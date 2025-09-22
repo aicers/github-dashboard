@@ -1,11 +1,13 @@
 # GitHub Dashboard
 
-GitHub Dashboard monitors GitHub activity from a single dashboard.
+GitHub Dashboard collects GitHub organization data into PostgreSQL and exposes
+configuration, sync controls, and analytics through a Next.js dashboard.
 
 ## Prerequisites
 
 - Node.js 22+
 - npm 10+
+- PostgreSQL 14+ running locally or reachable via connection string
 - A GitHub personal access token with `read:user` and repository metadata
   scopes (`GITHUB_TOKEN`)
 
@@ -17,11 +19,14 @@ GitHub Dashboard monitors GitHub activity from a single dashboard.
    npm install
    ```
 
-2. Provide your GitHub token for local development (`npm run dev` reads from `.env.local`
-   or the current shell):
+2. Provide environment variables (`npm run dev` reads from `.env.local` or the
+   current shell):
 
    ```bash
    export GITHUB_TOKEN=ghp_your_token
+   export GITHUB_ORG=my-github-org
+   export DATABASE_URL=postgres://postgres:postgres@localhost:5432/github_dashboard
+   export SYNC_INTERVAL_MINUTES=60
    ```
 
 3. Start the dev server:
@@ -30,13 +35,35 @@ GitHub Dashboard monitors GitHub activity from a single dashboard.
    npm run dev
    ```
 
-4. Visit `http://localhost:3000` for the landing page and
-   `http://localhost:3000/github-test` to run the GitHub API connectivity
-   check.
+4. Visit the app:
 
-The `/github-test` page shows the authenticated viewer, rate-limit information,
-and a repo lookup form powered by React Hook Form, Zod validation, and the
-GitHub GraphQL API via `graphql-request`.
+   - `http://localhost:3000` — landing page with quick links
+   - `http://localhost:3000/dashboard` — data collection controls & analytics
+   - `http://localhost:3000/github-test` — GraphQL connectivity test page
+
+### PostgreSQL schema bootstrap
+
+The first API call or dashboard render triggers schema creation (tables for
+users, repositories, issues, pull requests, reviews, comments, and sync
+metadata). Ensure `DATABASE_URL` points to a database the app can manage.
+
+To reset the data store manually:
+
+```bash
+curl -X POST http://localhost:3000/api/sync/reset -d '{"preserveLogs":true}' \
+  -H "Content-Type: application/json"
+```
+
+### Data collection flows
+
+- **Manual backfill** — choose a start date on the dashboard or call
+  `POST /api/sync/backfill { startDate }` to fetch data up to the present.
+- **Incremental sync** — toggle auto-sync on the dashboard or call
+  `POST /api/sync/auto { enabled: true }`; it runs immediately and then every
+  `SYNC_INTERVAL_MINUTES` minutes using the latest successful sync timestamp.
+- **Status & analytics** — the dashboard consumes `GET /api/sync/status` and
+  `GET /api/data/stats` to present sync logs, data freshness, counts, and top
+  contributors/repositories.
 
 ## Quality Tooling
 
@@ -84,15 +111,23 @@ executes:
 src/app/             → Next.js App Router routes and layouts
 src/components/      → Shared UI components (shadcn/ui + custom)
 src/lib/             → Utilities, env parsing, GitHub API client
-src/app/api/         → Route handlers (GitHub repository summary endpoint)
+src/lib/db/          → PostgreSQL client, schema bootstrap, query helpers
+src/lib/sync/        → Sync orchestration utilities and scheduler
+src/app/api/         → Route handlers (GitHub repository summary + data sync APIs)
 infra/               → Docker/nginx assets for HTTPS proxying
 ```
 
 ## Environment
 
-Environment variables are parsed through `src/lib/env.ts`. Define `GITHUB_TOKEN`
-in your runtime to allow server-side GitHub API requests:
+Environment variables are parsed through `src/lib/env.ts`:
+<!-- markdownlint-disable MD013 -->
+| Variable | Required | Description |
+| --- | --- | --- |
+| `GITHUB_TOKEN` | ✅ | GitHub token with `read:user` + repository metadata scope |
+| `GITHUB_ORG` | ✅ | Organization login to target for data collection |
+| `DATABASE_URL` | ✅ | PostgreSQL connection string |
+| `SYNC_INTERVAL_MINUTES` | ⛔ (default 60) | Interval for automatic incremental sync |
+<!-- markdownlint-enable MD013 -->
 
-- Local dev: `.env.local` (or export in your shell before running `npm run dev`).
-- Docker/production: `.env` consumed by `docker compose` or environment values
-  injected by your hosting platform.
+Define them in `.env.local` for local development or provide them via your
+hosting platform. Docker Compose reads from `.env` in the project root.
