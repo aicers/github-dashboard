@@ -1,0 +1,1088 @@
+import { ClientError } from "graphql-request";
+import type { GraphQLClient, RequestDocument } from "graphql-request";
+
+import {
+  recordSyncLog,
+  updateSyncLog,
+  upsertComment,
+  upsertIssue,
+  upsertPullRequest,
+  upsertRepository,
+  upsertReview,
+  upsertUser,
+  updateSyncState,
+  reviewExists,
+} from "@/lib/db/operations";
+import { createGithubClient } from "@/lib/github/client";
+import {
+  issueCommentsQuery,
+  organizationRepositoriesQuery,
+  pullRequestCommentsQuery,
+  pullRequestReviewCommentsQuery,
+  pullRequestReviewsQuery,
+  repositoryIssuesQuery,
+  repositoryPullRequestsQuery,
+} from "@/lib/github/queries";
+
+export type SyncLogger = (message: string) => void;
+
+export type SyncOptions = {
+  org: string;
+  since?: string | null;
+  until?: string | null;
+  sinceByResource?: Partial<Record<ResourceKey, string | null>>;
+  logger?: SyncLogger;
+};
+
+type Maybe<T> = T | null | undefined;
+
+type GithubActor = {
+  __typename: string;
+  id: string;
+  login?: string | null;
+  name?: string | null;
+  avatarUrl?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+type RepositoryNode = {
+  id: string;
+  name: string;
+  nameWithOwner: string;
+  url: string;
+  isPrivate: boolean;
+  createdAt: string;
+  updatedAt: string;
+  owner?: GithubActor | null;
+};
+
+type IssueNode = {
+  id: string;
+  number: number;
+  title: string;
+  state: string;
+  url: string;
+  createdAt: string;
+  updatedAt: string;
+  closedAt?: string | null;
+  author?: GithubActor | null;
+};
+
+type PullRequestNode = IssueNode & {
+  mergedAt?: string | null;
+  merged?: boolean | null;
+};
+
+type ReviewNode = {
+  id: string;
+  author?: GithubActor | null;
+  submittedAt?: string | null;
+  state?: string | null;
+};
+
+type CommentNode = {
+  id: string;
+  author?: GithubActor | null;
+  createdAt: string;
+  updatedAt?: string | null;
+  pullRequestReview?: { id: string } | null;
+};
+
+type CommentCollectionResult = {
+  latest: string | null;
+  count: number;
+};
+
+type ReviewCollectionResult = {
+  latest: string | null;
+  count: number;
+  reviewIds: Set<string>;
+};
+
+type PageInfo = {
+  hasNextPage: boolean;
+  endCursor: string | null;
+};
+
+type GraphQLConnection<T> = {
+  pageInfo: PageInfo;
+  nodes: T[] | null;
+};
+
+type OrganizationRepositoriesQueryResponse = {
+  organization: {
+    repositories: GraphQLConnection<RepositoryNode> | null;
+  } | null;
+};
+
+type RepositoryIssuesQueryResponse = {
+  repository: {
+    issues: GraphQLConnection<IssueNode> | null;
+  } | null;
+};
+
+type RepositoryPullRequestsQueryResponse = {
+  repository: {
+    pullRequests: GraphQLConnection<PullRequestNode> | null;
+  } | null;
+};
+
+type PullRequestReviewsQueryResponse = {
+  repository: {
+    pullRequest: {
+      reviews: GraphQLConnection<ReviewNode> | null;
+    } | null;
+  } | null;
+};
+
+type PullRequestReviewCommentsQueryResponse = {
+  repository: {
+    pullRequest: {
+      reviewThreads: GraphQLConnection<{
+        id: string;
+        comments: {
+          nodes: CommentNode[] | null;
+        } | null;
+      }> | null;
+    } | null;
+  } | null;
+};
+
+type IssueCommentsQueryResponse = {
+  repository: {
+    issue: {
+      comments: GraphQLConnection<CommentNode> | null;
+    } | null;
+  } | null;
+};
+
+type PullRequestCommentsQueryResponse = {
+  repository: {
+    pullRequest: {
+      comments: GraphQLConnection<CommentNode> | null;
+    } | null;
+  } | null;
+};
+
+export const RESOURCE_KEYS = [
+  "repositories",
+  "issues",
+  "pull_requests",
+  "reviews",
+  "comments",
+] as const;
+
+export type ResourceKey = (typeof RESOURCE_KEYS)[number];
+
+const RETRYABLE_STATUS_CODES = new Set([500, 502, 503, 504]);
+const MAX_RETRY_ATTEMPTS = 3;
+const BASE_RETRY_DELAY_MS = 500;
+const BACKOFF_FACTOR = 2;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function toActor(actor: Maybe<GithubActor>) {
+  if (!actor?.id) {
+    return null;
+  }
+
+  return {
+    id: actor.id,
+    login: actor.login ?? null,
+    name: actor.name ?? null,
+    avatarUrl: actor.avatarUrl ?? null,
+    createdAt: actor.createdAt ?? null,
+    updatedAt: actor.updatedAt ?? null,
+    __typename: actor.__typename,
+  };
+}
+
+type TimeBounds = {
+  since: number | null;
+  until: number | null;
+};
+
+function toTime(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+  const time = Date.parse(value);
+  return Number.isNaN(time) ? null : time;
+}
+
+function createBounds(since?: string | null, until?: string | null): TimeBounds {
+  return {
+    since: toTime(since),
+    until: toTime(until),
+  };
+}
+
+function evaluateTimestamp(
+  timestamp: string | null | undefined,
+  bounds: TimeBounds,
+): {
+  include: boolean;
+  afterUpperBound: boolean;
+} {
+  const value = toTime(timestamp);
+  if (value === null) {
+    return { include: false, afterUpperBound: false };
+  }
+
+  if (bounds.since !== null && value < bounds.since) {
+    return { include: false, afterUpperBound: false };
+  }
+
+  if (bounds.until !== null && value >= bounds.until) {
+    return { include: false, afterUpperBound: true };
+  }
+
+  return { include: true, afterUpperBound: false };
+}
+
+async function processActor(actor: Maybe<GithubActor>) {
+  const normalized = toActor(actor);
+  if (!normalized) {
+    return null;
+  }
+
+  await upsertUser(normalized);
+  return normalized.id;
+}
+
+function maxTimestamp(current: string | null, candidate: string | null | undefined) {
+  if (!candidate) {
+    return current;
+  }
+
+  if (!current) {
+    return candidate;
+  }
+
+  return new Date(candidate) > new Date(current) ? candidate : current;
+}
+
+function ensureLogId(id: number | undefined) {
+  if (typeof id !== "number") {
+    throw new Error("Failed to record sync log entry.");
+  }
+
+  return id;
+}
+
+function isNotFoundError(error: unknown) {
+  if (error instanceof ClientError) {
+    return (error.response?.errors ?? []).some(
+      (item) => item.extensions?.code === "NOT_FOUND",
+    );
+  }
+
+  return false;
+}
+
+function isRetryableError(error: unknown) {
+  if (error instanceof ClientError) {
+    const status = error.response?.status ?? 0;
+    return RETRYABLE_STATUS_CODES.has(status);
+  }
+
+  return error instanceof Error;
+}
+
+function describeError(error: unknown) {
+  if (error instanceof ClientError) {
+    const status = error.response?.status;
+    return `status ${status ?? "unknown"}`;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "unknown error";
+}
+
+async function requestWithRetry<T>(
+  client: GraphQLClient,
+  document: RequestDocument,
+  variables: Record<string, unknown>,
+  options: { logger?: SyncLogger; context?: string; retries?: number } = {},
+): Promise<T> {
+  const { logger, context, retries = MAX_RETRY_ATTEMPTS } = options;
+  let attempt = 0;
+  let delay = BASE_RETRY_DELAY_MS;
+  let lastError: unknown = null;
+
+  while (attempt < retries) {
+    try {
+      return await client.request<T>(document, variables);
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableError(error) || attempt === retries - 1) {
+        throw error;
+      }
+
+      const attemptNumber = attempt + 1;
+      logger?.(
+        `Retrying ${context ?? "request"} (${attemptNumber}/${retries}) after ${describeError(error)}...`,
+      );
+      await sleep(delay);
+      delay *= BACKOFF_FACTOR;
+      attempt += 1;
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("GraphQL request failed after retries");
+}
+
+function resolveSince(options: SyncOptions, resource: ResourceKey) {
+  return options.sinceByResource?.[resource] ?? options.since ?? null;
+}
+
+function resolveUntil(options: SyncOptions) {
+  return options.until ?? null;
+}
+
+type CommentTarget = "issue" | "pull_request";
+
+async function collectIssueComments(
+  client: GraphQLClient,
+  repository: RepositoryNode,
+  issue: IssueNode,
+  options: SyncOptions,
+  target: CommentTarget = "issue",
+): Promise<CommentCollectionResult> {
+  const { logger } = options;
+  const effectiveSince = resolveSince(options, "comments");
+  const effectiveUntil = resolveUntil(options);
+  const bounds = createBounds(effectiveSince, effectiveUntil);
+  if (!issue.number) {
+    return { latest: null, count: 0 };
+  }
+
+  let cursor: string | null = null;
+  let hasNextPage = true;
+  let latest: string | null = null;
+  let count = 0;
+  const [owner, name] = repository.nameWithOwner.split("/");
+
+  while (hasNextPage) {
+    const logLabel = target === "issue" ? "issue" : "pull request";
+    logger?.(
+      `Fetching ${logLabel} comments for ${repository.nameWithOwner} #${issue.number}${cursor ? ` (cursor ${cursor})` : ""}`,
+    );
+
+    let connection: { pageInfo?: PageInfo | null; nodes?: CommentNode[] | null } | null = null;
+    try {
+      if (target === "pull_request") {
+        const data: PullRequestCommentsQueryResponse = await requestWithRetry(
+          client,
+          pullRequestCommentsQuery,
+          {
+            owner,
+            name,
+            number: issue.number,
+            cursor,
+          },
+          {
+            logger,
+            context: `${logLabel} comments ${repository.nameWithOwner}#${issue.number}`,
+          },
+        );
+        connection = data.repository?.pullRequest?.comments ?? null;
+      } else {
+        const data: IssueCommentsQueryResponse = await requestWithRetry(
+          client,
+          issueCommentsQuery,
+          {
+            owner,
+            name,
+            number: issue.number,
+            cursor,
+          },
+          {
+            logger,
+            context: `issue comments ${repository.nameWithOwner}#${issue.number}`,
+          },
+        );
+        connection = data.repository?.issue?.comments ?? null;
+      }
+    } catch (error) {
+      if (isNotFoundError(error)) {
+        logger?.(
+          `${logLabel === "issue" ? "Issue" : "Pull request"} ${repository.nameWithOwner} #${issue.number} no longer exists. Skipping comment collection.`,
+        );
+        break;
+      }
+
+      throw error;
+    }
+
+    if (!connection) {
+      logger?.(
+        `${logLabel === "issue" ? "Issue" : "Pull request"} ${repository.nameWithOwner} #${issue.number} was not found. Skipping comment collection.`,
+      );
+      break;
+    }
+
+    const commentNodes: CommentNode[] = connection.nodes ?? [];
+    let reachedUpperBound = false;
+
+    for (const comment of commentNodes) {
+      const timestamp = comment.updatedAt ?? comment.createdAt;
+      const decision = evaluateTimestamp(timestamp, bounds);
+      if (!decision.include) {
+        if (decision.afterUpperBound) {
+          reachedUpperBound = true;
+          break;
+        }
+        continue;
+      }
+
+      const authorId = await processActor(comment.author);
+      const isIssueTarget = target === "issue";
+      await upsertComment({
+        id: comment.id,
+        issueId: isIssueTarget ? issue.id : null,
+        pullRequestId: isIssueTarget ? null : issue.id,
+        reviewId: comment.pullRequestReview?.id ?? null,
+        authorId: authorId ?? null,
+        createdAt: comment.createdAt,
+        updatedAt: comment.updatedAt ?? null,
+        raw: comment,
+      });
+
+      latest = maxTimestamp(latest, timestamp);
+      count += 1;
+    }
+
+    if (reachedUpperBound) {
+      hasNextPage = false;
+      cursor = null;
+      break;
+    }
+
+    hasNextPage = connection.pageInfo?.hasNextPage ?? false;
+    cursor = connection.pageInfo?.endCursor ?? null;
+    if (!hasNextPage) {
+      cursor = null;
+    }
+  }
+
+  return { latest, count };
+}
+
+async function collectReviewComments(
+  client: GraphQLClient,
+  repository: RepositoryNode,
+  pullRequest: PullRequestNode,
+  options: SyncOptions,
+  reviewCache: Set<string>,
+) : Promise<CommentCollectionResult> {
+  const { logger } = options;
+  const effectiveSince = resolveSince(options, "comments");
+  const effectiveUntil = resolveUntil(options);
+  const bounds = createBounds(effectiveSince, effectiveUntil);
+  let cursor: string | null = null;
+  let hasNextPage = true;
+  let latest: string | null = null;
+  let count = 0;
+  const [owner, name] = repository.nameWithOwner.split("/");
+
+  while (hasNextPage) {
+    logger?.(
+      `Fetching review comments for ${repository.nameWithOwner} PR #${pullRequest.number}${cursor ? ` (cursor ${cursor})` : ""}`,
+    );
+
+    const data: PullRequestReviewCommentsQueryResponse = await requestWithRetry(
+      client,
+      pullRequestReviewCommentsQuery,
+      {
+        owner,
+        name,
+        number: pullRequest.number,
+        cursor,
+      },
+      {
+        logger,
+        context: `review threads ${repository.nameWithOwner}#${pullRequest.number}`,
+      },
+    );
+
+    const threads = data.repository?.pullRequest?.reviewThreads;
+    const threadNodes = threads?.nodes ?? [];
+    let reachedUpperBound = false;
+
+    for (const thread of threadNodes) {
+      for (const comment of (thread.comments?.nodes ?? []) as CommentNode[]) {
+        const timestamp = comment.updatedAt ?? comment.createdAt;
+        const decision = evaluateTimestamp(timestamp, bounds);
+        if (!decision.include) {
+          if (decision.afterUpperBound) {
+            reachedUpperBound = true;
+            break;
+          }
+          continue;
+        }
+
+        const authorId = await processActor(comment.author);
+        let reviewId: string | null = null;
+        const potentialReviewId = comment.pullRequestReview?.id ?? null;
+        if (potentialReviewId) {
+          if (reviewCache.has(potentialReviewId)) {
+            reviewId = potentialReviewId;
+          } else if (await reviewExists(potentialReviewId)) {
+            reviewCache.add(potentialReviewId);
+            reviewId = potentialReviewId;
+          } else {
+            logger?.(
+              `Review ${potentialReviewId} referenced by comment ${comment.id} was not found. Saving without review reference.`,
+            );
+          }
+        }
+
+        await upsertComment({
+          id: comment.id,
+          issueId: null,
+          pullRequestId: pullRequest.id,
+          reviewId,
+          authorId: authorId ?? null,
+          createdAt: comment.createdAt,
+          updatedAt: comment.updatedAt ?? null,
+          raw: comment,
+        });
+
+        latest = maxTimestamp(latest, timestamp);
+        count += 1;
+      }
+      if (reachedUpperBound) {
+        break;
+      }
+    }
+
+    if (reachedUpperBound) {
+      hasNextPage = false;
+      cursor = null;
+      break;
+    }
+
+    hasNextPage = threads?.pageInfo?.hasNextPage ?? false;
+    cursor = threads?.pageInfo?.endCursor ?? null;
+  }
+
+  return { latest, count };
+}
+
+async function collectReviews(
+  client: GraphQLClient,
+  repository: RepositoryNode,
+  pullRequest: PullRequestNode,
+  options: SyncOptions,
+) : Promise<ReviewCollectionResult> {
+  const { logger } = options;
+  const effectiveSince = resolveSince(options, "reviews");
+  const effectiveUntil = resolveUntil(options);
+  const bounds = createBounds(effectiveSince, effectiveUntil);
+  let cursor: string | null = null;
+  let hasNextPage = true;
+  let latest: string | null = null;
+  let count = 0;
+  const reviewIds = new Set<string>();
+  const [owner, name] = repository.nameWithOwner.split("/");
+
+  while (hasNextPage) {
+    logger?.(
+      `Fetching reviews for ${repository.nameWithOwner} PR #${pullRequest.number}${cursor ? ` (cursor ${cursor})` : ""}`,
+    );
+
+    const data: PullRequestReviewsQueryResponse = await requestWithRetry(
+      client,
+      pullRequestReviewsQuery,
+      {
+        owner,
+        name,
+        number: pullRequest.number,
+        cursor,
+      },
+      {
+        logger,
+        context: `reviews ${repository.nameWithOwner}#${pullRequest.number}`,
+      },
+    );
+
+    const reviewsConnection = data.repository?.pullRequest?.reviews;
+    const reviewNodes: ReviewNode[] = reviewsConnection?.nodes ?? [];
+    let reachedUpperBound = false;
+
+    for (const review of reviewNodes) {
+      const timestamp = review.submittedAt ?? null;
+      const decision = evaluateTimestamp(timestamp, bounds);
+      if (!decision.include) {
+        if (decision.afterUpperBound) {
+          reachedUpperBound = true;
+          break;
+        }
+        continue;
+      }
+
+      const authorId = await processActor(review.author);
+      await upsertReview({
+        id: review.id,
+        pullRequestId: pullRequest.id,
+        authorId: authorId ?? null,
+        state: review.state ?? null,
+        submittedAt: review.submittedAt ?? null,
+        raw: review,
+      });
+
+      reviewIds.add(review.id);
+      latest = maxTimestamp(latest, timestamp);
+      count += 1;
+    }
+
+    if (reachedUpperBound) {
+      hasNextPage = false;
+      cursor = null;
+      break;
+    }
+
+    hasNextPage = reviewsConnection?.pageInfo?.hasNextPage ?? false;
+    cursor = reviewsConnection?.pageInfo?.endCursor ?? null;
+  }
+
+  return { latest, count, reviewIds };
+}
+
+async function collectIssuesForRepository(
+  client: GraphQLClient,
+  repository: RepositoryNode,
+  options: SyncOptions,
+) {
+  const { logger } = options;
+  const effectiveSince = resolveSince(options, "issues");
+  const effectiveUntil = resolveUntil(options);
+  const bounds = createBounds(effectiveSince, effectiveUntil);
+  let cursor: string | null = null;
+  let hasNextPage = true;
+  const [owner, name] = repository.nameWithOwner.split("/");
+  let latestIssueUpdated: string | null = null;
+  let latestCommentUpdated: string | null = null;
+  let issueCount = 0;
+  let commentCount = 0;
+
+  while (hasNextPage) {
+    logger?.(
+      `Fetching issues for ${repository.nameWithOwner}${cursor ? ` (cursor ${cursor})` : ""}`,
+    );
+
+    const data: RepositoryIssuesQueryResponse = await requestWithRetry(
+      client,
+      repositoryIssuesQuery,
+      {
+        owner,
+        name,
+        cursor,
+        since: effectiveSince,
+      },
+      {
+        logger,
+        context: `issues ${repository.nameWithOwner}`,
+      },
+    );
+
+    const issuesConnection = data.repository?.issues;
+    const issueNodes: IssueNode[] = issuesConnection?.nodes ?? [];
+    let reachedUpperBound = false;
+
+    for (const issue of issueNodes) {
+      const decision = evaluateTimestamp(issue.updatedAt, bounds);
+      if (!decision.include) {
+        if (decision.afterUpperBound) {
+          reachedUpperBound = true;
+          break;
+        }
+        continue;
+      }
+
+      const authorId = await processActor(issue.author);
+      await upsertIssue({
+        id: issue.id,
+        number: issue.number,
+        repositoryId: repository.id,
+        authorId: authorId ?? null,
+        title: issue.title,
+        state: issue.state,
+        createdAt: issue.createdAt,
+        updatedAt: issue.updatedAt,
+        closedAt: issue.closedAt ?? null,
+        raw: issue,
+      });
+
+      latestIssueUpdated = maxTimestamp(latestIssueUpdated, issue.updatedAt);
+      issueCount += 1;
+
+      const commentsResult = await collectIssueComments(
+        client,
+        repository,
+        issue,
+        options,
+        "issue",
+      );
+      latestCommentUpdated = maxTimestamp(latestCommentUpdated, commentsResult.latest);
+      commentCount += commentsResult.count;
+    }
+
+    if (reachedUpperBound) {
+      hasNextPage = false;
+      cursor = null;
+      break;
+    }
+
+    hasNextPage = issuesConnection?.pageInfo?.hasNextPage ?? false;
+    cursor = issuesConnection?.pageInfo?.endCursor ?? null;
+  }
+
+  return { latestIssueUpdated, latestCommentUpdated, issueCount, commentCount };
+}
+
+async function collectPullRequestsForRepository(
+  client: GraphQLClient,
+  repository: RepositoryNode,
+  options: SyncOptions,
+) {
+  const { logger } = options;
+  const effectiveSince = resolveSince(options, "pull_requests");
+  const effectiveUntil = resolveUntil(options);
+  const bounds = createBounds(effectiveSince, effectiveUntil);
+  let cursor: string | null = null;
+  let hasNextPage = true;
+  const [owner, name] = repository.nameWithOwner.split("/");
+  let latestPullRequestUpdated: string | null = null;
+  let latestReviewSubmitted: string | null = null;
+  let latestCommentUpdated: string | null = null;
+  let pullRequestCount = 0;
+  let reviewCount = 0;
+  let commentCount = 0;
+  const reviewCache = new Set<string>();
+
+  while (hasNextPage) {
+    logger?.(
+      `Fetching pull requests for ${repository.nameWithOwner}${cursor ? ` (cursor ${cursor})` : ""}`,
+    );
+
+    const data: RepositoryPullRequestsQueryResponse = await requestWithRetry(
+      client,
+      repositoryPullRequestsQuery,
+      {
+        owner,
+        name,
+        cursor,
+      },
+      {
+        logger,
+        context: `pull requests ${repository.nameWithOwner}`,
+      },
+    );
+
+    const prsConnection = data.repository?.pullRequests;
+    const prNodes: PullRequestNode[] = prsConnection?.nodes ?? [];
+    let reachedUpperBound = false;
+
+    for (const pullRequest of prNodes) {
+      const decision = evaluateTimestamp(pullRequest.updatedAt, bounds);
+      if (!decision.include) {
+        if (decision.afterUpperBound) {
+          reachedUpperBound = true;
+          break;
+        }
+        continue;
+      }
+
+      const authorId = await processActor(pullRequest.author);
+      await upsertPullRequest({
+        id: pullRequest.id,
+        number: pullRequest.number,
+        repositoryId: repository.id,
+        authorId: authorId ?? null,
+        title: pullRequest.title,
+        state: pullRequest.state,
+        createdAt: pullRequest.createdAt,
+        updatedAt: pullRequest.updatedAt,
+        closedAt: pullRequest.closedAt ?? null,
+        mergedAt: pullRequest.mergedAt ?? null,
+        merged: pullRequest.merged ?? null,
+        raw: pullRequest,
+      });
+
+      latestPullRequestUpdated = maxTimestamp(latestPullRequestUpdated, pullRequest.updatedAt);
+      pullRequestCount += 1;
+
+      const issueCommentsResult = await collectIssueComments(
+        client,
+        repository,
+        pullRequest,
+        options,
+        "pull_request",
+      );
+      latestCommentUpdated = maxTimestamp(latestCommentUpdated, issueCommentsResult.latest);
+      commentCount += issueCommentsResult.count;
+
+      const reviewResult = await collectReviews(client, repository, pullRequest, options);
+      latestReviewSubmitted = maxTimestamp(latestReviewSubmitted, reviewResult.latest);
+      reviewCount += reviewResult.count;
+      for (const id of reviewResult.reviewIds) {
+        reviewCache.add(id);
+      }
+
+      const reviewCommentResult = await collectReviewComments(
+        client,
+        repository,
+        pullRequest,
+        options,
+        reviewCache,
+      );
+      latestCommentUpdated = maxTimestamp(latestCommentUpdated, reviewCommentResult.latest);
+      commentCount += reviewCommentResult.count;
+    }
+
+    if (reachedUpperBound) {
+      hasNextPage = false;
+      cursor = null;
+      break;
+    }
+
+    hasNextPage = prsConnection?.pageInfo?.hasNextPage ?? false;
+    cursor = prsConnection?.pageInfo?.endCursor ?? null;
+  }
+
+  return {
+    latestPullRequestUpdated,
+    latestReviewSubmitted,
+    latestCommentUpdated,
+    pullRequestCount,
+    reviewCount,
+    commentCount,
+  };
+}
+
+async function collectRepositories(
+  client: GraphQLClient,
+  options: SyncOptions,
+): Promise<{ repositories: RepositoryNode[]; latestUpdated: string | null }> {
+  const { org, logger } = options;
+  let cursor: string | null = null;
+  let hasNextPage = true;
+  const repositories: RepositoryNode[] = [];
+  let latestUpdated: string | null = null;
+
+  while (hasNextPage) {
+    logger?.(`Fetching repositories for ${org}${cursor ? ` (cursor ${cursor})` : ""}`);
+    const data: OrganizationRepositoriesQueryResponse = await requestWithRetry(
+      client,
+      organizationRepositoriesQuery,
+      {
+        login: org,
+        cursor,
+      },
+      {
+        logger,
+        context: `repositories for ${org}`,
+      },
+    );
+
+    const repositoriesConnection = data.organization?.repositories;
+    const nodes: RepositoryNode[] = repositoriesConnection?.nodes ?? [];
+
+    for (const repository of nodes) {
+      const ownerId = await processActor(repository.owner);
+      await upsertRepository({
+        id: repository.id,
+        name: repository.name,
+        nameWithOwner: repository.nameWithOwner,
+        url: repository.url,
+        isPrivate: repository.isPrivate,
+        createdAt: repository.createdAt,
+        updatedAt: repository.updatedAt,
+        ownerId: ownerId ?? null,
+        raw: repository,
+      });
+
+      repositories.push(repository);
+      latestUpdated = maxTimestamp(latestUpdated, repository.updatedAt);
+    }
+
+    hasNextPage = repositoriesConnection?.pageInfo?.hasNextPage ?? false;
+    cursor = repositoriesConnection?.pageInfo?.endCursor ?? null;
+  }
+
+  return { repositories, latestUpdated };
+}
+
+export async function runCollection(options: SyncOptions) {
+  if (!options.org) {
+    throw new Error("GitHub organization is not configured.");
+  }
+
+  const client = createGithubClient();
+  const repoLogId = ensureLogId(await recordSyncLog("repositories", "running"));
+  let repositories: RepositoryNode[] = [];
+  let repositoriesLatest: string | null = null;
+
+  try {
+    const repositoryResult = await collectRepositories(client, options);
+    repositories = repositoryResult.repositories;
+    repositoriesLatest = repositoryResult.latestUpdated;
+
+    if (repositoriesLatest) {
+      await updateSyncState("repositories", null, repositoriesLatest);
+    }
+
+    await updateSyncLog(
+      repoLogId,
+      "success",
+      `Processed ${repositories.length} repositories for ${options.org}.`,
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unexpected error while collecting repositories.";
+    await updateSyncLog(repoLogId, "failed", message);
+    throw error;
+  }
+
+  let latestIssueUpdated: string | null = null;
+  let latestPullRequestUpdated: string | null = null;
+  let latestReviewSubmitted: string | null = null;
+  let latestCommentUpdated: string | null = null;
+  let totalIssues = 0;
+  let totalPullRequests = 0;
+  let totalReviews = 0;
+  let totalComments = 0;
+
+  const commentLogId = ensureLogId(await recordSyncLog("comments", "running"));
+  const issuesLogId = ensureLogId(await recordSyncLog("issues", "running"));
+
+  try {
+    for (const repository of repositories) {
+      const issuesResult = await collectIssuesForRepository(client, repository, options);
+      latestIssueUpdated = maxTimestamp(
+        latestIssueUpdated,
+        issuesResult.latestIssueUpdated,
+      );
+      latestCommentUpdated = maxTimestamp(
+        latestCommentUpdated,
+        issuesResult.latestCommentUpdated,
+      );
+      totalIssues += issuesResult.issueCount;
+      totalComments += issuesResult.commentCount;
+    }
+
+    if (latestIssueUpdated) {
+      await updateSyncState("issues", null, latestIssueUpdated);
+    }
+
+    await updateSyncLog(
+      issuesLogId,
+      "success",
+      `Upserted ${totalIssues} issues across ${repositories.length} repositories.`,
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unexpected error while collecting issues.";
+    await updateSyncLog(issuesLogId, "failed", message);
+    await updateSyncLog(commentLogId, "failed", message);
+    throw error;
+  }
+
+  const pullRequestLogId = ensureLogId(
+    await recordSyncLog("pull_requests", "running"),
+  );
+  const reviewLogId = ensureLogId(await recordSyncLog("reviews", "running"));
+
+  try {
+    for (const repository of repositories) {
+      const prsResult = await collectPullRequestsForRepository(client, repository, options);
+      latestPullRequestUpdated = maxTimestamp(
+        latestPullRequestUpdated,
+        prsResult.latestPullRequestUpdated,
+      );
+      latestReviewSubmitted = maxTimestamp(
+        latestReviewSubmitted,
+        prsResult.latestReviewSubmitted,
+      );
+      latestCommentUpdated = maxTimestamp(
+        latestCommentUpdated,
+        prsResult.latestCommentUpdated,
+      );
+      totalPullRequests += prsResult.pullRequestCount;
+      totalReviews += prsResult.reviewCount;
+      totalComments += prsResult.commentCount;
+    }
+
+    if (latestPullRequestUpdated) {
+      await updateSyncState("pull_requests", null, latestPullRequestUpdated);
+    }
+
+    if (latestReviewSubmitted) {
+      await updateSyncState("reviews", null, latestReviewSubmitted);
+    }
+
+    await updateSyncLog(
+      pullRequestLogId,
+      "success",
+      `Upserted ${totalPullRequests} pull requests across ${repositories.length} repositories.`,
+    );
+
+    await updateSyncLog(
+      reviewLogId,
+      "success",
+      `Recorded ${totalReviews} pull request reviews.`,
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unexpected error while collecting pull requests.";
+    await updateSyncLog(pullRequestLogId, "failed", message);
+    await updateSyncLog(reviewLogId, "failed", message);
+    await updateSyncLog(commentLogId, "failed", message);
+    throw error;
+  }
+
+  if (latestCommentUpdated) {
+    await updateSyncState("comments", null, latestCommentUpdated);
+  }
+
+  await updateSyncLog(
+    commentLogId,
+    "success",
+    `Captured ${totalComments} comments from issues, pull requests, and reviews.`,
+  );
+
+  return {
+    repositoriesProcessed: repositories.length,
+    counts: {
+      issues: totalIssues,
+      pullRequests: totalPullRequests,
+      reviews: totalReviews,
+      comments: totalComments,
+    },
+    timestamps: {
+      repositories: repositoriesLatest,
+      issues: latestIssueUpdated,
+      pullRequests: latestPullRequestUpdated,
+      reviews: latestReviewSubmitted,
+      comments: latestCommentUpdated,
+    },
+  };
+}

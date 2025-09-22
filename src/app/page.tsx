@@ -20,9 +20,14 @@ export default function Home() {
           shadcn/ui, typed forms, and testing. Use it as the foundation for
           building compelling GitHub experiences.
         </p>
-        <Button asChild size="lg" className="mt-2">
-          <Link href="/github-test">Open the GitHub test page</Link>
-        </Button>
+        <div className="mt-2 flex flex-wrap items-center justify-center gap-3">
+          <Button asChild size="lg">
+            <Link href="/dashboard">Open the data dashboard</Link>
+          </Button>
+          <Button asChild size="lg" variant="secondary">
+            <Link href="/github-test">Open the GitHub test page</Link>
+          </Button>
+        </div>
       </section>
 
       <section className="mx-auto grid w-full max-w-5xl gap-6 md:grid-cols-3">
