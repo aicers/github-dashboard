@@ -21,7 +21,10 @@ export async function GET() {
     }
 
     return NextResponse.json(
-      { success: false, message: "Unexpected error while fetching sync configuration." },
+      {
+        success: false,
+        message: "Unexpected error while fetching sync configuration.",
+      },
       { status: 500 },
     );
   }
@@ -54,7 +57,10 @@ export async function PATCH(request: Request) {
     }
 
     return NextResponse.json(
-      { success: false, message: "Unexpected error while updating sync configuration." },
+      {
+        success: false,
+        message: "Unexpected error while updating sync configuration.",
+      },
       { status: 500 },
     );
   }

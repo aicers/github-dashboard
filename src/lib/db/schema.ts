@@ -125,7 +125,7 @@ const SCHEMA_STATEMENTS = [
     message TEXT
   )`,
   `CREATE INDEX IF NOT EXISTS sync_log_resource_idx ON sync_log(resource)`,
-  `CREATE INDEX IF NOT EXISTS sync_log_started_idx ON sync_log(started_at)`
+  `CREATE INDEX IF NOT EXISTS sync_log_started_idx ON sync_log(started_at)`,
 ];
 
 let ensurePromise: Promise<void> | null = null;

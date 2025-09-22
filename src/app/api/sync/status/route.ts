@@ -15,7 +15,10 @@ export async function GET() {
     }
 
     return NextResponse.json(
-      { success: false, message: "Unexpected error while fetching sync status." },
+      {
+        success: false,
+        message: "Unexpected error while fetching sync status.",
+      },
       { status: 500 },
     );
   }

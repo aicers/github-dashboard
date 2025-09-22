@@ -11,7 +11,9 @@ const requestSchema = z
 
 export async function POST(request: Request) {
   try {
-    const payload = requestSchema.parse(await request.json().catch(() => undefined));
+    const payload = requestSchema.parse(
+      await request.json().catch(() => undefined),
+    );
     await resetData({ preserveLogs: payload?.preserveLogs ?? true });
 
     return NextResponse.json({ success: true });

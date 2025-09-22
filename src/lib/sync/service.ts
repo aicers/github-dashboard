@@ -11,16 +11,16 @@ import {
   updateSyncConfig,
 } from "@/lib/db/operations";
 import { env } from "@/lib/env";
-import {
-  RESOURCE_KEYS,
-  runCollection,
-} from "@/lib/github/collectors";
 import type { ResourceKey, SyncLogger } from "@/lib/github/collectors";
+import { RESOURCE_KEYS, runCollection } from "@/lib/github/collectors";
 
 const dateSchema = z.string().transform((value, ctx) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Invalid date value." });
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Invalid date value.",
+    });
     return z.NEVER;
   }
 
@@ -239,14 +239,18 @@ export async function initializeScheduler() {
   await ensureSchema();
   const config = await getSyncConfig();
   if (config?.auto_sync_enabled) {
-    startScheduler(config.sync_interval_minutes ?? env.SYNC_INTERVAL_MINUTES ?? 60);
+    startScheduler(
+      config.sync_interval_minutes ?? env.SYNC_INTERVAL_MINUTES ?? 60,
+    );
   }
 }
 
 export async function runBackfill(startDate: string, logger?: SyncLogger) {
   const parsedDate = dateSchema.parse(startDate);
   const start = new Date(parsedDate);
-  const startUtc = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()));
+  const startUtc = new Date(
+    Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()),
+  );
   const now = new Date();
   const nowUtc = new Date(now.toISOString());
 
@@ -296,7 +300,9 @@ export async function runBackfill(startDate: string, logger?: SyncLogger) {
       totals.comments += counts.comments;
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Unknown error during backfill chunk.";
+        error instanceof Error
+          ? error.message
+          : "Unknown error during backfill chunk.";
       chunks.push({
         status: "failed",
         since: sinceIso,
@@ -335,7 +341,10 @@ export async function enableAutomaticSync(options?: {
 }) {
   await ensureSchema();
   const config = await getSyncConfig();
-  const interval = options?.intervalMinutes ?? config?.sync_interval_minutes ?? env.SYNC_INTERVAL_MINUTES;
+  const interval =
+    options?.intervalMinutes ??
+    config?.sync_interval_minutes ??
+    env.SYNC_INTERVAL_MINUTES;
   if (!interval) {
     throw new Error("Sync interval is not configured.");
   }
@@ -389,7 +398,11 @@ export async function updateSyncSettings(params: {
   }
 }
 
-export async function resetData({ preserveLogs = true }: { preserveLogs?: boolean }) {
+export async function resetData({
+  preserveLogs = true,
+}: {
+  preserveLogs?: boolean;
+}) {
   await ensureSchema();
   await resetDatabase({ preserveLogs });
   await updateSyncConfig({

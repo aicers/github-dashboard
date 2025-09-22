@@ -53,7 +53,10 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json(
-      { success: false, message: "Unexpected error while updating sync automation." },
+      {
+        success: false,
+        message: "Unexpected error while updating sync automation.",
+      },
       { status: 500 },
     );
   }

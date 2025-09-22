@@ -314,10 +314,7 @@ export async function upsertReview(review: DbReview) {
 }
 
 export async function reviewExists(reviewId: string) {
-  const result = await query(
-    `SELECT 1 FROM reviews WHERE id = $1`,
-    [reviewId],
-  );
+  const result = await query(`SELECT 1 FROM reviews WHERE id = $1`, [reviewId]);
   return Boolean(result.rowCount && result.rowCount > 0);
 }
 
@@ -358,7 +355,11 @@ export async function upsertComment(comment: DbComment) {
   );
 }
 
-export async function recordSyncLog(resource: string, status: SyncLogStatus, message?: string) {
+export async function recordSyncLog(
+  resource: string,
+  status: SyncLogStatus,
+  message?: string,
+) {
   const result = await query<{ id: number }>(
     `INSERT INTO sync_log (resource, status, message, started_at)
      VALUES ($1, $2, $3, NOW())
@@ -473,11 +474,19 @@ export async function updateSyncConfig(params: {
   );
 }
 
-export async function resetData({ preserveLogs = true }: { preserveLogs?: boolean }) {
+export async function resetData({
+  preserveLogs = true,
+}: {
+  preserveLogs?: boolean;
+}) {
   if (preserveLogs) {
-    await query(`TRUNCATE comments, reviews, issues, pull_requests, repositories, users RESTART IDENTITY CASCADE`);
+    await query(
+      `TRUNCATE comments, reviews, issues, pull_requests, repositories, users RESTART IDENTITY CASCADE`,
+    );
   } else {
-    await query(`TRUNCATE comments, reviews, issues, pull_requests, repositories, users, sync_log, sync_state RESTART IDENTITY CASCADE`);
+    await query(
+      `TRUNCATE comments, reviews, issues, pull_requests, repositories, users, sync_log, sync_state RESTART IDENTITY CASCADE`,
+    );
   }
 }
 
@@ -517,7 +526,9 @@ export async function getCountsByTable(): Promise<TableCountSummary[]> {
   }));
 }
 
-export async function getTimeRangeByTable(table: "issues" | "pull_requests"): Promise<RangeSummary> {
+export async function getTimeRangeByTable(
+  table: "issues" | "pull_requests",
+): Promise<RangeSummary> {
   const result = await query<RangeSummary>(
     `SELECT MIN(github_created_at) AS oldest, MAX(github_updated_at) AS newest FROM ${table}`,
   );
@@ -552,7 +563,9 @@ type TopRepositoryRow = {
   pull_request_count: string;
 };
 
-export async function getTopRepositoriesByActivity(limit = 5): Promise<TopRepositoryRow[]> {
+export async function getTopRepositoriesByActivity(
+  limit = 5,
+): Promise<TopRepositoryRow[]> {
   const result = await query<TopRepositoryRow>(
     `SELECT repository_id,
             SUM(CASE WHEN type = 'issue' THEN count ELSE 0 END) AS issue_count,
@@ -616,7 +629,9 @@ type RepositoryProfileRow = {
   name_with_owner: string | null;
 };
 
-export async function getRepositoryProfiles(ids: string[]): Promise<RepositoryProfile[]> {
+export async function getRepositoryProfiles(
+  ids: string[],
+): Promise<RepositoryProfile[]> {
   if (!ids.length) {
     return [];
   }
@@ -633,13 +648,15 @@ export async function getRepositoryProfiles(ids: string[]): Promise<RepositoryPr
 }
 
 export async function getDashboardStats(): Promise<DashboardSummary> {
-  const [counts, issuesRange, prsRange, topUsers, topRepos] = await Promise.all([
-    getCountsByTable(),
-    getTimeRangeByTable("issues"),
-    getTimeRangeByTable("pull_requests"),
-    getTopUsersByIssues(5),
-    getTopRepositoriesByActivity(5),
-  ]);
+  const [counts, issuesRange, prsRange, topUsers, topRepos] = await Promise.all(
+    [
+      getCountsByTable(),
+      getTimeRangeByTable("issues"),
+      getTimeRangeByTable("pull_requests"),
+      getTopUsersByIssues(5),
+      getTopRepositoriesByActivity(5),
+    ],
+  );
 
   const userIds = topUsers
     .map((row) => row.author_id)
