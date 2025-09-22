@@ -14,7 +14,9 @@ let pool: Pool | null = null;
 
 function createPool() {
   if (!env.DATABASE_URL) {
-    throw new Error("DATABASE_URL is not configured. Update your environment settings.");
+    throw new Error(
+      "DATABASE_URL is not configured. Update your environment settings.",
+    );
   }
 
   const config: PoolConfig = {
@@ -37,13 +39,15 @@ export function getPool() {
 export async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,
   params?: QueryParams,
-) : Promise<QueryResult<T>> {
+): Promise<QueryResult<T>> {
   const client = getPool();
   const result = await client.query<T>(text, params);
   return result as QueryResult<T>;
 }
 
-export async function withTransaction<T>(handler: (client: PoolClient) => Promise<T>) {
+export async function withTransaction<T>(
+  handler: (client: PoolClient) => Promise<T>,
+) {
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");

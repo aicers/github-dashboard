@@ -1,17 +1,17 @@
-import { ClientError } from "graphql-request";
 import type { GraphQLClient, RequestDocument } from "graphql-request";
+import { ClientError } from "graphql-request";
 
 import {
   recordSyncLog,
+  reviewExists,
   updateSyncLog,
+  updateSyncState,
   upsertComment,
   upsertIssue,
   upsertPullRequest,
   upsertRepository,
   upsertReview,
   upsertUser,
-  updateSyncState,
-  reviewExists,
 } from "@/lib/db/operations";
 import { createGithubClient } from "@/lib/github/client";
 import {
@@ -215,7 +215,10 @@ function toTime(value: string | null | undefined) {
   return Number.isNaN(time) ? null : time;
 }
 
-function createBounds(since?: string | null, until?: string | null): TimeBounds {
+function createBounds(
+  since?: string | null,
+  until?: string | null,
+): TimeBounds {
   return {
     since: toTime(since),
     until: toTime(until),
@@ -255,7 +258,10 @@ async function processActor(actor: Maybe<GithubActor>) {
   return normalized.id;
 }
 
-function maxTimestamp(current: string | null, candidate: string | null | undefined) {
+function maxTimestamp(
+  current: string | null,
+  candidate: string | null | undefined,
+) {
   if (!candidate) {
     return current;
   }
@@ -379,7 +385,10 @@ async function collectIssueComments(
       `Fetching ${logLabel} comments for ${repository.nameWithOwner} #${issue.number}${cursor ? ` (cursor ${cursor})` : ""}`,
     );
 
-    let connection: { pageInfo?: PageInfo | null; nodes?: CommentNode[] | null } | null = null;
+    let connection: {
+      pageInfo?: PageInfo | null;
+      nodes?: CommentNode[] | null;
+    } | null = null;
     try {
       if (target === "pull_request") {
         const data: PullRequestCommentsQueryResponse = await requestWithRetry(
@@ -485,7 +494,7 @@ async function collectReviewComments(
   pullRequest: PullRequestNode,
   options: SyncOptions,
   reviewCache: Set<string>,
-) : Promise<CommentCollectionResult> {
+): Promise<CommentCollectionResult> {
   const { logger } = options;
   const effectiveSince = resolveSince(options, "comments");
   const effectiveUntil = resolveUntil(options);
@@ -585,7 +594,7 @@ async function collectReviews(
   repository: RepositoryNode,
   pullRequest: PullRequestNode,
   options: SyncOptions,
-) : Promise<ReviewCollectionResult> {
+): Promise<ReviewCollectionResult> {
   const { logger } = options;
   const effectiveSince = resolveSince(options, "reviews");
   const effectiveUntil = resolveUntil(options);
@@ -735,7 +744,10 @@ async function collectIssuesForRepository(
         options,
         "issue",
       );
-      latestCommentUpdated = maxTimestamp(latestCommentUpdated, commentsResult.latest);
+      latestCommentUpdated = maxTimestamp(
+        latestCommentUpdated,
+        commentsResult.latest,
+      );
       commentCount += commentsResult.count;
     }
 
@@ -821,7 +833,10 @@ async function collectPullRequestsForRepository(
         raw: pullRequest,
       });
 
-      latestPullRequestUpdated = maxTimestamp(latestPullRequestUpdated, pullRequest.updatedAt);
+      latestPullRequestUpdated = maxTimestamp(
+        latestPullRequestUpdated,
+        pullRequest.updatedAt,
+      );
       pullRequestCount += 1;
 
       const issueCommentsResult = await collectIssueComments(
@@ -831,11 +846,22 @@ async function collectPullRequestsForRepository(
         options,
         "pull_request",
       );
-      latestCommentUpdated = maxTimestamp(latestCommentUpdated, issueCommentsResult.latest);
+      latestCommentUpdated = maxTimestamp(
+        latestCommentUpdated,
+        issueCommentsResult.latest,
+      );
       commentCount += issueCommentsResult.count;
 
-      const reviewResult = await collectReviews(client, repository, pullRequest, options);
-      latestReviewSubmitted = maxTimestamp(latestReviewSubmitted, reviewResult.latest);
+      const reviewResult = await collectReviews(
+        client,
+        repository,
+        pullRequest,
+        options,
+      );
+      latestReviewSubmitted = maxTimestamp(
+        latestReviewSubmitted,
+        reviewResult.latest,
+      );
       reviewCount += reviewResult.count;
       for (const id of reviewResult.reviewIds) {
         reviewCache.add(id);
@@ -848,7 +874,10 @@ async function collectPullRequestsForRepository(
         options,
         reviewCache,
       );
-      latestCommentUpdated = maxTimestamp(latestCommentUpdated, reviewCommentResult.latest);
+      latestCommentUpdated = maxTimestamp(
+        latestCommentUpdated,
+        reviewCommentResult.latest,
+      );
       commentCount += reviewCommentResult.count;
     }
 
@@ -883,7 +912,9 @@ async function collectRepositories(
   let latestUpdated: string | null = null;
 
   while (hasNextPage) {
-    logger?.(`Fetching repositories for ${org}${cursor ? ` (cursor ${cursor})` : ""}`);
+    logger?.(
+      `Fetching repositories for ${org}${cursor ? ` (cursor ${cursor})` : ""}`,
+    );
     const data: OrganizationRepositoriesQueryResponse = await requestWithRetry(
       client,
       organizationRepositoriesQuery,
@@ -972,7 +1003,11 @@ export async function runCollection(options: SyncOptions) {
 
   try {
     for (const repository of repositories) {
-      const issuesResult = await collectIssuesForRepository(client, repository, options);
+      const issuesResult = await collectIssuesForRepository(
+        client,
+        repository,
+        options,
+      );
       latestIssueUpdated = maxTimestamp(
         latestIssueUpdated,
         issuesResult.latestIssueUpdated,
@@ -1011,7 +1046,11 @@ export async function runCollection(options: SyncOptions) {
 
   try {
     for (const repository of repositories) {
-      const prsResult = await collectPullRequestsForRepository(client, repository, options);
+      const prsResult = await collectPullRequestsForRepository(
+        client,
+        repository,
+        options,
+      );
       latestPullRequestUpdated = maxTimestamp(
         latestPullRequestUpdated,
         prsResult.latestPullRequestUpdated,

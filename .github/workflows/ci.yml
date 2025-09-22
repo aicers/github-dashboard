@@ -25,16 +25,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Biome
+      - name: Setup Biome CLI
         uses: biomejs/setup-biome@v2
         with:
           version: latest
 
-      - name: Format check
-        run: npm run format:check
-
-      - name: Lint
-        run: npm run lint
+      - name: Run Biome
+        run: biome ci --error-on-warnings .
 
       - name: Type check
         run: npm run typecheck

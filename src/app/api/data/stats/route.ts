@@ -15,7 +15,10 @@ export async function GET() {
     }
 
     return NextResponse.json(
-      { success: false, message: "Unexpected error while fetching dashboard stats." },
+      {
+        success: false,
+        message: "Unexpected error while fetching dashboard stats.",
+      },
       { status: 500 },
     );
   }
