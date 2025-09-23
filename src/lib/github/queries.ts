@@ -134,6 +134,44 @@ export const repositoryIssuesQuery = gql`
           comments(first: 0) {
             totalCount
           }
+          trackedIssues(first: 10) {
+            totalCount
+          }
+          trackedInIssues(first: 10) {
+            totalCount
+          }
+          timelineItems(last: 50, itemTypes: [ADDED_TO_PROJECT_EVENT, MOVED_COLUMNS_IN_PROJECT_EVENT]) {
+            nodes {
+              __typename
+              ... on AddedToProjectEvent {
+                createdAt
+                projectColumnName
+                project {
+                  name
+                }
+              }
+              ... on MovedColumnsInProjectEvent {
+                createdAt
+                projectColumnName
+                previousProjectColumnName
+                project {
+                  name
+                }
+              }
+            }
+          }
+          projectCards(first: 10) {
+            nodes {
+              column {
+                name
+                project {
+                  name
+                }
+              }
+              createdAt
+              updatedAt
+            }
+          }
         }
       }
     }

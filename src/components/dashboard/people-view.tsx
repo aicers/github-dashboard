@@ -196,6 +196,36 @@ export function PeopleView({
             />
           </section>
 
+          <section className="flex flex-col gap-3">
+            <h3 className="text-lg font-semibold">Parent / Child 이슈 지표</h3>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <MetricCard
+                title="Parent 이슈 해결 시간"
+                metric={individual.metrics.parentIssueResolutionTime}
+                format="hours"
+                impact="negative"
+              />
+              <MetricCard
+                title="Parent 이슈 작업 시간"
+                metric={individual.metrics.parentIssueWorkTime}
+                format="hours"
+                impact="negative"
+              />
+              <MetricCard
+                title="Child 이슈 해결 시간"
+                metric={individual.metrics.childIssueResolutionTime}
+                format="hours"
+                impact="negative"
+              />
+              <MetricCard
+                title="Child 이슈 작업 시간"
+                metric={individual.metrics.childIssueWorkTime}
+                format="hours"
+                impact="negative"
+              />
+            </div>
+          </section>
+
           <section className="grid gap-4 lg:grid-cols-2">
             <Card className="border-border/70">
               <CardHeader>

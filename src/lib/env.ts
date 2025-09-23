@@ -24,6 +24,7 @@ const envSchema = z.object({
         .positive({ message: "SYNC_INTERVAL_MINUTES must be positive." })
         .optional(),
     ),
+  TODO_PROJECT_NAME: z.string().optional(),
 });
 
 const parsed = envSchema.parse({
@@ -31,9 +32,11 @@ const parsed = envSchema.parse({
   GITHUB_ORG: process.env.GITHUB_ORG,
   DATABASE_URL: process.env.DATABASE_URL,
   SYNC_INTERVAL_MINUTES: process.env.SYNC_INTERVAL_MINUTES,
+  TODO_PROJECT_NAME: process.env.TODO_PROJECT_NAME,
 });
 
 export const env = {
   ...parsed,
   SYNC_INTERVAL_MINUTES: parsed.SYNC_INTERVAL_MINUTES ?? 60,
+  TODO_PROJECT_NAME: parsed.TODO_PROJECT_NAME ?? "to-do list",
 };

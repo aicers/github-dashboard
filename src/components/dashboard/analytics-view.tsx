@@ -272,6 +272,36 @@ export function AnalyticsView({
         />
       </section>
 
+      <section className="flex flex-col gap-3">
+        <h2 className="text-lg font-semibold">Parent / Child 이슈 지표</h2>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <MetricCard
+            title="Parent 이슈 해결 시간"
+            metric={organization.metrics.parentIssueResolutionTime}
+            format="hours"
+            impact="negative"
+          />
+          <MetricCard
+            title="Parent 이슈 작업 시간"
+            metric={organization.metrics.parentIssueWorkTime}
+            format="hours"
+            impact="negative"
+          />
+          <MetricCard
+            title="Child 이슈 해결 시간"
+            metric={organization.metrics.childIssueResolutionTime}
+            format="hours"
+            impact="negative"
+          />
+          <MetricCard
+            title="Child 이슈 작업 시간"
+            metric={organization.metrics.childIssueWorkTime}
+            format="hours"
+            impact="negative"
+          />
+        </div>
+      </section>
+
       <section className="grid gap-4 lg:grid-cols-2">
         <Card className="border-border/70">
           <CardHeader className="pb-3">
