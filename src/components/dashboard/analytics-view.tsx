@@ -199,7 +199,12 @@ export function AnalyticsView({
   const resolutionTrend = organization.trends.issueResolutionHours.map(
     (point) => ({
       date: point.date,
-      hours: point.values.resolutionHours ?? 0,
+      resolutionHours: Number.isFinite(point.values.resolutionHours)
+        ? point.values.resolutionHours
+        : 0,
+      workHours: Number.isFinite(point.values.workHours)
+        ? point.values.workHours
+        : 0,
     }),
   );
 
@@ -250,6 +255,12 @@ export function AnalyticsView({
         <MetricCard
           title="평균 해결 시간"
           metric={organization.metrics.issueResolutionTime}
+          format="hours"
+          impact="negative"
+        />
+        <MetricCard
+          title="평균 작업 시간"
+          metric={organization.metrics.issueWorkTime}
           format="hours"
           impact="negative"
         />
@@ -408,10 +419,10 @@ export function AnalyticsView({
         <Card className="border-border/70">
           <CardHeader>
             <CardTitle className="text-base font-medium">
-              월별 평균 해결 시간
+              월별 평균 해결 · 작업 시간
             </CardTitle>
             <CardDescription className="text-sm text-muted-foreground">
-              이슈가 해결되기까지 걸린 시간을 월별로 비교합니다.
+              해결 시점과 작업 완료 시점까지 걸린 시간을 월별로 비교합니다.
             </CardDescription>
           </CardHeader>
           <CardContent className="h-72">
@@ -433,10 +444,17 @@ export function AnalyticsView({
                   tickLine={false}
                 />
                 <Tooltip />
+                <Legend />
                 <Bar
-                  dataKey="hours"
-                  name="평균 시간"
+                  dataKey="resolutionHours"
+                  name="평균 해결 시간"
                   fill="#2563eb"
+                  radius={[4, 4, 0, 0]}
+                />
+                <Bar
+                  dataKey="workHours"
+                  name="평균 작업 시간"
+                  fill="#16a34a"
                   radius={[4, 4, 0, 0]}
                 />
               </BarChart>
