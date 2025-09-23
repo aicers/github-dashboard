@@ -169,6 +169,12 @@ export function PeopleView({
               impact="negative"
             />
             <MetricCard
+              title="평균 작업 시간"
+              metric={individual.metrics.issueWorkTime}
+              format="hours"
+              impact="negative"
+            />
+            <MetricCard
               title="리뷰 수행"
               metric={individual.metrics.reviewsCompleted}
               format="count"

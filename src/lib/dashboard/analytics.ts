@@ -286,6 +286,7 @@ type IssueDurationSummary = {
   childResolution: number | null;
   parentWork: number | null;
   childWork: number | null;
+  overallWork: number | null;
 };
 
 type IssueDurationAccumulator = {
@@ -453,14 +454,18 @@ function extractWorkTimestamps(
 
       const columnName =
         normalizeText(node.projectColumnName) ?? normalizeText(node.columnName);
-      const createdAt = typeof node.createdAt === "string" ? node.createdAt : null;
+      const createdAt =
+        typeof node.createdAt === "string" ? node.createdAt : null;
       if (!columnName || !createdAt) {
         return null;
       }
 
       return { columnName, createdAt };
     })
-    .filter((value): value is { columnName: string; createdAt: string } => value !== null)
+    .filter(
+      (value): value is { columnName: string; createdAt: string } =>
+        value !== null,
+    )
     .sort((a, b) => {
       const left = parseTimestamp(a.createdAt) ?? 0;
       const right = parseTimestamp(b.createdAt) ?? 0;
@@ -504,9 +509,10 @@ function extractWorkTimestamps(
           card.column && typeof card.column === "object"
             ? (card.column as Record<string, unknown>)
             : null;
-        const projectName = column?.project && typeof column.project === "object"
-          ? normalizeText((column.project as Record<string, unknown>).name)
-          : null;
+        const projectName =
+          column?.project && typeof column.project === "object"
+            ? normalizeText((column.project as Record<string, unknown>).name)
+            : null;
         if (!matchProject(projectName, targetProject)) {
           return null;
         }
@@ -523,7 +529,10 @@ function extractWorkTimestamps(
 
         return { columnName, timestamp };
       })
-      .filter((value): value is { columnName: string; timestamp: string } => value !== null)
+      .filter(
+        (value): value is { columnName: string; timestamp: string } =>
+          value !== null,
+      )
       .sort((a, b) => {
         const left = parseTimestamp(a.timestamp) ?? 0;
         const right = parseTimestamp(b.timestamp) ?? 0;
@@ -531,7 +540,9 @@ function extractWorkTimestamps(
       });
 
     if (!startedAt) {
-      const inProgressCard = cardEntries.find((card) => card.columnName === "in progress");
+      const inProgressCard = cardEntries.find(
+        (card) => card.columnName === "in progress",
+      );
       if (inProgressCard) {
         startedAt = inProgressCard.timestamp;
       }
@@ -556,6 +567,7 @@ function summarizeIssueDurations(
   const childResolution = createAccumulator();
   const parentWork = createAccumulator();
   const childWork = createAccumulator();
+  const overallWork = createAccumulator();
 
   rows.forEach((row) => {
     const raw = parseIssueRaw(row.data);
@@ -577,8 +589,12 @@ function summarizeIssueDurations(
     }
 
     if (targetProject) {
-      const { startedAt, completedAt } = extractWorkTimestamps(raw, targetProject);
+      const { startedAt, completedAt } = extractWorkTimestamps(
+        raw,
+        targetProject,
+      );
       const workHours = calculateHoursBetween(startedAt, completedAt);
+      addSample(overallWork, workHours);
       if (classification.isParent) {
         addSample(parentWork, workHours);
       }
@@ -593,7 +609,79 @@ function summarizeIssueDurations(
     childResolution: finalizeAccumulator(childResolution),
     parentWork: finalizeAccumulator(parentWork),
     childWork: finalizeAccumulator(childWork),
+    overallWork: finalizeAccumulator(overallWork),
   };
+}
+
+type MonthlyBucket = {
+  resolution: IssueDurationAccumulator;
+  work: IssueDurationAccumulator;
+};
+
+function getMonthFormatter(timeZone: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+  });
+}
+
+function buildMonthlyDurationTrend(
+  rows: IssueDurationDetailRow[],
+  targetProject: string | null,
+  timeZone: string,
+): MultiTrendPoint[] {
+  const formatter = getMonthFormatter(timeZone);
+  const buckets = new Map<string, MonthlyBucket>();
+
+  rows.forEach((row) => {
+    if (!row.github_closed_at) {
+      return;
+    }
+
+    const closedDate = new Date(row.github_closed_at);
+    if (Number.isNaN(closedDate.getTime())) {
+      return;
+    }
+
+    const bucketKey = formatter.format(closedDate);
+    let bucket = buckets.get(bucketKey);
+    if (!bucket) {
+      bucket = {
+        resolution: createAccumulator(),
+        work: createAccumulator(),
+      };
+      buckets.set(bucketKey, bucket);
+    }
+
+    const resolutionHours = calculateHoursBetween(
+      row.github_created_at,
+      row.github_closed_at,
+    );
+    addSample(bucket.resolution, resolutionHours);
+
+    if (targetProject) {
+      const raw = parseIssueRaw(row.data);
+      if (raw) {
+        const { startedAt, completedAt } = extractWorkTimestamps(
+          raw,
+          targetProject,
+        );
+        const workHours = calculateHoursBetween(startedAt, completedAt);
+        addSample(bucket.work, workHours);
+      }
+    }
+  });
+
+  return Array.from(buckets.entries())
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([date, bucket]) => ({
+      date,
+      values: {
+        resolutionHours: finalizeAccumulator(bucket.resolution) ?? Number.NaN,
+        workHours: finalizeAccumulator(bucket.work) ?? Number.NaN,
+      },
+    }));
 }
 
 type ReviewAggregateRow = {
@@ -773,43 +861,6 @@ async function fetchTrend(
   return result.rows.map((row) => ({
     date: row.date,
     value: Number(row.count ?? 0),
-  }));
-}
-
-type ResolutionTrendRow = {
-  bucket: string;
-  avg_hours: number | null;
-};
-
-async function fetchResolutionTrend(
-  start: string,
-  end: string,
-  repositoryIds: string[] | undefined,
-  timeZone: string,
-): Promise<MultiTrendPoint[]> {
-  const params: unknown[] = [start, end];
-  let repoClause = "";
-  if (repositoryIds?.length) {
-    params.push(repositoryIds);
-    const index = params.length;
-    repoClause = ` AND i.repository_id = ANY($${index}::text[])`;
-  }
-
-  const timezoneIndex = params.length + 1;
-
-  const result = await query<ResolutionTrendRow>(
-    `SELECT to_char(date_trunc('month', i.github_closed_at AT TIME ZONE $${timezoneIndex}), 'YYYY-MM') AS bucket,
-            AVG(EXTRACT(EPOCH FROM (i.github_closed_at - i.github_created_at)) / 3600.0) AS avg_hours
-     FROM issues i
-     WHERE i.github_closed_at BETWEEN $1 AND $2${repoClause}
-     GROUP BY bucket
-     ORDER BY bucket`,
-    [...params, timeZone],
-  );
-
-  return result.rows.map((row) => ({
-    date: row.bucket,
-    values: { resolutionHours: row.avg_hours ?? 0 },
   }));
 }
 
@@ -1646,6 +1697,7 @@ export async function getDashboardAnalytics(
   await ensureSchema();
   const config = await getSyncConfig();
   const timeZone = config?.timezone ?? "UTC";
+  const targetProject = normalizeText(env.TODO_PROJECT_NAME);
 
   const [
     currentIssues,
@@ -1660,7 +1712,6 @@ export async function getDashboardAnalytics(
     issuesClosedTrend,
     prsCreatedTrend,
     prsMergedTrend,
-    resolutionTrend,
     reviewHeatmap,
     repoDistributionRows,
     repoComparisonRows,
@@ -1720,7 +1771,6 @@ export async function getDashboardAnalytics(
       repositoryFilter,
       timeZone,
     ),
-    fetchResolutionTrend(range.start, range.end, repositoryFilter, timeZone),
     fetchReviewHeatmap(range.start, range.end, repositoryFilter, timeZone),
     fetchRepoDistribution(range.start, range.end, repositoryFilter),
     fetchRepoComparison(range.start, range.end, repositoryFilter),
@@ -1809,7 +1859,6 @@ export async function getDashboardAnalytics(
       ? previousIssues.reopened_count / totalIssuesClosedPrevious
       : 0;
 
-  const targetProject = normalizeText(env.TODO_PROJECT_NAME);
   const issueDurationCurrent = summarizeIssueDurations(
     currentIssueDurationDetails,
     targetProject,
@@ -1817,6 +1866,11 @@ export async function getDashboardAnalytics(
   const issueDurationPrevious = summarizeIssueDurations(
     previousIssueDurationDetails,
     targetProject,
+  );
+  const monthlyDurationTrend = buildMonthlyDurationTrend(
+    currentIssueDurationDetails,
+    targetProject,
+    timeZone,
   );
 
   const issueMetrics = {
@@ -1831,6 +1885,11 @@ export async function getDashboardAnalytics(
     issueResolutionTime: buildDurationComparison(
       currentIssues.avg_resolution_hours,
       previousIssues.avg_resolution_hours,
+      "hours",
+    ),
+    issueWorkTime: buildDurationComparison(
+      issueDurationCurrent.overallWork,
+      issueDurationPrevious.overallWork,
       "hours",
     ),
     issueBacklogRatio: buildRatioComparison(
@@ -1948,7 +2007,7 @@ export async function getDashboardAnalytics(
       issuesClosed: toTrend(issuesClosedTrend),
       prsCreated: toTrend(prsCreatedTrend),
       prsMerged: toTrend(prsMergedTrend),
-      issueResolutionHours: resolutionTrend,
+      issueResolutionHours: monthlyDurationTrend,
       reviewHeatmap,
     },
     repoDistribution: mapRepoDistribution(repoDistributionRows, repoProfileMap),
@@ -2075,6 +2134,11 @@ export async function getDashboardAnalytics(
       issueResolutionTime: buildDurationComparison(
         individualIssuesCurrent.avg_resolution_hours,
         individualIssuesPrevious.avg_resolution_hours,
+        "hours",
+      ),
+      issueWorkTime: buildDurationComparison(
+        individualDurationCurrent.overallWork,
+        individualDurationPrevious.overallWork,
         "hours",
       ),
       parentIssueResolutionTime: buildDurationComparison(
