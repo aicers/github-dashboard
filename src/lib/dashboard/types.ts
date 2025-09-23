@@ -108,6 +108,8 @@ export type IndividualMetricSet = {
   childIssueResolutionTime: DurationComparisonValue;
   parentIssueWorkTime: DurationComparisonValue;
   childIssueWorkTime: DurationComparisonValue;
+  prsCreated: ComparisonValue;
+  prsMerged: ComparisonValue;
   reviewsCompleted: ComparisonValue;
   reviewResponseTime: DurationComparisonValue;
   prsReviewed: ComparisonValue;

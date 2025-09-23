@@ -175,6 +175,16 @@ export function PeopleView({
               impact="negative"
             />
             <MetricCard
+              title="PR 생성"
+              metric={individual.metrics.prsCreated}
+              format="count"
+            />
+            <MetricCard
+              title="PR 머지"
+              metric={individual.metrics.prsMerged}
+              format="count"
+            />
+            <MetricCard
               title="리뷰 수행"
               metric={individual.metrics.reviewsCompleted}
               format="count"

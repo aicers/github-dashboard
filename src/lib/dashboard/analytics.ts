@@ -1256,6 +1256,42 @@ type IndividualReviewRow = {
   review_comments: number;
 };
 
+type IndividualPullRequestRow = {
+  created: number;
+  merged: number;
+};
+
+async function fetchIndividualPullRequestMetrics(
+  personId: string,
+  start: string,
+  end: string,
+  repositoryIds: string[] | undefined,
+): Promise<IndividualPullRequestRow> {
+  const params: unknown[] = [personId, start, end];
+  let repoClause = "";
+  if (repositoryIds?.length) {
+    params.push(repositoryIds);
+    const index = params.length;
+    repoClause = ` AND p.repository_id = ANY($${index}::text[])`;
+  }
+
+  const result = await query<IndividualPullRequestRow>(
+    `SELECT
+       COUNT(*) FILTER (WHERE p.github_created_at BETWEEN $2 AND $3) AS created,
+       COUNT(*) FILTER (WHERE p.github_merged_at BETWEEN $2 AND $3) AS merged
+     FROM pull_requests p
+     WHERE p.author_id = $1${repoClause}`,
+    params,
+  );
+
+  return (
+    result.rows[0] ?? {
+      created: 0,
+      merged: 0,
+    }
+  );
+}
+
 async function fetchIndividualReviewMetrics(
   personId: string,
   start: string,
@@ -2019,6 +2055,8 @@ export async function getDashboardAnalytics(
     const [
       individualIssuesCurrent,
       individualIssuesPrevious,
+      individualPullRequestsCurrent,
+      individualPullRequestsPrevious,
       individualReviewsCurrent,
       individualReviewsPrevious,
       individualCoverageCurrent,
@@ -2037,6 +2075,18 @@ export async function getDashboardAnalytics(
         repositoryFilter,
       ),
       fetchIndividualIssueMetrics(
+        personProfile.id,
+        range.previousStart,
+        range.previousEnd,
+        repositoryFilter,
+      ),
+      fetchIndividualPullRequestMetrics(
+        personProfile.id,
+        range.start,
+        range.end,
+        repositoryFilter,
+      ),
+      fetchIndividualPullRequestMetrics(
         personProfile.id,
         range.previousStart,
         range.previousEnd,
@@ -2140,6 +2190,14 @@ export async function getDashboardAnalytics(
         individualDurationCurrent.overallWork,
         individualDurationPrevious.overallWork,
         "hours",
+      ),
+      prsCreated: buildComparison(
+        individualPullRequestsCurrent.created,
+        individualPullRequestsPrevious.created,
+      ),
+      prsMerged: buildComparison(
+        individualPullRequestsCurrent.merged,
+        individualPullRequestsPrevious.merged,
       ),
       parentIssueResolutionTime: buildDurationComparison(
         individualDurationCurrent.parentResolution,
