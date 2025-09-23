@@ -377,6 +377,7 @@ export async function updateOrganization(org: string) {
 export async function updateSyncSettings(params: {
   orgName?: string;
   syncIntervalMinutes?: number;
+  timezone?: string;
 }) {
   await ensureSchema();
 
@@ -395,6 +396,21 @@ export async function updateSyncSettings(params: {
     if (config?.auto_sync_enabled) {
       startScheduler(interval);
     }
+  }
+
+  if (params.timezone !== undefined) {
+    const tz = params.timezone.trim();
+    if (!tz) {
+      throw new Error("Timezone cannot be empty.");
+    }
+
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: tz }).format();
+    } catch (_error) {
+      throw new Error("Invalid timezone identifier.");
+    }
+
+    await updateSyncConfig({ timezone: tz });
   }
 }
 

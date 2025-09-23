@@ -6,6 +6,7 @@ import { fetchSyncStatus, updateSyncSettings } from "@/lib/sync/service";
 const patchSchema = z.object({
   orgName: z.string().optional(),
   syncIntervalMinutes: z.number().int().positive().optional(),
+  timezone: z.string().min(1).optional(),
 });
 
 export async function GET() {

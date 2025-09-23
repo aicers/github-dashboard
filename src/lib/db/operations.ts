@@ -410,7 +410,7 @@ export async function getSyncState(resource: string) {
 
 export async function getSyncConfig() {
   const result = await query(
-    `SELECT id, org_name, auto_sync_enabled, sync_interval_minutes, last_sync_started_at, last_sync_completed_at, last_successful_sync_at
+    `SELECT id, org_name, auto_sync_enabled, sync_interval_minutes, timezone, last_sync_started_at, last_sync_completed_at, last_successful_sync_at
      FROM sync_config
      WHERE id = 'default'`,
   );
@@ -422,6 +422,7 @@ export async function updateSyncConfig(params: {
   orgName?: string;
   autoSyncEnabled?: boolean;
   syncIntervalMinutes?: number;
+  timezone?: string;
   lastSyncStartedAt?: string | null;
   lastSyncCompletedAt?: string | null;
   lastSuccessfulSyncAt?: string | null;
@@ -442,6 +443,11 @@ export async function updateSyncConfig(params: {
   if (typeof params.syncIntervalMinutes === "number") {
     fields.push(`sync_interval_minutes = $${fields.length + 1}`);
     values.push(params.syncIntervalMinutes);
+  }
+
+  if (typeof params.timezone === "string") {
+    fields.push(`timezone = $${fields.length + 1}`);
+    values.push(params.timezone);
   }
 
   if (params.lastSyncStartedAt !== undefined) {

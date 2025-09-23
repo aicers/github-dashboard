@@ -1,0 +1,274 @@
+"use client";
+
+import { useEffect } from "react";
+import {
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { DashboardFilterPanel } from "@/components/dashboard/dashboard-filter-panel";
+import { MetricCard } from "@/components/dashboard/metric-card";
+import { formatNumber } from "@/components/dashboard/metric-utils";
+import { RepoDistributionList } from "@/components/dashboard/repo-distribution-list";
+import { useDashboardAnalytics } from "@/components/dashboard/use-dashboard-analytics";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import type { DashboardAnalytics } from "@/lib/dashboard/types";
+
+type PeopleViewProps = {
+  initialAnalytics: DashboardAnalytics;
+  defaultRange: { start: string; end: string };
+};
+
+export function PeopleView({
+  initialAnalytics,
+  defaultRange,
+}: PeopleViewProps) {
+  const {
+    analytics,
+    filters,
+    setFilters,
+    applyFilters,
+    isLoading,
+    error,
+    timeZone,
+  } = useDashboardAnalytics({ initialAnalytics, defaultRange });
+
+  const repositories = analytics.repositories;
+  const contributors = analytics.contributors;
+  const individual = analytics.individual;
+
+  useEffect(() => {
+    if (!filters.personId && contributors.length > 0) {
+      const nextFilters = { ...filters, personId: contributors[0].id };
+      void applyFilters(nextFilters);
+    }
+  }, [contributors, filters, filters.personId, applyFilters]);
+
+  return (
+    <section className="flex flex-col gap-8">
+      <header className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-3xl font-semibold">개인 활동 분석</h1>
+            <p className="text-sm text-muted-foreground">
+              팀 구성원의 이슈 처리와 리뷰 활동을 자세히 살펴보세요.
+            </p>
+          </div>
+        </div>
+
+        <DashboardFilterPanel
+          filters={filters}
+          setFilters={setFilters}
+          onApply={() => {
+            void applyFilters();
+          }}
+          isLoading={isLoading}
+          error={error}
+          repositories={repositories}
+          contributors={contributors}
+          range={analytics.range}
+          showPersonSelector={false}
+          timeZone={timeZone}
+        />
+      </header>
+
+      <section className="flex flex-col gap-4">
+        <h2 className="text-lg font-semibold">구성원 선택</h2>
+        <div className="flex flex-wrap gap-2">
+          {contributors.map((person) => {
+            const isActive = person.id === filters.personId;
+            return (
+              <Button
+                key={person.id}
+                size="sm"
+                variant={isActive ? "default" : "outline"}
+                onClick={() => {
+                  const nextFilters = { ...filters, personId: person.id };
+                  void applyFilters(nextFilters);
+                }}
+              >
+                {person.login ?? person.name ?? person.id}
+              </Button>
+            );
+          })}
+          {contributors.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              데이터가 아직 없습니다. 동기화를 실행하여 활동을 수집하세요.
+            </p>
+          )}
+        </div>
+      </section>
+
+      {individual ? (
+        <section className="flex flex-col gap-8">
+          <Card className="border-border/70">
+            <CardHeader>
+              <CardTitle className="text-base font-medium">
+                {individual.person.login ??
+                  individual.person.name ??
+                  individual.person.id}
+              </CardTitle>
+              {individual.person.name && individual.person.login && (
+                <CardDescription className="text-sm text-muted-foreground">
+                  {individual.person.name}
+                </CardDescription>
+              )}
+            </CardHeader>
+            <CardContent className="flex flex-wrap gap-6 text-sm text-muted-foreground">
+              <span>
+                이슈 생성{" "}
+                {formatNumber(individual.metrics.issuesCreated.current)}
+              </span>
+              <span>
+                이슈 종료{" "}
+                {formatNumber(individual.metrics.issuesClosed.current)}
+              </span>
+              <span>
+                리뷰 수행{" "}
+                {formatNumber(individual.metrics.reviewsCompleted.current)}
+              </span>
+              <span>
+                논의 댓글{" "}
+                {formatNumber(individual.metrics.discussionComments.current)}
+              </span>
+            </CardContent>
+          </Card>
+
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <MetricCard
+              title="이슈 생성"
+              metric={individual.metrics.issuesCreated}
+              format="count"
+            />
+            <MetricCard
+              title="이슈 종료"
+              metric={individual.metrics.issuesClosed}
+              format="count"
+            />
+            <MetricCard
+              title="본인 이슈 해결율"
+              metric={individual.metrics.issueResolutionRatio}
+              format="ratio"
+            />
+            <MetricCard
+              title="평균 해결 시간"
+              metric={individual.metrics.issueResolutionTime}
+              format="hours"
+              impact="negative"
+            />
+            <MetricCard
+              title="리뷰 수행"
+              metric={individual.metrics.reviewsCompleted}
+              format="count"
+            />
+            <MetricCard
+              title="리뷰 응답 시간"
+              metric={individual.metrics.reviewResponseTime}
+              format="hours"
+              impact="negative"
+            />
+            <MetricCard
+              title="PR 리뷰 커버리지"
+              metric={individual.metrics.reviewCoverage}
+              format="percentage"
+            />
+            <MetricCard
+              title="리뷰 참여 비율"
+              metric={individual.metrics.reviewParticipation}
+              format="percentage"
+            />
+            <MetricCard
+              title="토론 참여"
+              metric={individual.metrics.discussionComments}
+              format="count"
+            />
+          </section>
+
+          <section className="grid gap-4 lg:grid-cols-2">
+            <Card className="border-border/70">
+              <CardHeader>
+                <CardTitle className="text-base font-medium">
+                  월별 이슈 & 리뷰 추이
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={individual.trends.monthly}>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="hsl(var(--muted-foreground) / 0.2)"
+                    />
+                    <XAxis
+                      dataKey="date"
+                      stroke="hsl(var(--muted-foreground))"
+                      fontSize={12}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      stroke="hsl(var(--muted-foreground))"
+                      fontSize={12}
+                      tickLine={false}
+                    />
+                    <Tooltip />
+                    <Legend />
+                    <Line
+                      type="monotone"
+                      dataKey="values.issues"
+                      name="이슈"
+                      stroke="#2563eb"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="values.reviews"
+                      name="리뷰"
+                      stroke="#16a34a"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/70">
+              <CardHeader>
+                <CardTitle className="text-base font-medium">
+                  활동 리포지토리
+                </CardTitle>
+                <CardDescription className="text-sm text-muted-foreground">
+                  해당 기간 동안 활동 비중이 높은 리포지토리
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <RepoDistributionList
+                  items={individual.trends.repoActivity}
+                  limit={8}
+                />
+              </CardContent>
+            </Card>
+          </section>
+        </section>
+      ) : (
+        <Card className="border-border/70">
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            구성원을 선택하면 주요 지표가 표시됩니다.
+          </CardContent>
+        </Card>
+      )}
+    </section>
+  );
+}
