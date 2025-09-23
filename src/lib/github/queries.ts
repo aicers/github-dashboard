@@ -160,6 +160,9 @@ export const repositoryPullRequestsQuery = gql`
           mergedAt
           isDraft
           merged
+          additions
+          deletions
+          changedFiles
           reviewDecision
           author {
             __typename

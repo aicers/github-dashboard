@@ -104,12 +104,14 @@ const SCHEMA_STATEMENTS = [
     org_name TEXT NOT NULL,
     auto_sync_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     sync_interval_minutes INTEGER NOT NULL DEFAULT 60,
+    timezone TEXT NOT NULL DEFAULT 'UTC',
     last_sync_started_at TIMESTAMPTZ,
     last_sync_completed_at TIMESTAMPTZ,
     last_successful_sync_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
+  `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'UTC'`,
   `CREATE TABLE IF NOT EXISTS sync_state (
     resource TEXT PRIMARY KEY,
     last_cursor TEXT,
@@ -141,11 +143,12 @@ async function applySchema() {
 
     const orgName = env.GITHUB_ORG ?? null;
     await pool.query(
-      `INSERT INTO sync_config (id, org_name, auto_sync_enabled, sync_interval_minutes)
-       VALUES ('default', COALESCE($1, 'unset'), FALSE, $2)
+      `INSERT INTO sync_config (id, org_name, auto_sync_enabled, sync_interval_minutes, timezone)
+       VALUES ('default', COALESCE($1, 'unset'), FALSE, $2, 'UTC')
        ON CONFLICT (id) DO UPDATE SET
          sync_interval_minutes = EXCLUDED.sync_interval_minutes,
          org_name = CASE WHEN $1 IS NOT NULL THEN EXCLUDED.org_name ELSE sync_config.org_name END,
+         timezone = sync_config.timezone,
          updated_at = NOW()`,
       [orgName, env.SYNC_INTERVAL_MINUTES],
     );
