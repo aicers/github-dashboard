@@ -74,7 +74,9 @@ export function formatChange(
   const percent = metric.percentChange;
 
   let changeLabel = "";
-  if (format === "hours") {
+  if (!Number.isFinite(change)) {
+    changeLabel = "–";
+  } else if (format === "hours") {
     changeLabel = `${change >= 0 ? "+" : ""}${formatDuration(Math.abs(change), "hours")}`;
   } else if (format === "percentage") {
     const difference = change * 100;
