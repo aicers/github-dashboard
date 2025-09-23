@@ -1,11 +1,15 @@
 services:
   app:
     build: .
+    env_file:
+      - .env
     environment:
-      - NODE_ENV=production
-      - PORT=3000
-      - HOSTNAME=0.0.0.0
-      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_ORG: ${GITHUB_ORG:-}
+      DATABASE_URL: ${DATABASE_URL}
     restart: unless-stopped
 
   proxy:
