@@ -265,6 +265,12 @@ export function AnalyticsView({
           impact="negative"
         />
         <MetricCard
+          title="PR 생성"
+          metric={organization.metrics.prsCreated}
+          format="count"
+          impact="positive"
+        />
+        <MetricCard
           title="PR 머지"
           metric={organization.metrics.prsMerged}
           format="count"
