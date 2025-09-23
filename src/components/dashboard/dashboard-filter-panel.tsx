@@ -39,6 +39,11 @@ export function DashboardFilterPanel({
   showPersonSelector = true,
   timeZone,
 }: DashboardFilterPanelProps) {
+  const allRepositoryIds = repositories.map((repo) => repo.id);
+  const allReposSelected =
+    allRepositoryIds.length > 0 &&
+    allRepositoryIds.every((repoId) => filters.repositoryIds.includes(repoId));
+
   const handlePresetChange = useCallback(
     (preset: TimePresetKey) => {
       if (preset === "custom") {
@@ -62,6 +67,10 @@ export function DashboardFilterPanel({
       (option) => option.value,
     );
     setFilters((current) => ({ ...current, repositoryIds: values }));
+  };
+
+  const handleSelectAllRepositories = () => {
+    setFilters((current) => ({ ...current, repositoryIds: allRepositoryIds }));
   };
 
   const handlePersonSelection = (
@@ -129,18 +138,29 @@ export function DashboardFilterPanel({
           <span className="text-xs uppercase text-muted-foreground">
             리포지토리 필터
           </span>
-          <select
-            multiple
-            value={filters.repositoryIds}
-            onChange={handleRepoSelection}
-            className="h-32 rounded-md border border-border/60 bg-background p-2 text-sm"
-          >
-            {repositories.map((repo) => (
-              <option key={repo.id} value={repo.id}>
-                {repo.nameWithOwner ?? repo.name ?? repo.id}
-              </option>
-            ))}
-          </select>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+            <select
+              multiple
+              value={filters.repositoryIds}
+              onChange={handleRepoSelection}
+              className="h-32 w-full flex-1 rounded-md border border-border/60 bg-background p-2 text-sm"
+            >
+              {repositories.map((repo) => (
+                <option key={repo.id} value={repo.id}>
+                  {repo.nameWithOwner ?? repo.name ?? repo.id}
+                </option>
+              ))}
+            </select>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={handleSelectAllRepositories}
+              disabled={allReposSelected || allRepositoryIds.length === 0}
+            >
+              전체 선택
+            </Button>
+          </div>
           <span className="text-xs text-muted-foreground">
             여러 리포지토리를 선택하려면 ⌘/Ctrl 키를 누른 상태에서 선택하세요.
           </span>
