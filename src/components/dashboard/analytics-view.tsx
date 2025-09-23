@@ -235,6 +235,7 @@ export function AnalyticsView({
           repositories={repositories}
           contributors={contributors}
           range={analytics.range}
+          showPersonSelector={false}
           timeZone={timeZone}
         />
       </header>

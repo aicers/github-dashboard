@@ -28,15 +28,19 @@ export type DashboardAnalyticsState = {
 
 const DEFAULT_PRESET: TimePresetKey = "last_30_days";
 
-function resolveInitialFilters(defaultRange: {
-  start: string;
-  end: string;
-}): FilterState {
+function resolveInitialFilters(
+  defaultRange: {
+    start: string;
+    end: string;
+  },
+  initialAnalytics: DashboardAnalytics,
+): FilterState {
+  const allRepositoryIds = initialAnalytics.repositories.map((repo) => repo.id);
   return {
     start: defaultRange.start,
     end: defaultRange.end,
     preset: DEFAULT_PRESET,
-    repositoryIds: [],
+    repositoryIds: allRepositoryIds,
     personId: null,
   };
 }
@@ -51,7 +55,7 @@ export function useDashboardAnalytics({
   const [analytics, setAnalytics] = useState(initialAnalytics);
   const [timeZone, setTimeZone] = useState(initialAnalytics.timeZone);
   const [filters, setFilters] = useState<FilterState>(() =>
-    resolveInitialFilters(defaultRange),
+    resolveInitialFilters(defaultRange, initialAnalytics),
   );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
