@@ -60,6 +60,10 @@ export type OrganizationAnalytics = {
     issuesCreated: ComparisonValue;
     issuesClosed: ComparisonValue;
     issueResolutionTime: DurationComparisonValue;
+    parentIssueResolutionTime: DurationComparisonValue;
+    childIssueResolutionTime: DurationComparisonValue;
+    parentIssueWorkTime: DurationComparisonValue;
+    childIssueWorkTime: DurationComparisonValue;
     issueBacklogRatio: RatioComparisonValue;
     prsCreated: ComparisonValue;
     prsMerged: ComparisonValue;
@@ -98,6 +102,10 @@ export type IndividualMetricSet = {
   issuesClosed: ComparisonValue;
   issueResolutionRatio: RatioComparisonValue;
   issueResolutionTime: DurationComparisonValue;
+   parentIssueResolutionTime: DurationComparisonValue;
+   childIssueResolutionTime: DurationComparisonValue;
+   parentIssueWorkTime: DurationComparisonValue;
+   childIssueWorkTime: DurationComparisonValue;
   reviewsCompleted: ComparisonValue;
   reviewResponseTime: DurationComparisonValue;
   prsReviewed: ComparisonValue;

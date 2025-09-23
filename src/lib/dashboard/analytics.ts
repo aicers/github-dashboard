@@ -22,6 +22,7 @@ import {
   type RepositoryProfile,
   type UserProfile,
 } from "@/lib/db/operations";
+import { env } from "@/lib/env";
 
 function toIso(value: string) {
   const date = new Date(value);
@@ -52,6 +53,10 @@ function subtractDuration(startIso: string, endIso: string) {
 }
 
 function calculatePercentChange(current: number, previous: number) {
+  if (!Number.isFinite(current) || !Number.isFinite(previous)) {
+    return null;
+  }
+
   if (previous === 0) {
     return current === 0 ? 0 : null;
   }
@@ -73,8 +78,8 @@ function buildDurationComparison(
   previousHours: number | null,
   unit: "hours" | "days",
 ): DurationComparisonValue {
-  const current = currentHours ?? 0;
-  const previous = previousHours ?? 0;
+  const current = currentHours ?? Number.NaN;
+  const previous = previousHours ?? Number.NaN;
   return {
     current,
     previous,
@@ -89,6 +94,15 @@ function buildRatioComparison(
   previous: number | null,
 ): ComparisonValue {
   return buildComparison(current ?? 0, previous ?? 0);
+}
+
+function normalizeText(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim().toLowerCase();
+  return trimmed.length ? trimmed : null;
 }
 
 type RangeContext = {
@@ -224,6 +238,362 @@ async function fetchPrAggregates(
       avg_comments_pr: null,
     }
   );
+}
+
+type IssueDurationDetailRow = {
+  id: string;
+  github_created_at: string;
+  github_closed_at: string;
+  data: unknown;
+};
+
+async function fetchIssueDurationDetails(
+  start: string,
+  end: string,
+  repositoryIds: string[] | undefined,
+  authorId?: string,
+): Promise<IssueDurationDetailRow[]> {
+  const params: unknown[] = [start, end];
+  let repoClause = "";
+  if (repositoryIds?.length) {
+    params.push(repositoryIds);
+    repoClause = ` AND i.repository_id = ANY($${params.length}::text[])`;
+  }
+
+  let authorClause = "";
+  if (authorId) {
+    params.push(authorId);
+    authorClause = ` AND i.author_id = $${params.length}`;
+  }
+
+  const result = await query<IssueDurationDetailRow>(
+    `SELECT
+       i.id,
+       i.github_created_at,
+       i.github_closed_at,
+       i.data
+     FROM issues i
+     WHERE i.github_closed_at BETWEEN $1 AND $2
+       AND i.github_closed_at IS NOT NULL${repoClause}${authorClause}`,
+    params,
+  );
+
+  return result.rows;
+}
+
+type IssueDurationSummary = {
+  parentResolution: number | null;
+  childResolution: number | null;
+  parentWork: number | null;
+  childWork: number | null;
+};
+
+type IssueDurationAccumulator = {
+  sum: number;
+  count: number;
+};
+
+type IssueRaw = {
+  trackedIssues?: unknown;
+  trackedInIssues?: unknown;
+  timelineItems?: { nodes?: unknown[] };
+  projectCards?: { nodes?: unknown[] };
+  [key: string]: unknown;
+};
+
+function createAccumulator(): IssueDurationAccumulator {
+  return { sum: 0, count: 0 };
+}
+
+function addSample(acc: IssueDurationAccumulator, value: number | null) {
+  if (value === null || Number.isNaN(value)) {
+    return;
+  }
+
+  acc.sum += value;
+  acc.count += 1;
+}
+
+function finalizeAccumulator(acc: IssueDurationAccumulator): number | null {
+  return acc.count > 0 ? acc.sum / acc.count : Number.NaN;
+}
+
+function parseIssueRaw(data: unknown): IssueRaw | null {
+  if (!data) {
+    return null;
+  }
+
+  if (typeof data === "string") {
+    try {
+      const parsed = JSON.parse(data);
+      if (parsed && typeof parsed === "object") {
+        return parsed as IssueRaw;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  if (typeof data === "object") {
+    return data as IssueRaw;
+  }
+
+  return null;
+}
+
+function extractTotalCount(node: unknown): number {
+  if (!node || typeof node !== "object") {
+    return 0;
+  }
+
+  const total = (node as Record<string, unknown>).totalCount;
+  if (typeof total === "number") {
+    return Number.isFinite(total) ? total : 0;
+  }
+
+  if (typeof total === "string") {
+    const parsed = Number(total);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  return 0;
+}
+
+function classifyIssue(raw: IssueRaw): {
+  isParent: boolean;
+  isChild: boolean;
+} {
+  const trackedIssues = extractTotalCount(raw.trackedIssues);
+  const trackedInIssues = extractTotalCount(raw.trackedInIssues);
+  return {
+    isParent: trackedIssues > 0,
+    isChild: trackedInIssues > 0,
+  };
+}
+
+function parseTimestamp(value: unknown): number | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const time = Date.parse(value);
+  return Number.isNaN(time) ? null : time;
+}
+
+function calculateHoursBetween(
+  start: string | null,
+  end: string | null,
+): number | null {
+  if (!start || !end) {
+    return null;
+  }
+
+  const startTime = parseTimestamp(start);
+  const endTime = parseTimestamp(end);
+  if (startTime === null || endTime === null) {
+    return null;
+  }
+
+  const durationMs = endTime - startTime;
+  if (durationMs < 0) {
+    return null;
+  }
+
+  return durationMs / 3_600_000;
+}
+
+type WorkTimestamps = {
+  startedAt: string | null;
+  completedAt: string | null;
+};
+
+function matchProject(projectName: unknown, target: string | null) {
+  if (!target) {
+    return false;
+  }
+
+  return normalizeText(projectName) === target;
+}
+
+type TimelineEventNode = {
+  projectColumnName?: unknown;
+  columnName?: unknown;
+  project?: unknown;
+  createdAt?: unknown;
+};
+
+function extractWorkTimestamps(
+  raw: IssueRaw,
+  targetProject: string | null,
+): WorkTimestamps {
+  const empty: WorkTimestamps = { startedAt: null, completedAt: null };
+  if (!targetProject) {
+    return empty;
+  }
+
+  const timelineContainer = raw.timelineItems;
+  const timeline = Array.isArray(timelineContainer?.nodes)
+    ? (timelineContainer?.nodes as TimelineEventNode[])
+    : [];
+
+  const events = timeline
+    .map((node) => {
+      if (!node) {
+        return null;
+      }
+
+      const projectName =
+        node.project && typeof node.project === "object"
+          ? normalizeText((node.project as Record<string, unknown>).name)
+          : null;
+      if (!matchProject(projectName, targetProject)) {
+        return null;
+      }
+
+      const columnName =
+        normalizeText(node.projectColumnName) ?? normalizeText(node.columnName);
+      const createdAt = typeof node.createdAt === "string" ? node.createdAt : null;
+      if (!columnName || !createdAt) {
+        return null;
+      }
+
+      return { columnName, createdAt };
+    })
+    .filter((value): value is { columnName: string; createdAt: string } => value !== null)
+    .sort((a, b) => {
+      const left = parseTimestamp(a.createdAt) ?? 0;
+      const right = parseTimestamp(b.createdAt) ?? 0;
+      return left - right;
+    });
+
+  let startedAt: string | null = null;
+  let completedAt: string | null = null;
+
+  for (const event of events) {
+    if (!startedAt && event.columnName === "in progress") {
+      startedAt = event.createdAt;
+    }
+
+    if (startedAt && event.columnName === "done") {
+      completedAt = event.createdAt;
+      break;
+    }
+  }
+
+  const projectCardsContainer = raw.projectCards;
+  const projectCardNodes = projectCardsContainer?.nodes;
+  if ((!startedAt || !completedAt) && Array.isArray(projectCardNodes)) {
+    const cards = projectCardNodes as (
+      | {
+          column?: unknown;
+          updatedAt?: unknown;
+          createdAt?: unknown;
+        }
+      | null
+      | undefined
+    )[];
+
+    const cardEntries = cards
+      .map((card) => {
+        if (!card) {
+          return null;
+        }
+
+        const column =
+          card.column && typeof card.column === "object"
+            ? (card.column as Record<string, unknown>)
+            : null;
+        const projectName = column?.project && typeof column.project === "object"
+          ? normalizeText((column.project as Record<string, unknown>).name)
+          : null;
+        if (!matchProject(projectName, targetProject)) {
+          return null;
+        }
+
+        const columnName = column?.name ? normalizeText(column.name) : null;
+        const timestamp =
+          (typeof card.updatedAt === "string" && card.updatedAt) ||
+          (typeof card.createdAt === "string" && card.createdAt) ||
+          null;
+
+        if (!columnName || !timestamp) {
+          return null;
+        }
+
+        return { columnName, timestamp };
+      })
+      .filter((value): value is { columnName: string; timestamp: string } => value !== null)
+      .sort((a, b) => {
+        const left = parseTimestamp(a.timestamp) ?? 0;
+        const right = parseTimestamp(b.timestamp) ?? 0;
+        return left - right;
+      });
+
+    if (!startedAt) {
+      const inProgressCard = cardEntries.find((card) => card.columnName === "in progress");
+      if (inProgressCard) {
+        startedAt = inProgressCard.timestamp;
+      }
+    }
+
+    if (!completedAt) {
+      const doneCard = cardEntries.find((card) => card.columnName === "done");
+      if (doneCard) {
+        completedAt = doneCard.timestamp;
+      }
+    }
+  }
+
+  return { startedAt, completedAt };
+}
+
+function summarizeIssueDurations(
+  rows: IssueDurationDetailRow[],
+  targetProject: string | null,
+): IssueDurationSummary {
+  const parentResolution = createAccumulator();
+  const childResolution = createAccumulator();
+  const parentWork = createAccumulator();
+  const childWork = createAccumulator();
+
+  rows.forEach((row) => {
+    const raw = parseIssueRaw(row.data);
+    const resolutionHours = calculateHoursBetween(
+      row.github_created_at,
+      row.github_closed_at,
+    );
+
+    if (!raw) {
+      return;
+    }
+
+    const classification = classifyIssue(raw);
+    if (classification.isParent) {
+      addSample(parentResolution, resolutionHours);
+    }
+    if (classification.isChild) {
+      addSample(childResolution, resolutionHours);
+    }
+
+    if (targetProject) {
+      const { startedAt, completedAt } = extractWorkTimestamps(raw, targetProject);
+      const workHours = calculateHoursBetween(startedAt, completedAt);
+      if (classification.isParent) {
+        addSample(parentWork, workHours);
+      }
+      if (classification.isChild) {
+        addSample(childWork, workHours);
+      }
+    }
+  });
+
+  return {
+    parentResolution: finalizeAccumulator(parentResolution),
+    childResolution: finalizeAccumulator(childResolution),
+    parentWork: finalizeAccumulator(parentWork),
+    childWork: finalizeAccumulator(childWork),
+  };
 }
 
 type ReviewAggregateRow = {
@@ -1299,6 +1669,8 @@ export async function getDashboardAnalytics(
     leaderboardReviews,
     leaderboardResponders,
     leaderboardComments,
+    currentIssueDurationDetails,
+    previousIssueDurationDetails,
   ] = await Promise.all([
     fetchIssueAggregates(range.start, range.end, repositoryFilter),
     fetchIssueAggregates(
@@ -1357,6 +1729,12 @@ export async function getDashboardAnalytics(
     fetchLeaderboard("reviews", range.start, range.end, repositoryFilter, 10),
     fetchLeaderboard("response", range.start, range.end, repositoryFilter, 10),
     fetchLeaderboard("comments", range.start, range.end, repositoryFilter, 10),
+    fetchIssueDurationDetails(range.start, range.end, repositoryFilter),
+    fetchIssueDurationDetails(
+      range.previousStart,
+      range.previousEnd,
+      repositoryFilter,
+    ),
   ]);
 
   const repoIds = new Set<string>();
@@ -1431,6 +1809,16 @@ export async function getDashboardAnalytics(
       ? previousIssues.reopened_count / totalIssuesClosedPrevious
       : 0;
 
+  const targetProject = normalizeText(env.TODO_PROJECT_NAME);
+  const issueDurationCurrent = summarizeIssueDurations(
+    currentIssueDurationDetails,
+    targetProject,
+  );
+  const issueDurationPrevious = summarizeIssueDurations(
+    previousIssueDurationDetails,
+    targetProject,
+  );
+
   const issueMetrics = {
     issuesCreated: buildComparison(
       currentIssues.issues_created,
@@ -1452,6 +1840,26 @@ export async function getDashboardAnalytics(
       previousIssues.issues_closed
         ? previousIssues.issues_created / previousIssues.issues_closed
         : previousIssues.issues_created,
+    ),
+    parentIssueResolutionTime: buildDurationComparison(
+      issueDurationCurrent.parentResolution,
+      issueDurationPrevious.parentResolution,
+      "hours",
+    ),
+    childIssueResolutionTime: buildDurationComparison(
+      issueDurationCurrent.childResolution,
+      issueDurationPrevious.childResolution,
+      "hours",
+    ),
+    parentIssueWorkTime: buildDurationComparison(
+      issueDurationCurrent.parentWork,
+      issueDurationPrevious.parentWork,
+      "hours",
+    ),
+    childIssueWorkTime: buildDurationComparison(
+      issueDurationCurrent.childWork,
+      issueDurationPrevious.childWork,
+      "hours",
     ),
   };
 
@@ -1558,6 +1966,8 @@ export async function getDashboardAnalytics(
       individualCoveragePrevious,
       individualDiscussionCurrent,
       individualDiscussionPrevious,
+      individualIssueDurationsCurrent,
+      individualIssueDurationsPrevious,
       individualMonthly,
       individualRepoRows,
     ] = await Promise.all([
@@ -1609,6 +2019,18 @@ export async function getDashboardAnalytics(
         range.previousEnd,
         repositoryFilter,
       ),
+      fetchIssueDurationDetails(
+        range.start,
+        range.end,
+        repositoryFilter,
+        personProfile.id,
+      ),
+      fetchIssueDurationDetails(
+        range.previousStart,
+        range.previousEnd,
+        repositoryFilter,
+        personProfile.id,
+      ),
       fetchIndividualMonthlyTrends(
         personProfile.id,
         range.start,
@@ -1623,6 +2045,15 @@ export async function getDashboardAnalytics(
         repositoryFilter,
       ),
     ]);
+
+    const individualDurationCurrent = summarizeIssueDurations(
+      individualIssueDurationsCurrent,
+      targetProject,
+    );
+    const individualDurationPrevious = summarizeIssueDurations(
+      individualIssueDurationsPrevious,
+      targetProject,
+    );
 
     const individualMetrics = {
       issuesCreated: buildComparison(
@@ -1644,6 +2075,26 @@ export async function getDashboardAnalytics(
       issueResolutionTime: buildDurationComparison(
         individualIssuesCurrent.avg_resolution_hours,
         individualIssuesPrevious.avg_resolution_hours,
+        "hours",
+      ),
+      parentIssueResolutionTime: buildDurationComparison(
+        individualDurationCurrent.parentResolution,
+        individualDurationPrevious.parentResolution,
+        "hours",
+      ),
+      childIssueResolutionTime: buildDurationComparison(
+        individualDurationCurrent.childResolution,
+        individualDurationPrevious.childResolution,
+        "hours",
+      ),
+      parentIssueWorkTime: buildDurationComparison(
+        individualDurationCurrent.parentWork,
+        individualDurationPrevious.parentWork,
+        "hours",
+      ),
+      childIssueWorkTime: buildDurationComparison(
+        individualDurationCurrent.childWork,
+        individualDurationPrevious.childWork,
         "hours",
       ),
       reviewsCompleted: buildComparison(

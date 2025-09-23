@@ -67,6 +67,14 @@ type IssueNode = {
   updatedAt: string;
   closedAt?: string | null;
   author?: GithubActor | null;
+  trackedIssues?: { totalCount?: number | null } | null;
+  trackedInIssues?: { totalCount?: number | null } | null;
+  timelineItems?: {
+    nodes: IssueTimelineItem[] | null;
+  } | null;
+  projectCards?: {
+    nodes: IssueProjectCard[] | null;
+  } | null;
 };
 
 type PullRequestNode = IssueNode & {
@@ -92,6 +100,34 @@ type CommentNode = {
 type CommentCollectionResult = {
   latest: string | null;
   count: number;
+};
+
+type IssueTimelineItem =
+  | {
+      __typename: "AddedToProjectEvent";
+      createdAt: string;
+      projectColumnName?: string | null;
+      project?: { name?: string | null } | null;
+    }
+  | {
+      __typename: "MovedColumnsInProjectEvent";
+      createdAt: string;
+      projectColumnName?: string | null;
+      previousProjectColumnName?: string | null;
+      project?: { name?: string | null } | null;
+    }
+  | {
+      __typename: string;
+      createdAt?: string | null;
+    };
+
+type IssueProjectCard = {
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  column?: {
+    name?: string | null;
+    project?: { name?: string | null } | null;
+  } | null;
 };
 
 type ReviewCollectionResult = {
