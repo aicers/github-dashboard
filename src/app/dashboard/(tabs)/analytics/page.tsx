@@ -8,7 +8,9 @@ export const dynamic = "force-dynamic";
 export default async function AnalyticsPage() {
   const status = await fetchSyncStatus();
   const timeZone = status.config?.timezone ?? "UTC";
-  const presetRange = buildRangeFromPreset("last_30_days", timeZone);
+  const weekStart =
+    (status.config?.week_start as "sunday" | "monday") ?? "monday";
+  const presetRange = buildRangeFromPreset("last_30_days", timeZone, weekStart);
   const start = presetRange?.start ?? new Date().toISOString();
   const end = presetRange?.end ?? new Date().toISOString();
 

@@ -5,7 +5,7 @@ import {
   PRESETS,
   type TimePresetKey,
 } from "@/components/dashboard/dashboard-filters";
-import type { DashboardAnalytics } from "@/lib/dashboard/types";
+import type { DashboardAnalytics, WeekStart } from "@/lib/dashboard/types";
 
 export type FilterState = {
   start: string;
@@ -24,6 +24,7 @@ export type DashboardAnalyticsState = {
   error: string | null;
   presets: typeof PRESETS;
   timeZone: string;
+  weekStart: WeekStart;
 };
 
 const DEFAULT_PRESET: TimePresetKey = "last_30_days";
@@ -54,6 +55,9 @@ export function useDashboardAnalytics({
 }): DashboardAnalyticsState {
   const [analytics, setAnalytics] = useState(initialAnalytics);
   const [timeZone, setTimeZone] = useState(initialAnalytics.timeZone);
+  const [weekStart, setWeekStart] = useState<WeekStart>(
+    initialAnalytics.weekStart,
+  );
   const [filters, setFilters] = useState<FilterState>(() =>
     resolveInitialFilters(defaultRange, initialAnalytics),
   );
@@ -90,6 +94,9 @@ export function useDashboardAnalytics({
       if (nextAnalytics.timeZone) {
         setTimeZone(nextAnalytics.timeZone);
       }
+      if (nextAnalytics.weekStart) {
+        setWeekStart(nextAnalytics.weekStart);
+      }
     } catch (fetchError) {
       setError(
         fetchError instanceof Error
@@ -123,5 +130,6 @@ export function useDashboardAnalytics({
     error,
     presets,
     timeZone,
+    weekStart,
   };
 }

@@ -182,6 +182,7 @@ export function AnalyticsView({
     isLoading,
     error,
     timeZone,
+    weekStart,
   } = useDashboardAnalytics({ initialAnalytics, defaultRange });
 
   const repositories = analytics.repositories;
@@ -244,6 +245,7 @@ export function AnalyticsView({
           range={analytics.range}
           showPersonSelector={false}
           timeZone={timeZone}
+          weekStart={weekStart}
         />
       </header>
 

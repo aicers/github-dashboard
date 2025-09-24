@@ -14,6 +14,7 @@ describe("analytics-view helpers", () => {
     const last30 = __analyticsInternals.buildRangeFromPreset(
       "last_30_days",
       "UTC",
+      "monday",
       reference,
     );
     expect(last30).not.toBeNull();
@@ -30,6 +31,7 @@ describe("analytics-view helpers", () => {
     const thisMonth = __analyticsInternals.buildRangeFromPreset(
       "this_month",
       "UTC",
+      "monday",
       reference,
     );
     expect(thisMonth).not.toBeNull();
@@ -41,6 +43,24 @@ describe("analytics-view helpers", () => {
       const diffDays = (end.getTime() - start.getTime()) / 86_400_000;
       expect(diffDays).toBeGreaterThanOrEqual(27);
       expect(diffDays).toBeLessThanOrEqual(31);
+    }
+
+    const mondayWeek = __analyticsInternals.buildRangeFromPreset(
+      "this_week",
+      "UTC",
+      "monday",
+      reference,
+    );
+    const sundayWeek = __analyticsInternals.buildRangeFromPreset(
+      "this_week",
+      "UTC",
+      "sunday",
+      reference,
+    );
+    expect(mondayWeek).not.toBeNull();
+    expect(sundayWeek).not.toBeNull();
+    if (mondayWeek && sundayWeek) {
+      expect(mondayWeek.start).not.toEqual(sundayWeek.start);
     }
   });
 

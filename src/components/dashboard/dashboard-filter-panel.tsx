@@ -11,7 +11,7 @@ import {
 import type { FilterState } from "@/components/dashboard/use-dashboard-analytics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { DashboardAnalytics } from "@/lib/dashboard/types";
+import type { DashboardAnalytics, WeekStart } from "@/lib/dashboard/types";
 import type { RepositoryProfile, UserProfile } from "@/lib/db/operations";
 
 type DashboardFilterPanelProps = {
@@ -25,6 +25,7 @@ type DashboardFilterPanelProps = {
   range: DashboardAnalytics["range"];
   showPersonSelector?: boolean;
   timeZone: string;
+  weekStart: WeekStart;
 };
 
 export function DashboardFilterPanel({
@@ -38,6 +39,7 @@ export function DashboardFilterPanel({
   range,
   showPersonSelector = true,
   timeZone,
+  weekStart,
 }: DashboardFilterPanelProps) {
   const allRepositoryIds = repositories.map((repo) => repo.id);
   const allReposSelected =
@@ -51,7 +53,7 @@ export function DashboardFilterPanel({
         return;
       }
 
-      const computed = buildRangeFromPreset(preset, timeZone);
+      const computed = buildRangeFromPreset(preset, timeZone, weekStart);
       setFilters((current) => ({
         ...current,
         preset,
@@ -59,7 +61,7 @@ export function DashboardFilterPanel({
         end: computed?.end ?? current.end,
       }));
     },
-    [setFilters, timeZone],
+    [setFilters, timeZone, weekStart],
   );
 
   const handleRepoSelection = (event: React.ChangeEvent<HTMLSelectElement>) => {
