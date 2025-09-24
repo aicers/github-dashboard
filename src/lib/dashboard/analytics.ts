@@ -24,6 +24,8 @@ import {
 } from "@/lib/db/operations";
 import { env } from "@/lib/env";
 
+const HOLIDAY_SET = buildHolidaySet(env.HOLIDAYS);
+
 function toIso(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -113,6 +115,117 @@ function normalizeText(value: unknown): string | null {
 
   const trimmed = value.trim().toLowerCase();
   return trimmed.length ? trimmed : null;
+}
+
+function buildHolidaySet(dates: string[]): Set<string> {
+  const set = new Set<string>();
+  dates.forEach((date) => {
+    const normalized = normalizeHolidayDate(date);
+    if (normalized) {
+      set.add(normalized);
+    }
+  });
+  return set;
+}
+
+function normalizeHolidayDate(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const directMatch = /^\d{4}-\d{2}-\d{2}$/.exec(trimmed);
+  if (directMatch) {
+    return trimmed;
+  }
+
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return `${parsed.getUTCFullYear()}-${`${parsed.getUTCMonth() + 1}`.padStart(2, "0")}-${`${parsed.getUTCDate()}`.padStart(2, "0")}`;
+}
+
+function formatDateKey(date: Date) {
+  return `${date.getUTCFullYear()}-${`${date.getUTCMonth() + 1}`.padStart(2, "0")}-${`${date.getUTCDate()}`.padStart(2, "0")}`;
+}
+
+function isBusinessDay(date: Date, holidays: Set<string>) {
+  const day = date.getUTCDay();
+  if (day === 0 || day === 6) {
+    return false;
+  }
+
+  return !holidays.has(formatDateKey(date));
+}
+
+function calculateBusinessHoursBetween(
+  startIso: string | null,
+  endIso: string | null,
+  holidays: Set<string>,
+) {
+  if (!startIso || !endIso) {
+    return null;
+  }
+
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return null;
+  }
+
+  if (end <= start) {
+    return 0;
+  }
+
+  let cursor = start.getTime();
+  const endMs = end.getTime();
+  let totalMs = 0;
+
+  while (cursor < endMs) {
+    const cursorDate = new Date(cursor);
+    const nextDayUtc = Date.UTC(
+      cursorDate.getUTCFullYear(),
+      cursorDate.getUTCMonth(),
+      cursorDate.getUTCDate() + 1,
+    );
+    const segmentEnd = Math.min(nextDayUtc, endMs);
+    if (isBusinessDay(cursorDate, holidays)) {
+      totalMs += segmentEnd - cursor;
+    }
+    cursor = segmentEnd;
+  }
+
+  return totalMs / 3_600_000;
+}
+
+function averageBusinessResponseHours(
+  rows: { requestedAt: string; respondedAt: string | null }[],
+  holidays: Set<string>,
+) {
+  const values: number[] = [];
+  rows.forEach((row) => {
+    const hours = calculateBusinessHoursBetween(
+      row.requestedAt,
+      row.respondedAt,
+      holidays,
+    );
+    if (hours !== null && Number.isFinite(hours)) {
+      values.push(hours);
+    }
+  });
+
+  if (!values.length) {
+    return null;
+  }
+
+  const sum = values.reduce((acc, value) => acc + value, 0);
+  return sum / values.length;
 }
 
 type RangeContext = {
@@ -756,6 +869,18 @@ type ReviewAggregateRow = {
   avg_participation: number | null;
 };
 
+type ReviewStatsRow = {
+  reviews_completed: number;
+  avg_participation: number | null;
+};
+
+type ReviewResponseRow = {
+  reviewer_id: string | null;
+  pull_request_id: string;
+  requested_at: string;
+  responded_at: string | null;
+};
+
 async function fetchReviewAggregates(
   start: string,
   end: string,
@@ -769,104 +894,54 @@ async function fetchReviewAggregates(
     repoClause = ` AND pr.repository_id = ANY($${index}::text[])`;
   }
 
-  const result = await query<ReviewAggregateRow>(
-    `WITH pr_scope AS (
-       SELECT pr.id, pr.github_created_at, pr.repository_id, pr.author_id
-       FROM pull_requests pr
-       WHERE pr.github_created_at BETWEEN $1 AND $2${repoClause}
-     ),
-    reviews_in_range AS (
-      SELECT r.id, r.author_id, r.github_submitted_at, r.pull_request_id
-      FROM reviews r
-      JOIN pr_scope pr ON pr.id = r.pull_request_id
-      WHERE r.github_submitted_at BETWEEN $1 AND $2
+  const [statsResult, responseRows] = await Promise.all([
+    query<ReviewStatsRow>(
+      `WITH pr_scope AS (
+         SELECT pr.id, pr.github_created_at, pr.repository_id, pr.author_id
+         FROM pull_requests pr
+         WHERE pr.github_created_at BETWEEN $1 AND $2${repoClause}
+       ),
+       reviews_in_range AS (
+         SELECT r.id, r.author_id, r.github_submitted_at, r.pull_request_id
+         FROM reviews r
+         JOIN pr_scope pr ON pr.id = r.pull_request_id
+         WHERE r.github_submitted_at BETWEEN $1 AND $2
+       ),
+       participation AS (
+         SELECT
+           pr_scope.id AS pull_request_id,
+           COUNT(DISTINCT r.author_id) FILTER (WHERE r.github_submitted_at BETWEEN $1 AND $2) AS reviewer_count
+         FROM pr_scope
+         LEFT JOIN reviews r ON r.pull_request_id = pr_scope.id
+         GROUP BY pr_scope.id
+       )
+       SELECT
+         (SELECT COUNT(*) FROM reviews_in_range) AS reviews_completed,
+         (SELECT AVG(COALESCE(participation.reviewer_count, 0)) FROM participation) AS avg_participation
+       `,
+      params,
     ),
-    participation AS (
-      SELECT
-        pr_scope.id AS pull_request_id,
-        COUNT(DISTINCT r.author_id) FILTER (WHERE r.github_submitted_at BETWEEN $1 AND $2) AS reviewer_count
-      FROM pr_scope
-      LEFT JOIN reviews r ON r.pull_request_id = pr_scope.id
-      GROUP BY pr_scope.id
-    ),
-    review_requests_scope AS (
-      SELECT rr.id, rr.pull_request_id, rr.reviewer_id, rr.requested_at, rr.removed_at
-      FROM review_requests rr
-      JOIN pr_scope pr ON pr.id = rr.pull_request_id
-      WHERE rr.reviewer_id IS NOT NULL
-        AND rr.requested_at BETWEEN $1 AND $2
-     ),
-    response_events AS (
-      SELECT
-        rr.pull_request_id,
-        rr.reviewer_id,
-        r.github_submitted_at AS responded_at
-      FROM review_requests_scope rr
-      JOIN reviews r ON r.pull_request_id = rr.pull_request_id
-      WHERE r.author_id = rr.reviewer_id
-        AND r.github_submitted_at BETWEEN $1 AND $2
-      UNION ALL
-      SELECT
-        rr.pull_request_id,
-        rr.reviewer_id,
-        c.github_created_at AS responded_at
-      FROM review_requests_scope rr
-      JOIN comments c ON c.pull_request_id = rr.pull_request_id
-      WHERE c.author_id = rr.reviewer_id
-        AND c.github_created_at BETWEEN $1 AND $2
-      UNION ALL
-      SELECT
-        rr.pull_request_id,
-        rr.reviewer_id,
-        r.github_created_at AS responded_at
-      FROM review_requests_scope rr
-      JOIN reactions r ON r.subject_id = rr.pull_request_id
-      WHERE r.subject_type = 'pull_request'
-        AND r.user_id = rr.reviewer_id
-        AND r.github_created_at BETWEEN $1 AND $2
-    ),
-    request_responses AS (
-      SELECT
-        rr.pull_request_id,
-        rr.requested_at,
-        MIN(
-          CASE
-            WHEN response_events.responded_at >= rr.requested_at
-              AND (rr.removed_at IS NULL OR response_events.responded_at < rr.removed_at)
-            THEN response_events.responded_at
-            ELSE NULL
-          END
-        ) AS responded_at
-      FROM review_requests_scope rr
-      LEFT JOIN response_events
-        ON response_events.pull_request_id = rr.pull_request_id
-       AND response_events.reviewer_id = rr.reviewer_id
-      GROUP BY rr.pull_request_id, rr.requested_at
-    ),
-    first_responses AS (
-      SELECT
-        pull_request_id,
-        MIN(EXTRACT(EPOCH FROM (responded_at - requested_at)) / 3600.0) AS response_hours
-      FROM request_responses
-      WHERE responded_at IS NOT NULL
-        AND responded_at >= requested_at
-      GROUP BY pull_request_id
-    )
-    SELECT
-      (SELECT COUNT(*) FROM reviews_in_range) AS reviews_completed,
-      (SELECT AVG(response_hours) FROM first_responses) AS avg_response_hours,
-      (SELECT AVG(COALESCE(participation.reviewer_count, 0)) FROM participation) AS avg_participation
-    `,
-    params,
+    fetchReviewResponsePairs(start, end, repositoryIds),
+  ]);
+
+  const statsRow = statsResult.rows[0] ?? {
+    reviews_completed: 0,
+    avg_participation: null,
+  };
+
+  const avgResponseHours = averageBusinessResponseHours(
+    responseRows.map((row) => ({
+      requestedAt: row.requested_at,
+      respondedAt: row.responded_at,
+    })),
+    HOLIDAY_SET,
   );
 
-  return (
-    result.rows[0] ?? {
-      reviews_completed: 0,
-      avg_response_hours: null,
-      avg_participation: null,
-    }
-  );
+  return {
+    reviews_completed: Number(statsRow.reviews_completed ?? 0),
+    avg_response_hours: avgResponseHours,
+    avg_participation: statsRow.avg_participation,
+  };
 }
 
 type TotalEventsRow = {
@@ -1228,6 +1303,91 @@ async function fetchReviewerActivity(
   return result.rows;
 }
 
+async function fetchReviewResponsePairs(
+  start: string,
+  end: string,
+  repositoryIds: string[] | undefined,
+  reviewerId?: string,
+): Promise<ReviewResponseRow[]> {
+  const params: unknown[] = [start, end];
+  let repoClause = "";
+  if (repositoryIds?.length) {
+    params.push(repositoryIds);
+    const index = params.length;
+    repoClause = ` AND pr.repository_id = ANY($${index}::text[])`;
+  }
+
+  let reviewerClause = "";
+  if (reviewerId) {
+    params.push(reviewerId);
+    reviewerClause = ` AND rr.reviewer_id = $${params.length}`;
+  }
+
+  const result = await query<ReviewResponseRow>(
+    `WITH pr_scope AS (
+       SELECT pr.id, pr.github_created_at, pr.repository_id, pr.author_id
+       FROM pull_requests pr
+       WHERE pr.github_created_at BETWEEN $1 AND $2${repoClause}
+     ),
+     review_requests_scope AS (
+       SELECT rr.id, rr.pull_request_id, rr.reviewer_id, rr.requested_at, rr.removed_at
+       FROM review_requests rr
+       JOIN pr_scope pr ON pr.id = rr.pull_request_id
+       WHERE rr.reviewer_id IS NOT NULL
+         AND rr.requested_at BETWEEN $1 AND $2${reviewerClause}
+         AND pr.author_id <> rr.reviewer_id
+     ),
+     response_events AS (
+       SELECT
+         rr.id AS review_request_id,
+         r.github_submitted_at AS responded_at
+       FROM review_requests_scope rr
+       JOIN reviews r ON r.pull_request_id = rr.pull_request_id
+       WHERE r.author_id = rr.reviewer_id
+         AND r.github_submitted_at BETWEEN $1 AND $2
+       UNION ALL
+       SELECT
+         rr.id AS review_request_id,
+         c.github_created_at AS responded_at
+       FROM review_requests_scope rr
+       JOIN comments c ON c.pull_request_id = rr.pull_request_id
+       WHERE c.author_id = rr.reviewer_id
+         AND c.github_created_at BETWEEN $1 AND $2
+       UNION ALL
+       SELECT
+         rr.id AS review_request_id,
+         r.github_created_at AS responded_at
+       FROM review_requests_scope rr
+       JOIN reactions r ON r.subject_id = rr.pull_request_id
+       WHERE r.subject_type = 'pull_request'
+         AND r.user_id = rr.reviewer_id
+         AND r.github_created_at BETWEEN $1 AND $2
+     ),
+     valid_responses AS (
+       SELECT
+         rr.id AS review_request_id,
+         MIN(response_events.responded_at) AS responded_at
+       FROM review_requests_scope rr
+       LEFT JOIN response_events
+         ON response_events.review_request_id = rr.id
+         AND response_events.responded_at >= rr.requested_at
+         AND (rr.removed_at IS NULL OR response_events.responded_at < rr.removed_at)
+       GROUP BY rr.id
+     )
+     SELECT
+       rr.reviewer_id,
+       rr.pull_request_id,
+       rr.requested_at,
+       valid_responses.responded_at
+     FROM review_requests_scope rr
+     JOIN valid_responses ON valid_responses.review_request_id = rr.id
+     WHERE valid_responses.responded_at IS NOT NULL`,
+    params,
+  );
+
+  return result.rows;
+}
+
 type LeaderboardRow = {
   user_id: string;
   value: number;
@@ -1294,84 +1454,39 @@ async function fetchLeaderboard(
       return result.rows;
     }
     case "response": {
-      const result = await query<LeaderboardRow>(
-        `WITH pr_scope AS (
-           SELECT pr.id, pr.github_created_at, pr.repository_id, pr.author_id
-           FROM pull_requests pr
-           WHERE pr.github_created_at BETWEEN $1 AND $2${repoClausePrs}
-         ),
-         review_requests_scope AS (
-           SELECT rr.pull_request_id, rr.reviewer_id, rr.requested_at, rr.removed_at
-           FROM review_requests rr
-           JOIN pr_scope pr ON pr.id = rr.pull_request_id
-           WHERE rr.reviewer_id IS NOT NULL
-             AND rr.requested_at BETWEEN $1 AND $2
-         ),
-         response_events AS (
-           SELECT
-             rr.pull_request_id,
-             rr.reviewer_id AS user_id,
-             r.github_submitted_at AS responded_at
-           FROM review_requests_scope rr
-           JOIN reviews r ON r.pull_request_id = rr.pull_request_id
-           WHERE r.author_id = rr.reviewer_id
-             AND r.github_submitted_at BETWEEN $1 AND $2
-         UNION ALL
-           SELECT
-             rr.pull_request_id,
-             rr.reviewer_id AS user_id,
-             c.github_created_at AS responded_at
-           FROM review_requests_scope rr
-           JOIN comments c ON c.pull_request_id = rr.pull_request_id
-           WHERE c.author_id = rr.reviewer_id
-             AND c.github_created_at BETWEEN $1 AND $2
-         UNION ALL
-           SELECT
-             rr.pull_request_id,
-             rr.reviewer_id AS user_id,
-             r.github_created_at AS responded_at
-           FROM review_requests_scope rr
-           JOIN reactions r ON r.subject_id = rr.pull_request_id
-           WHERE r.subject_type = 'pull_request'
-             AND r.user_id = rr.reviewer_id
-             AND r.github_created_at BETWEEN $1 AND $2
-         ),
-         request_responses AS (
-           SELECT
-             rr.reviewer_id AS user_id,
-             rr.pull_request_id,
-             rr.requested_at,
-             MIN(
-               CASE
-                 WHEN response_events.responded_at >= rr.requested_at
-                   AND (rr.removed_at IS NULL OR response_events.responded_at < rr.removed_at)
-                 THEN response_events.responded_at
-                 ELSE NULL
-               END
-             ) AS responded_at
-           FROM review_requests_scope rr
-           LEFT JOIN response_events
-             ON response_events.pull_request_id = rr.pull_request_id
-            AND response_events.user_id = rr.reviewer_id
-           GROUP BY rr.reviewer_id, rr.pull_request_id, rr.requested_at
-         ),
-         response_times AS (
-           SELECT
-             user_id,
-             EXTRACT(EPOCH FROM (responded_at - requested_at)) / 3600.0 AS response_hours
-           FROM request_responses
-           WHERE responded_at IS NOT NULL
-             AND responded_at >= requested_at
-         )
-         SELECT user_id,
-                AVG(response_hours) AS value
-         FROM response_times
-         WHERE user_id IS NOT NULL
-         GROUP BY user_id
-         ORDER BY value ASC`,
-        params,
+      const responsePairs = await fetchReviewResponsePairs(
+        start,
+        end,
+        repositoryIds,
       );
-      return result.rows;
+      const stats = new Map<string, { sum: number; count: number }>();
+      responsePairs.forEach((row) => {
+        if (!row.reviewer_id) {
+          return;
+        }
+
+        const hours = calculateBusinessHoursBetween(
+          row.requested_at,
+          row.responded_at,
+          HOLIDAY_SET,
+        );
+        if (hours === null || !Number.isFinite(hours)) {
+          return;
+        }
+
+        const current = stats.get(row.reviewer_id) ?? { sum: 0, count: 0 };
+        current.sum += hours;
+        current.count += 1;
+        stats.set(row.reviewer_id, current);
+      });
+
+      return Array.from(stats.entries())
+        .map(([userId, { sum, count }]) => ({
+          user_id: userId,
+          value: sum / count,
+          secondary_value: null,
+        }))
+        .sort((a, b) => a.value - b.value);
     }
     case "comments": {
       const result = await query<LeaderboardRow>(
@@ -1445,6 +1560,12 @@ type IndividualReviewRow = {
   review_comments: number;
 };
 
+type IndividualReviewBaseRow = {
+  reviews: number;
+  prs_reviewed: number;
+  review_comments: number;
+};
+
 type IndividualPullRequestRow = {
   created: number;
   merged: number;
@@ -1495,96 +1616,58 @@ async function fetchIndividualReviewMetrics(
     repoClause = ` AND pr.repository_id = ANY($${index}::text[])`;
   }
 
-  const result = await query<IndividualReviewRow>(
+  const statsResult = await query<IndividualReviewBaseRow>(
     `WITH reviewer_reviews AS (
-       SELECT r.pull_request_id, r.github_submitted_at
+       SELECT r.pull_request_id
        FROM reviews r
        JOIN pull_requests pr ON pr.id = r.pull_request_id
        WHERE r.author_id = $1
          AND r.github_submitted_at BETWEEN $2 AND $3${repoClause}
          AND pr.author_id <> $1
      ),
-     review_requests_scope AS (
-       SELECT rr.pull_request_id, rr.requested_at, rr.removed_at
-       FROM review_requests rr
-       JOIN pull_requests pr ON pr.id = rr.pull_request_id
-       WHERE rr.reviewer_id = $1
-         AND rr.requested_at BETWEEN $2 AND $3${repoClause}
-         AND pr.author_id <> $1
-     ),
-     response_events AS (
-       SELECT
-         rr.pull_request_id,
-         r.github_submitted_at AS responded_at
-       FROM review_requests_scope rr
-       JOIN reviews r ON r.pull_request_id = rr.pull_request_id
-       WHERE r.author_id = $1
-         AND r.github_submitted_at BETWEEN $2 AND $3
-       UNION ALL
-       SELECT
-         rr.pull_request_id,
-         c.github_created_at AS responded_at
-       FROM review_requests_scope rr
-       JOIN comments c ON c.pull_request_id = rr.pull_request_id
-       WHERE c.author_id = $1
-         AND c.github_created_at BETWEEN $2 AND $3
-       UNION ALL
-       SELECT
-         rr.pull_request_id,
-         r.github_created_at AS responded_at
-       FROM review_requests_scope rr
-       JOIN reactions r ON r.subject_id = rr.pull_request_id
-       WHERE r.subject_type = 'pull_request'
-         AND r.user_id = $1
-         AND r.github_created_at BETWEEN $2 AND $3
-     ),
-     request_responses AS (
-       SELECT
-         rr.pull_request_id,
-         rr.requested_at,
-         MIN(
-           CASE
-             WHEN response_events.responded_at >= rr.requested_at
-               AND (rr.removed_at IS NULL OR response_events.responded_at < rr.removed_at)
-             THEN response_events.responded_at
-             ELSE NULL
-           END
-         ) AS responded_at
-       FROM review_requests_scope rr
-       LEFT JOIN response_events
-         ON response_events.pull_request_id = rr.pull_request_id
-       GROUP BY rr.pull_request_id, rr.requested_at
-     ),
-     first_responses AS (
-       SELECT
-         MIN(EXTRACT(EPOCH FROM (responded_at - requested_at)) / 3600.0) AS response_hours
-       FROM request_responses
-       WHERE responded_at IS NOT NULL
-         AND responded_at >= requested_at
-     ),
      review_comments AS (
        SELECT COUNT(*) AS review_comments
        FROM comments c
        JOIN pull_requests pr ON pr.id = c.pull_request_id
-       WHERE c.author_id = $1 AND c.github_created_at BETWEEN $2 AND $3${repoClause}
+       WHERE c.author_id = $1
+         AND c.github_created_at BETWEEN $2 AND $3${repoClause}
+         AND pr.author_id <> $1
      )
      SELECT
        (SELECT COUNT(*) FROM reviewer_reviews) AS reviews,
        (SELECT COUNT(DISTINCT pull_request_id) FROM reviewer_reviews) AS prs_reviewed,
-       (SELECT AVG(response_hours) FROM first_responses) AS avg_response_hours,
        (SELECT review_comments FROM review_comments) AS review_comments
      `,
     params,
   );
 
-  return (
-    result.rows[0] ?? {
-      reviews: 0,
-      prs_reviewed: 0,
-      avg_response_hours: null,
-      review_comments: 0,
-    }
+  const statsRow = statsResult.rows[0] ?? {
+    reviews: 0,
+    prs_reviewed: 0,
+    review_comments: 0,
+  };
+
+  const responsePairs = await fetchReviewResponsePairs(
+    start,
+    end,
+    repositoryIds,
+    personId,
   );
+
+  const avgResponseHours = averageBusinessResponseHours(
+    responsePairs.map((row) => ({
+      requestedAt: row.requested_at,
+      respondedAt: row.responded_at,
+    })),
+    HOLIDAY_SET,
+  );
+
+  return {
+    reviews: Number(statsRow.reviews ?? 0),
+    prs_reviewed: Number(statsRow.prs_reviewed ?? 0),
+    avg_response_hours: avgResponseHours,
+    review_comments: Number(statsRow.review_comments ?? 0),
+  };
 }
 
 type IndividualCoverageRow = {
