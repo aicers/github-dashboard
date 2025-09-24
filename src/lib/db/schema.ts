@@ -133,6 +133,7 @@ const SCHEMA_STATEMENTS = [
     auto_sync_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     sync_interval_minutes INTEGER NOT NULL DEFAULT 60,
     timezone TEXT NOT NULL DEFAULT 'UTC',
+    week_start TEXT NOT NULL DEFAULT 'monday',
     last_sync_started_at TIMESTAMPTZ,
     last_sync_completed_at TIMESTAMPTZ,
     last_successful_sync_at TIMESTAMPTZ,
@@ -140,6 +141,7 @@ const SCHEMA_STATEMENTS = [
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
   `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'UTC'`,
+  `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS week_start TEXT NOT NULL DEFAULT 'monday'`,
   `CREATE TABLE IF NOT EXISTS sync_state (
     resource TEXT PRIMARY KEY,
     last_cursor TEXT,

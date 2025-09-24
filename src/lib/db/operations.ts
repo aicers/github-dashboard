@@ -522,7 +522,7 @@ export async function getSyncState(resource: string) {
 
 export async function getSyncConfig() {
   const result = await query(
-    `SELECT id, org_name, auto_sync_enabled, sync_interval_minutes, timezone, last_sync_started_at, last_sync_completed_at, last_successful_sync_at
+    `SELECT id, org_name, auto_sync_enabled, sync_interval_minutes, timezone, week_start, last_sync_started_at, last_sync_completed_at, last_successful_sync_at
      FROM sync_config
      WHERE id = 'default'`,
   );
@@ -535,6 +535,7 @@ export async function updateSyncConfig(params: {
   autoSyncEnabled?: boolean;
   syncIntervalMinutes?: number;
   timezone?: string;
+  weekStart?: "sunday" | "monday";
   lastSyncStartedAt?: string | null;
   lastSyncCompletedAt?: string | null;
   lastSuccessfulSyncAt?: string | null;
@@ -560,6 +561,11 @@ export async function updateSyncConfig(params: {
   if (typeof params.timezone === "string") {
     fields.push(`timezone = $${fields.length + 1}`);
     values.push(params.timezone);
+  }
+
+  if (typeof params.weekStart === "string") {
+    fields.push(`week_start = $${fields.length + 1}`);
+    values.push(params.weekStart);
   }
 
   if (params.lastSyncStartedAt !== undefined) {

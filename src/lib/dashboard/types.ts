@@ -13,6 +13,8 @@ export type DurationComparisonValue = ComparisonValue & {
 
 export type RatioComparisonValue = ComparisonValue;
 
+export type WeekStart = "sunday" | "monday";
+
 export type TrendPoint = {
   date: string;
   value: number;
@@ -161,6 +163,7 @@ export type DashboardAnalytics = {
   individual: IndividualAnalytics | null;
   leaderboard: LeaderboardSummary;
   timeZone: string;
+  weekStart: WeekStart;
 };
 
 export type AnalyticsParams = {

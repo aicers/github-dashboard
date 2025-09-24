@@ -46,6 +46,7 @@ type SettingsViewProps = {
   orgName: string;
   syncIntervalMinutes: number;
   timeZone: string;
+  weekStart: "sunday" | "monday";
 };
 
 type ApiResponse<T> = {
@@ -58,11 +59,15 @@ export function SettingsView({
   orgName,
   syncIntervalMinutes,
   timeZone,
+  weekStart,
 }: SettingsViewProps) {
   const router = useRouter();
   const [name, setName] = useState(orgName);
   const [interval, setInterval] = useState(syncIntervalMinutes.toString());
   const [timezone, setTimezone] = useState(timeZone);
+  const [weekStartValue, setWeekStartValue] = useState<"sunday" | "monday">(
+    weekStart,
+  );
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isSaving, startSaving] = useTransition();
   const orgInputId = useId();
@@ -98,6 +103,7 @@ export function SettingsView({
             orgName: name.trim(),
             syncIntervalMinutes: parsedInterval,
             timezone,
+            weekStart: weekStartValue,
           }),
         });
         const data = (await response.json()) as ApiResponse<unknown>;
@@ -168,7 +174,7 @@ export function SettingsView({
             대시보드의 날짜/시간 계산에 사용할 표준 시간대를 선택하세요.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-2 text-sm">
+        <CardContent className="flex flex-col gap-4 text-sm">
           <label className="flex flex-col gap-2">
             <span className="text-muted-foreground">표준 시간대</span>
             <select
@@ -181,6 +187,19 @@ export function SettingsView({
                   {zone}
                 </option>
               ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-2">
+            <span className="text-muted-foreground">주의 시작 요일</span>
+            <select
+              value={weekStartValue}
+              onChange={(event) =>
+                setWeekStartValue(event.target.value as "sunday" | "monday")
+              }
+              className="rounded-md border border-border/60 bg-background p-2 text-sm"
+            >
+              <option value="monday">월요일 시작</option>
+              <option value="sunday">일요일 시작</option>
             </select>
           </label>
         </CardContent>

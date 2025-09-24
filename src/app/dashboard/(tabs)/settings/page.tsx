@@ -13,6 +13,7 @@ export default async function SettingsPage() {
       orgName={config?.org_name ?? ""}
       syncIntervalMinutes={config?.sync_interval_minutes ?? 60}
       timeZone={timeZone}
+      weekStart={(config?.week_start as "sunday" | "monday") ?? "monday"}
     />
   );
 }

@@ -378,6 +378,7 @@ export async function updateSyncSettings(params: {
   orgName?: string;
   syncIntervalMinutes?: number;
   timezone?: string;
+  weekStart?: "sunday" | "monday";
 }) {
   await ensureSchema();
 
@@ -411,6 +412,15 @@ export async function updateSyncSettings(params: {
     }
 
     await updateSyncConfig({ timezone: tz });
+  }
+
+  if (params.weekStart !== undefined) {
+    const value = params.weekStart;
+    if (value !== "sunday" && value !== "monday") {
+      throw new Error("Week start must be either 'sunday' or 'monday'.");
+    }
+
+    await updateSyncConfig({ weekStart: value });
   }
 }
 

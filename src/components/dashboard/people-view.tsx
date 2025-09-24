@@ -43,6 +43,7 @@ export function PeopleView({
     isLoading,
     error,
     timeZone,
+    weekStart,
   } = useDashboardAnalytics({ initialAnalytics, defaultRange });
 
   const repositories = analytics.repositories;
@@ -81,6 +82,7 @@ export function PeopleView({
           range={analytics.range}
           showPersonSelector={false}
           timeZone={timeZone}
+          weekStart={weekStart}
         />
       </header>
 

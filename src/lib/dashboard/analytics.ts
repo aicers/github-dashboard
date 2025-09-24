@@ -12,6 +12,7 @@ import type {
   RepoDistributionItem,
   ReviewerActivity,
   TrendPoint,
+  WeekStart,
 } from "@/lib/dashboard/types";
 import { ensureSchema } from "@/lib/db";
 import { query } from "@/lib/db/client";
@@ -2110,6 +2111,8 @@ export async function getDashboardAnalytics(
   await ensureSchema();
   const config = await getSyncConfig();
   const timeZone = config?.timezone ?? "UTC";
+  const weekStart: WeekStart =
+    config?.week_start === "sunday" ? "sunday" : "monday";
   const targetProject = normalizeText(env.TODO_PROJECT_NAME);
 
   const [
@@ -2699,5 +2702,6 @@ export async function getDashboardAnalytics(
     individual,
     leaderboard,
     timeZone,
+    weekStart,
   };
 }
