@@ -365,8 +365,8 @@ async function fetchPrAggregates(
 
 type IssueDurationDetailRow = {
   id: string;
-  github_created_at: string;
-  github_closed_at: string;
+  github_created_at: string | Date;
+  github_closed_at: string | Date;
   data: unknown;
 };
 
@@ -491,13 +491,20 @@ function classifyIssue(raw: IssueRaw): {
 } {
   const trackedIssues = extractTotalCount(raw.trackedIssues);
   const trackedInIssues = extractTotalCount(raw.trackedInIssues);
+  const isParent = trackedIssues > 0;
   return {
-    isParent: trackedIssues > 0,
-    isChild: trackedInIssues > 0,
+    isParent,
+    // Treat issues without explicit parent/child links as child issues by default.
+    isChild: trackedInIssues > 0 || !isParent,
   };
 }
 
 function parseTimestamp(value: unknown): number | null {
+  if (value instanceof Date) {
+    const time = value.getTime();
+    return Number.isNaN(time) ? null : time;
+  }
+
   if (typeof value !== "string") {
     return null;
   }
@@ -507,8 +514,8 @@ function parseTimestamp(value: unknown): number | null {
 }
 
 function calculateHoursBetween(
-  start: string | null,
-  end: string | null,
+  start: string | Date | null,
+  end: string | Date | null,
 ): number | null {
   if (!start || !end) {
     return null;
@@ -605,6 +612,24 @@ function extractWorkTimestamps(
     : [];
 
   const statusEvents: Array<{ status: string; createdAt: string }> = [];
+  let projectAddedAt: string | null = null;
+
+  const updateProjectAddedAt = (timestamp: string | null) => {
+    if (!timestamp) {
+      return;
+    }
+
+    if (!projectAddedAt) {
+      projectAddedAt = timestamp;
+      return;
+    }
+
+    const current = parseTimestamp(projectAddedAt);
+    const candidate = parseTimestamp(timestamp);
+    if (candidate !== null && (current === null || candidate < current)) {
+      projectAddedAt = timestamp;
+    }
+  };
 
   timelineNodes.forEach((node) => {
     if (!node) {
@@ -637,6 +662,9 @@ function extractWorkTimestamps(
         return;
       }
 
+      if (type === "AddedToProjectEvent") {
+        updateProjectAddedAt(createdAt);
+      }
       statusEvents.push({ status: columnName, createdAt });
       return;
     }
@@ -688,6 +716,10 @@ function extractWorkTimestamps(
       return;
     }
 
+    const createdAt =
+      typeof item.createdAt === "string" ? (item.createdAt as string) : null;
+    updateProjectAddedAt(createdAt);
+
     const statusValue = (item as Record<string, unknown>).status as
       | Record<string, unknown>
       | null
@@ -726,13 +758,18 @@ function extractWorkTimestamps(
   for (const event of statusEvents) {
     if (!startedAt && isInProgressStatus(event.status)) {
       startedAt = event.createdAt;
-      continue;
     }
 
-    if (startedAt && isDoneStatus(event.status)) {
+    if (!completedAt && isDoneStatus(event.status)) {
       completedAt = event.createdAt;
-      break;
+      if (startedAt) {
+        break;
+      }
     }
+  }
+
+  if (!startedAt && projectAddedAt) {
+    startedAt = projectAddedAt;
   }
 
   return { startedAt, completedAt };
@@ -755,11 +792,9 @@ function summarizeIssueDurations(
       row.github_closed_at,
     );
 
-    if (!raw) {
-      return;
-    }
-
-    const classification = classifyIssue(raw);
+    // Issues without raw payload lack link metadata; default them to child-only stats.
+    const fallbackClassification = { isParent: false, isChild: true };
+    const classification = raw ? classifyIssue(raw) : fallbackClassification;
     if (classification.isParent) {
       addSample(parentResolution, resolutionHours);
     }
@@ -767,7 +802,7 @@ function summarizeIssueDurations(
       addSample(childResolution, resolutionHours);
     }
 
-    if (targetProject) {
+    if (targetProject && raw) {
       const { startedAt, completedAt } = extractWorkTimestamps(
         raw,
         targetProject,
@@ -1027,8 +1062,8 @@ async function fetchTotalEvents(
 }
 
 type TrendRow = {
-  date: string;
-  count: number;
+  date: Date | string;
+  count: number | string;
 };
 
 async function fetchTrend(
@@ -1057,10 +1092,22 @@ async function fetchTrend(
 
   params.push(timeZone);
   const result = await query<TrendRow>(queryText, params);
-  return result.rows.map((row) => ({
-    date: row.date,
-    value: Number(row.count ?? 0),
-  }));
+  return result.rows.map((row) => {
+    let normalizedDate: string | null = null;
+    if (row.date instanceof Date) {
+      normalizedDate = formatDateKey(row.date);
+    } else if (typeof row.date === "string") {
+      const parsed = new Date(row.date);
+      normalizedDate = Number.isNaN(parsed.getTime())
+        ? row.date
+        : formatDateKey(parsed);
+    }
+
+    return {
+      date: normalizedDate ?? String(row.date),
+      value: Number(row.count ?? 0),
+    };
+  });
 }
 
 type HeatmapRow = {
@@ -1193,7 +1240,7 @@ type RepoComparisonRawRow = {
   repository_id: string;
   issues_resolved: number;
   prs_merged: number;
-  avg_first_review_hours: number | null;
+  avg_first_review_hours: number | string | null;
 };
 
 async function fetchRepoComparison(
@@ -2003,7 +2050,14 @@ function mapRepoComparison(
     repository: repoProfiles.get(row.repository_id) ?? null,
     issuesResolved: Number(row.issues_resolved ?? 0),
     pullRequestsMerged: Number(row.prs_merged ?? 0),
-    avgFirstReviewHours: row.avg_first_review_hours,
+    avgFirstReviewHours: (() => {
+      if (row.avg_first_review_hours == null) {
+        return null;
+      }
+
+      const numeric = Number(row.avg_first_review_hours);
+      return Number.isFinite(numeric) ? numeric : null;
+    })(),
   }));
 }
 

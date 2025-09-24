@@ -132,6 +132,13 @@ type IssueTimelineItem =
       project?: { name?: string | null } | null;
     }
   | {
+      __typename: "ProjectV2ItemFieldValueChangedEvent";
+      createdAt: string;
+      fieldName?: string | null;
+      projectItem?: { project?: { title?: string | null } | null } | null;
+      currentValue?: ProjectV2ItemFieldValue | null;
+    }
+  | {
       __typename: string;
       createdAt?: string | null;
     };
