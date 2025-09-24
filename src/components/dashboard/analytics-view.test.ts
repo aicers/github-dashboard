@@ -59,9 +59,9 @@ describe("analytics-view helpers", () => {
     );
 
     expect(merged).toEqual([
-      { date: "2024-01-01", left: 3 },
+      { date: "2024-01-01", left: 3, right: 0 },
       { date: "2024-01-02", left: 5, right: 4 },
-      { date: "2024-01-03", right: 2 },
+      { date: "2024-01-03", left: 0, right: 2 },
     ]);
   });
 });

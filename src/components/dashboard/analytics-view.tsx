@@ -52,16 +52,23 @@ function mergeTrends(
 ) {
   const map = new Map<string, TrendEntry>();
 
+  const ensureEntry = (date: string): TrendEntry => {
+    let entry = map.get(date);
+    if (!entry) {
+      entry = { date, [leftKey]: 0, [rightKey]: 0 } as TrendEntry;
+      map.set(date, entry);
+    }
+    return entry;
+  };
+
   left.forEach((point) => {
-    const entry = map.get(point.date) ?? ({ date: point.date } as TrendEntry);
+    const entry = ensureEntry(point.date);
     entry[leftKey] = point.value;
-    map.set(point.date, entry);
   });
 
   right.forEach((point) => {
-    const entry = map.get(point.date) ?? ({ date: point.date } as TrendEntry);
+    const entry = ensureEntry(point.date);
     entry[rightKey] = point.value;
-    map.set(point.date, entry);
   });
 
   return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));

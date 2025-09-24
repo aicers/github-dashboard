@@ -140,7 +140,14 @@ export const repositoryIssuesQuery = gql`
           trackedInIssues(first: 10) {
             totalCount
           }
-          timelineItems(last: 50, itemTypes: [ADDED_TO_PROJECT_EVENT, MOVED_COLUMNS_IN_PROJECT_EVENT]) {
+          timelineItems(
+            last: 50,
+            itemTypes: [
+              ADDED_TO_PROJECT_EVENT,
+              MOVED_COLUMNS_IN_PROJECT_EVENT,
+              PROJECT_V2_ITEM_FIELD_VALUE_CHANGED_EVENT
+            ]
+          ) {
             nodes {
               __typename
               ... on AddedToProjectEvent {
@@ -156,6 +163,34 @@ export const repositoryIssuesQuery = gql`
                 previousProjectColumnName
                 project {
                   name
+                }
+              }
+              ... on ProjectV2ItemFieldValueChangedEvent {
+                createdAt
+                fieldName
+                projectItem {
+                  project {
+                    title
+                  }
+                }
+                currentValue {
+                  __typename
+                  ... on ProjectV2ItemFieldSingleSelectValue {
+                    name
+                    updatedAt
+                  }
+                  ... on ProjectV2ItemFieldIterationValue {
+                    title
+                    updatedAt
+                  }
+                  ... on ProjectV2ItemFieldTextValue {
+                    text
+                    updatedAt
+                  }
+                  ... on ProjectV2ItemFieldNumberValue {
+                    number
+                    updatedAt
+                  }
                 }
               }
             }
