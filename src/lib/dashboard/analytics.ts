@@ -65,11 +65,13 @@ function calculatePercentChange(current: number, previous: number) {
 }
 
 function buildComparison(current: number, previous: number): ComparisonValue {
+  const currentValue = Number(current ?? 0);
+  const previousValue = Number(previous ?? 0);
   return {
-    current,
-    previous,
-    absoluteChange: current - previous,
-    percentChange: calculatePercentChange(current, previous),
+    current: currentValue,
+    previous: previousValue,
+    absoluteChange: currentValue - previousValue,
+    percentChange: calculatePercentChange(currentValue, previousValue),
   };
 }
 
@@ -78,8 +80,16 @@ function buildDurationComparison(
   previousHours: number | null,
   unit: "hours" | "days",
 ): DurationComparisonValue {
-  const current = currentHours ?? Number.NaN;
-  const previous = previousHours ?? Number.NaN;
+  const normalize = (value: number | string | null | undefined) => {
+    if (value === null || value === undefined) {
+      return Number.NaN;
+    }
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : Number.NaN;
+  };
+
+  const current = normalize(currentHours);
+  const previous = normalize(previousHours);
   return {
     current,
     previous,
@@ -298,7 +308,8 @@ type IssueRaw = {
   trackedIssues?: unknown;
   trackedInIssues?: unknown;
   timelineItems?: { nodes?: unknown[] };
-  projectCards?: { nodes?: unknown[] };
+  projectItems?: { nodes?: unknown[] };
+  reactions?: { nodes?: unknown[] };
   [key: string]: unknown;
 };
 
@@ -416,13 +427,56 @@ function matchProject(projectName: unknown, target: string | null) {
 
   return normalizeText(projectName) === target;
 }
-
-type TimelineEventNode = {
-  projectColumnName?: unknown;
-  columnName?: unknown;
-  project?: unknown;
-  createdAt?: unknown;
+type TimelineEventNode = Record<string, unknown> & {
+  __typename?: string;
 };
+
+function extractProjectFieldValueName(value: unknown): string | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  if (typeof record.name === "string") {
+    return record.name;
+  }
+  if (typeof record.title === "string") {
+    return record.title;
+  }
+  if (typeof record.text === "string") {
+    return record.text;
+  }
+  if (typeof record.number === "number") {
+    return String(record.number);
+  }
+  return null;
+}
+
+function normalizeStatus(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  return value.trim().toLowerCase();
+}
+
+function isInProgressStatus(status: string) {
+  return (
+    status.includes("progress") ||
+    status === "doing" ||
+    status === "in-progress"
+  );
+}
+
+function isDoneStatus(status: string) {
+  return (
+    status === "done" ||
+    status === "completed" ||
+    status === "complete" ||
+    status === "finished" ||
+    status === "closed"
+  );
+}
 
 function extractWorkTimestamps(
   raw: IssueRaw,
@@ -433,126 +487,138 @@ function extractWorkTimestamps(
     return empty;
   }
 
-  const timelineContainer = raw.timelineItems;
-  const timeline = Array.isArray(timelineContainer?.nodes)
-    ? (timelineContainer?.nodes as TimelineEventNode[])
+  const timelineNodes = Array.isArray(raw.timelineItems?.nodes)
+    ? (raw.timelineItems?.nodes as TimelineEventNode[])
     : [];
 
-  const events = timeline
-    .map((node) => {
-      if (!node) {
-        return null;
-      }
+  const statusEvents: Array<{ status: string; createdAt: string }> = [];
 
+  timelineNodes.forEach((node) => {
+    if (!node) {
+      return;
+    }
+
+    const type = typeof node.__typename === "string" ? node.__typename : "";
+    if (
+      type === "AddedToProjectEvent" ||
+      type === "MovedColumnsInProjectEvent"
+    ) {
       const projectName =
         node.project && typeof node.project === "object"
           ? normalizeText((node.project as Record<string, unknown>).name)
           : null;
       if (!matchProject(projectName, targetProject)) {
-        return null;
+        return;
       }
 
-      const columnName =
-        normalizeText(node.projectColumnName) ?? normalizeText(node.columnName);
+      const columnName = normalizeStatus(
+        (typeof node.projectColumnName === "string"
+          ? node.projectColumnName
+          : typeof (node as Record<string, unknown>).columnName === "string"
+            ? ((node as Record<string, unknown>).columnName as string)
+            : null) ?? null,
+      );
       const createdAt =
         typeof node.createdAt === "string" ? node.createdAt : null;
       if (!columnName || !createdAt) {
-        return null;
+        return;
       }
 
-      return { columnName, createdAt };
-    })
-    .filter(
-      (value): value is { columnName: string; createdAt: string } =>
-        value !== null,
-    )
-    .sort((a, b) => {
-      const left = parseTimestamp(a.createdAt) ?? 0;
-      const right = parseTimestamp(b.createdAt) ?? 0;
-      return left - right;
-    });
+      statusEvents.push({ status: columnName, createdAt });
+      return;
+    }
+
+    if (type === "ProjectV2ItemFieldValueChangedEvent") {
+      const projectItem = node.projectItem as
+        | { project?: { title?: string | null } }
+        | undefined;
+      const projectTitle = projectItem?.project?.title ?? null;
+      if (!matchProject(projectTitle, targetProject)) {
+        return;
+      }
+
+      const fieldName = normalizeStatus(
+        (node as Record<string, unknown>).fieldName as string | null,
+      );
+      if (fieldName !== "status") {
+        return;
+      }
+
+      const currentValue = extractProjectFieldValueName(
+        (node as Record<string, unknown>).currentValue,
+      );
+      const normalizedStatus = normalizeStatus(currentValue);
+      const createdAt =
+        typeof node.createdAt === "string" ? node.createdAt : null;
+      if (!normalizedStatus || !createdAt) {
+        return;
+      }
+
+      statusEvents.push({ status: normalizedStatus, createdAt });
+    }
+  });
+
+  const projectItems = Array.isArray(raw.projectItems?.nodes)
+    ? (raw.projectItems?.nodes as Record<string, unknown>[])
+    : [];
+
+  projectItems.forEach((item) => {
+    if (!item) {
+      return;
+    }
+
+    const projectTitle =
+      item.project && typeof item.project === "object"
+        ? normalizeText((item.project as Record<string, unknown>).title)
+        : null;
+    if (!matchProject(projectTitle, targetProject)) {
+      return;
+    }
+
+    const statusValue = (item as Record<string, unknown>).status as
+      | Record<string, unknown>
+      | null
+      | undefined;
+    if (!statusValue) {
+      return;
+    }
+
+    const statusLabel = normalizeStatus(
+      extractProjectFieldValueName(statusValue),
+    );
+    const timestamp =
+      typeof statusValue.updatedAt === "string"
+        ? (statusValue.updatedAt as string)
+        : typeof item.updatedAt === "string"
+          ? (item.updatedAt as string)
+          : typeof item.createdAt === "string"
+            ? (item.createdAt as string)
+            : null;
+    if (!statusLabel || !timestamp) {
+      return;
+    }
+
+    statusEvents.push({ status: statusLabel, createdAt: timestamp });
+  });
+
+  statusEvents.sort((a, b) => {
+    const left = parseTimestamp(a.createdAt) ?? 0;
+    const right = parseTimestamp(b.createdAt) ?? 0;
+    return left - right;
+  });
 
   let startedAt: string | null = null;
   let completedAt: string | null = null;
 
-  for (const event of events) {
-    if (!startedAt && event.columnName === "in progress") {
+  for (const event of statusEvents) {
+    if (!startedAt && isInProgressStatus(event.status)) {
       startedAt = event.createdAt;
+      continue;
     }
 
-    if (startedAt && event.columnName === "done") {
+    if (startedAt && isDoneStatus(event.status)) {
       completedAt = event.createdAt;
       break;
-    }
-  }
-
-  const projectCardsContainer = raw.projectCards;
-  const projectCardNodes = projectCardsContainer?.nodes;
-  if ((!startedAt || !completedAt) && Array.isArray(projectCardNodes)) {
-    const cards = projectCardNodes as (
-      | {
-          column?: unknown;
-          updatedAt?: unknown;
-          createdAt?: unknown;
-        }
-      | null
-      | undefined
-    )[];
-
-    const cardEntries = cards
-      .map((card) => {
-        if (!card) {
-          return null;
-        }
-
-        const column =
-          card.column && typeof card.column === "object"
-            ? (card.column as Record<string, unknown>)
-            : null;
-        const projectName =
-          column?.project && typeof column.project === "object"
-            ? normalizeText((column.project as Record<string, unknown>).name)
-            : null;
-        if (!matchProject(projectName, targetProject)) {
-          return null;
-        }
-
-        const columnName = column?.name ? normalizeText(column.name) : null;
-        const timestamp =
-          (typeof card.updatedAt === "string" && card.updatedAt) ||
-          (typeof card.createdAt === "string" && card.createdAt) ||
-          null;
-
-        if (!columnName || !timestamp) {
-          return null;
-        }
-
-        return { columnName, timestamp };
-      })
-      .filter(
-        (value): value is { columnName: string; timestamp: string } =>
-          value !== null,
-      )
-      .sort((a, b) => {
-        const left = parseTimestamp(a.timestamp) ?? 0;
-        const right = parseTimestamp(b.timestamp) ?? 0;
-        return left - right;
-      });
-
-    if (!startedAt) {
-      const inProgressCard = cardEntries.find(
-        (card) => card.columnName === "in progress",
-      );
-      if (inProgressCard) {
-        startedAt = inProgressCard.timestamp;
-      }
-    }
-
-    if (!completedAt) {
-      const doneCard = cardEntries.find((card) => card.columnName === "done");
-      if (doneCard) {
-        completedAt = doneCard.timestamp;
-      }
     }
   }
 
@@ -704,35 +770,93 @@ async function fetchReviewAggregates(
   }
 
   const result = await query<ReviewAggregateRow>(
-    `WITH reviews_in_range AS (
-       SELECT r.id, r.author_id, r.github_submitted_at, r.pull_request_id
-       FROM reviews r
-       WHERE r.github_submitted_at BETWEEN $1 AND $2
-     ),
-     first_reviews AS (
-       SELECT
-         rir.pull_request_id,
-         MIN(rir.github_submitted_at) AS first_review
-       FROM reviews_in_range rir
-       GROUP BY rir.pull_request_id
-     ),
-     participation AS (
-       SELECT
-         pr.id AS pull_request_id,
-         COUNT(DISTINCT r.author_id) FILTER (WHERE r.github_submitted_at BETWEEN $1 AND $2) AS reviewer_count
+    `WITH pr_scope AS (
+       SELECT pr.id, pr.github_created_at, pr.repository_id, pr.author_id
        FROM pull_requests pr
-       LEFT JOIN reviews r ON r.pull_request_id = pr.id
        WHERE pr.github_created_at BETWEEN $1 AND $2${repoClause}
-       GROUP BY pr.id
-     )
-     SELECT
-       (SELECT COUNT(*) FROM reviews_in_range rir JOIN pull_requests pr ON pr.id = rir.pull_request_id WHERE TRUE${repoClause}) AS reviews_completed,
-       (SELECT AVG(EXTRACT(EPOCH FROM (fr.first_review - pr.github_created_at)) / 3600.0)
-        FROM first_reviews fr
-        JOIN pull_requests pr ON pr.id = fr.pull_request_id
-        WHERE TRUE${repoClause}) AS avg_response_hours,
-       (SELECT AVG(COALESCE(participation.reviewer_count, 0)) FROM participation) AS avg_participation
-     `,
+     ),
+    reviews_in_range AS (
+      SELECT r.id, r.author_id, r.github_submitted_at, r.pull_request_id
+      FROM reviews r
+      JOIN pr_scope pr ON pr.id = r.pull_request_id
+      WHERE r.github_submitted_at BETWEEN $1 AND $2
+    ),
+    participation AS (
+      SELECT
+        pr_scope.id AS pull_request_id,
+        COUNT(DISTINCT r.author_id) FILTER (WHERE r.github_submitted_at BETWEEN $1 AND $2) AS reviewer_count
+      FROM pr_scope
+      LEFT JOIN reviews r ON r.pull_request_id = pr_scope.id
+      GROUP BY pr_scope.id
+    ),
+    review_requests_scope AS (
+      SELECT rr.id, rr.pull_request_id, rr.reviewer_id, rr.requested_at, rr.removed_at
+      FROM review_requests rr
+      JOIN pr_scope pr ON pr.id = rr.pull_request_id
+      WHERE rr.reviewer_id IS NOT NULL
+        AND rr.requested_at BETWEEN $1 AND $2
+     ),
+    response_events AS (
+      SELECT
+        rr.pull_request_id,
+        rr.reviewer_id,
+        r.github_submitted_at AS responded_at
+      FROM review_requests_scope rr
+      JOIN reviews r ON r.pull_request_id = rr.pull_request_id
+      WHERE r.author_id = rr.reviewer_id
+        AND r.github_submitted_at BETWEEN $1 AND $2
+      UNION ALL
+      SELECT
+        rr.pull_request_id,
+        rr.reviewer_id,
+        c.github_created_at AS responded_at
+      FROM review_requests_scope rr
+      JOIN comments c ON c.pull_request_id = rr.pull_request_id
+      WHERE c.author_id = rr.reviewer_id
+        AND c.github_created_at BETWEEN $1 AND $2
+      UNION ALL
+      SELECT
+        rr.pull_request_id,
+        rr.reviewer_id,
+        r.github_created_at AS responded_at
+      FROM review_requests_scope rr
+      JOIN reactions r ON r.subject_id = rr.pull_request_id
+      WHERE r.subject_type = 'pull_request'
+        AND r.user_id = rr.reviewer_id
+        AND r.github_created_at BETWEEN $1 AND $2
+    ),
+    request_responses AS (
+      SELECT
+        rr.pull_request_id,
+        rr.requested_at,
+        MIN(
+          CASE
+            WHEN response_events.responded_at >= rr.requested_at
+              AND (rr.removed_at IS NULL OR response_events.responded_at < rr.removed_at)
+            THEN response_events.responded_at
+            ELSE NULL
+          END
+        ) AS responded_at
+      FROM review_requests_scope rr
+      LEFT JOIN response_events
+        ON response_events.pull_request_id = rr.pull_request_id
+       AND response_events.reviewer_id = rr.reviewer_id
+      GROUP BY rr.pull_request_id, rr.requested_at
+    ),
+    first_responses AS (
+      SELECT
+        pull_request_id,
+        MIN(EXTRACT(EPOCH FROM (responded_at - requested_at)) / 3600.0) AS response_hours
+      FROM request_responses
+      WHERE responded_at IS NOT NULL
+        AND responded_at >= requested_at
+      GROUP BY pull_request_id
+    )
+    SELECT
+      (SELECT COUNT(*) FROM reviews_in_range) AS reviews_completed,
+      (SELECT AVG(response_hours) FROM first_responses) AS avg_response_hours,
+      (SELECT AVG(COALESCE(participation.reviewer_count, 0)) FROM participation) AS avg_participation
+    `,
     params,
   );
 
@@ -1096,7 +1220,7 @@ async function fetchReviewerActivity(
      JOIN pull_requests pr ON pr.id = r.pull_request_id
      WHERE r.author_id IS NOT NULL${repoClause}
      GROUP BY r.author_id
-     ORDER BY review_count DESC
+     ORDER BY review_count DESC, prs_reviewed DESC
      LIMIT $3`,
     params,
   );
@@ -1163,14 +1287,73 @@ async function fetchLeaderboard(
     }
     case "response": {
       const result = await query<LeaderboardRow>(
-        `WITH response_times AS (
+        `WITH pr_scope AS (
+           SELECT pr.id, pr.github_created_at, pr.repository_id, pr.author_id
+           FROM pull_requests pr
+           WHERE pr.github_created_at BETWEEN $1 AND $2${repoClausePrs}
+         ),
+         review_requests_scope AS (
+           SELECT rr.pull_request_id, rr.reviewer_id, rr.requested_at, rr.removed_at
+           FROM review_requests rr
+           JOIN pr_scope pr ON pr.id = rr.pull_request_id
+           WHERE rr.reviewer_id IS NOT NULL
+             AND rr.requested_at BETWEEN $1 AND $2
+         ),
+         response_events AS (
            SELECT
-             r.author_id AS user_id,
-             EXTRACT(EPOCH FROM (MIN(r.github_submitted_at) - pr.github_created_at)) / 3600.0 AS response_hours
-           FROM reviews r
-           JOIN pull_requests pr ON pr.id = r.pull_request_id
-           WHERE r.github_submitted_at BETWEEN $1 AND $2${repoClauseReviews}
-           GROUP BY r.author_id, r.pull_request_id, pr.github_created_at
+             rr.pull_request_id,
+             rr.reviewer_id AS user_id,
+             r.github_submitted_at AS responded_at
+           FROM review_requests_scope rr
+           JOIN reviews r ON r.pull_request_id = rr.pull_request_id
+           WHERE r.author_id = rr.reviewer_id
+             AND r.github_submitted_at BETWEEN $1 AND $2
+         UNION ALL
+           SELECT
+             rr.pull_request_id,
+             rr.reviewer_id AS user_id,
+             c.github_created_at AS responded_at
+           FROM review_requests_scope rr
+           JOIN comments c ON c.pull_request_id = rr.pull_request_id
+           WHERE c.author_id = rr.reviewer_id
+             AND c.github_created_at BETWEEN $1 AND $2
+         UNION ALL
+           SELECT
+             rr.pull_request_id,
+             rr.reviewer_id AS user_id,
+             r.github_created_at AS responded_at
+           FROM review_requests_scope rr
+           JOIN reactions r ON r.subject_id = rr.pull_request_id
+           WHERE r.subject_type = 'pull_request'
+             AND r.user_id = rr.reviewer_id
+             AND r.github_created_at BETWEEN $1 AND $2
+         ),
+         request_responses AS (
+           SELECT
+             rr.reviewer_id AS user_id,
+             rr.pull_request_id,
+             rr.requested_at,
+             MIN(
+               CASE
+                 WHEN response_events.responded_at >= rr.requested_at
+                   AND (rr.removed_at IS NULL OR response_events.responded_at < rr.removed_at)
+                 THEN response_events.responded_at
+                 ELSE NULL
+               END
+             ) AS responded_at
+           FROM review_requests_scope rr
+           LEFT JOIN response_events
+             ON response_events.pull_request_id = rr.pull_request_id
+            AND response_events.user_id = rr.reviewer_id
+           GROUP BY rr.reviewer_id, rr.pull_request_id, rr.requested_at
+         ),
+         response_times AS (
+           SELECT
+             user_id,
+             EXTRACT(EPOCH FROM (responded_at - requested_at)) / 3600.0 AS response_hours
+           FROM request_responses
+           WHERE responded_at IS NOT NULL
+             AND responded_at >= requested_at
          )
          SELECT user_id,
                 AVG(response_hours) AS value
@@ -1311,16 +1494,67 @@ async function fetchIndividualReviewMetrics(
        SELECT r.pull_request_id, r.github_submitted_at
        FROM reviews r
        JOIN pull_requests pr ON pr.id = r.pull_request_id
-       WHERE r.author_id = $1 AND r.github_submitted_at BETWEEN $2 AND $3${repoClause}
+       WHERE r.author_id = $1
+         AND r.github_submitted_at BETWEEN $2 AND $3${repoClause}
+         AND pr.author_id <> $1
      ),
-     response_times AS (
+     review_requests_scope AS (
+       SELECT rr.pull_request_id, rr.requested_at, rr.removed_at
+       FROM review_requests rr
+       JOIN pull_requests pr ON pr.id = rr.pull_request_id
+       WHERE rr.reviewer_id = $1
+         AND rr.requested_at BETWEEN $2 AND $3${repoClause}
+         AND pr.author_id <> $1
+     ),
+     response_events AS (
        SELECT
          rr.pull_request_id,
-         MIN(rr.github_submitted_at) AS first_review,
-         pr.github_created_at
-       FROM reviewer_reviews rr
-       JOIN pull_requests pr ON pr.id = rr.pull_request_id
-       GROUP BY rr.pull_request_id, pr.github_created_at
+         r.github_submitted_at AS responded_at
+       FROM review_requests_scope rr
+       JOIN reviews r ON r.pull_request_id = rr.pull_request_id
+       WHERE r.author_id = $1
+         AND r.github_submitted_at BETWEEN $2 AND $3
+       UNION ALL
+       SELECT
+         rr.pull_request_id,
+         c.github_created_at AS responded_at
+       FROM review_requests_scope rr
+       JOIN comments c ON c.pull_request_id = rr.pull_request_id
+       WHERE c.author_id = $1
+         AND c.github_created_at BETWEEN $2 AND $3
+       UNION ALL
+       SELECT
+         rr.pull_request_id,
+         r.github_created_at AS responded_at
+       FROM review_requests_scope rr
+       JOIN reactions r ON r.subject_id = rr.pull_request_id
+       WHERE r.subject_type = 'pull_request'
+         AND r.user_id = $1
+         AND r.github_created_at BETWEEN $2 AND $3
+     ),
+     request_responses AS (
+       SELECT
+         rr.pull_request_id,
+         rr.requested_at,
+         MIN(
+           CASE
+             WHEN response_events.responded_at >= rr.requested_at
+               AND (rr.removed_at IS NULL OR response_events.responded_at < rr.removed_at)
+             THEN response_events.responded_at
+             ELSE NULL
+           END
+         ) AS responded_at
+       FROM review_requests_scope rr
+       LEFT JOIN response_events
+         ON response_events.pull_request_id = rr.pull_request_id
+       GROUP BY rr.pull_request_id, rr.requested_at
+     ),
+     first_responses AS (
+       SELECT
+         MIN(EXTRACT(EPOCH FROM (responded_at - requested_at)) / 3600.0) AS response_hours
+       FROM request_responses
+       WHERE responded_at IS NOT NULL
+         AND responded_at >= requested_at
      ),
      review_comments AS (
        SELECT COUNT(*) AS review_comments
@@ -1331,7 +1565,7 @@ async function fetchIndividualReviewMetrics(
      SELECT
        (SELECT COUNT(*) FROM reviewer_reviews) AS reviews,
        (SELECT COUNT(DISTINCT pull_request_id) FROM reviewer_reviews) AS prs_reviewed,
-       (SELECT AVG(EXTRACT(EPOCH FROM (response_times.first_review - response_times.github_created_at)) / 3600.0) FROM response_times) AS avg_response_hours,
+       (SELECT AVG(response_hours) FROM first_responses) AS avg_response_hours,
        (SELECT review_comments FROM review_comments) AS review_comments
      `,
     params,

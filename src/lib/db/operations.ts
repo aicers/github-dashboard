@@ -116,6 +116,24 @@ export type DbComment = {
   raw: unknown;
 };
 
+export type DbReaction = {
+  id: string;
+  subjectType: string;
+  subjectId: string;
+  userId?: string | null;
+  content?: string | null;
+  createdAt?: string | null;
+  raw: unknown;
+};
+
+export type DbReviewRequest = {
+  id: string;
+  pullRequestId: string;
+  reviewerId?: string | null;
+  requestedAt: string;
+  raw: unknown;
+};
+
 export type SyncLogStatus = "success" | "failed" | "running";
 
 function toJsonb(value: unknown) {
@@ -279,6 +297,100 @@ export async function upsertPullRequest(pullRequest: DbPullRequest) {
       pullRequest.mergedAt ?? null,
       toJsonb(pullRequest.raw),
     ],
+  );
+}
+
+export async function upsertReaction(reaction: DbReaction) {
+  await query(
+    `INSERT INTO reactions (
+       id,
+       subject_type,
+       subject_id,
+       user_id,
+       content,
+       github_created_at,
+       data,
+       inserted_at,
+       updated_at
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, NOW(), NOW())
+     ON CONFLICT (id) DO UPDATE SET
+       subject_type = EXCLUDED.subject_type,
+       subject_id = EXCLUDED.subject_id,
+       user_id = EXCLUDED.user_id,
+       content = EXCLUDED.content,
+       github_created_at = EXCLUDED.github_created_at,
+       data = EXCLUDED.data,
+       updated_at = NOW()`,
+    [
+      reaction.id,
+      reaction.subjectType,
+      reaction.subjectId,
+      reaction.userId ?? null,
+      reaction.content ?? null,
+      reaction.createdAt ?? null,
+      toJsonb(reaction.raw),
+    ],
+  );
+}
+
+export async function upsertReviewRequest(request: DbReviewRequest) {
+  await query(
+    `INSERT INTO review_requests (
+       id,
+       pull_request_id,
+       reviewer_id,
+       requested_at,
+       removed_at,
+       data,
+       inserted_at,
+       updated_at
+     )
+     VALUES ($1, $2, $3, $4, NULL, $5::jsonb, NOW(), NOW())
+     ON CONFLICT (id) DO UPDATE SET
+       pull_request_id = EXCLUDED.pull_request_id,
+       reviewer_id = EXCLUDED.reviewer_id,
+       requested_at = EXCLUDED.requested_at,
+       data = EXCLUDED.data,
+       updated_at = NOW()`,
+    [
+      request.id,
+      request.pullRequestId,
+      request.reviewerId ?? null,
+      request.requestedAt,
+      toJsonb(request.raw),
+    ],
+  );
+}
+
+export async function markReviewRequestRemoved(params: {
+  pullRequestId: string;
+  reviewerId: string | null;
+  removedAt: string;
+  raw: unknown;
+}) {
+  const { pullRequestId, reviewerId, removedAt, raw } = params;
+  if (!reviewerId) {
+    return;
+  }
+
+  await query(
+    `WITH target AS (
+       SELECT id
+       FROM review_requests
+       WHERE pull_request_id = $1
+         AND reviewer_id = $2
+         AND requested_at <= $3
+         AND (removed_at IS NULL OR removed_at > $3)
+       ORDER BY requested_at DESC
+       LIMIT 1
+     )
+     UPDATE review_requests
+     SET removed_at = $3,
+         removed_data = $4::jsonb,
+         updated_at = NOW()
+     WHERE id IN (SELECT id FROM target)`,
+    [pullRequestId, reviewerId, removedAt, toJsonb(raw)],
   );
 }
 
