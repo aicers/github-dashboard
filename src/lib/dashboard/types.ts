@@ -138,6 +138,7 @@ export type LeaderboardEntry = {
 };
 
 export type LeaderboardSummary = {
+  prsCreated: LeaderboardEntry[];
   issuesCreated: LeaderboardEntry[];
   reviewsCompleted: LeaderboardEntry[];
   fastestResponders: LeaderboardEntry[];

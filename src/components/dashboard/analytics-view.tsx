@@ -138,7 +138,7 @@ function LeaderboardTable({
         {entries.length === 0 && (
           <p className="text-sm text-muted-foreground">데이터가 없습니다.</p>
         )}
-        {entries.slice(0, 10).map((entry, index) => (
+        {entries.map((entry, index) => (
           <div key={entry.user.id} className="flex items-center gap-3 text-sm">
             <span className="w-6 text-muted-foreground">{index + 1}</span>
             <div className="flex flex-col flex-1">
@@ -757,10 +757,6 @@ export function AnalyticsView({
         <h2 className="text-2xl font-semibold">리더보드</h2>
         <div className="grid gap-4 lg:grid-cols-2">
           <LeaderboardTable
-            title="이슈 생성"
-            entries={analytics.leaderboard.issuesCreated}
-          />
-          <LeaderboardTable
             title="리뷰 수행"
             entries={analytics.leaderboard.reviewsCompleted}
           />
@@ -768,6 +764,14 @@ export function AnalyticsView({
             title="빠른 리뷰 응답"
             entries={analytics.leaderboard.fastestResponders}
             unit="h"
+          />
+          <LeaderboardTable
+            title="이슈 생성"
+            entries={analytics.leaderboard.issuesCreated}
+          />
+          <LeaderboardTable
+            title="PR 생성"
+            entries={analytics.leaderboard.prsCreated}
           />
           <LeaderboardTable
             title="토론 참여"
