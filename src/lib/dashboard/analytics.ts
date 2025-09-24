@@ -1235,13 +1235,12 @@ type LeaderboardRow = {
 };
 
 async function fetchLeaderboard(
-  metric: "issues" | "reviews" | "response" | "comments",
+  metric: "issues" | "reviews" | "response" | "comments" | "prs",
   start: string,
   end: string,
   repositoryIds: string[] | undefined,
-  limit = 10,
 ): Promise<LeaderboardRow[]> {
-  const params: unknown[] = [start, end, limit];
+  const params: unknown[] = [start, end];
   let repoClauseIssues = "";
   let repoClausePrs = "";
   let repoClauseCommentsIssue = "";
@@ -1264,8 +1263,18 @@ async function fetchLeaderboard(
          FROM issues i
          WHERE i.author_id IS NOT NULL AND i.github_created_at BETWEEN $1 AND $2${repoClauseIssues}
          GROUP BY i.author_id
-         ORDER BY value DESC
-         LIMIT $3`,
+         ORDER BY value DESC`,
+        params,
+      );
+      return result.rows;
+    }
+    case "prs": {
+      const result = await query<LeaderboardRow>(
+        `SELECT pr.author_id AS user_id, COUNT(*) AS value
+         FROM pull_requests pr
+         WHERE pr.author_id IS NOT NULL AND pr.github_created_at BETWEEN $1 AND $2${repoClausePrs}
+         GROUP BY pr.author_id
+         ORDER BY value DESC`,
         params,
       );
       return result.rows;
@@ -1279,8 +1288,7 @@ async function fetchLeaderboard(
          JOIN pull_requests pr ON pr.id = r.pull_request_id
          WHERE r.author_id IS NOT NULL${repoClauseReviews}
          GROUP BY r.author_id
-         ORDER BY value DESC
-         LIMIT $3`,
+         ORDER BY value DESC`,
         params,
       );
       return result.rows;
@@ -1360,8 +1368,7 @@ async function fetchLeaderboard(
          FROM response_times
          WHERE user_id IS NOT NULL
          GROUP BY user_id
-         ORDER BY value ASC
-         LIMIT $3`,
+         ORDER BY value ASC`,
         params,
       );
       return result.rows;
@@ -1378,8 +1385,7 @@ async function fetchLeaderboard(
              OR (c.pull_request_id IS NOT NULL${repoClauseCommentsPr})
            )
          GROUP BY c.author_id
-         ORDER BY value DESC
-         LIMIT $3`,
+         ORDER BY value DESC`,
         params,
       );
       return result.rows;
@@ -1986,6 +1992,7 @@ export async function getDashboardAnalytics(
     repoDistributionRows,
     repoComparisonRows,
     reviewerActivityRows,
+    leaderboardPrs,
     leaderboardIssues,
     leaderboardReviews,
     leaderboardResponders,
@@ -2045,10 +2052,11 @@ export async function getDashboardAnalytics(
     fetchRepoDistribution(range.start, range.end, repositoryFilter),
     fetchRepoComparison(range.start, range.end, repositoryFilter),
     fetchReviewerActivity(range.start, range.end, repositoryFilter, 10),
-    fetchLeaderboard("issues", range.start, range.end, repositoryFilter, 10),
-    fetchLeaderboard("reviews", range.start, range.end, repositoryFilter, 10),
-    fetchLeaderboard("response", range.start, range.end, repositoryFilter, 10),
-    fetchLeaderboard("comments", range.start, range.end, repositoryFilter, 10),
+    fetchLeaderboard("prs", range.start, range.end, repositoryFilter),
+    fetchLeaderboard("issues", range.start, range.end, repositoryFilter),
+    fetchLeaderboard("reviews", range.start, range.end, repositoryFilter),
+    fetchLeaderboard("response", range.start, range.end, repositoryFilter),
+    fetchLeaderboard("comments", range.start, range.end, repositoryFilter),
     fetchIssueDurationDetails(range.start, range.end, repositoryFilter),
     fetchIssueDurationDetails(
       range.previousStart,
@@ -2074,6 +2082,7 @@ export async function getDashboardAnalytics(
 
   const leaderboardUserIds = new Set<string>();
   [
+    leaderboardPrs,
     leaderboardIssues,
     leaderboardReviews,
     leaderboardResponders,
@@ -2499,6 +2508,11 @@ export async function getDashboardAnalytics(
   }
 
   const leaderboardProfiles = new Set<string>();
+  leaderboardPrs.forEach((row) => {
+    if (row.user_id) {
+      leaderboardProfiles.add(row.user_id);
+    }
+  });
   leaderboardIssues.forEach((row) => {
     if (row.user_id) {
       leaderboardProfiles.add(row.user_id);
@@ -2529,6 +2543,7 @@ export async function getDashboardAnalytics(
   });
 
   const leaderboard: LeaderboardSummary = {
+    prsCreated: mapLeaderboard(leaderboardPrs, leaderboardMap),
     issuesCreated: mapLeaderboard(leaderboardIssues, leaderboardMap),
     reviewsCompleted: mapLeaderboard(leaderboardReviews, leaderboardMap),
     fastestResponders: mapLeaderboard(leaderboardResponders, leaderboardMap),
