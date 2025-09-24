@@ -2,6 +2,7 @@ import type { GraphQLClient, RequestDocument } from "graphql-request";
 import { ClientError } from "graphql-request";
 
 import {
+  markReviewRequestRemoved,
   recordSyncLog,
   reviewExists,
   updateSyncLog,
@@ -9,8 +10,10 @@ import {
   upsertComment,
   upsertIssue,
   upsertPullRequest,
+  upsertReaction,
   upsertRepository,
   upsertReview,
+  upsertReviewRequest,
   upsertUser,
 } from "@/lib/db/operations";
 import { createGithubClient } from "@/lib/github/client";
@@ -72,14 +75,23 @@ type IssueNode = {
   timelineItems?: {
     nodes: IssueTimelineItem[] | null;
   } | null;
-  projectCards?: {
-    nodes: IssueProjectCard[] | null;
+  projectItems?: {
+    nodes: ProjectV2ItemNode[] | null;
+  } | null;
+  reactions?: {
+    nodes: ReactionNode[] | null;
   } | null;
 };
 
 type PullRequestNode = IssueNode & {
   mergedAt?: string | null;
   merged?: boolean | null;
+  reactions?: {
+    nodes: ReactionNode[] | null;
+  } | null;
+  timelineItems?: {
+    nodes: PullRequestTimelineItem[] | null;
+  } | null;
 };
 
 type ReviewNode = {
@@ -95,6 +107,9 @@ type CommentNode = {
   createdAt: string;
   updatedAt?: string | null;
   pullRequestReview?: { id: string } | null;
+  reactions?: {
+    nodes: ReactionNode[] | null;
+  } | null;
 };
 
 type CommentCollectionResult = {
@@ -121,14 +136,71 @@ type IssueTimelineItem =
       createdAt?: string | null;
     };
 
-type IssueProjectCard = {
+type ProjectV2ItemFieldValue =
+  | {
+      __typename: "ProjectV2ItemFieldSingleSelectValue";
+      name?: string | null;
+      updatedAt?: string | null;
+    }
+  | {
+      __typename: "ProjectV2ItemFieldIterationValue";
+      title?: string | null;
+      updatedAt?: string | null;
+    }
+  | {
+      __typename: "ProjectV2ItemFieldTextValue";
+      text?: string | null;
+      updatedAt?: string | null;
+    }
+  | {
+      __typename: "ProjectV2ItemFieldNumberValue";
+      number?: number | null;
+      updatedAt?: string | null;
+    }
+  | {
+      __typename: string;
+      updatedAt?: string | null;
+    };
+
+type ProjectV2ItemNode = {
+  id: string;
   createdAt?: string | null;
   updatedAt?: string | null;
-  column?: {
-    name?: string | null;
-    project?: { name?: string | null } | null;
+  project?: {
+    title?: string | null;
   } | null;
+  status?: ProjectV2ItemFieldValue | null;
 };
+
+type ReactionNode = {
+  id: string;
+  content?: string | null;
+  createdAt?: string | null;
+  user?: GithubActor | null;
+};
+
+type PullRequestTimelineItem =
+  | {
+      __typename: "ReviewRequestedEvent";
+      id: string;
+      createdAt: string;
+      requestedReviewer?: GithubActor | null;
+    }
+  | {
+      __typename: "ReviewRequestRemovedEvent";
+      id: string;
+      createdAt: string;
+      requestedReviewer?: GithubActor | null;
+    }
+  | {
+      __typename: Exclude<
+        string,
+        "ReviewRequestedEvent" | "ReviewRequestRemovedEvent"
+      >;
+      id?: string;
+      createdAt?: string | null;
+      requestedReviewer?: never;
+    };
 
 type ReviewCollectionResult = {
   latest: string | null;
@@ -292,6 +364,45 @@ async function processActor(actor: Maybe<GithubActor>) {
 
   await upsertUser(normalized);
   return normalized.id;
+}
+
+async function resolveReviewerId(
+  reviewer: Maybe<{ id?: string | null; __typename?: string }>,
+) {
+  if (!reviewer?.id) {
+    return null;
+  }
+
+  const typename = reviewer.__typename ?? "";
+  if (typename === "Team") {
+    return null;
+  }
+
+  return processActor(reviewer as GithubActor);
+}
+
+async function processReactions(
+  reactions: Maybe<{ nodes: ReactionNode[] | null }>,
+  subjectType: string,
+  subjectId: string,
+) {
+  const reactionNodes = reactions?.nodes ?? [];
+  for (const reaction of reactionNodes) {
+    if (!reaction?.id) {
+      continue;
+    }
+
+    const userId = await processActor(reaction.user);
+    await upsertReaction({
+      id: reaction.id,
+      subjectType,
+      subjectId,
+      userId: userId ?? null,
+      content: reaction.content ?? null,
+      createdAt: reaction.createdAt ?? null,
+      raw: reaction,
+    });
+  }
 }
 
 function maxTimestamp(
@@ -504,6 +615,8 @@ async function collectIssueComments(
         raw: comment,
       });
 
+      await processReactions(comment.reactions, "comment", comment.id);
+
       latest = maxTimestamp(latest, timestamp);
       count += 1;
     }
@@ -603,6 +716,8 @@ async function collectReviewComments(
           updatedAt: comment.updatedAt ?? null,
           raw: comment,
         });
+
+        await processReactions(comment.reactions, "comment", comment.id);
 
         latest = maxTimestamp(latest, timestamp);
         count += 1;
@@ -770,6 +885,8 @@ async function collectIssuesForRepository(
         raw: issue,
       });
 
+      await processReactions(issue.reactions, "issue", issue.id);
+
       latestIssueUpdated = maxTimestamp(latestIssueUpdated, issue.updatedAt);
       issueCount += 1;
 
@@ -868,6 +985,59 @@ async function collectPullRequestsForRepository(
         merged: pullRequest.merged ?? null,
         raw: pullRequest,
       });
+
+      const timeline = Array.isArray(pullRequest.timelineItems?.nodes)
+        ? [...(pullRequest.timelineItems?.nodes as PullRequestTimelineItem[])]
+        : [];
+
+      timeline.sort((a, b) => {
+        const left =
+          toTime(typeof a.createdAt === "string" ? a.createdAt : null) ?? 0;
+        const right =
+          toTime(typeof b.createdAt === "string" ? b.createdAt : null) ?? 0;
+        return left - right;
+      });
+
+      for (const event of timeline) {
+        if (!event || typeof event.__typename !== "string") {
+          continue;
+        }
+
+        if (event.__typename === "ReviewRequestedEvent") {
+          const reviewerId = await resolveReviewerId(event.requestedReviewer);
+          if (!reviewerId || typeof event.createdAt !== "string" || !event.id) {
+            continue;
+          }
+
+          await upsertReviewRequest({
+            id: event.id,
+            pullRequestId: pullRequest.id,
+            reviewerId,
+            requestedAt: event.createdAt,
+            raw: event,
+          });
+        } else if (event.__typename === "ReviewRequestRemovedEvent") {
+          if (typeof event.createdAt !== "string") {
+            continue;
+          }
+          const reviewerId = await resolveReviewerId(event.requestedReviewer);
+          if (!reviewerId) {
+            continue;
+          }
+          await markReviewRequestRemoved({
+            pullRequestId: pullRequest.id,
+            reviewerId,
+            removedAt: event.createdAt,
+            raw: event,
+          });
+        }
+      }
+
+      await processReactions(
+        pullRequest.reactions,
+        "pull_request",
+        pullRequest.id,
+      );
 
       latestPullRequestUpdated = maxTimestamp(
         latestPullRequestUpdated,

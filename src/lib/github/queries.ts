@@ -160,16 +160,33 @@ export const repositoryIssuesQuery = gql`
               }
             }
           }
-          projectCards(first: 10) {
+          projectItems(first: 10) {
             nodes {
-              column {
-                name
-                project {
-                  name
-                }
-              }
+              id
               createdAt
               updatedAt
+              project {
+                title
+              }
+              status: fieldValueByName(name: "Status") {
+                __typename
+                ... on ProjectV2ItemFieldSingleSelectValue {
+                  name
+                  updatedAt
+                }
+                ... on ProjectV2ItemFieldIterationValue {
+                  title
+                  updatedAt
+                }
+                ... on ProjectV2ItemFieldTextValue {
+                  text
+                  updatedAt
+                }
+                ... on ProjectV2ItemFieldNumberValue {
+                  number
+                  updatedAt
+                }
+              }
             }
           }
         }
@@ -231,6 +248,64 @@ export const repositoryPullRequestsQuery = gql`
           }
           reviews(first: 0) {
             totalCount
+          }
+          timelineItems(last: 100, itemTypes: [REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT]) {
+            nodes {
+              __typename
+              ... on ReviewRequestedEvent {
+                id
+                createdAt
+                requestedReviewer {
+                  __typename
+                  ... on User {
+                    id
+                    login
+                    name
+                    avatarUrl(size: 200)
+                    createdAt
+                    updatedAt
+                  }
+                  ... on Team {
+                    id
+                    slug
+                    name
+                  }
+                }
+              }
+              ... on ReviewRequestRemovedEvent {
+                id
+                createdAt
+                requestedReviewer {
+                  __typename
+                  ... on User {
+                    id
+                    login
+                    name
+                    avatarUrl(size: 200)
+                    createdAt
+                    updatedAt
+                  }
+                  ... on Team {
+                    id
+                    slug
+                    name
+                  }
+                }
+              }
+            }
+          }
+          reactions(first: 100, orderBy: { field: CREATED_AT, direction: ASC }) {
+            nodes {
+              id
+              content
+              createdAt
+              user {
+                id
+                login
+                name
+                avatarUrl(size: 200)
+              }
+            }
           }
         }
       }
@@ -323,6 +398,19 @@ export const issueCommentsQuery = gql`
             updatedAt
             url
             body
+            reactions(first: 50, orderBy: { field: CREATED_AT, direction: ASC }) {
+              nodes {
+                id
+                content
+                createdAt
+                user {
+                  id
+                  login
+                  name
+                  avatarUrl(size: 200)
+                }
+              }
+            }
           }
         }
       }
@@ -369,6 +457,19 @@ export const pullRequestCommentsQuery = gql`
             updatedAt
             url
             body
+            reactions(first: 50, orderBy: { field: CREATED_AT, direction: ASC }) {
+              nodes {
+                id
+                content
+                createdAt
+                user {
+                  id
+                  login
+                  name
+                  avatarUrl(size: 200)
+                }
+              }
+            }
           }
         }
       }
@@ -420,6 +521,19 @@ export const pullRequestReviewCommentsQuery = gql`
                 body
                 pullRequestReview {
                   id
+                }
+                reactions(first: 50, orderBy: { field: CREATED_AT, direction: ASC }) {
+                  nodes {
+                    id
+                    content
+                    createdAt
+                    user {
+                        id
+                        login
+                        name
+                        avatarUrl(size: 200)
+                    }
+                  }
                 }
               }
             }
