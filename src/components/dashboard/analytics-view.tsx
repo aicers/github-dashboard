@@ -16,6 +16,7 @@ import {
 import { DashboardFilterPanel } from "@/components/dashboard/dashboard-filter-panel";
 import { buildRangeFromPreset } from "@/components/dashboard/dashboard-filters";
 import { MetricCard } from "@/components/dashboard/metric-card";
+import { organizationMetricTooltips } from "@/components/dashboard/metric-tooltips";
 import {
   formatDuration,
   formatNumber,
@@ -255,47 +256,55 @@ export function AnalyticsView({
           metric={organization.metrics.issuesCreated}
           format="count"
           impact="positive"
+          tooltip={organizationMetricTooltips.issuesCreated}
         />
         <MetricCard
           title="이슈 종료"
           metric={organization.metrics.issuesClosed}
           format="count"
           impact="positive"
+          tooltip={organizationMetricTooltips.issuesClosed}
         />
         <MetricCard
           title="평균 해결 시간"
           metric={organization.metrics.issueResolutionTime}
           format="hours"
           impact="negative"
+          tooltip={organizationMetricTooltips.issueResolutionTime}
         />
         <MetricCard
           title="평균 작업 시간"
           metric={organization.metrics.issueWorkTime}
           format="hours"
           impact="negative"
+          tooltip={organizationMetricTooltips.issueWorkTime}
         />
         <MetricCard
           title="PR 생성"
           metric={organization.metrics.prsCreated}
           format="count"
           impact="positive"
+          tooltip={organizationMetricTooltips.prsCreated}
         />
         <MetricCard
           title="PR 머지"
           metric={organization.metrics.prsMerged}
           format="count"
           impact="positive"
+          tooltip={organizationMetricTooltips.prsMerged}
         />
         <MetricCard
           title="리뷰 참여 비율"
           metric={organization.metrics.reviewParticipation}
           format="percentage"
+          tooltip={organizationMetricTooltips.reviewParticipation}
         />
         <MetricCard
           title="리뷰 응답 시간"
           metric={organization.metrics.reviewResponseTime}
           format="hours"
           impact="negative"
+          tooltip={organizationMetricTooltips.reviewResponseTime}
         />
       </section>
 
@@ -307,24 +316,28 @@ export function AnalyticsView({
             metric={organization.metrics.parentIssueResolutionTime}
             format="hours"
             impact="negative"
+            tooltip={organizationMetricTooltips.parentIssueResolutionTime}
           />
           <MetricCard
             title="Parent 이슈 작업 시간"
             metric={organization.metrics.parentIssueWorkTime}
             format="hours"
             impact="negative"
+            tooltip={organizationMetricTooltips.parentIssueWorkTime}
           />
           <MetricCard
             title="Child 이슈 해결 시간"
             metric={organization.metrics.childIssueResolutionTime}
             format="hours"
             impact="negative"
+            tooltip={organizationMetricTooltips.childIssueResolutionTime}
           />
           <MetricCard
             title="Child 이슈 작업 시간"
             metric={organization.metrics.childIssueWorkTime}
             format="hours"
             impact="negative"
+            tooltip={organizationMetricTooltips.childIssueWorkTime}
           />
         </div>
       </section>

@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import { DashboardFilterPanel } from "@/components/dashboard/dashboard-filter-panel";
 import { MetricCard } from "@/components/dashboard/metric-card";
+import { individualMetricTooltips } from "@/components/dashboard/metric-tooltips";
 import { formatNumber } from "@/components/dashboard/metric-utils";
 import { RepoDistributionList } from "@/components/dashboard/repo-distribution-list";
 import { useDashboardAnalytics } from "@/components/dashboard/use-dashboard-analytics";
@@ -153,64 +154,76 @@ export function PeopleView({
               title="이슈 생성"
               metric={individual.metrics.issuesCreated}
               format="count"
+              tooltip={individualMetricTooltips.issuesCreated}
             />
             <MetricCard
               title="이슈 종료"
               metric={individual.metrics.issuesClosed}
               format="count"
+              tooltip={individualMetricTooltips.issuesClosed}
             />
             <MetricCard
               title="본인 이슈 해결율"
               metric={individual.metrics.issueResolutionRatio}
               format="ratio"
+              tooltip={individualMetricTooltips.issueResolutionRatio}
             />
             <MetricCard
               title="평균 해결 시간"
               metric={individual.metrics.issueResolutionTime}
               format="hours"
               impact="negative"
+              tooltip={individualMetricTooltips.issueResolutionTime}
             />
             <MetricCard
               title="평균 작업 시간"
               metric={individual.metrics.issueWorkTime}
               format="hours"
               impact="negative"
+              tooltip={individualMetricTooltips.issueWorkTime}
             />
             <MetricCard
               title="PR 생성"
               metric={individual.metrics.prsCreated}
               format="count"
+              tooltip={individualMetricTooltips.prsCreated}
             />
             <MetricCard
               title="PR 머지"
               metric={individual.metrics.prsMerged}
               format="count"
+              tooltip={individualMetricTooltips.prsMerged}
             />
             <MetricCard
               title="리뷰 수행"
               metric={individual.metrics.reviewsCompleted}
               format="count"
+              tooltip={individualMetricTooltips.reviewsCompleted}
             />
             <MetricCard
               title="리뷰 응답 시간"
               metric={individual.metrics.reviewResponseTime}
               format="hours"
               impact="negative"
+              tooltip={individualMetricTooltips.reviewResponseTime}
             />
             <MetricCard
               title="PR 리뷰 커버리지"
               metric={individual.metrics.reviewCoverage}
               format="percentage"
+              tooltip={individualMetricTooltips.reviewCoverage}
             />
             <MetricCard
               title="리뷰 참여 비율"
               metric={individual.metrics.reviewParticipation}
               format="percentage"
+              tooltip={individualMetricTooltips.reviewParticipation}
             />
             <MetricCard
               title="토론 참여"
               metric={individual.metrics.discussionComments}
               format="count"
+              tooltip={individualMetricTooltips.discussionComments}
             />
           </section>
 
@@ -222,24 +235,28 @@ export function PeopleView({
                 metric={individual.metrics.parentIssueResolutionTime}
                 format="hours"
                 impact="negative"
+                tooltip={individualMetricTooltips.parentIssueResolutionTime}
               />
               <MetricCard
                 title="Parent 이슈 작업 시간"
                 metric={individual.metrics.parentIssueWorkTime}
                 format="hours"
                 impact="negative"
+                tooltip={individualMetricTooltips.parentIssueWorkTime}
               />
               <MetricCard
                 title="Child 이슈 해결 시간"
                 metric={individual.metrics.childIssueResolutionTime}
                 format="hours"
                 impact="negative"
+                tooltip={individualMetricTooltips.childIssueResolutionTime}
               />
               <MetricCard
                 title="Child 이슈 작업 시간"
                 metric={individual.metrics.childIssueWorkTime}
                 format="hours"
                 impact="negative"
+                tooltip={individualMetricTooltips.childIssueWorkTime}
               />
             </div>
           </section>
