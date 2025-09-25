@@ -6,8 +6,10 @@ import type {
   HeatmapCell,
   LeaderboardEntry,
   LeaderboardSummary,
+  MetricHistoryEntry,
   MultiTrendPoint,
   OrganizationAnalytics,
+  PeriodKey,
   RepoComparisonRow,
   RepoDistributionItem,
   ReviewerActivity,
@@ -107,6 +109,32 @@ function buildRatioComparison(
   previous: number | null,
 ): ComparisonValue {
   return buildComparison(current ?? 0, previous ?? 0);
+}
+
+const HISTORY_PERIODS: PeriodKey[] = ["previous2", "previous", "current"];
+
+function normalizeHistoryValue(
+  value: number | null | undefined,
+): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function buildHistorySeries(
+  values: Array<number | null | undefined>,
+): MetricHistoryEntry[] {
+  return HISTORY_PERIODS.map((period, index) => ({
+    period,
+    value: normalizeHistoryValue(values[index]),
+  }));
 }
 
 function normalizeText(value: unknown): string | null {
@@ -234,6 +262,8 @@ type RangeContext = {
   end: string;
   previousStart: string;
   previousEnd: string;
+  previous2Start: string;
+  previous2End: string;
   intervalDays: number;
 };
 
@@ -250,12 +280,16 @@ function resolveRange({
     sanitizedStart,
     sanitizedEnd,
   );
+  const { previousStart: previous2Start, previousEnd: previous2End } =
+    subtractDuration(previousStart, previousEnd);
   const intervalDays = differenceInDays(sanitizedStart, sanitizedEnd);
   return {
     start: sanitizedStart,
     end: sanitizedEnd,
     previousStart,
     previousEnd,
+    previous2Start,
+    previous2End,
     intervalDays,
   };
 }
@@ -2115,15 +2149,52 @@ export async function getDashboardAnalytics(
     config?.week_start === "sunday" ? "sunday" : "monday";
   const targetProject = normalizeText(env.TODO_PROJECT_NAME);
 
+  const [currentIssues, previousIssues, previous2Issues] = await Promise.all([
+    fetchIssueAggregates(range.start, range.end, repositoryFilter),
+    fetchIssueAggregates(
+      range.previousStart,
+      range.previousEnd,
+      repositoryFilter,
+    ),
+    fetchIssueAggregates(
+      range.previous2Start,
+      range.previous2End,
+      repositoryFilter,
+    ),
+  ]);
+
+  const [currentPrs, previousPrs, previous2Prs] = await Promise.all([
+    fetchPrAggregates(range.start, range.end, repositoryFilter),
+    fetchPrAggregates(range.previousStart, range.previousEnd, repositoryFilter),
+    fetchPrAggregates(
+      range.previous2Start,
+      range.previous2End,
+      repositoryFilter,
+    ),
+  ]);
+
+  const [currentReviews, previousReviews, previous2Reviews] = await Promise.all(
+    [
+      fetchReviewAggregates(range.start, range.end, repositoryFilter),
+      fetchReviewAggregates(
+        range.previousStart,
+        range.previousEnd,
+        repositoryFilter,
+      ),
+      fetchReviewAggregates(
+        range.previous2Start,
+        range.previous2End,
+        repositoryFilter,
+      ),
+    ],
+  );
+
+  const [currentEvents, previousEvents] = await Promise.all([
+    fetchTotalEvents(range.start, range.end, repositoryFilter),
+    fetchTotalEvents(range.previousStart, range.previousEnd, repositoryFilter),
+  ]);
+
   const [
-    currentIssues,
-    previousIssues,
-    currentPrs,
-    previousPrs,
-    currentReviews,
-    previousReviews,
-    currentEvents,
-    previousEvents,
     issuesCreatedTrend,
     issuesClosedTrend,
     prsCreatedTrend,
@@ -2139,23 +2210,8 @@ export async function getDashboardAnalytics(
     leaderboardComments,
     currentIssueDurationDetails,
     previousIssueDurationDetails,
+    previous2IssueDurationDetails,
   ] = await Promise.all([
-    fetchIssueAggregates(range.start, range.end, repositoryFilter),
-    fetchIssueAggregates(
-      range.previousStart,
-      range.previousEnd,
-      repositoryFilter,
-    ),
-    fetchPrAggregates(range.start, range.end, repositoryFilter),
-    fetchPrAggregates(range.previousStart, range.previousEnd, repositoryFilter),
-    fetchReviewAggregates(range.start, range.end, repositoryFilter),
-    fetchReviewAggregates(
-      range.previousStart,
-      range.previousEnd,
-      repositoryFilter,
-    ),
-    fetchTotalEvents(range.start, range.end, repositoryFilter),
-    fetchTotalEvents(range.previousStart, range.previousEnd, repositoryFilter),
     fetchTrend(
       "issues",
       "github_created_at",
@@ -2201,6 +2257,11 @@ export async function getDashboardAnalytics(
     fetchIssueDurationDetails(
       range.previousStart,
       range.previousEnd,
+      repositoryFilter,
+    ),
+    fetchIssueDurationDetails(
+      range.previous2Start,
+      range.previous2End,
       repositoryFilter,
     ),
   ]);
@@ -2286,6 +2347,10 @@ export async function getDashboardAnalytics(
     previousIssueDurationDetails,
     targetProject,
   );
+  const issueDurationPrevious2 = summarizeIssueDurations(
+    previous2IssueDurationDetails,
+    targetProject,
+  );
   const monthlyDurationTrend = buildMonthlyDurationTrend(
     currentIssueDurationDetails,
     targetProject,
@@ -2340,6 +2405,69 @@ export async function getDashboardAnalytics(
       "hours",
     ),
   };
+
+  const organizationHistory = {
+    issuesCreated: buildHistorySeries([
+      previous2Issues.issues_created,
+      previousIssues.issues_created,
+      currentIssues.issues_created,
+    ]),
+    issuesClosed: buildHistorySeries([
+      previous2Issues.issues_closed,
+      previousIssues.issues_closed,
+      currentIssues.issues_closed,
+    ]),
+    issueResolutionTime: buildHistorySeries([
+      previous2Issues.avg_resolution_hours,
+      previousIssues.avg_resolution_hours,
+      currentIssues.avg_resolution_hours,
+    ]),
+    issueWorkTime: buildHistorySeries([
+      issueDurationPrevious2.overallWork,
+      issueDurationPrevious.overallWork,
+      issueDurationCurrent.overallWork,
+    ]),
+    parentIssueResolutionTime: buildHistorySeries([
+      issueDurationPrevious2.parentResolution,
+      issueDurationPrevious.parentResolution,
+      issueDurationCurrent.parentResolution,
+    ]),
+    parentIssueWorkTime: buildHistorySeries([
+      issueDurationPrevious2.parentWork,
+      issueDurationPrevious.parentWork,
+      issueDurationCurrent.parentWork,
+    ]),
+    childIssueResolutionTime: buildHistorySeries([
+      issueDurationPrevious2.childResolution,
+      issueDurationPrevious.childResolution,
+      issueDurationCurrent.childResolution,
+    ]),
+    childIssueWorkTime: buildHistorySeries([
+      issueDurationPrevious2.childWork,
+      issueDurationPrevious.childWork,
+      issueDurationCurrent.childWork,
+    ]),
+    prsCreated: buildHistorySeries([
+      previous2Prs.prs_created,
+      previousPrs.prs_created,
+      currentPrs.prs_created,
+    ]),
+    prsMerged: buildHistorySeries([
+      previous2Prs.prs_merged,
+      previousPrs.prs_merged,
+      currentPrs.prs_merged,
+    ]),
+    reviewParticipation: buildHistorySeries([
+      previous2Reviews.avg_participation,
+      previousReviews.avg_participation,
+      currentReviews.avg_participation,
+    ]),
+    reviewResponseTime: buildHistorySeries([
+      previous2Reviews.avg_response_hours,
+      previousReviews.avg_response_hours,
+      currentReviews.avg_response_hours,
+    ]),
+  } satisfies OrganizationAnalytics["metricHistory"];
 
   const prMetrics = {
     prsCreated: buildComparison(
@@ -2420,6 +2548,7 @@ export async function getDashboardAnalytics(
       totalEvents: activityMetrics.totalEvents,
     },
     activityBreakdown,
+    metricHistory: organizationHistory,
     reviewers: mapReviewerActivity(reviewerActivityRows, userProfileMap),
     trends: {
       issuesCreated: toTrend(issuesCreatedTrend),
