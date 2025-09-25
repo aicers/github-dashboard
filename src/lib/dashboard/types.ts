@@ -185,6 +185,8 @@ export type LeaderboardEntry = {
 
 export type LeaderboardSummary = {
   prsCreated: LeaderboardEntry[];
+  prsMerged: LeaderboardEntry[];
+  prsMergedBy: LeaderboardEntry[];
   issuesCreated: LeaderboardEntry[];
   reviewsCompleted: LeaderboardEntry[];
   fastestResponders: LeaderboardEntry[];

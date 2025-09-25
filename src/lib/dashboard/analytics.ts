@@ -1770,7 +1770,14 @@ type LeaderboardRow = {
 };
 
 async function fetchLeaderboard(
-  metric: "issues" | "reviews" | "response" | "comments" | "prs",
+  metric:
+    | "issues"
+    | "reviews"
+    | "response"
+    | "comments"
+    | "prs"
+    | "prsMerged"
+    | "prsMergedBy",
   start: string,
   end: string,
   repositoryIds: string[] | undefined,
@@ -1809,6 +1816,31 @@ async function fetchLeaderboard(
          FROM pull_requests pr
          WHERE pr.author_id IS NOT NULL AND pr.github_created_at BETWEEN $1 AND $2${repoClausePrs}
          GROUP BY pr.author_id
+         ORDER BY value DESC`,
+        params,
+      );
+      return result.rows;
+    }
+    case "prsMerged": {
+      const result = await query<LeaderboardRow>(
+        `SELECT pr.author_id AS user_id, COUNT(*) AS value
+         FROM pull_requests pr
+         WHERE pr.author_id IS NOT NULL AND pr.github_merged_at BETWEEN $1 AND $2${repoClausePrs}
+         GROUP BY pr.author_id
+         ORDER BY value DESC`,
+        params,
+      );
+      return result.rows;
+    }
+    case "prsMergedBy": {
+      const result = await query<LeaderboardRow>(
+        `SELECT pr.data -> 'mergedBy' ->> 'id' AS user_id, COUNT(*) AS value
+         FROM pull_requests pr
+         LEFT JOIN users u ON u.id = pr.data -> 'mergedBy' ->> 'id'
+         WHERE pr.github_merged_at BETWEEN $1 AND $2${repoClausePrs}
+           AND pr.data -> 'mergedBy' ->> 'id' IS NOT NULL
+           AND ${DEPENDABOT_FILTER}
+         GROUP BY user_id
          ORDER BY value DESC`,
         params,
       );
@@ -2568,6 +2600,8 @@ export async function getDashboardAnalytics(
     reviewerActivityRows,
     mainBranchContributionRows,
     leaderboardPrs,
+    leaderboardPrsMerged,
+    leaderboardPrsMergedBy,
     leaderboardIssues,
     leaderboardReviews,
     leaderboardResponders,
@@ -2616,6 +2650,8 @@ export async function getDashboardAnalytics(
     fetchReviewerActivity(range.start, range.end, repositoryFilter),
     fetchMainBranchContribution(range.start, range.end, repositoryFilter),
     fetchLeaderboard("prs", range.start, range.end, repositoryFilter),
+    fetchLeaderboard("prsMerged", range.start, range.end, repositoryFilter),
+    fetchLeaderboard("prsMergedBy", range.start, range.end, repositoryFilter),
     fetchLeaderboard("issues", range.start, range.end, repositoryFilter),
     fetchLeaderboard("reviews", range.start, range.end, repositoryFilter),
     fetchLeaderboard("response", range.start, range.end, repositoryFilter),
@@ -2667,6 +2703,8 @@ export async function getDashboardAnalytics(
   const leaderboardUserIds = new Set<string>();
   [
     leaderboardPrs,
+    leaderboardPrsMerged,
+    leaderboardPrsMergedBy,
     leaderboardIssues,
     leaderboardReviews,
     leaderboardResponders,
@@ -3209,6 +3247,16 @@ export async function getDashboardAnalytics(
       leaderboardProfiles.add(row.user_id);
     }
   });
+  leaderboardPrsMerged.forEach((row) => {
+    if (row.user_id) {
+      leaderboardProfiles.add(row.user_id);
+    }
+  });
+  leaderboardPrsMergedBy.forEach((row) => {
+    if (row.user_id) {
+      leaderboardProfiles.add(row.user_id);
+    }
+  });
   leaderboardIssues.forEach((row) => {
     if (row.user_id) {
       leaderboardProfiles.add(row.user_id);
@@ -3284,6 +3332,8 @@ export async function getDashboardAnalytics(
 
   const leaderboard: LeaderboardSummary = {
     prsCreated: mapLeaderboard(leaderboardPrs, leaderboardMap),
+    prsMerged: mapLeaderboard(leaderboardPrsMerged, leaderboardMap),
+    prsMergedBy: mapLeaderboard(leaderboardPrsMergedBy, leaderboardMap),
     issuesCreated: mapLeaderboard(leaderboardIssues, leaderboardMap),
     reviewsCompleted: mapLeaderboard(leaderboardReviews, leaderboardMap),
     fastestResponders: mapLeaderboard(leaderboardResponders, leaderboardMap),

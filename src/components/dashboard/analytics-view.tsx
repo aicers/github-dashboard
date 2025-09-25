@@ -1110,6 +1110,14 @@ export function AnalyticsView({
             entries={analytics.leaderboard.prsCreated}
           />
           <LeaderboardTable
+            title="PR 머지"
+            entries={analytics.leaderboard.prsMerged}
+          />
+          <LeaderboardTable
+            title="PR 머지 수행"
+            entries={analytics.leaderboard.prsMergedBy}
+          />
+          <LeaderboardTable
             title="토론 참여"
             entries={analytics.leaderboard.discussionEngagement}
           />
