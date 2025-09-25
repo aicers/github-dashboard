@@ -522,7 +522,7 @@ export async function getSyncState(resource: string) {
 
 export async function getSyncConfig() {
   const result = await query(
-    `SELECT id, org_name, auto_sync_enabled, sync_interval_minutes, timezone, week_start, last_sync_started_at, last_sync_completed_at, last_successful_sync_at
+    `SELECT id, org_name, auto_sync_enabled, sync_interval_minutes, timezone, week_start, excluded_repository_ids, last_sync_started_at, last_sync_completed_at, last_successful_sync_at
      FROM sync_config
      WHERE id = 'default'`,
   );
@@ -536,6 +536,7 @@ export async function updateSyncConfig(params: {
   syncIntervalMinutes?: number;
   timezone?: string;
   weekStart?: "sunday" | "monday";
+  excludedRepositories?: string[];
   lastSyncStartedAt?: string | null;
   lastSyncCompletedAt?: string | null;
   lastSuccessfulSyncAt?: string | null;
@@ -566,6 +567,11 @@ export async function updateSyncConfig(params: {
   if (typeof params.weekStart === "string") {
     fields.push(`week_start = $${fields.length + 1}`);
     values.push(params.weekStart);
+  }
+
+  if (Array.isArray(params.excludedRepositories)) {
+    fields.push(`excluded_repository_ids = $${fields.length + 1}`);
+    values.push(params.excludedRepositories);
   }
 
   if (params.lastSyncStartedAt !== undefined) {
@@ -764,6 +770,20 @@ export async function getRepositoryProfiles(
     `SELECT id, name, name_with_owner FROM repositories WHERE id = ANY($1::text[])`,
     [ids],
   );
+  return result.rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    nameWithOwner: row.name_with_owner,
+  }));
+}
+
+export async function listAllRepositories(): Promise<RepositoryProfile[]> {
+  const result = await query<RepositoryProfileRow>(
+    `SELECT id, name, name_with_owner
+     FROM repositories
+     ORDER BY name_with_owner NULLS LAST, name NULLS LAST, id`,
+  );
+
   return result.rows.map((row) => ({
     id: row.id,
     name: row.name,

@@ -379,6 +379,7 @@ export async function updateSyncSettings(params: {
   syncIntervalMinutes?: number;
   timezone?: string;
   weekStart?: "sunday" | "monday";
+  excludedRepositories?: string[];
 }) {
   await ensureSchema();
 
@@ -421,6 +422,18 @@ export async function updateSyncSettings(params: {
     }
 
     await updateSyncConfig({ weekStart: value });
+  }
+
+  if (params.excludedRepositories !== undefined) {
+    const normalized = Array.from(
+      new Set(
+        params.excludedRepositories
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0),
+      ),
+    );
+
+    await updateSyncConfig({ excludedRepositories: normalized });
   }
 }
 

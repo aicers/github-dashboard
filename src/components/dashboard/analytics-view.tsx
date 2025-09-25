@@ -323,8 +323,9 @@ export function AnalyticsView({
 
   const organization = analytics.organization as OrganizationAnalytics;
 
-  const reviewerLeaderboardEntries: LeaderboardEntry[] =
-    organization.reviewers.map((reviewer) => ({
+  const reviewerLeaderboardEntries: LeaderboardEntry[] = organization.reviewers
+    .filter((reviewer) => reviewer.reviewCount > 0)
+    .map((reviewer) => ({
       user: reviewer.profile ?? {
         id: reviewer.reviewerId,
         login: null,

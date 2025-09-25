@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useId, useMemo, useState, useTransition } from "react";
+import { useEffect, useId, useMemo, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import type { RepositoryProfile } from "@/lib/db/operations";
 
 const FALLBACK_TIMEZONES = [
   "UTC",
@@ -47,6 +48,8 @@ type SettingsViewProps = {
   syncIntervalMinutes: number;
   timeZone: string;
   weekStart: "sunday" | "monday";
+  repositories: RepositoryProfile[];
+  excludedRepositoryIds: string[];
 };
 
 type ApiResponse<T> = {
@@ -60,6 +63,8 @@ export function SettingsView({
   syncIntervalMinutes,
   timeZone,
   weekStart,
+  repositories,
+  excludedRepositoryIds,
 }: SettingsViewProps) {
   const router = useRouter();
   const [name, setName] = useState(orgName);
@@ -69,9 +74,16 @@ export function SettingsView({
     weekStart,
   );
   const [feedback, setFeedback] = useState<string | null>(null);
+  const normalizedExcluded = useMemo(() => {
+    const allowed = new Set(repositories.map((repo) => repo.id));
+    return excludedRepositoryIds.filter((id) => allowed.has(id));
+  }, [excludedRepositoryIds, repositories]);
+  const [excludedRepos, setExcludedRepos] =
+    useState<string[]>(normalizedExcluded);
   const [isSaving, startSaving] = useTransition();
   const orgInputId = useId();
   const intervalInputId = useId();
+  const excludeSelectId = useId();
 
   const timezones = useMemo(() => {
     const options = getTimezoneOptions();
@@ -81,6 +93,31 @@ export function SettingsView({
 
     return [timezone, ...options];
   }, [timezone]);
+
+  useEffect(() => {
+    setExcludedRepos(normalizedExcluded);
+  }, [normalizedExcluded]);
+
+  const sortedRepositories = useMemo(() => {
+    return [...repositories].sort((a, b) => {
+      const nameA = a.nameWithOwner ?? a.name ?? a.id;
+      const nameB = b.nameWithOwner ?? b.name ?? b.id;
+      return nameA.localeCompare(nameB);
+    });
+  }, [repositories]);
+
+  const handleExcludedChange = (
+    event: React.ChangeEvent<HTMLSelectElement>,
+  ) => {
+    const selected = Array.from(event.target.selectedOptions).map(
+      (option) => option.value,
+    );
+    setExcludedRepos(selected);
+  };
+
+  const handleClearExcluded = () => {
+    setExcludedRepos([]);
+  };
 
   const handleSave = () => {
     startSaving(async () => {
@@ -104,6 +141,7 @@ export function SettingsView({
             syncIntervalMinutes: parsedInterval,
             timezone,
             weekStart: weekStartValue,
+            excludedRepositories: excludedRepos,
           }),
         });
         const data = (await response.json()) as ApiResponse<unknown>;
@@ -203,12 +241,64 @@ export function SettingsView({
             </select>
           </label>
         </CardContent>
-        <CardFooter>
-          <Button onClick={handleSave} disabled={isSaving}>
-            {isSaving ? "저장 중..." : "설정 저장"}
+      </Card>
+
+      <Card className="border-border/70">
+        <CardHeader>
+          <CardTitle>리포지토리 제외</CardTitle>
+          <CardDescription>
+            제외된 리포지토리는 Analytics와 People 메뉴의 필터 목록에 표시되지
+            않습니다.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4 text-sm">
+          {sortedRepositories.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              동기화된 리포지토리가 없습니다.
+            </p>
+          ) : (
+            <label className="flex flex-col gap-2" htmlFor={excludeSelectId}>
+              <span className="text-muted-foreground">
+                제외할 리포지토리를 선택하세요
+              </span>
+              <select
+                id={excludeSelectId}
+                multiple
+                value={excludedRepos}
+                onChange={handleExcludedChange}
+                className="h-48 rounded-md border border-border/60 bg-background p-2 text-sm"
+              >
+                {sortedRepositories.map((repo) => (
+                  <option key={repo.id} value={repo.id}>
+                    {repo.nameWithOwner ?? repo.name ?? repo.id}
+                  </option>
+                ))}
+              </select>
+              <span className="text-xs text-muted-foreground">
+                여러 리포지토리를 선택하려면 ⌘/Ctrl 키를 눌러 복수 선택하세요.
+              </span>
+            </label>
+          )}
+        </CardContent>
+        <CardFooter className="flex justify-between">
+          <span className="text-xs text-muted-foreground">
+            제외된 리포지토리: {excludedRepos.length}개
+          </span>
+          <Button
+            variant="secondary"
+            onClick={handleClearExcluded}
+            disabled={!excludedRepos.length}
+          >
+            제외 목록 비우기
           </Button>
         </CardFooter>
       </Card>
+
+      <div className="flex justify-end">
+        <Button onClick={handleSave} disabled={isSaving}>
+          {isSaving ? "저장 중..." : "설정 저장"}
+        </Button>
+      </div>
     </section>
   );
 }
