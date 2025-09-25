@@ -1463,18 +1463,32 @@ type ReviewerActivityRow = {
   prs_reviewed: number;
 };
 
+type MainBranchContributionRow = {
+  user_id: string;
+  review_count: number;
+  author_count: number;
+  additions: number;
+  deletions: number;
+};
+
 async function fetchReviewerActivity(
   start: string,
   end: string,
   repositoryIds: string[] | undefined,
-  limit = 10,
+  limit?: number,
 ): Promise<ReviewerActivityRow[]> {
-  const params: unknown[] = [start, end, limit];
+  const params: unknown[] = [start, end];
   let repoClause = "";
   if (repositoryIds?.length) {
     params.push(repositoryIds);
     const index = params.length;
     repoClause = ` AND pr.repository_id = ANY($${index}::text[])`;
+  }
+
+  let limitClause = "";
+  if (typeof limit === "number" && Number.isFinite(limit) && limit > 0) {
+    params.push(limit);
+    limitClause = ` LIMIT $${params.length}`;
   }
 
   const result = await query<ReviewerActivityRow>(
@@ -1488,8 +1502,83 @@ async function fetchReviewerActivity(
      WHERE r.author_id IS NOT NULL${repoClause}
        AND ${DEPENDABOT_FILTER}
      GROUP BY r.author_id
-     ORDER BY review_count DESC, prs_reviewed DESC
-     LIMIT $3`,
+     ORDER BY review_count DESC, prs_reviewed DESC${limitClause}`,
+    params,
+  );
+
+  return result.rows;
+}
+
+async function fetchMainBranchContribution(
+  start: string,
+  end: string,
+  repositoryIds: string[] | undefined,
+): Promise<MainBranchContributionRow[]> {
+  const params: unknown[] = [start, end];
+  let repoClause = "";
+  if (repositoryIds?.length) {
+    params.push(repositoryIds);
+    const index = params.length;
+    repoClause = ` AND p.repository_id = ANY($${index}::text[])`;
+  }
+
+  const result = await query<MainBranchContributionRow>(
+    `WITH merged_prs AS (
+       SELECT
+         p.id,
+         p.author_id,
+         COALESCE((p.data ->> 'additions')::numeric, 0) AS additions,
+         COALESCE((p.data ->> 'deletions')::numeric, 0) AS deletions
+       FROM pull_requests p
+       LEFT JOIN users u ON u.id = p.author_id
+       WHERE p.github_merged_at BETWEEN $1 AND $2
+         AND p.github_merged_at IS NOT NULL${repoClause}
+         AND ${DEPENDABOT_FILTER}
+     ),
+     author_contrib AS (
+       SELECT
+         mp.author_id AS user_id,
+         COUNT(*) AS author_count,
+         SUM(mp.additions) AS additions,
+         SUM(mp.deletions) AS deletions
+       FROM merged_prs mp
+       WHERE mp.author_id IS NOT NULL
+       GROUP BY mp.author_id
+     ),
+     review_prs AS (
+       SELECT DISTINCT
+         r.author_id AS reviewer_id,
+         mp.id,
+         mp.additions,
+         mp.deletions
+       FROM merged_prs mp
+       JOIN reviews r ON r.pull_request_id = mp.id
+       LEFT JOIN users u ON u.id = r.author_id
+       WHERE r.author_id IS NOT NULL
+         AND ${DEPENDABOT_FILTER}
+         AND r.github_submitted_at BETWEEN $1 AND $2
+         AND r.author_id <> mp.author_id
+     ),
+     review_contrib AS (
+       SELECT
+         reviewer_id AS user_id,
+         COUNT(*) AS review_count,
+         SUM(additions) AS additions,
+         SUM(deletions) AS deletions
+       FROM review_prs
+       GROUP BY reviewer_id
+     )
+     SELECT
+       COALESCE(author_contrib.user_id, review_contrib.user_id) AS user_id,
+       COALESCE(review_contrib.review_count, 0) AS review_count,
+       COALESCE(author_contrib.author_count, 0) AS author_count,
+       COALESCE(author_contrib.additions, 0) + COALESCE(review_contrib.additions, 0) AS additions,
+       COALESCE(author_contrib.deletions, 0) + COALESCE(review_contrib.deletions, 0) AS deletions
+     FROM author_contrib
+     FULL OUTER JOIN review_contrib ON author_contrib.user_id = review_contrib.user_id
+     WHERE COALESCE(author_contrib.author_count, 0) + COALESCE(review_contrib.review_count, 0) > 0
+     ORDER BY (COALESCE(author_contrib.author_count, 0) + COALESCE(review_contrib.review_count, 0)) DESC,
+              COALESCE(author_contrib.additions, 0) + COALESCE(review_contrib.additions, 0) DESC`,
     params,
   );
 
@@ -2361,6 +2450,7 @@ export async function getDashboardAnalytics(
     repoDistributionRows,
     repoComparisonRows,
     reviewerActivityRows,
+    mainBranchContributionRows,
     leaderboardPrs,
     leaderboardIssues,
     leaderboardReviews,
@@ -2407,7 +2497,8 @@ export async function getDashboardAnalytics(
     fetchReviewHeatmap(range.start, range.end, repositoryFilter, timeZone),
     fetchRepoDistribution(range.start, range.end, repositoryFilter),
     fetchRepoComparison(range.start, range.end, repositoryFilter),
-    fetchReviewerActivity(range.start, range.end, repositoryFilter, 10),
+    fetchReviewerActivity(range.start, range.end, repositoryFilter),
+    fetchMainBranchContribution(range.start, range.end, repositoryFilter),
     fetchLeaderboard("prs", range.start, range.end, repositoryFilter),
     fetchLeaderboard("issues", range.start, range.end, repositoryFilter),
     fetchLeaderboard("reviews", range.start, range.end, repositoryFilter),
@@ -3017,6 +3108,11 @@ export async function getDashboardAnalytics(
       leaderboardProfiles.add(row.user_id);
     }
   });
+  mainBranchContributionRows.forEach((row) => {
+    if (row.user_id) {
+      leaderboardProfiles.add(row.user_id);
+    }
+  });
 
   const leaderboardMap = new Map<string, UserProfile>();
   leaderboardProfiles.forEach((id) => {
@@ -3026,12 +3122,52 @@ export async function getDashboardAnalytics(
     }
   });
 
+  const mainBranchContributionEntries: LeaderboardEntry[] =
+    mainBranchContributionRows.map((row) => {
+      const reviewCount = Number(row.review_count ?? 0);
+      const authorCount = Number(row.author_count ?? 0);
+      const additions = Number(row.additions ?? 0);
+      const deletions = Number(row.deletions ?? 0);
+
+      return {
+        user: leaderboardMap.get(row.user_id) ??
+          userProfileMap.get(row.user_id) ?? {
+            id: row.user_id,
+            login: null,
+            name: null,
+            avatarUrl: null,
+          },
+        value: reviewCount + authorCount,
+        secondaryValue: reviewCount,
+        details: [
+          {
+            label: "PR",
+            value: authorCount,
+            suffix: "건",
+          },
+          {
+            label: "+",
+            value: additions,
+            sign: "positive",
+            suffix: "라인",
+          },
+          {
+            label: "-",
+            value: deletions,
+            sign: "negative",
+            suffix: "라인",
+          },
+        ],
+      } satisfies LeaderboardEntry;
+    });
+
   const leaderboard: LeaderboardSummary = {
     prsCreated: mapLeaderboard(leaderboardPrs, leaderboardMap),
     issuesCreated: mapLeaderboard(leaderboardIssues, leaderboardMap),
     reviewsCompleted: mapLeaderboard(leaderboardReviews, leaderboardMap),
     fastestResponders: mapLeaderboard(leaderboardResponders, leaderboardMap),
     discussionEngagement: mapLeaderboard(leaderboardComments, leaderboardMap),
+    mainBranchContribution: mainBranchContributionEntries,
   };
 
   const contributorProfiles = contributorIds.length

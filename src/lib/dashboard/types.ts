@@ -166,10 +166,18 @@ export type IndividualAnalytics = {
   trends: IndividualTrends;
 };
 
+export type LeaderboardDetail = {
+  label: string;
+  value: number;
+  suffix?: string;
+  sign?: "positive" | "negative";
+};
+
 export type LeaderboardEntry = {
   user: UserProfile;
   value: number;
   secondaryValue?: number | null;
+  details?: LeaderboardDetail[];
 };
 
 export type LeaderboardSummary = {
@@ -178,6 +186,7 @@ export type LeaderboardSummary = {
   reviewsCompleted: LeaderboardEntry[];
   fastestResponders: LeaderboardEntry[];
   discussionEngagement: LeaderboardEntry[];
+  mainBranchContribution: LeaderboardEntry[];
 };
 
 export type RangeSummary = {
