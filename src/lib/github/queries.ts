@@ -119,30 +119,6 @@ export const repositoryIssuesQuery = gql`
               avatarUrl(size: 200)
             }
           }
-          mergedBy {
-            __typename
-            ... on User {
-              id
-              login
-              name
-              avatarUrl(size: 200)
-              createdAt
-              updatedAt
-            }
-            ... on Organization {
-              id
-              login
-              name
-              avatarUrl(size: 200)
-              createdAt
-              updatedAt
-            }
-            ... on Bot {
-              id
-              login
-              avatarUrl(size: 200)
-            }
-          }
           participants(first: 10) {
             nodes {
               ... on User {
@@ -166,11 +142,7 @@ export const repositoryIssuesQuery = gql`
           }
           timelineItems(
             last: 50,
-            itemTypes: [
-              ADDED_TO_PROJECT_EVENT,
-              MOVED_COLUMNS_IN_PROJECT_EVENT,
-              PROJECT_V2_ITEM_FIELD_VALUE_CHANGED_EVENT
-            ]
+            itemTypes: [ADDED_TO_PROJECT_EVENT, MOVED_COLUMNS_IN_PROJECT_EVENT]
           ) {
             nodes {
               __typename
@@ -187,34 +159,6 @@ export const repositoryIssuesQuery = gql`
                 previousProjectColumnName
                 project {
                   name
-                }
-              }
-              ... on ProjectV2ItemFieldValueChangedEvent {
-                createdAt
-                fieldName
-                projectItem {
-                  project {
-                    title
-                  }
-                }
-                currentValue {
-                  __typename
-                  ... on ProjectV2ItemFieldSingleSelectValue {
-                    name
-                    updatedAt
-                  }
-                  ... on ProjectV2ItemFieldIterationValue {
-                    title
-                    updatedAt
-                  }
-                  ... on ProjectV2ItemFieldTextValue {
-                    text
-                    updatedAt
-                  }
-                  ... on ProjectV2ItemFieldNumberValue {
-                    number
-                    updatedAt
-                  }
                 }
               }
             }

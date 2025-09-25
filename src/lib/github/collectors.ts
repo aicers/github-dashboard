@@ -2,6 +2,7 @@ import type { GraphQLClient, RequestDocument } from "graphql-request";
 import { ClientError } from "graphql-request";
 
 import {
+  fetchIssueRawMap,
   markReviewRequestRemoved,
   recordSyncLog,
   reviewExists,
@@ -133,13 +134,6 @@ type IssueTimelineItem =
       project?: { name?: string | null } | null;
     }
   | {
-      __typename: "ProjectV2ItemFieldValueChangedEvent";
-      createdAt: string;
-      fieldName?: string | null;
-      projectItem?: { project?: { title?: string | null } | null } | null;
-      currentValue?: ProjectV2ItemFieldValue | null;
-    }
-  | {
       __typename: string;
       createdAt?: string | null;
     };
@@ -179,6 +173,15 @@ type ProjectV2ItemNode = {
   } | null;
   status?: ProjectV2ItemFieldValue | null;
 };
+
+type ProjectStatusHistoryEntry = {
+  projectItemId: string;
+  projectTitle: string | null;
+  status: string;
+  occurredAt: string;
+};
+
+const PROJECT_REMOVED_STATUS = "__PROJECT_REMOVED__";
 
 type ReactionNode = {
   id: string;
@@ -509,6 +512,226 @@ function resolveSince(options: SyncOptions, resource: ResourceKey) {
 
 function resolveUntil(options: SyncOptions) {
   return options.until ?? null;
+}
+
+function extractProjectStatusHistoryFromRaw(
+  raw: unknown,
+): ProjectStatusHistoryEntry[] {
+  if (!raw || typeof raw !== "object") {
+    return [];
+  }
+
+  const record = raw as Record<string, unknown>;
+  const history = record.projectStatusHistory;
+  if (!Array.isArray(history)) {
+    return [];
+  }
+
+  const entries: ProjectStatusHistoryEntry[] = [];
+  history.forEach((item) => {
+    if (!item || typeof item !== "object") {
+      return;
+    }
+    const data = item as Record<string, unknown>;
+    const projectItemId =
+      typeof data.projectItemId === "string" ? data.projectItemId : null;
+    const status = typeof data.status === "string" ? data.status : null;
+    const occurredAt =
+      typeof data.occurredAt === "string" ? data.occurredAt : null;
+    if (!projectItemId || !status || !occurredAt) {
+      return;
+    }
+    const projectTitle =
+      typeof data.projectTitle === "string" ? data.projectTitle : null;
+    entries.push({ projectItemId, projectTitle, status, occurredAt });
+  });
+
+  return entries;
+}
+
+function extractProjectFieldValueLabel(
+  value: ProjectV2ItemFieldValue | null | undefined,
+): string | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  if (typeof record.name === "string" && record.name.trim()) {
+    return record.name.trim();
+  }
+  if (typeof record.title === "string" && record.title.trim()) {
+    return record.title.trim();
+  }
+  if (typeof record.text === "string" && record.text.trim()) {
+    return record.text.trim();
+  }
+  if (typeof record.number === "number" && Number.isFinite(record.number)) {
+    return String(record.number);
+  }
+
+  return null;
+}
+
+function resolveStatusTimestamp(item: ProjectV2ItemNode): string | null {
+  const statusRecord =
+    item.status && typeof item.status === "object"
+      ? (item.status as Record<string, unknown>)
+      : null;
+  const candidates: unknown[] = [];
+  if (statusRecord) {
+    candidates.push(statusRecord.updatedAt, statusRecord.createdAt);
+  }
+  candidates.push(item.updatedAt, item.createdAt);
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function collectProjectStatusSnapshots(
+  issue: IssueNode,
+): ProjectStatusHistoryEntry[] {
+  const nodes = Array.isArray(issue.projectItems?.nodes)
+    ? (issue.projectItems?.nodes as ProjectV2ItemNode[])
+    : [];
+
+  const snapshots: ProjectStatusHistoryEntry[] = [];
+  nodes.forEach((node) => {
+    if (!node || typeof node !== "object") {
+      return;
+    }
+
+    const projectItemId = typeof node.id === "string" ? node.id : null;
+    if (!projectItemId) {
+      return;
+    }
+
+    const projectTitle =
+      node.project && typeof node.project === "object"
+        ? typeof node.project.title === "string"
+          ? node.project.title
+          : null
+        : null;
+
+    const statusLabel = extractProjectFieldValueLabel(node.status ?? null);
+    const occurredAt = resolveStatusTimestamp(node);
+
+    if (!statusLabel || !occurredAt) {
+      return;
+    }
+
+    snapshots.push({
+      projectItemId,
+      projectTitle,
+      status: statusLabel,
+      occurredAt,
+    });
+  });
+
+  return snapshots;
+}
+
+function mergeProjectStatusHistory(
+  existing: ProjectStatusHistoryEntry[],
+  snapshots: ProjectStatusHistoryEntry[],
+): ProjectStatusHistoryEntry[] {
+  const map = new Map<string, ProjectStatusHistoryEntry>();
+
+  const createKey = (entry: ProjectStatusHistoryEntry) =>
+    `${entry.projectItemId}|${entry.status}|${entry.occurredAt}`;
+
+  existing.forEach((entry) => {
+    map.set(createKey(entry), { ...entry });
+  });
+
+  snapshots.forEach((snapshot) => {
+    const key = createKey(snapshot);
+    const current = map.get(key);
+    if (current) {
+      if (!current.projectTitle && snapshot.projectTitle) {
+        current.projectTitle = snapshot.projectTitle;
+      }
+      return;
+    }
+    map.set(key, { ...snapshot });
+  });
+
+  const entries = Array.from(map.values());
+  entries.sort((a, b) => {
+    const left = Date.parse(a.occurredAt);
+    const right = Date.parse(b.occurredAt);
+    if (!Number.isNaN(left) && !Number.isNaN(right)) {
+      return left - right;
+    }
+    return a.occurredAt.localeCompare(b.occurredAt);
+  });
+
+  return entries;
+}
+
+function createRemovalEntries(
+  previous: ProjectStatusHistoryEntry[],
+  currentSnapshots: ProjectStatusHistoryEntry[],
+  detectedAt: string | null,
+): ProjectStatusHistoryEntry[] {
+  if (!previous.length) {
+    return [];
+  }
+
+  const currentIds = new Set(
+    currentSnapshots.map((entry) => entry.projectItemId),
+  );
+  const timestamp = detectedAt ?? new Date().toISOString();
+  const grouped = new Map<string, ProjectStatusHistoryEntry[]>();
+
+  previous.forEach((entry) => {
+    const list = grouped.get(entry.projectItemId);
+    if (list) {
+      list.push(entry);
+    } else {
+      grouped.set(entry.projectItemId, [entry]);
+    }
+  });
+
+  const removals: ProjectStatusHistoryEntry[] = [];
+  for (const [projectItemId, entries] of grouped) {
+    if (currentIds.has(projectItemId)) {
+      continue;
+    }
+
+    if (entries.some((entry) => entry.status === PROJECT_REMOVED_STATUS)) {
+      continue;
+    }
+
+    const sorted = [...entries].sort((left, right) => {
+      const leftTime = Date.parse(left.occurredAt);
+      const rightTime = Date.parse(right.occurredAt);
+      if (Number.isNaN(leftTime) && Number.isNaN(rightTime)) {
+        return 0;
+      }
+      if (Number.isNaN(leftTime)) {
+        return -1;
+      }
+      if (Number.isNaN(rightTime)) {
+        return 1;
+      }
+      return leftTime - rightTime;
+    });
+    const lastEntry = sorted[sorted.length - 1];
+    removals.push({
+      projectItemId,
+      projectTitle: lastEntry?.projectTitle ?? null,
+      status: PROJECT_REMOVED_STATUS,
+      occurredAt: timestamp,
+    });
+  }
+
+  return removals;
 }
 
 type CommentTarget = "issue" | "pull_request";
@@ -867,6 +1090,9 @@ async function collectIssuesForRepository(
 
     const issuesConnection = data.repository?.issues;
     const issueNodes: IssueNode[] = issuesConnection?.nodes ?? [];
+    const existingIssueRaw = issueNodes.length
+      ? await fetchIssueRawMap(issueNodes.map((node) => node.id))
+      : new Map<string, unknown>();
     let reachedUpperBound = false;
 
     for (const issue of issueNodes) {
@@ -880,6 +1106,24 @@ async function collectIssuesForRepository(
       }
 
       const authorId = await processActor(issue.author);
+      const previousHistory = extractProjectStatusHistoryFromRaw(
+        existingIssueRaw.get(issue.id),
+      );
+      const snapshots = collectProjectStatusSnapshots(issue);
+      const removals = createRemovalEntries(
+        previousHistory,
+        snapshots,
+        typeof issue.updatedAt === "string" ? issue.updatedAt : null,
+      );
+      const mergedHistory = mergeProjectStatusHistory(previousHistory, [
+        ...snapshots,
+        ...removals,
+      ]);
+      const rawIssue =
+        mergedHistory.length > 0
+          ? { ...issue, projectStatusHistory: mergedHistory }
+          : issue;
+
       await upsertIssue({
         id: issue.id,
         number: issue.number,
@@ -890,7 +1134,7 @@ async function collectIssuesForRepository(
         createdAt: issue.createdAt,
         updatedAt: issue.updatedAt,
         closedAt: issue.closedAt ?? null,
-        raw: issue,
+        raw: rawIssue,
       });
 
       await processReactions(issue.reactions, "issue", issue.id);

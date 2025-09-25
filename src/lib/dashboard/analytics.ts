@@ -555,6 +555,7 @@ type IssueRaw = {
   timelineItems?: { nodes?: unknown[] };
   projectItems?: { nodes?: unknown[] };
   reactions?: { nodes?: unknown[] };
+  projectStatusHistory?: unknown;
   [key: string]: unknown;
 };
 
@@ -744,7 +745,36 @@ function extractWorkTimestamps(
     : [];
 
   const statusEvents: Array<{ status: string; createdAt: string }> = [];
+  const seenStatusEvents = new Set<string>();
   let projectAddedAt: string | null = null;
+
+  const addNormalizedStatusEvent = (
+    normalizedStatus: string | null,
+    createdAt: string | null,
+  ) => {
+    if (!normalizedStatus || !createdAt) {
+      return;
+    }
+
+    if (normalizedStatus.startsWith("__")) {
+      return;
+    }
+
+    const key = `${normalizedStatus}|${createdAt}`;
+    if (seenStatusEvents.has(key)) {
+      return;
+    }
+
+    seenStatusEvents.add(key);
+    statusEvents.push({ status: normalizedStatus, createdAt });
+  };
+
+  const addStatusEvent = (
+    statusLabel: string | null,
+    createdAt: string | null,
+  ) => {
+    addNormalizedStatusEvent(normalizeStatus(statusLabel), createdAt);
+  };
 
   const updateProjectAddedAt = (timestamp: string | null) => {
     if (!timestamp) {
@@ -797,7 +827,7 @@ function extractWorkTimestamps(
       if (type === "AddedToProjectEvent") {
         updateProjectAddedAt(createdAt);
       }
-      statusEvents.push({ status: columnName, createdAt });
+      addNormalizedStatusEvent(columnName, createdAt);
       return;
     }
 
@@ -827,7 +857,7 @@ function extractWorkTimestamps(
         return;
       }
 
-      statusEvents.push({ status: normalizedStatus, createdAt });
+      addNormalizedStatusEvent(normalizedStatus, createdAt);
     }
   });
 
@@ -875,8 +905,34 @@ function extractWorkTimestamps(
       return;
     }
 
-    statusEvents.push({ status: statusLabel, createdAt: timestamp });
+    addNormalizedStatusEvent(statusLabel, timestamp);
   });
+
+  const history =
+    raw && typeof raw === "object"
+      ? (raw as Record<string, unknown>).projectStatusHistory
+      : null;
+
+  if (Array.isArray(history)) {
+    history.forEach((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return;
+      }
+
+      const record = entry as Record<string, unknown>;
+      const projectTitle = normalizeText(record.projectTitle);
+      if (!matchProject(projectTitle, targetProject)) {
+        return;
+      }
+
+      const statusLabel =
+        typeof record.status === "string" ? record.status : null;
+      const occurredAt =
+        typeof record.occurredAt === "string" ? record.occurredAt : null;
+
+      addStatusEvent(statusLabel, occurredAt);
+    });
+  }
 
   statusEvents.sort((a, b) => {
     const left = parseTimestamp(a.createdAt) ?? 0;

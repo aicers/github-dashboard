@@ -251,6 +251,26 @@ export async function upsertIssue(issue: DbIssue) {
   );
 }
 
+export async function fetchIssueRawMap(ids: readonly string[]) {
+  if (!ids.length) {
+    return new Map<string, unknown>();
+  }
+
+  const result = await query<{ id: string; data: unknown }>(
+    `SELECT id, data
+       FROM issues
+      WHERE id = ANY($1::text[])`,
+    [ids],
+  );
+
+  const map = new Map<string, unknown>();
+  for (const row of result.rows) {
+    map.set(row.id, row.data);
+  }
+
+  return map;
+}
+
 export async function upsertPullRequest(pullRequest: DbPullRequest) {
   await query(
     `INSERT INTO pull_requests (
