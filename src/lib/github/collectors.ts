@@ -295,14 +295,286 @@ export const RESOURCE_KEYS = [
 export type ResourceKey = (typeof RESOURCE_KEYS)[number];
 
 const RETRYABLE_STATUS_CODES = new Set([500, 502, 503, 504]);
+const RATE_LIMIT_ERROR_CODES = new Set([
+  "RATE_LIMIT",
+  "RATE_LIMITED",
+  "GRAPHQL_RATE_LIMIT",
+  "graphql_rate_limit",
+]);
 const MAX_RETRY_ATTEMPTS = 3;
+const MAX_RATE_LIMIT_RETRIES = 10;
 const BASE_RETRY_DELAY_MS = 500;
+const DEFAULT_RATE_LIMIT_DELAY_MS = 60_000;
 const BACKOFF_FACTOR = 2;
 
 function sleep(ms: number) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function isRateLimitError(error: unknown): error is ClientError {
+  if (!(error instanceof ClientError)) {
+    return false;
+  }
+
+  const responseErrors = Array.isArray(error.response?.errors)
+    ? error.response.errors
+    : [];
+
+  for (const graphqlError of responseErrors) {
+    const errorRecord = asRecord(graphqlError);
+    if (!errorRecord) {
+      continue;
+    }
+
+    const markers: string[] = [];
+    const directType = errorRecord.type;
+    if (typeof directType === "string") {
+      markers.push(directType);
+    }
+
+    const directCode = errorRecord.code;
+    if (typeof directCode === "string") {
+      markers.push(directCode);
+    }
+
+    const extensionsRecord = asRecord(errorRecord.extensions);
+    if (extensionsRecord) {
+      const extensionType = extensionsRecord.type;
+      if (typeof extensionType === "string") {
+        markers.push(extensionType);
+      }
+
+      const extensionCode = extensionsRecord.code;
+      if (typeof extensionCode === "string") {
+        markers.push(extensionCode);
+      }
+    }
+
+    if (markers.some((marker) => RATE_LIMIT_ERROR_CODES.has(marker))) {
+      return true;
+    }
+  }
+
+  return /rate limit/i.test(error.message ?? "");
+}
+
+function getHeaderValue(headers: unknown, key: string): string | null {
+  if (!headers) {
+    return null;
+  }
+
+  const headerKey = key.toLowerCase();
+  const headersWithGet = headers as {
+    get?: (name: string) => string | null | undefined;
+  };
+  if (typeof headersWithGet.get === "function") {
+    const headerValue =
+      headersWithGet.get(key) ?? headersWithGet.get(headerKey);
+    if (typeof headerValue === "string" && headerValue.length > 0) {
+      return headerValue;
+    }
+  }
+
+  if (typeof headers === "object") {
+    for (const [rawKey, value] of Object.entries(
+      headers as Record<string, unknown>,
+    )) {
+      if (rawKey.toLowerCase() !== headerKey) {
+        continue;
+      }
+
+      if (typeof value === "string") {
+        return value;
+      }
+
+      if (Array.isArray(value)) {
+        const firstValue = value.find((item) => typeof item === "string");
+        if (typeof firstValue === "string") {
+          return firstValue;
+        }
+      }
+
+      if (value != null) {
+        return String(value);
+      }
+    }
+  }
+
+  return null;
+}
+
+function parseRetryAfterHeader(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const numeric = Number(trimmed);
+  if (Number.isFinite(numeric)) {
+    if (numeric <= 0) {
+      return 0;
+    }
+    return numeric * 1000;
+  }
+
+  const timestamp = Date.parse(trimmed);
+  if (Number.isNaN(timestamp)) {
+    return null;
+  }
+
+  const waitMs = timestamp - Date.now();
+  return waitMs > 0 ? waitMs : 0;
+}
+
+function parseResetHeader(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const numeric = Number(trimmed);
+  if (Number.isFinite(numeric)) {
+    const waitMs = numeric * 1000 - Date.now();
+    return waitMs > 0 ? waitMs : 0;
+  }
+
+  const timestamp = Date.parse(trimmed);
+  if (Number.isNaN(timestamp)) {
+    return null;
+  }
+
+  const waitMs = timestamp - Date.now();
+  return waitMs > 0 ? waitMs : 0;
+}
+
+function parseExtensionDelay(value: unknown): number | null {
+  if (value == null) {
+    return null;
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    if (value <= 0) {
+      return 0;
+    }
+    return value * 1000;
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    const asNumber = Number(value);
+    if (Number.isFinite(asNumber)) {
+      if (asNumber <= 0) {
+        return 0;
+      }
+      return asNumber * 1000;
+    }
+
+    const timestamp = Date.parse(value);
+    if (!Number.isNaN(timestamp)) {
+      const waitMs = timestamp - Date.now();
+      return waitMs > 0 ? waitMs : 0;
+    }
+  }
+
+  return null;
+}
+
+function parseExtensionReset(value: unknown): number | null {
+  if (value == null) {
+    return null;
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    const timestamp = Date.parse(value);
+    if (!Number.isNaN(timestamp)) {
+      const waitMs = timestamp - Date.now();
+      return waitMs > 0 ? waitMs : 0;
+    }
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const waitMs = value * 1000 - Date.now();
+    return waitMs > 0 ? waitMs : 0;
+  }
+
+  return null;
+}
+
+function getRateLimitRetryDelayMs(error: ClientError): number {
+  const headers = (error.response as Record<string, unknown>)?.headers ?? null;
+
+  const retryAfterHeader =
+    typeof headers === "object" ? getHeaderValue(headers, "retry-after") : null;
+  if (typeof retryAfterHeader === "string") {
+    const delayFromHeader = parseRetryAfterHeader(retryAfterHeader);
+    if (delayFromHeader != null) {
+      return Math.max(delayFromHeader, DEFAULT_RATE_LIMIT_DELAY_MS);
+    }
+  }
+
+  const resetHeader =
+    typeof headers === "object"
+      ? getHeaderValue(headers, "x-ratelimit-reset")
+      : null;
+  if (typeof resetHeader === "string") {
+    const delayFromReset = parseResetHeader(resetHeader);
+    if (delayFromReset != null) {
+      return Math.max(delayFromReset, DEFAULT_RATE_LIMIT_DELAY_MS);
+    }
+  }
+
+  const responseErrors = Array.isArray(error.response?.errors)
+    ? error.response.errors
+    : [];
+
+  for (const graphqlError of responseErrors) {
+    const errorRecord = asRecord(graphqlError);
+    if (!errorRecord) {
+      continue;
+    }
+
+    const extensionsRecord = asRecord(errorRecord.extensions);
+    if (!extensionsRecord) {
+      continue;
+    }
+
+    const delayKeys = [
+      "retryAfter",
+      "retry_after",
+      "retryAfterSeconds",
+      "retry_after_seconds",
+      "wait",
+      "seconds",
+      "resetAfter",
+      "reset_after",
+    ];
+
+    for (const key of delayKeys) {
+      const extensionDelay = parseExtensionDelay(extensionsRecord[key]);
+      if (extensionDelay != null) {
+        return Math.max(extensionDelay, DEFAULT_RATE_LIMIT_DELAY_MS);
+      }
+    }
+
+    const resetKeys = ["resetAt", "reset_at", "resetTime", "reset_time"];
+    for (const key of resetKeys) {
+      const extensionReset = parseExtensionReset(extensionsRecord[key]);
+      if (extensionReset != null) {
+        return Math.max(extensionReset, DEFAULT_RATE_LIMIT_DELAY_MS);
+      }
+    }
+  }
+
+  return DEFAULT_RATE_LIMIT_DELAY_MS;
 }
 
 function toActor(actor: Maybe<GithubActor>) {
@@ -481,12 +753,30 @@ async function requestWithRetry<T>(
   let attempt = 0;
   let delay = BASE_RETRY_DELAY_MS;
   let lastError: unknown = null;
+  let rateLimitRetryCount = 0;
 
   while (attempt < retries) {
     try {
       return await client.request<T>(document, variables);
     } catch (error) {
       lastError = error;
+
+      if (isRateLimitError(error)) {
+        rateLimitRetryCount += 1;
+        if (rateLimitRetryCount > MAX_RATE_LIMIT_RETRIES) {
+          throw error;
+        }
+
+        const waitMs = getRateLimitRetryDelayMs(error);
+        const waitSeconds = Math.ceil(waitMs / 1000);
+        const contextLabel = context ?? "request";
+        logger?.(
+          `Rate limit reached for ${contextLabel}. Waiting ${waitSeconds}s before retrying (${rateLimitRetryCount}/${MAX_RATE_LIMIT_RETRIES}).`,
+        );
+        await sleep(waitMs);
+        continue;
+      }
+
       if (!isRetryableError(error) || attempt === retries - 1) {
         throw error;
       }
