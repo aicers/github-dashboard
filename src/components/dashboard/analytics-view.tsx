@@ -16,7 +16,10 @@ import {
 import { DashboardFilterPanel } from "@/components/dashboard/dashboard-filter-panel";
 import { buildRangeFromPreset } from "@/components/dashboard/dashboard-filters";
 import { MetricCard } from "@/components/dashboard/metric-card";
-import { organizationMetricTooltips } from "@/components/dashboard/metric-tooltips";
+import {
+  individualMetricTooltips,
+  organizationMetricTooltips,
+} from "@/components/dashboard/metric-tooltips";
 import {
   formatDuration,
   formatNumber,
@@ -1120,6 +1123,7 @@ export function AnalyticsView({
           <LeaderboardTable
             title="토론 참여"
             entries={analytics.leaderboard.discussionEngagement}
+            tooltip={individualMetricTooltips.discussionComments}
           />
         </div>
       </section>
