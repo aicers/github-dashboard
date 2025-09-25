@@ -190,12 +190,14 @@ function LeaderboardTable({
   entries,
   unit,
   valueFormatter,
+  secondaryLabel,
   tooltip,
 }: {
   title: string;
   entries: LeaderboardEntry[];
   unit?: string;
   valueFormatter?: (value: number) => string;
+  secondaryLabel?: string;
   tooltip?: string;
 }) {
   const tooltipId = useId();
@@ -235,16 +237,64 @@ function LeaderboardTable({
                 {entry.user.login ?? entry.user.name ?? entry.user.id}
               </span>
               {entry.user.name && entry.user.login && (
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs text-muted-foreground whitespace-pre-line">
                   {entry.user.name}
                 </span>
               )}
             </div>
-            <span className="font-semibold">
-              {valueFormatter
-                ? valueFormatter(entry.value)
-                : `${formatNumber(entry.value)}${unit ?? ""}`}
-            </span>
+            <div className="flex flex-col items-end text-right">
+              <span className="font-semibold">
+                {valueFormatter
+                  ? valueFormatter(entry.value)
+                  : `${formatNumber(entry.value)}${unit ?? ""}`}
+              </span>
+              {(secondaryLabel && entry.secondaryValue != null) ||
+              entry.details?.length ? (
+                <div className="flex flex-col items-end text-right text-xs text-muted-foreground">
+                  {(() => {
+                    const lines: string[] = [];
+                    const countParts: string[] = [];
+                    const lineParts: string[] = [];
+
+                    if (secondaryLabel && entry.secondaryValue != null) {
+                      countParts.push(
+                        `${secondaryLabel} ${formatNumber(entry.secondaryValue)}${unit ?? ""}`,
+                      );
+                    }
+
+                    entry.details?.forEach((detail) => {
+                      const suffix = detail.suffix ?? "";
+                      const prefix =
+                        detail.sign === "positive"
+                          ? "+"
+                          : detail.sign === "negative"
+                            ? "-"
+                            : "";
+                      const isLineDetail =
+                        detail.label === "+" || detail.label === "-";
+                      const numberText = `${prefix}${formatNumber(detail.value)}${suffix}`;
+                      const display = isLineDetail
+                        ? `${detail.label}${formatNumber(detail.value)}${suffix}`
+                        : `${detail.label} ${numberText}`;
+                      if (isLineDetail) {
+                        lineParts.push(display);
+                      } else {
+                        countParts.push(display);
+                      }
+                    });
+
+                    if (countParts.length > 0) {
+                      lines.push(countParts.join(" · "));
+                    }
+                    if (lineParts.length > 0) {
+                      lines.push(lineParts.join(" · "));
+                    }
+
+                    return lines.map((text) => <span key={text}>{text}</span>);
+                  })()}
+                </div>
+              ) : null}
+            </div>
           </div>
         ))}
       </CardContent>
@@ -272,6 +322,21 @@ export function AnalyticsView({
   const contributors = analytics.contributors;
 
   const organization = analytics.organization as OrganizationAnalytics;
+
+  const reviewerLeaderboardEntries: LeaderboardEntry[] =
+    organization.reviewers.map((reviewer) => ({
+      user: reviewer.profile ?? {
+        id: reviewer.reviewerId,
+        login: null,
+        name: null,
+        avatarUrl: null,
+      },
+      value: reviewer.reviewCount,
+      secondaryValue: reviewer.pullRequestsReviewed,
+    }));
+
+  const mainBranchContributionEntries =
+    analytics.leaderboard.mainBranchContribution;
 
   const issuesLineData = mergeTrends(
     organization.trends.issuesCreated,
@@ -671,47 +736,7 @@ export function AnalyticsView({
         </Card>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-2">
-        <Card className="border-border/70">
-          <CardHeader>
-            <CardTitle className="text-base font-medium">
-              리뷰어 활동 Top 10
-            </CardTitle>
-            <CardDescription className="text-sm text-muted-foreground">
-              리뷰 건수와 참여한 PR 수를 기준으로 한 순위입니다. Dependabot이
-              생성한 Pull Request는 제외됩니다.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            {organization.reviewers.length === 0 && (
-              <p className="text-muted-foreground">데이터가 없습니다.</p>
-            )}
-            {organization.reviewers.map((reviewer) => (
-              <div
-                key={reviewer.reviewerId}
-                className="flex items-center justify-between gap-3"
-              >
-                <div className="flex flex-col">
-                  <span className="font-medium">
-                    {reviewer.profile?.login ??
-                      reviewer.profile?.name ??
-                      reviewer.reviewerId}
-                  </span>
-                  {reviewer.profile?.name && reviewer.profile?.login && (
-                    <span className="text-xs text-muted-foreground">
-                      {reviewer.profile.name}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                  <span>리뷰 {formatNumber(reviewer.reviewCount)}</span>
-                  <span>PR {formatNumber(reviewer.pullRequestsReviewed)}</span>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
+      <section className="grid gap-4">
         <Card className="border-border/70">
           <CardHeader>
             <CardTitle className="text-base font-medium">
@@ -890,8 +915,19 @@ export function AnalyticsView({
         <h2 className="text-2xl font-semibold">리더보드</h2>
         <div className="grid gap-4 lg:grid-cols-2">
           <LeaderboardTable
-            title="리뷰 수행"
-            entries={analytics.leaderboard.reviewsCompleted}
+            title="리뷰어 활동"
+            entries={reviewerLeaderboardEntries}
+            valueFormatter={(value) => `${formatNumber(value)}건`}
+            secondaryLabel="참여 PR"
+            unit="건"
+          />
+          <LeaderboardTable
+            title="메인 브랜치 기여"
+            entries={mainBranchContributionEntries}
+            valueFormatter={(value) => `${formatNumber(value)}건`}
+            secondaryLabel="리뷰"
+            unit="건"
+            tooltip="리뷰한 PR과 직접 생성한 PR 중에서 머지된 PR 건수를 합산합니다. +/− 값은 병합된 PR들의 코드 추가·삭제 라인 합계입니다. Dependabot Pull Request는 제외됩니다."
           />
           <LeaderboardTable
             title="빠른 리뷰 응답"
