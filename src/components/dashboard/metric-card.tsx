@@ -1,13 +1,15 @@
 import { Info } from "lucide-react";
-import { type ReactNode, useId } from "react";
+import { type ReactElement, useId } from "react";
 import {
-  Bar,
-  BarChart,
-  Cell,
+  type DotProps,
   LabelList,
   type LabelProps,
+  Line,
+  LineChart,
+  type LineProps,
   ResponsiveContainer,
   XAxis,
+  YAxis,
 } from "recharts";
 
 import {
@@ -31,6 +33,8 @@ import type {
 } from "@/lib/dashboard/types";
 
 const HISTORY_COLORS: Record<PeriodKey, string> = {
+  previous4: "var(--color-chart-5)",
+  previous3: "var(--color-chart-4)",
   previous2: "var(--color-chart-3)",
   previous: "var(--color-chart-2)",
   current: "var(--color-chart-1)",
@@ -82,7 +86,7 @@ export function MetricCard({
       label: entry.label,
       period,
       rawValue: numericValue,
-      value: numericValue ?? 0,
+      value: numericValue,
       displayValue,
       fill: HISTORY_COLORS[period] ?? HISTORY_COLORS.current,
     };
@@ -91,33 +95,61 @@ export function MetricCard({
     Number.isFinite(entry.rawValue),
   );
 
-  const renderBarLabel = ({
-    x,
-    y,
-    width,
-    value,
-    index,
-  }: LabelProps): ReactNode => {
-    if (typeof index !== "number") {
-      return null;
-    }
+  type ChartContentRenderer<Props> = (props: Props) => ReactElement | null;
 
-    const entry = historyData[index];
+  const renderDot: ChartContentRenderer<DotProps> = (props) => {
+    const entry = (
+      props as DotProps & {
+        payload?: (typeof historyData)[number];
+      }
+    ).payload;
+    const cx =
+      typeof props.cx === "number" ? props.cx : Number(props.cx ?? Number.NaN);
+    const cy =
+      typeof props.cy === "number" ? props.cy : Number(props.cy ?? Number.NaN);
+    const shouldHide =
+      !entry ||
+      !Number.isFinite(cx) ||
+      !Number.isFinite(cy) ||
+      entry.rawValue == null;
+
+    return (
+      <circle
+        cx={Number.isFinite(cx) ? cx : 0}
+        cy={Number.isFinite(cy) ? cy : 0}
+        r={shouldHide ? 0 : 5}
+        fill={entry?.fill ?? "var(--color-chart-1)"}
+        stroke={shouldHide ? "transparent" : "var(--background)"}
+        strokeWidth={shouldHide ? 0 : 2}
+      />
+    );
+  };
+
+  const renderPointLabel: ChartContentRenderer<LabelProps> = (props) => {
+    const entry = (
+      props as LabelProps & {
+        payload?: (typeof historyData)[number];
+      }
+    ).payload;
     if (!entry) {
       return null;
     }
 
-    const label = typeof value === "string" ? value : String(value ?? "");
+    const label =
+      typeof props.value === "string" ? props.value : String(props.value ?? "");
     if (!label) {
       return null;
     }
 
-    const centerX = (x ?? 0) + (width ?? 0) / 2;
-    const offsetY = (y ?? 0) - 6;
+    const numericX =
+      typeof props.x === "number" ? props.x : Number(props.x ?? 0);
+    const numericY =
+      typeof props.y === "number" ? props.y : Number(props.y ?? 0);
+    const offsetY = numericY - 8;
 
     return (
       <text
-        x={centerX}
+        x={numericX}
         y={offsetY}
         textAnchor="middle"
         fill="var(--foreground)"
@@ -163,12 +195,11 @@ export function MetricCard({
           {changeLabel} ({percentLabel})
         </span>
         {hasHistory && (
-          <div className="h-28 pt-1">
+          <div className="h-32 pt-1">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart
+              <LineChart
                 data={historyData}
-                margin={{ top: 28, right: 12, left: -12, bottom: 0 }}
-                barCategoryGap={12}
+                margin={{ top: 28, right: 16, left: 16, bottom: 0 }}
               >
                 <XAxis
                   dataKey="label"
@@ -176,17 +207,23 @@ export function MetricCard({
                   tickLine={false}
                   tick={{ fontSize: 11 }}
                 />
-                <Bar dataKey="value" radius={[4, 4, 0, 0]} barSize={36}>
-                  {historyData.map((entry) => (
-                    <Cell key={entry.period} fill={entry.fill} />
-                  ))}
+                <YAxis hide domain={["auto", "auto"]} />
+                <Line
+                  type="monotone"
+                  dataKey="value"
+                  stroke="var(--color-chart-1)"
+                  strokeWidth={2}
+                  dot={renderDot as LineProps["dot"]}
+                  connectNulls={false}
+                  isAnimationActive={false}
+                >
                   <LabelList
                     dataKey="displayValue"
                     position="top"
-                    content={renderBarLabel}
+                    content={renderPointLabel}
                   />
-                </Bar>
-              </BarChart>
+                </Line>
+              </LineChart>
             </ResponsiveContainer>
           </div>
         )}
