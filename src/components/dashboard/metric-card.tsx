@@ -1,3 +1,6 @@
+import { Info } from "lucide-react";
+import { useId } from "react";
+
 import {
   changeColor,
   formatChange,
@@ -23,6 +26,7 @@ type MetricCardProps = {
   metric: ComparisonValue | DurationComparisonValue;
   format: MetricFormat;
   impact?: MetricImpact;
+  tooltip?: string;
 };
 
 export function MetricCard({
@@ -31,7 +35,9 @@ export function MetricCard({
   metric,
   format,
   impact = "positive",
+  tooltip,
 }: MetricCardProps) {
+  const tooltipId = useId();
   const valueMetric =
     format === "hours"
       ? {
@@ -46,7 +52,25 @@ export function MetricCard({
   return (
     <Card className="border-border/70">
       <CardHeader className="pb-2">
-        <CardTitle className="text-base font-medium">{title}</CardTitle>
+        <CardTitle className="flex items-center gap-1 text-base font-medium">
+          <span>{title}</span>
+          {tooltip && (
+            <button
+              type="button"
+              aria-describedby={tooltipId}
+              className="group relative inline-flex cursor-help items-center text-muted-foreground focus:outline-none"
+            >
+              <Info className="h-4 w-4" aria-hidden="true" />
+              <span
+                id={tooltipId}
+                role="tooltip"
+                className="pointer-events-none absolute left-1/2 top-full z-20 w-48 -translate-x-1/2 translate-y-2 rounded-md border border-border/60 bg-background px-2 py-1 text-xs text-muted-foreground opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+              >
+                {tooltip}
+              </span>
+            </button>
+          )}
+        </CardTitle>
         {description && (
           <CardDescription className="text-xs text-muted-foreground">
             {description}
