@@ -64,8 +64,12 @@ export type RepoDistributionItem = {
 export type RepoComparisonRow = {
   repositoryId: string;
   repository: RepositoryProfile | null;
+  issuesCreated: number;
   issuesResolved: number;
+  pullRequestsCreated: number;
   pullRequestsMerged: number;
+  reviews: number;
+  comments: number;
   avgFirstReviewHours: number | null;
 };
 
@@ -97,7 +101,6 @@ export type OrganizationAnalytics = {
     avgPrSize: ComparisonValue;
     avgCommentsPerIssue: ComparisonValue;
     avgCommentsPerPr: ComparisonValue;
-    reopenedIssuesRatio: RatioComparisonValue;
     totalEvents: ComparisonValue;
   };
   activityBreakdown: {
