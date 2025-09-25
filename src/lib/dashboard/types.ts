@@ -20,7 +20,12 @@ export type TrendPoint = {
   value: number;
 };
 
-export type PeriodKey = "previous2" | "previous" | "current";
+export type PeriodKey =
+  | "previous4"
+  | "previous3"
+  | "previous2"
+  | "previous"
+  | "current";
 
 export type MetricHistoryEntry = {
   period: PeriodKey;
@@ -175,6 +180,10 @@ export type RangeSummary = {
   previousEnd: string;
   previous2Start: string;
   previous2End: string;
+  previous3Start: string;
+  previous3End: string;
+  previous4Start: string;
+  previous4End: string;
   intervalDays: number;
 };
 

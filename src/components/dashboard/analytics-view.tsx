@@ -47,8 +47,16 @@ type AnalyticsViewProps = {
 
 type TrendEntry = Record<string, number> & { date: string };
 
-const HISTORY_KEYS: PeriodKey[] = ["previous2", "previous", "current"];
+const HISTORY_KEYS: PeriodKey[] = [
+  "previous4",
+  "previous3",
+  "previous2",
+  "previous",
+  "current",
+];
 const HISTORY_LABELS: Record<PeriodKey, string> = {
+  previous4: "4회 전",
+  previous3: "3회 전",
   previous2: "2회 전",
   previous: "이전",
   current: "이번",

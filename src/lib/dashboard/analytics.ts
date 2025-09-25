@@ -111,7 +111,13 @@ function buildRatioComparison(
   return buildComparison(current ?? 0, previous ?? 0);
 }
 
-const HISTORY_PERIODS: PeriodKey[] = ["previous2", "previous", "current"];
+const HISTORY_PERIODS: PeriodKey[] = [
+  "previous4",
+  "previous3",
+  "previous2",
+  "previous",
+  "current",
+];
 
 function normalizeHistoryValue(
   value: number | null | undefined,
@@ -264,6 +270,10 @@ type RangeContext = {
   previousEnd: string;
   previous2Start: string;
   previous2End: string;
+  previous3Start: string;
+  previous3End: string;
+  previous4Start: string;
+  previous4End: string;
   intervalDays: number;
 };
 
@@ -282,6 +292,10 @@ function resolveRange({
   );
   const { previousStart: previous2Start, previousEnd: previous2End } =
     subtractDuration(previousStart, previousEnd);
+  const { previousStart: previous3Start, previousEnd: previous3End } =
+    subtractDuration(previous2Start, previous2End);
+  const { previousStart: previous4Start, previousEnd: previous4End } =
+    subtractDuration(previous3Start, previous3End);
   const intervalDays = differenceInDays(sanitizedStart, sanitizedEnd);
   return {
     start: sanitizedStart,
@@ -290,6 +304,10 @@ function resolveRange({
     previousEnd,
     previous2Start,
     previous2End,
+    previous3Start,
+    previous3End,
+    previous4Start,
+    previous4End,
     intervalDays,
   };
 }
@@ -2149,7 +2167,13 @@ export async function getDashboardAnalytics(
     config?.week_start === "sunday" ? "sunday" : "monday";
   const targetProject = normalizeText(env.TODO_PROJECT_NAME);
 
-  const [currentIssues, previousIssues, previous2Issues] = await Promise.all([
+  const [
+    currentIssues,
+    previousIssues,
+    previous2Issues,
+    previous3Issues,
+    previous4Issues,
+  ] = await Promise.all([
     fetchIssueAggregates(range.start, range.end, repositoryFilter),
     fetchIssueAggregates(
       range.previousStart,
@@ -2161,33 +2185,72 @@ export async function getDashboardAnalytics(
       range.previous2End,
       repositoryFilter,
     ),
-  ]);
-
-  const [currentPrs, previousPrs, previous2Prs] = await Promise.all([
-    fetchPrAggregates(range.start, range.end, repositoryFilter),
-    fetchPrAggregates(range.previousStart, range.previousEnd, repositoryFilter),
-    fetchPrAggregates(
-      range.previous2Start,
-      range.previous2End,
+    fetchIssueAggregates(
+      range.previous3Start,
+      range.previous3End,
+      repositoryFilter,
+    ),
+    fetchIssueAggregates(
+      range.previous4Start,
+      range.previous4End,
       repositoryFilter,
     ),
   ]);
 
-  const [currentReviews, previousReviews, previous2Reviews] = await Promise.all(
-    [
-      fetchReviewAggregates(range.start, range.end, repositoryFilter),
-      fetchReviewAggregates(
+  const [currentPrs, previousPrs, previous2Prs, previous3Prs, previous4Prs] =
+    await Promise.all([
+      fetchPrAggregates(range.start, range.end, repositoryFilter),
+      fetchPrAggregates(
         range.previousStart,
         range.previousEnd,
         repositoryFilter,
       ),
-      fetchReviewAggregates(
+      fetchPrAggregates(
         range.previous2Start,
         range.previous2End,
         repositoryFilter,
       ),
-    ],
-  );
+      fetchPrAggregates(
+        range.previous3Start,
+        range.previous3End,
+        repositoryFilter,
+      ),
+      fetchPrAggregates(
+        range.previous4Start,
+        range.previous4End,
+        repositoryFilter,
+      ),
+    ]);
+
+  const [
+    currentReviews,
+    previousReviews,
+    previous2Reviews,
+    previous3Reviews,
+    previous4Reviews,
+  ] = await Promise.all([
+    fetchReviewAggregates(range.start, range.end, repositoryFilter),
+    fetchReviewAggregates(
+      range.previousStart,
+      range.previousEnd,
+      repositoryFilter,
+    ),
+    fetchReviewAggregates(
+      range.previous2Start,
+      range.previous2End,
+      repositoryFilter,
+    ),
+    fetchReviewAggregates(
+      range.previous3Start,
+      range.previous3End,
+      repositoryFilter,
+    ),
+    fetchReviewAggregates(
+      range.previous4Start,
+      range.previous4End,
+      repositoryFilter,
+    ),
+  ]);
 
   const [currentEvents, previousEvents] = await Promise.all([
     fetchTotalEvents(range.start, range.end, repositoryFilter),
@@ -2211,6 +2274,8 @@ export async function getDashboardAnalytics(
     currentIssueDurationDetails,
     previousIssueDurationDetails,
     previous2IssueDurationDetails,
+    previous3IssueDurationDetails,
+    previous4IssueDurationDetails,
   ] = await Promise.all([
     fetchTrend(
       "issues",
@@ -2262,6 +2327,16 @@ export async function getDashboardAnalytics(
     fetchIssueDurationDetails(
       range.previous2Start,
       range.previous2End,
+      repositoryFilter,
+    ),
+    fetchIssueDurationDetails(
+      range.previous3Start,
+      range.previous3End,
+      repositoryFilter,
+    ),
+    fetchIssueDurationDetails(
+      range.previous4Start,
+      range.previous4End,
       repositoryFilter,
     ),
   ]);
@@ -2351,6 +2426,14 @@ export async function getDashboardAnalytics(
     previous2IssueDurationDetails,
     targetProject,
   );
+  const issueDurationPrevious3 = summarizeIssueDurations(
+    previous3IssueDurationDetails,
+    targetProject,
+  );
+  const issueDurationPrevious4 = summarizeIssueDurations(
+    previous4IssueDurationDetails,
+    targetProject,
+  );
   const monthlyDurationTrend = buildMonthlyDurationTrend(
     currentIssueDurationDetails,
     targetProject,
@@ -2408,61 +2491,85 @@ export async function getDashboardAnalytics(
 
   const organizationHistory = {
     issuesCreated: buildHistorySeries([
+      previous4Issues.issues_created,
+      previous3Issues.issues_created,
       previous2Issues.issues_created,
       previousIssues.issues_created,
       currentIssues.issues_created,
     ]),
     issuesClosed: buildHistorySeries([
+      previous4Issues.issues_closed,
+      previous3Issues.issues_closed,
       previous2Issues.issues_closed,
       previousIssues.issues_closed,
       currentIssues.issues_closed,
     ]),
     issueResolutionTime: buildHistorySeries([
+      previous4Issues.avg_resolution_hours,
+      previous3Issues.avg_resolution_hours,
       previous2Issues.avg_resolution_hours,
       previousIssues.avg_resolution_hours,
       currentIssues.avg_resolution_hours,
     ]),
     issueWorkTime: buildHistorySeries([
+      issueDurationPrevious4.overallWork,
+      issueDurationPrevious3.overallWork,
       issueDurationPrevious2.overallWork,
       issueDurationPrevious.overallWork,
       issueDurationCurrent.overallWork,
     ]),
     parentIssueResolutionTime: buildHistorySeries([
+      issueDurationPrevious4.parentResolution,
+      issueDurationPrevious3.parentResolution,
       issueDurationPrevious2.parentResolution,
       issueDurationPrevious.parentResolution,
       issueDurationCurrent.parentResolution,
     ]),
     parentIssueWorkTime: buildHistorySeries([
+      issueDurationPrevious4.parentWork,
+      issueDurationPrevious3.parentWork,
       issueDurationPrevious2.parentWork,
       issueDurationPrevious.parentWork,
       issueDurationCurrent.parentWork,
     ]),
     childIssueResolutionTime: buildHistorySeries([
+      issueDurationPrevious4.childResolution,
+      issueDurationPrevious3.childResolution,
       issueDurationPrevious2.childResolution,
       issueDurationPrevious.childResolution,
       issueDurationCurrent.childResolution,
     ]),
     childIssueWorkTime: buildHistorySeries([
+      issueDurationPrevious4.childWork,
+      issueDurationPrevious3.childWork,
       issueDurationPrevious2.childWork,
       issueDurationPrevious.childWork,
       issueDurationCurrent.childWork,
     ]),
     prsCreated: buildHistorySeries([
+      previous4Prs.prs_created,
+      previous3Prs.prs_created,
       previous2Prs.prs_created,
       previousPrs.prs_created,
       currentPrs.prs_created,
     ]),
     prsMerged: buildHistorySeries([
+      previous4Prs.prs_merged,
+      previous3Prs.prs_merged,
       previous2Prs.prs_merged,
       previousPrs.prs_merged,
       currentPrs.prs_merged,
     ]),
     reviewParticipation: buildHistorySeries([
+      previous4Reviews.avg_participation,
+      previous3Reviews.avg_participation,
       previous2Reviews.avg_participation,
       previousReviews.avg_participation,
       currentReviews.avg_participation,
     ]),
     reviewResponseTime: buildHistorySeries([
+      previous4Reviews.avg_response_hours,
+      previous3Reviews.avg_response_hours,
       previous2Reviews.avg_response_hours,
       previousReviews.avg_response_hours,
       currentReviews.avg_response_hours,
