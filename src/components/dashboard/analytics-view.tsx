@@ -34,7 +34,9 @@ import type {
   DashboardAnalytics,
   HeatmapCell,
   LeaderboardEntry,
+  MetricHistoryEntry,
   OrganizationAnalytics,
+  PeriodKey,
 } from "@/lib/dashboard/types";
 
 type AnalyticsViewProps = {
@@ -44,6 +46,13 @@ type AnalyticsViewProps = {
 };
 
 type TrendEntry = Record<string, number> & { date: string };
+
+const HISTORY_KEYS: PeriodKey[] = ["previous2", "previous", "current"];
+const HISTORY_LABELS: Record<PeriodKey, string> = {
+  previous2: "2회 전",
+  previous: "이전",
+  current: "이번",
+};
 
 function mergeTrends(
   left: { date: string; value: number }[],
@@ -73,6 +82,13 @@ function mergeTrends(
   });
 
   return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function toCardHistory(series?: MetricHistoryEntry[]) {
+  return HISTORY_KEYS.map((period) => ({
+    label: HISTORY_LABELS[period],
+    value: series?.find((entry) => entry.period === period)?.value ?? null,
+  }));
 }
 
 function Heatmap({ data }: { data: HeatmapCell[] }) {
@@ -257,6 +273,7 @@ export function AnalyticsView({
           format="count"
           impact="positive"
           tooltip={organizationMetricTooltips.issuesCreated}
+          history={toCardHistory(organization.metricHistory.issuesCreated)}
         />
         <MetricCard
           title="이슈 종료"
@@ -264,6 +281,7 @@ export function AnalyticsView({
           format="count"
           impact="positive"
           tooltip={organizationMetricTooltips.issuesClosed}
+          history={toCardHistory(organization.metricHistory.issuesClosed)}
         />
         <MetricCard
           title="평균 해결 시간"
@@ -271,6 +289,9 @@ export function AnalyticsView({
           format="hours"
           impact="negative"
           tooltip={organizationMetricTooltips.issueResolutionTime}
+          history={toCardHistory(
+            organization.metricHistory.issueResolutionTime,
+          )}
         />
         <MetricCard
           title="평균 작업 시간"
@@ -278,6 +299,7 @@ export function AnalyticsView({
           format="hours"
           impact="negative"
           tooltip={organizationMetricTooltips.issueWorkTime}
+          history={toCardHistory(organization.metricHistory.issueWorkTime)}
         />
         <MetricCard
           title="PR 생성"
@@ -285,6 +307,7 @@ export function AnalyticsView({
           format="count"
           impact="positive"
           tooltip={organizationMetricTooltips.prsCreated}
+          history={toCardHistory(organization.metricHistory.prsCreated)}
         />
         <MetricCard
           title="PR 머지"
@@ -292,12 +315,16 @@ export function AnalyticsView({
           format="count"
           impact="positive"
           tooltip={organizationMetricTooltips.prsMerged}
+          history={toCardHistory(organization.metricHistory.prsMerged)}
         />
         <MetricCard
           title="리뷰 참여 비율"
           metric={organization.metrics.reviewParticipation}
           format="percentage"
           tooltip={organizationMetricTooltips.reviewParticipation}
+          history={toCardHistory(
+            organization.metricHistory.reviewParticipation,
+          )}
         />
         <MetricCard
           title="리뷰 응답 시간"
@@ -305,6 +332,7 @@ export function AnalyticsView({
           format="hours"
           impact="negative"
           tooltip={organizationMetricTooltips.reviewResponseTime}
+          history={toCardHistory(organization.metricHistory.reviewResponseTime)}
         />
       </section>
 
@@ -317,6 +345,9 @@ export function AnalyticsView({
             format="hours"
             impact="negative"
             tooltip={organizationMetricTooltips.parentIssueResolutionTime}
+            history={toCardHistory(
+              organization.metricHistory.parentIssueResolutionTime,
+            )}
           />
           <MetricCard
             title="Parent 이슈 작업 시간"
@@ -324,6 +355,9 @@ export function AnalyticsView({
             format="hours"
             impact="negative"
             tooltip={organizationMetricTooltips.parentIssueWorkTime}
+            history={toCardHistory(
+              organization.metricHistory.parentIssueWorkTime,
+            )}
           />
           <MetricCard
             title="Child 이슈 해결 시간"
@@ -331,6 +365,9 @@ export function AnalyticsView({
             format="hours"
             impact="negative"
             tooltip={organizationMetricTooltips.childIssueResolutionTime}
+            history={toCardHistory(
+              organization.metricHistory.childIssueResolutionTime,
+            )}
           />
           <MetricCard
             title="Child 이슈 작업 시간"
@@ -338,6 +375,9 @@ export function AnalyticsView({
             format="hours"
             impact="negative"
             tooltip={organizationMetricTooltips.childIssueWorkTime}
+            history={toCardHistory(
+              organization.metricHistory.childIssueWorkTime,
+            )}
           />
         </div>
       </section>

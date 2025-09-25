@@ -20,6 +20,13 @@ export type TrendPoint = {
   value: number;
 };
 
+export type PeriodKey = "previous2" | "previous" | "current";
+
+export type MetricHistoryEntry = {
+  period: PeriodKey;
+  value: number | null;
+};
+
 export type MultiTrendPoint = {
   date: string;
   values: Record<string, number>;
@@ -87,6 +94,20 @@ export type OrganizationAnalytics = {
     reviews: number;
     comments: number;
   };
+  metricHistory: {
+    issuesCreated: MetricHistoryEntry[];
+    issuesClosed: MetricHistoryEntry[];
+    issueResolutionTime: MetricHistoryEntry[];
+    issueWorkTime: MetricHistoryEntry[];
+    parentIssueResolutionTime: MetricHistoryEntry[];
+    parentIssueWorkTime: MetricHistoryEntry[];
+    childIssueResolutionTime: MetricHistoryEntry[];
+    childIssueWorkTime: MetricHistoryEntry[];
+    prsCreated: MetricHistoryEntry[];
+    prsMerged: MetricHistoryEntry[];
+    reviewParticipation: MetricHistoryEntry[];
+    reviewResponseTime: MetricHistoryEntry[];
+  };
   reviewers: ReviewerActivity[];
   trends: {
     issuesCreated: TrendPoint[];
@@ -152,6 +173,8 @@ export type RangeSummary = {
   end: string;
   previousStart: string;
   previousEnd: string;
+  previous2Start: string;
+  previous2End: string;
   intervalDays: number;
 };
 
