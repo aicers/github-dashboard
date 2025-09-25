@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useId } from "react";
 import {
   buildRangeFromPreset,
   fromDateInputValue,
@@ -46,6 +46,9 @@ export function DashboardFilterPanel({
     allRepositoryIds.length > 0 &&
     allRepositoryIds.every((repoId) => filters.repositoryIds.includes(repoId));
 
+  const customStartId = useId();
+  const customEndId = useId();
+
   const handlePresetChange = useCallback(
     (preset: TimePresetKey) => {
       if (preset === "custom") {
@@ -85,100 +88,131 @@ export function DashboardFilterPanel({
     }));
   };
 
-  return (
-    <div className="grid gap-4 rounded-lg border border-border/60 bg-background/60 p-4 md:grid-cols-2 xl:grid-cols-4">
-      <div className="flex flex-col gap-2 text-sm">
-        <span className="text-xs uppercase text-muted-foreground">
-          기간 선택
-        </span>
-        <div className="flex flex-wrap gap-2">
-          {PRESETS.map((preset) => (
-            <Button
-              key={preset.key}
-              variant={filters.preset === preset.key ? "default" : "secondary"}
-              size="sm"
-              onClick={() => handlePresetChange(preset.key)}
-            >
-              {preset.label}
-            </Button>
-          ))}
-        </div>
-        {filters.preset === "custom" && (
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <Input
-              type="date"
-              value={toDateInputValue(filters.start, timeZone)}
-              onChange={(event) =>
-                setFilters((current) => ({
-                  ...current,
-                  preset: "custom",
-                  start: fromDateInputValue(
-                    event.target.value,
-                    timeZone,
-                    "start",
-                  ),
-                }))
-              }
-            />
-            <Input
-              type="date"
-              value={toDateInputValue(filters.end, timeZone)}
-              onChange={(event) =>
-                setFilters((current) => ({
-                  ...current,
-                  preset: "custom",
-                  end: fromDateInputValue(event.target.value, timeZone, "end"),
-                }))
-              }
-            />
-          </div>
-        )}
-      </div>
+  const panelSectionClass =
+    "flex h-full flex-col gap-4 rounded-xl border border-border/50 bg-card p-4 text-sm shadow-sm";
+  const sectionLabelClass =
+    "text-xs font-semibold uppercase tracking-wide text-muted-foreground";
+  const helperTextClass = "text-xs text-muted-foreground";
+  const actionPanelSpanClass =
+    showPersonSelector && contributors.length > 0
+      ? ""
+      : "md:col-span-2 xl:col-span-2";
 
-      <div className="flex flex-col gap-2 text-sm">
-        <label className="flex flex-col gap-2">
-          <span className="text-xs uppercase text-muted-foreground">
-            리포지토리 필터
-          </span>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
-            <select
-              multiple
-              value={filters.repositoryIds}
-              onChange={handleRepoSelection}
-              className="h-32 w-full flex-1 rounded-md border border-border/60 bg-background p-2 text-sm"
-            >
-              {repositories.map((repo) => (
-                <option key={repo.id} value={repo.id}>
-                  {repo.nameWithOwner ?? repo.name ?? repo.id}
-                </option>
-              ))}
-            </select>
+  return (
+    <section className="rounded-2xl border border-border/60 bg-background/80 p-4 shadow-sm backdrop-blur md:p-6">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 xl:gap-5">
+        <div className={panelSectionClass}>
+          <div className="flex flex-col gap-1">
+            <span className={sectionLabelClass}>기간 선택</span>
+            <p className={helperTextClass}>
+              사전 설정으로 빠르게 기간을 전환하세요.
+            </p>
+          </div>
+          <div className="grid w-full grid-cols-2 gap-2 md:grid-cols-3">
+            {PRESETS.map((preset) => (
+              <Button
+                key={preset.key}
+                variant={
+                  filters.preset === preset.key ? "default" : "secondary"
+                }
+                size="sm"
+                onClick={() => handlePresetChange(preset.key)}
+                className="justify-start"
+              >
+                {preset.label}
+              </Button>
+            ))}
+          </div>
+          {filters.preset === "custom" && (
+            <div className="grid gap-3 pt-1 sm:grid-cols-2">
+              <label className="flex flex-col gap-1" htmlFor={customStartId}>
+                <span className={helperTextClass}>시작일</span>
+                <Input
+                  id={customStartId}
+                  type="date"
+                  value={toDateInputValue(filters.start, timeZone)}
+                  onChange={(event) =>
+                    setFilters((current) => ({
+                      ...current,
+                      preset: "custom",
+                      start: fromDateInputValue(
+                        event.target.value,
+                        timeZone,
+                        "start",
+                      ),
+                    }))
+                  }
+                />
+              </label>
+              <label className="flex flex-col gap-1" htmlFor={customEndId}>
+                <span className={helperTextClass}>종료일</span>
+                <Input
+                  id={customEndId}
+                  type="date"
+                  value={toDateInputValue(filters.end, timeZone)}
+                  onChange={(event) =>
+                    setFilters((current) => ({
+                      ...current,
+                      preset: "custom",
+                      end: fromDateInputValue(
+                        event.target.value,
+                        timeZone,
+                        "end",
+                      ),
+                    }))
+                  }
+                />
+              </label>
+            </div>
+          )}
+        </div>
+
+        <div className={panelSectionClass}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex flex-col gap-1">
+              <span className={sectionLabelClass}>리포지토리 필터</span>
+              <p className={helperTextClass}>
+                관심 있는 리포지토리를 선택해서 집중해 보세요.
+              </p>
+            </div>
             <Button
               type="button"
               variant="secondary"
               size="sm"
               onClick={handleSelectAllRepositories}
               disabled={allReposSelected || allRepositoryIds.length === 0}
+              className="whitespace-nowrap"
             >
               전체 선택
             </Button>
           </div>
-          <span className="text-xs text-muted-foreground">
+          <select
+            multiple
+            value={filters.repositoryIds}
+            onChange={handleRepoSelection}
+            className="min-h-[8.5rem] w-full flex-1 rounded-lg border border-border/60 bg-background p-2 text-sm shadow-inner focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            {repositories.map((repo) => (
+              <option key={repo.id} value={repo.id}>
+                {repo.nameWithOwner ?? repo.name ?? repo.id}
+              </option>
+            ))}
+          </select>
+          <p className={helperTextClass}>
             여러 리포지토리를 선택하려면 ⌘/Ctrl 키를 누른 상태에서 선택하세요.
-          </span>
-        </label>
-      </div>
+          </p>
+        </div>
 
-      {showPersonSelector && (
-        <div className="flex flex-col gap-2 text-sm">
-          <label className="flex flex-col gap-2">
-            <span className="text-xs uppercase text-muted-foreground">
-              개인 선택
-            </span>
+        {showPersonSelector && (
+          <div className={panelSectionClass}>
+            <span className={sectionLabelClass}>개인 선택</span>
+            <p className={helperTextClass}>
+              특정 구성원의 활동을 살펴보려면 아래에서 선택하세요.
+            </p>
             <select
               value={filters.personId ?? ""}
               onChange={handlePersonSelection}
-              className="rounded-md border border-border/60 bg-background p-2 text-sm"
+              className="rounded-lg border border-border/60 bg-background p-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             >
               <option value="">전체 구성원</option>
               {contributors.map((person) => (
@@ -187,34 +221,41 @@ export function DashboardFilterPanel({
                 </option>
               ))}
             </select>
-          </label>
-        </div>
-      )}
+          </div>
+        )}
 
-      <div className="flex flex-col justify-between gap-2 text-sm">
-        <div className="flex flex-col gap-1">
-          <span className="text-xs uppercase text-muted-foreground">
-            선택된 기간
-          </span>
-          <span className="font-medium">
-            {toDateInputValue(filters.start, timeZone)} ~{" "}
-            {toDateInputValue(filters.end, timeZone)}
-          </span>
-          <span className="text-xs text-muted-foreground">
-            이전 기간: {toDateInputValue(range.previousStart, timeZone)} ~{" "}
-            {toDateInputValue(range.previousEnd, timeZone)}
-          </span>
-          <span className="text-xs text-muted-foreground">
-            시간대: {timeZone}
-          </span>
-        </div>
-        <div className="flex flex-col gap-2">
-          <Button onClick={onApply} disabled={isLoading}>
-            {isLoading ? "갱신 중..." : "필터 적용"}
-          </Button>
-          {error && <p className="text-xs text-destructive">{error}</p>}
+        <div className={`${panelSectionClass} ${actionPanelSpanClass}`}>
+          <div className="flex flex-col gap-3">
+            <span className={sectionLabelClass}>선택된 기간</span>
+            <dl className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <dt className={helperTextClass}>현재 기간</dt>
+                <dd className="font-medium">
+                  {toDateInputValue(filters.start, timeZone)} ~{" "}
+                  {toDateInputValue(filters.end, timeZone)}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <dt className={helperTextClass}>이전 기간</dt>
+                <dd className="text-sm text-muted-foreground">
+                  {toDateInputValue(range.previousStart, timeZone)} ~{" "}
+                  {toDateInputValue(range.previousEnd, timeZone)}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <dt className={helperTextClass}>시간대</dt>
+                <dd className="text-sm text-muted-foreground">{timeZone}</dd>
+              </div>
+            </dl>
+          </div>
+          <div className="flex flex-col gap-2 pt-1">
+            <Button onClick={onApply} disabled={isLoading} className="w-full">
+              {isLoading ? "갱신 중..." : "필터 적용"}
+            </Button>
+            {error && <p className="text-xs text-destructive">{error}</p>}
+          </div>
         </div>
       </div>
-    </div>
+    </section>
   );
 }
