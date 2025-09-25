@@ -1,6 +1,14 @@
 import { Info } from "lucide-react";
-import { useId } from "react";
-import { Bar, BarChart, ResponsiveContainer, XAxis } from "recharts";
+import { type ReactNode, useId } from "react";
+import {
+  Bar,
+  BarChart,
+  Cell,
+  LabelList,
+  type LabelProps,
+  ResponsiveContainer,
+  XAxis,
+} from "recharts";
 
 import {
   changeColor,
@@ -19,7 +27,14 @@ import {
 import type {
   ComparisonValue,
   DurationComparisonValue,
+  PeriodKey,
 } from "@/lib/dashboard/types";
+
+const HISTORY_COLORS: Record<PeriodKey, string> = {
+  previous2: "var(--color-chart-3)",
+  previous: "var(--color-chart-2)",
+  current: "var(--color-chart-1)",
+};
 
 type MetricCardProps = {
   title: string;
@@ -28,7 +43,7 @@ type MetricCardProps = {
   format: MetricFormat;
   impact?: MetricImpact;
   tooltip?: string;
-  history?: Array<{ label: string; value: number | null }>;
+  history?: Array<{ period: PeriodKey; label: string; value: number | null }>;
 };
 
 export function MetricCard({
@@ -41,25 +56,77 @@ export function MetricCard({
   history,
 }: MetricCardProps) {
   const tooltipId = useId();
+  const metricUnit = "unit" in metric ? metric.unit : undefined;
   const valueMetric =
-    format === "hours"
-      ? {
-          current: (metric as DurationComparisonValue).current,
-          unit: (metric as DurationComparisonValue).unit,
-        }
+    metricUnit != null
+      ? { current: metric.current, unit: metricUnit }
       : { current: metric.current };
   const valueLabel = formatMetricValue(valueMetric, format);
   const { changeLabel, percentLabel } = formatChange(metric, format);
   const changeClass = changeColor(impact, metric.absoluteChange);
-  const historyData =
-    history?.map((entry) => ({
+  const historyData = (history ?? []).map((entry) => {
+    const numericValue =
+      entry.value == null || Number.isNaN(Number(entry.value))
+        ? null
+        : Number(entry.value);
+    const period = entry.period ?? "current";
+    const displayValue = formatMetricValue(
+      {
+        current: numericValue ?? Number.NaN,
+        ...(metricUnit ? { unit: metricUnit } : {}),
+      },
+      format,
+    );
+
+    return {
       label: entry.label,
-      value:
-        entry.value === null || Number.isNaN(entry.value)
-          ? 0
-          : Number(entry.value),
-    })) ?? [];
-  const hasHistory = historyData.some((entry) => Number.isFinite(entry.value));
+      period,
+      rawValue: numericValue,
+      value: numericValue ?? 0,
+      displayValue,
+      fill: HISTORY_COLORS[period] ?? HISTORY_COLORS.current,
+    };
+  });
+  const hasHistory = historyData.some((entry) =>
+    Number.isFinite(entry.rawValue),
+  );
+
+  const renderBarLabel = ({
+    x,
+    y,
+    width,
+    value,
+    index,
+  }: LabelProps): ReactNode => {
+    if (typeof index !== "number") {
+      return null;
+    }
+
+    const entry = historyData[index];
+    if (!entry) {
+      return null;
+    }
+
+    const label = typeof value === "string" ? value : String(value ?? "");
+    if (!label) {
+      return null;
+    }
+
+    const centerX = (x ?? 0) + (width ?? 0) / 2;
+    const offsetY = (y ?? 0) - 6;
+
+    return (
+      <text
+        x={centerX}
+        y={offsetY}
+        textAnchor="middle"
+        fill="var(--foreground)"
+        fontSize={11}
+      >
+        {label}
+      </text>
+    );
+  };
 
   return (
     <Card className="border-border/70">
@@ -96,11 +163,12 @@ export function MetricCard({
           {changeLabel} ({percentLabel})
         </span>
         {hasHistory && (
-          <div className="h-20 pt-1">
+          <div className="h-28 pt-1">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={historyData}
-                margin={{ top: 8, right: 8, left: -20, bottom: 0 }}
+                margin={{ top: 28, right: 12, left: -12, bottom: 0 }}
+                barCategoryGap={12}
               >
                 <XAxis
                   dataKey="label"
@@ -108,11 +176,16 @@ export function MetricCard({
                   tickLine={false}
                   tick={{ fontSize: 11 }}
                 />
-                <Bar
-                  dataKey="value"
-                  fill="hsl(var(--primary))"
-                  radius={[4, 4, 0, 0]}
-                />
+                <Bar dataKey="value" radius={[4, 4, 0, 0]} barSize={36}>
+                  {historyData.map((entry) => (
+                    <Cell key={entry.period} fill={entry.fill} />
+                  ))}
+                  <LabelList
+                    dataKey="displayValue"
+                    position="top"
+                    content={renderBarLabel}
+                  />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>

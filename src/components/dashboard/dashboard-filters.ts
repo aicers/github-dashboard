@@ -3,7 +3,10 @@ import { DateTime } from "luxon";
 import type { WeekStart } from "@/lib/dashboard/types";
 
 export type TimePresetKey =
+  | "last_14_days"
   | "last_30_days"
+  | "last_60_days"
+  | "last_90_days"
   | "this_week"
   | "last_week"
   | "this_month"
@@ -12,7 +15,10 @@ export type TimePresetKey =
   | "custom";
 
 export const PRESETS: Array<{ key: TimePresetKey; label: string }> = [
+  { key: "last_14_days", label: "최근 2주" },
   { key: "last_30_days", label: "최근 30일" },
+  { key: "last_60_days", label: "최근 60일" },
+  { key: "last_90_days", label: "최근 90일" },
   { key: "this_week", label: "이번 주" },
   { key: "last_week", label: "지난 주" },
   { key: "this_month", label: "이번 달" },
@@ -43,9 +49,27 @@ export function buildRangeFromPreset(
 ) {
   const now = toZonedDateTime(timeZone, reference);
 
+  if (preset === "last_14_days") {
+    const end = now.endOf("day");
+    const start = end.minus({ days: 13 }).startOf("day");
+    return { start: start.toUTC().toISO(), end: end.toUTC().toISO() };
+  }
+
   if (preset === "last_30_days") {
     const end = now.endOf("day");
     const start = end.minus({ days: 29 }).startOf("day");
+    return { start: start.toUTC().toISO(), end: end.toUTC().toISO() };
+  }
+
+  if (preset === "last_60_days") {
+    const end = now.endOf("day");
+    const start = end.minus({ days: 59 }).startOf("day");
+    return { start: start.toUTC().toISO(), end: end.toUTC().toISO() };
+  }
+
+  if (preset === "last_90_days") {
+    const end = now.endOf("day");
+    const start = end.minus({ days: 89 }).startOf("day");
     return { start: start.toUTC().toISO(), end: end.toUTC().toISO() };
   }
 

@@ -10,7 +10,7 @@ export default async function PeoplePage() {
   const timeZone = status.config?.timezone ?? "UTC";
   const weekStart =
     (status.config?.week_start as "sunday" | "monday") ?? "monday";
-  const presetRange = buildRangeFromPreset("last_30_days", timeZone, weekStart);
+  const presetRange = buildRangeFromPreset("last_14_days", timeZone, weekStart);
   const start = presetRange?.start ?? new Date().toISOString();
   const end = presetRange?.end ?? new Date().toISOString();
   const analytics = await getDashboardAnalytics({ start, end });
