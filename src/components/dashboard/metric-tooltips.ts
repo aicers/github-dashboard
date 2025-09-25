@@ -35,7 +35,7 @@ export const individualMetricTooltips = {
     "이 구성원이 리뷰 요청을 받은 후 응답하기까지 걸린 평균 업무 시간입니다. 주말과 지정 휴일은 제외됩니다.",
   reviewCoverage: "이 구성원의 리뷰 커버리지 지표입니다.",
   reviewParticipation: "이 구성원의 리뷰 참여 비율입니다.",
-  discussionComments: "토론 스레드에서 남긴 코멘트 개수입니다.",
+  discussionComments: "이슈와 PR에서 남긴 코멘트 개수입니다.",
   parentIssueResolutionTime:
     "이 구성원이 담당한 부모 이슈의 평균 해결 시간입니다.",
   parentIssueWorkTime:
