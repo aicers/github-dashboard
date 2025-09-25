@@ -9,6 +9,7 @@ import {
   Legend,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -83,6 +84,50 @@ const HISTORY_LABELS: Record<PeriodKey, string> = {
   current: "이번",
 };
 
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+
+function formatDateKey(date: Date) {
+  return `${date.getUTCFullYear()}-${`${date.getUTCMonth() + 1}`.padStart(2, "0")}-${`${date.getUTCDate()}`.padStart(2, "0")}`;
+}
+
+function normalizeTrendDateKey(value: string) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return formatDateKey(parsed);
+}
+
+function buildDateKeys(start: string, end: string) {
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+    return [];
+  }
+
+  const startUtc = Date.UTC(
+    startDate.getUTCFullYear(),
+    startDate.getUTCMonth(),
+    startDate.getUTCDate(),
+  );
+  const endUtc = Date.UTC(
+    endDate.getUTCFullYear(),
+    endDate.getUTCMonth(),
+    endDate.getUTCDate(),
+  );
+
+  const keys: string[] = [];
+  for (let time = startUtc; time <= endUtc; time += DAY_IN_MS) {
+    keys.push(formatDateKey(new Date(time)));
+  }
+  return keys;
+}
+
 function mergeTrends(
   left: { date: string; value: number }[],
   right: { date: string; value: number }[],
@@ -91,11 +136,16 @@ function mergeTrends(
 ) {
   const map = new Map<string, TrendEntry>();
 
-  const ensureEntry = (date: string): TrendEntry => {
-    let entry = map.get(date);
+  const ensureEntry = (rawDate: string): TrendEntry => {
+    const normalizedDate = normalizeTrendDateKey(rawDate);
+    let entry = map.get(normalizedDate);
     if (!entry) {
-      entry = { date, [leftKey]: 0, [rightKey]: 0 } as TrendEntry;
-      map.set(date, entry);
+      entry = {
+        date: normalizedDate,
+        [leftKey]: 0,
+        [rightKey]: 0,
+      } as TrendEntry;
+      map.set(normalizedDate, entry);
     }
     return entry;
   };
@@ -351,6 +401,11 @@ export function AnalyticsView({
     direction: REPO_SORT_DEFAULT_DIRECTION.issuesResolved,
   }));
 
+  const dateKeys = useMemo(
+    () => buildDateKeys(analytics.range.start, analytics.range.end),
+    [analytics.range.start, analytics.range.end],
+  );
+
   const sortedRepoComparison = useMemo(() => {
     const rows = [...organization.repoComparison];
     const { key, direction } = repoSort;
@@ -509,12 +564,38 @@ export function AnalyticsView({
     "closed",
   );
 
+  const issuesNetTrend = useMemo(() => {
+    const map = new Map(issuesLineData.map((entry) => [entry.date, entry]));
+    return dateKeys.map((date) => {
+      const entry = map.get(date);
+      const created = entry?.created ?? 0;
+      const closed = entry?.closed ?? 0;
+      return {
+        date,
+        delta: created - closed,
+      };
+    });
+  }, [dateKeys, issuesLineData]);
+
   const prLineData = mergeTrends(
     organization.trends.prsCreated,
     organization.trends.prsMerged,
     "created",
     "merged",
   );
+
+  const prNetTrend = useMemo(() => {
+    const map = new Map(prLineData.map((entry) => [entry.date, entry]));
+    return dateKeys.map((date) => {
+      const entry = map.get(date);
+      const created = entry?.created ?? 0;
+      const merged = entry?.merged ?? 0;
+      return {
+        date,
+        delta: created - merged,
+      };
+    });
+  }, [dateKeys, prLineData]);
 
   const resolutionTrend = organization.trends.issueResolutionHours.map(
     (point) => ({
@@ -681,15 +762,15 @@ export function AnalyticsView({
         <Card className="border-border/70">
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-medium">
-              이슈 생성 vs 종료 추이
+              이슈 순증 추이
             </CardTitle>
             <CardDescription className="text-sm text-muted-foreground">
-              선택한 기간 동안의 일별 이슈 생성 및 종료 흐름
+              선택한 기간 동안 일별 이슈 생성 대비 종료(생성-종료) 변화량
             </CardDescription>
           </CardHeader>
           <CardContent className="h-72">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={issuesLineData}>
+              <LineChart data={issuesNetTrend}>
                 <CartesianGrid
                   strokeDasharray="3 3"
                   stroke="hsl(var(--muted-foreground) / 0.2)"
@@ -706,20 +787,16 @@ export function AnalyticsView({
                   tickLine={false}
                 />
                 <Tooltip />
-                <Legend />
-                <Line
-                  type="monotone"
-                  dataKey="created"
-                  name="생성"
-                  stroke="#2563eb"
-                  strokeWidth={2}
-                  dot={false}
+                <ReferenceLine
+                  y={0}
+                  stroke="hsl(var(--muted-foreground) / 0.6)"
+                  strokeDasharray="4 4"
                 />
                 <Line
                   type="monotone"
-                  dataKey="closed"
-                  name="종료"
-                  stroke="#16a34a"
+                  dataKey="delta"
+                  name="순증(생성-종료)"
+                  stroke="#2563eb"
                   strokeWidth={2}
                   dot={false}
                 />
@@ -731,15 +808,15 @@ export function AnalyticsView({
         <Card className="border-border/70">
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-medium">
-              PR 생성 vs 머지 추이
+              PR 순증 추이
             </CardTitle>
             <CardDescription className="text-sm text-muted-foreground">
-              기간 중 PR 생성 및 머지 흐름을 비교합니다.
+              기간 중 일별 PR 생성 대비 머지(생성-머지) 변화량
             </CardDescription>
           </CardHeader>
           <CardContent className="h-72">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={prLineData}>
+              <LineChart data={prNetTrend}>
                 <CartesianGrid
                   strokeDasharray="3 3"
                   stroke="hsl(var(--muted-foreground) / 0.2)"
@@ -756,20 +833,16 @@ export function AnalyticsView({
                   tickLine={false}
                 />
                 <Tooltip />
-                <Legend />
-                <Line
-                  type="monotone"
-                  dataKey="created"
-                  name="생성"
-                  stroke="#7c3aed"
-                  strokeWidth={2}
-                  dot={false}
+                <ReferenceLine
+                  y={0}
+                  stroke="hsl(var(--muted-foreground) / 0.6)"
+                  strokeDasharray="4 4"
                 />
                 <Line
                   type="monotone"
-                  dataKey="merged"
-                  name="머지"
-                  stroke="#ea580c"
+                  dataKey="delta"
+                  name="순증(생성-머지)"
+                  stroke="#7c3aed"
                   strokeWidth={2}
                   dot={false}
                 />
