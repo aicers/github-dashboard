@@ -3,8 +3,6 @@
 import { ArrowDown, ArrowUp, ArrowUpDown, Info } from "lucide-react";
 import { Fragment, type ReactNode, useId, useMemo, useState } from "react";
 import {
-  Bar,
-  BarChart,
   CartesianGrid,
   Legend,
   Line,
@@ -597,18 +595,6 @@ export function AnalyticsView({
     });
   }, [dateKeys, prLineData]);
 
-  const resolutionTrend = organization.trends.issueResolutionHours.map(
-    (point) => ({
-      date: point.date,
-      resolutionHours: Number.isFinite(point.values.resolutionHours)
-        ? point.values.resolutionHours
-        : 0,
-      workHours: Number.isFinite(point.values.workHours)
-        ? point.values.workHours
-        : 0,
-    }),
-  );
-
   const reviewHeatmap = organization.trends.reviewHeatmap;
 
   const individual = analytics.individual;
@@ -852,53 +838,7 @@ export function AnalyticsView({
         </Card>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-2">
-        <Card className="border-border/70">
-          <CardHeader>
-            <CardTitle className="text-base font-medium">
-              월별 평균 해결 · 작업 시간
-            </CardTitle>
-            <CardDescription className="text-sm text-muted-foreground">
-              해결 시점과 작업 완료 시점까지 걸린 시간을 월별로 비교합니다.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={resolutionTrend}>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="hsl(var(--muted-foreground) / 0.2)"
-                />
-                <XAxis
-                  dataKey="date"
-                  stroke="hsl(var(--muted-foreground))"
-                  fontSize={12}
-                  tickLine={false}
-                />
-                <YAxis
-                  stroke="hsl(var(--muted-foreground))"
-                  fontSize={12}
-                  tickLine={false}
-                />
-                <Tooltip />
-                <Legend />
-                <Bar
-                  dataKey="resolutionHours"
-                  name="평균 해결 시간"
-                  fill="#2563eb"
-                  radius={[4, 4, 0, 0]}
-                />
-                <Bar
-                  dataKey="workHours"
-                  name="평균 작업 시간"
-                  fill="#16a34a"
-                  radius={[4, 4, 0, 0]}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
+      <section className="grid gap-4">
         <Card className="border-border/70">
           <CardHeader>
             <CardTitle className="text-base font-medium">
