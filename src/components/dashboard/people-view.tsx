@@ -1,16 +1,6 @@
 "use client";
 
 import { useEffect } from "react";
-import {
-  CartesianGrid,
-  Legend,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { DashboardFilterPanel } from "@/components/dashboard/dashboard-filter-panel";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { toCardHistory } from "@/components/dashboard/metric-history";
@@ -284,53 +274,6 @@ export function PeopleView({
           </section>
 
           <section className="grid gap-4 lg:grid-cols-2">
-            <Card className="border-border/70">
-              <CardHeader>
-                <CardTitle className="text-base font-medium">
-                  월별 이슈 & 리뷰 추이
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={individual.trends.monthly}>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke="hsl(var(--muted-foreground) / 0.2)"
-                    />
-                    <XAxis
-                      dataKey="date"
-                      stroke="hsl(var(--muted-foreground))"
-                      fontSize={12}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      stroke="hsl(var(--muted-foreground))"
-                      fontSize={12}
-                      tickLine={false}
-                    />
-                    <Tooltip />
-                    <Legend />
-                    <Line
-                      type="monotone"
-                      dataKey="values.issues"
-                      name="이슈"
-                      stroke="#2563eb"
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="values.reviews"
-                      name="리뷰"
-                      stroke="#16a34a"
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
             <Card className="border-border/70">
               <CardHeader>
                 <CardTitle className="text-base font-medium">
