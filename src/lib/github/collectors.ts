@@ -86,6 +86,7 @@ type IssueNode = {
 type PullRequestNode = IssueNode & {
   mergedAt?: string | null;
   merged?: boolean | null;
+  mergedBy?: GithubActor | null;
   reactions?: {
     nodes: ReactionNode[] | null;
   } | null;
@@ -978,6 +979,7 @@ async function collectPullRequestsForRepository(
       }
 
       const authorId = await processActor(pullRequest.author);
+      await processActor(pullRequest.mergedBy);
       await upsertPullRequest({
         id: pullRequest.id,
         number: pullRequest.number,
