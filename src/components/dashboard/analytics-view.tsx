@@ -28,6 +28,7 @@ import { RepoDistributionList } from "@/components/dashboard/repo-distribution-l
 import { useDashboardAnalytics } from "@/components/dashboard/use-dashboard-analytics";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -42,6 +43,7 @@ import type {
   PeriodKey,
   RepoComparisonRow,
 } from "@/lib/dashboard/types";
+import { cn } from "@/lib/utils";
 
 type AnalyticsViewProps = {
   initialAnalytics: DashboardAnalytics;
@@ -59,6 +61,7 @@ type RepoSortKey =
   | "comments"
   | "avgFirstReviewHours";
 type RepoSortDirection = "asc" | "desc";
+type MainBranchSortKey = "count" | "additions" | "net";
 
 const REPO_SORT_DEFAULT_DIRECTION: Record<RepoSortKey, RepoSortDirection> = {
   issuesCreated: "desc",
@@ -69,6 +72,24 @@ const REPO_SORT_DEFAULT_DIRECTION: Record<RepoSortKey, RepoSortDirection> = {
   comments: "desc",
   avgFirstReviewHours: "asc",
 };
+
+const MAIN_BRANCH_SORT_OPTIONS: Array<{
+  key: MainBranchSortKey;
+  label: string;
+}> = [
+  {
+    key: "count",
+    label: "건수",
+  },
+  {
+    key: "additions",
+    label: "추가 라인",
+  },
+  {
+    key: "net",
+    label: "순증 라인",
+  },
+];
 
 const HISTORY_KEYS: PeriodKey[] = [
   "previous4",
@@ -263,6 +284,7 @@ function LeaderboardTable({
   valueFormatter,
   secondaryLabel,
   tooltip,
+  headerActions,
 }: {
   title: string;
   entries: LeaderboardEntry[];
@@ -270,6 +292,7 @@ function LeaderboardTable({
   valueFormatter?: (value: number) => string;
   secondaryLabel?: string;
   tooltip?: string;
+  headerActions?: ReactNode;
 }) {
   const tooltipId = useId();
   return (
@@ -295,6 +318,7 @@ function LeaderboardTable({
             </button>
           )}
         </CardTitle>
+        {headerActions ? <CardAction>{headerActions}</CardAction> : null}
       </CardHeader>
       <CardContent className="space-y-4">
         {entries.length === 0 && (
@@ -401,6 +425,9 @@ export function AnalyticsView({
     key: "issuesResolved",
     direction: REPO_SORT_DEFAULT_DIRECTION.issuesResolved,
   }));
+
+  const [mainBranchSortKey, setMainBranchSortKey] =
+    useState<MainBranchSortKey>("count");
 
   const dateKeys = useMemo(
     () => buildDateKeys(analytics.range.start, analytics.range.end),
@@ -555,8 +582,71 @@ export function AnalyticsView({
       secondaryValue: reviewer.pullRequestsReviewed,
     }));
 
-  const mainBranchContributionEntries =
+  const rawMainBranchContributionEntries =
     analytics.leaderboard.mainBranchContribution;
+
+  const mainBranchContributionEntries = useMemo(() => {
+    const getDetailValue = (entry: LeaderboardEntry, label: string) => {
+      if (!entry.details) {
+        return 0;
+      }
+      const detail = entry.details.find((item) => item.label === label);
+      return Number(detail?.value ?? 0);
+    };
+
+    const getSortValue = (entry: LeaderboardEntry) => {
+      if (mainBranchSortKey === "additions") {
+        return getDetailValue(entry, "+");
+      }
+
+      if (mainBranchSortKey === "net") {
+        return getDetailValue(entry, "+") - getDetailValue(entry, "-");
+      }
+
+      return entry.value;
+    };
+
+    const getName = (entry: LeaderboardEntry) =>
+      entry.user.login ?? entry.user.name ?? entry.user.id;
+
+    return [...rawMainBranchContributionEntries].sort((a, b) => {
+      const valueA = getSortValue(a);
+      const valueB = getSortValue(b);
+
+      if (valueA === valueB) {
+        return getName(a).localeCompare(getName(b));
+      }
+
+      return valueB - valueA;
+    });
+  }, [rawMainBranchContributionEntries, mainBranchSortKey]);
+
+  const mainBranchSortControls = (
+    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <span className="hidden font-medium md:inline">정렬</span>
+      <div className="flex rounded-md border border-border/60 bg-background/80 p-0.5">
+        {MAIN_BRANCH_SORT_OPTIONS.map((option) => {
+          const isActive = mainBranchSortKey === option.key;
+          return (
+            <button
+              key={option.key}
+              type="button"
+              onClick={() => setMainBranchSortKey(option.key)}
+              className={cn(
+                "rounded-[6px] px-2 py-1 text-xs font-medium transition-colors",
+                isActive
+                  ? "bg-secondary text-secondary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              aria-pressed={isActive}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 
   const issuesLineData = mergeTrends(
     organization.trends.issuesCreated,
@@ -1097,6 +1187,7 @@ export function AnalyticsView({
             secondaryLabel="리뷰"
             unit="건"
             tooltip="리뷰한 PR과 직접 생성한 PR 중에서 머지된 PR 건수를 합산합니다. +/− 값은 병합된 PR들의 코드 추가·삭제 라인 합계입니다. Dependabot Pull Request는 제외됩니다."
+            headerActions={mainBranchSortControls}
           />
           <LeaderboardTable
             title="빠른 리뷰 응답"
