@@ -4,11 +4,14 @@ export const organizationMetricTooltips = {
   issueResolutionTime: "이슈 생성부터 종료까지 걸린 평균 시간입니다.",
   issueWorkTime:
     "설정된 프로젝트 보드에서 진행 상태로 이동한 시점부터 완료 상태까지의 평균 시간입니다.",
-  prsCreated: "선택한 기간 동안 생성된 Pull Request 개수입니다.",
-  prsMerged: "선택한 기간 동안 병합된 Pull Request 개수입니다.",
+  prsCreated:
+    "선택한 기간 동안 생성된 Pull Request 개수입니다. Dependabot PR은 제외됩니다.",
+  prsMerged:
+    "선택한 기간 동안 병합된 Pull Request 개수입니다. Dependabot PR은 제외됩니다.",
   reviewParticipation:
-    "리뷰 요청에 응답한 구성원의 비율(응답한 리뷰어 수 ÷ 요청된 리뷰어 수)입니다.",
-  reviewResponseTime: "리뷰 요청이 생성된 후 첫 응답까지 걸린 평균 시간입니다.",
+    "리뷰 요청에 응답한 구성원의 비율(응답한 리뷰어 수 ÷ 요청된 리뷰어 수)입니다. Dependabot PR은 제외됩니다.",
+  reviewResponseTime:
+    "리뷰 요청이 생성된 후 첫 응답까지 걸린 평균 시간입니다. Dependabot PR은 제외됩니다.",
   parentIssueResolutionTime:
     "부모 이슈(다른 이슈를 하위 이슈로 포함하는 이슈)의 생성부터 종료까지 걸린 평균 시간입니다.",
   parentIssueWorkTime:

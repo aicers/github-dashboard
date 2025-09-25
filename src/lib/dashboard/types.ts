@@ -1,10 +1,17 @@
 import type { RepositoryProfile, UserProfile } from "@/lib/db/operations";
 
+export type ComparisonBreakdownEntry = {
+  label: string;
+  current: number;
+  previous: number;
+};
+
 export type ComparisonValue = {
   current: number;
   previous: number;
   absoluteChange: number;
   percentChange: number | null;
+  breakdown?: ComparisonBreakdownEntry[];
 };
 
 export type DurationComparisonValue = ComparisonValue & {
