@@ -13,7 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import type { RepositoryProfile } from "@/lib/db/operations";
+import type { RepositoryProfile, UserProfile } from "@/lib/db/operations";
 
 const FALLBACK_TIMEZONES = [
   "UTC",
@@ -50,6 +50,8 @@ type SettingsViewProps = {
   weekStart: "sunday" | "monday";
   repositories: RepositoryProfile[];
   excludedRepositoryIds: string[];
+  members: UserProfile[];
+  excludedMemberIds: string[];
 };
 
 type ApiResponse<T> = {
@@ -65,6 +67,8 @@ export function SettingsView({
   weekStart,
   repositories,
   excludedRepositoryIds,
+  members,
+  excludedMemberIds,
 }: SettingsViewProps) {
   const router = useRouter();
   const [name, setName] = useState(orgName);
@@ -74,16 +78,25 @@ export function SettingsView({
     weekStart,
   );
   const [feedback, setFeedback] = useState<string | null>(null);
-  const normalizedExcluded = useMemo(() => {
+  const normalizedExcludedRepositories = useMemo(() => {
     const allowed = new Set(repositories.map((repo) => repo.id));
     return excludedRepositoryIds.filter((id) => allowed.has(id));
   }, [excludedRepositoryIds, repositories]);
-  const [excludedRepos, setExcludedRepos] =
-    useState<string[]>(normalizedExcluded);
+  const [excludedRepos, setExcludedRepos] = useState<string[]>(
+    normalizedExcludedRepositories,
+  );
+  const normalizedExcludedMembers = useMemo(() => {
+    const allowed = new Set(members.map((member) => member.id));
+    return excludedMemberIds.filter((id) => allowed.has(id));
+  }, [excludedMemberIds, members]);
+  const [excludedPeople, setExcludedPeople] = useState<string[]>(
+    normalizedExcludedMembers,
+  );
   const [isSaving, startSaving] = useTransition();
   const orgInputId = useId();
   const intervalInputId = useId();
   const excludeSelectId = useId();
+  const excludePeopleSelectId = useId();
 
   const timezones = useMemo(() => {
     const options = getTimezoneOptions();
@@ -95,8 +108,12 @@ export function SettingsView({
   }, [timezone]);
 
   useEffect(() => {
-    setExcludedRepos(normalizedExcluded);
-  }, [normalizedExcluded]);
+    setExcludedRepos(normalizedExcludedRepositories);
+  }, [normalizedExcludedRepositories]);
+
+  useEffect(() => {
+    setExcludedPeople(normalizedExcludedMembers);
+  }, [normalizedExcludedMembers]);
 
   const sortedRepositories = useMemo(() => {
     return [...repositories].sort((a, b) => {
@@ -105,6 +122,16 @@ export function SettingsView({
       return nameA.localeCompare(nameB);
     });
   }, [repositories]);
+
+  const sortedMembers = useMemo(() => {
+    const toLabel = (member: UserProfile) =>
+      member.login ?? member.name ?? member.id;
+    return [...members].sort((a, b) =>
+      toLabel(a).localeCompare(toLabel(b), undefined, {
+        sensitivity: "base",
+      }),
+    );
+  }, [members]);
 
   const handleExcludedChange = (
     event: React.ChangeEvent<HTMLSelectElement>,
@@ -117,6 +144,19 @@ export function SettingsView({
 
   const handleClearExcluded = () => {
     setExcludedRepos([]);
+  };
+
+  const handleExcludedPeopleChange = (
+    event: React.ChangeEvent<HTMLSelectElement>,
+  ) => {
+    const selected = Array.from(event.target.selectedOptions).map(
+      (option) => option.value,
+    );
+    setExcludedPeople(selected);
+  };
+
+  const handleClearExcludedPeople = () => {
+    setExcludedPeople([]);
   };
 
   const handleSave = () => {
@@ -142,6 +182,7 @@ export function SettingsView({
             timezone,
             weekStart: weekStartValue,
             excludedRepositories: excludedRepos,
+            excludedPeople,
           }),
         });
         const data = (await response.json()) as ApiResponse<unknown>;
@@ -288,6 +329,59 @@ export function SettingsView({
             variant="secondary"
             onClick={handleClearExcluded}
             disabled={!excludedRepos.length}
+          >
+            제외 목록 비우기
+          </Button>
+        </CardFooter>
+      </Card>
+
+      <Card className="border-border/70">
+        <CardHeader>
+          <CardTitle>구성원 제외</CardTitle>
+          <CardDescription>
+            제외된 구성원은 Analytics와 People 메뉴에 표시되지 않습니다.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4 text-sm">
+          {sortedMembers.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              동기화된 구성원이 없습니다.
+            </p>
+          ) : (
+            <label
+              className="flex flex-col gap-2"
+              htmlFor={excludePeopleSelectId}
+            >
+              <span className="text-muted-foreground">
+                제외할 구성원을 선택하세요
+              </span>
+              <select
+                id={excludePeopleSelectId}
+                multiple
+                value={excludedPeople}
+                onChange={handleExcludedPeopleChange}
+                className="h-48 rounded-md border border-border/60 bg-background p-2 text-sm"
+              >
+                {sortedMembers.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.login ?? member.name ?? member.id}
+                  </option>
+                ))}
+              </select>
+              <span className="text-xs text-muted-foreground">
+                여러 구성원을 선택하려면 ⌘/Ctrl 키를 눌러 복수 선택하세요.
+              </span>
+            </label>
+          )}
+        </CardContent>
+        <CardFooter className="flex justify-between">
+          <span className="text-xs text-muted-foreground">
+            제외된 구성원: {excludedPeople.length}명
+          </span>
+          <Button
+            variant="secondary"
+            onClick={handleClearExcludedPeople}
+            disabled={!excludedPeople.length}
           >
             제외 목록 비우기
           </Button>

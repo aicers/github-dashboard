@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { DashboardFilterPanel } from "@/components/dashboard/dashboard-filter-panel";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { toCardHistory } from "@/components/dashboard/metric-history";
@@ -39,7 +39,17 @@ export function PeopleView({
   } = useDashboardAnalytics({ initialAnalytics, defaultRange });
 
   const repositories = analytics.repositories;
-  const contributors = analytics.contributors;
+  const unsortedContributors = analytics.contributors;
+  const contributors = useMemo(() => {
+    const displayName = (person: (typeof unsortedContributors)[number]) =>
+      person.login ?? person.name ?? person.id;
+
+    return [...unsortedContributors].sort((first, second) =>
+      displayName(first).localeCompare(displayName(second), undefined, {
+        sensitivity: "base",
+      }),
+    );
+  }, [unsortedContributors]);
   const individual = analytics.individual;
   const individualHistory = individual?.metricHistory;
 
