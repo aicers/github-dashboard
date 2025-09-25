@@ -2163,13 +2163,17 @@ async function fetchIndividualCoverageMetrics(
     `WITH prs_in_range AS (
        SELECT id
        FROM pull_requests pr
-       WHERE pr.github_created_at BETWEEN $2 AND $3${repoClause}
+       WHERE pr.github_merged_at IS NOT NULL
+         AND pr.github_merged_at BETWEEN $2 AND $3${repoClause}
      ),
      reviewer_prs AS (
        SELECT DISTINCT r.pull_request_id
        FROM reviews r
        JOIN pull_requests pr ON pr.id = r.pull_request_id
-       WHERE r.author_id = $1 AND r.github_submitted_at BETWEEN $2 AND $3${repoClause}
+       WHERE r.author_id = $1
+         AND r.github_submitted_at BETWEEN $2 AND $3${repoClause}
+         AND pr.github_merged_at IS NOT NULL
+         AND pr.github_merged_at BETWEEN $2 AND $3
      ),
      participation AS (
        SELECT
