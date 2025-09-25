@@ -1,5 +1,6 @@
 import type {
   AnalyticsParams,
+  ComparisonBreakdownEntry,
   ComparisonValue,
   DashboardAnalytics,
   DurationComparisonValue,
@@ -28,6 +29,9 @@ import {
 import { env } from "@/lib/env";
 
 const HOLIDAY_SET = buildHolidaySet(env.HOLIDAYS);
+
+const DEPENDABOT_FILTER =
+  "NOT (COALESCE(LOWER(u.login), '') LIKE 'dependabot%' OR COALESCE(LOWER(u.login), '') = 'app/dependabot')";
 
 function toIso(value: string) {
   const date = new Date(value);
@@ -69,7 +73,11 @@ function calculatePercentChange(current: number, previous: number) {
   return ((current - previous) / previous) * 100;
 }
 
-function buildComparison(current: number, previous: number): ComparisonValue {
+function buildComparison(
+  current: number,
+  previous: number,
+  breakdown?: ComparisonBreakdownEntry[],
+): ComparisonValue {
   const currentValue = Number(current ?? 0);
   const previousValue = Number(previous ?? 0);
   return {
@@ -77,6 +85,7 @@ function buildComparison(current: number, previous: number): ComparisonValue {
     previous: previousValue,
     absoluteChange: currentValue - previousValue,
     percentChange: calculatePercentChange(currentValue, previousValue),
+    breakdown: breakdown?.length ? breakdown : undefined,
   };
 }
 
@@ -361,7 +370,9 @@ async function fetchIssueAggregates(
 
 type PrAggregateRow = {
   prs_created: number;
+  prs_created_dependabot: number;
   prs_merged: number;
+  prs_merged_dependabot: number;
   avg_merge_hours: number | null;
   merge_without_review: number;
   avg_lines_changed: number | null;
@@ -381,39 +392,101 @@ async function fetchPrAggregates(
     repoClause = ` AND p.repository_id = ANY($${index}::text[])`;
   }
 
-  const result = await query<PrAggregateRow>(
+  const result = await query<{
+    prs_created_total: number | null;
+    prs_created_dependabot: number | null;
+    prs_merged_total: number | null;
+    prs_merged_dependabot: number | null;
+    avg_merge_hours: number | null;
+    merge_without_review: number | null;
+    avg_lines_changed: number | null;
+    avg_comments_pr: number | null;
+  }>(
     `WITH review_counts AS (
        SELECT r.pull_request_id, COUNT(*) FILTER (WHERE r.github_submitted_at IS NOT NULL) AS review_count
        FROM reviews r
        GROUP BY r.pull_request_id
+     ),
+     pull_requests_with_flags AS (
+       SELECT
+         p.*,
+         CASE
+           WHEN u.login IS NULL THEN FALSE
+           ELSE (
+             LOWER(u.login) LIKE 'dependabot%'
+             OR LOWER(u.login) = 'app/dependabot'
+           )
+         END AS is_dependabot
+       FROM pull_requests p
+       LEFT JOIN users u ON u.id = p.author_id
      )
       SELECT
-       COUNT(*) FILTER (WHERE p.github_created_at BETWEEN $1 AND $2) AS prs_created,
-       COUNT(*) FILTER (WHERE p.github_merged_at BETWEEN $1 AND $2) AS prs_merged,
+       COUNT(*) FILTER (WHERE p.github_created_at BETWEEN $1 AND $2) AS prs_created_total,
+       COUNT(*) FILTER (
+         WHERE p.github_created_at BETWEEN $1 AND $2 AND p.is_dependabot
+       ) AS prs_created_dependabot,
+       COUNT(*) FILTER (WHERE p.github_merged_at BETWEEN $1 AND $2) AS prs_merged_total,
+       COUNT(*) FILTER (
+         WHERE p.github_merged_at BETWEEN $1 AND $2 AND p.is_dependabot
+       ) AS prs_merged_dependabot,
        AVG(EXTRACT(EPOCH FROM (p.github_merged_at - p.github_created_at)) / 3600.0)
-         FILTER (WHERE p.github_merged_at BETWEEN $1 AND $2 AND p.github_merged_at IS NOT NULL) AS avg_merge_hours,
-       COUNT(*) FILTER (WHERE p.github_merged_at BETWEEN $1 AND $2 AND COALESCE(rc.review_count, 0) = 0) AS merge_without_review,
+         FILTER (
+           WHERE p.github_merged_at BETWEEN $1 AND $2
+             AND p.github_merged_at IS NOT NULL
+             AND NOT p.is_dependabot
+         ) AS avg_merge_hours,
+       COUNT(*) FILTER (
+         WHERE p.github_merged_at BETWEEN $1 AND $2
+           AND COALESCE(rc.review_count, 0) = 0
+           AND NOT p.is_dependabot
+       ) AS merge_without_review,
        AVG(COALESCE((p.data ->> 'additions')::numeric, 0) + COALESCE((p.data ->> 'deletions')::numeric, 0))
-         FILTER (WHERE p.github_merged_at BETWEEN $1 AND $2) AS avg_lines_changed,
+         FILTER (
+           WHERE p.github_merged_at BETWEEN $1 AND $2
+             AND NOT p.is_dependabot
+         ) AS avg_lines_changed,
        AVG(COALESCE((p.data -> 'comments' ->> 'totalCount')::numeric, 0))
-         FILTER (WHERE p.github_created_at BETWEEN $1 AND $2) AS avg_comments_pr
-     FROM pull_requests p
+         FILTER (
+           WHERE p.github_created_at BETWEEN $1 AND $2
+             AND NOT p.is_dependabot
+         ) AS avg_comments_pr
+     FROM pull_requests_with_flags p
      LEFT JOIN review_counts rc ON rc.pull_request_id = p.id
      WHERE (p.github_created_at BETWEEN $1 AND $2
         OR p.github_merged_at BETWEEN $1 AND $2)${repoClause}`,
     params,
   );
 
-  return (
-    result.rows[0] ?? {
+  const row = result.rows[0];
+
+  if (!row) {
+    return {
       prs_created: 0,
+      prs_created_dependabot: 0,
       prs_merged: 0,
+      prs_merged_dependabot: 0,
       avg_merge_hours: null,
       merge_without_review: 0,
       avg_lines_changed: null,
       avg_comments_pr: null,
-    }
-  );
+    };
+  }
+
+  const createdTotal = Number(row.prs_created_total ?? 0);
+  const createdDependabot = Number(row.prs_created_dependabot ?? 0);
+  const mergedTotal = Number(row.prs_merged_total ?? 0);
+  const mergedDependabot = Number(row.prs_merged_dependabot ?? 0);
+
+  return {
+    prs_created: createdTotal - createdDependabot,
+    prs_created_dependabot: createdDependabot,
+    prs_merged: mergedTotal - mergedDependabot,
+    prs_merged_dependabot: mergedDependabot,
+    avg_merge_hours: row.avg_merge_hours,
+    merge_without_review: Number(row.merge_without_review ?? 0),
+    avg_lines_changed: row.avg_lines_changed,
+    avg_comments_pr: row.avg_comments_pr,
+  };
 }
 
 type IssueDurationDetailRow = {
@@ -987,7 +1060,9 @@ async function fetchReviewAggregates(
       `WITH pr_scope AS (
          SELECT pr.id, pr.github_created_at, pr.repository_id, pr.author_id
          FROM pull_requests pr
+         LEFT JOIN users u ON u.id = pr.author_id
          WHERE pr.github_created_at BETWEEN $1 AND $2${repoClause}
+           AND ${DEPENDABOT_FILTER}
        ),
        reviews_in_range AS (
          SELECT r.id, r.author_id, r.github_submitted_at, r.pull_request_id
@@ -1070,13 +1145,17 @@ async function fetchTotalEvents(
      pr_events AS (
        SELECT COUNT(*) AS pull_requests
        FROM pull_requests p
+       LEFT JOIN users u ON u.id = p.author_id
        WHERE p.github_created_at BETWEEN $1 AND $2${repoClausePrs}
+         AND ${DEPENDABOT_FILTER}
      ),
      review_events AS (
        SELECT COUNT(*) AS reviews
        FROM reviews r
        JOIN pull_requests pr ON pr.id = r.pull_request_id
+       LEFT JOIN users u ON u.id = pr.author_id
        WHERE r.github_submitted_at BETWEEN $1 AND $2${repoClauseReviews}
+         AND ${DEPENDABOT_FILTER}
      ),
      comment_events AS (
        SELECT COUNT(*) AS comments
@@ -1234,16 +1313,20 @@ async function fetchRepoDistribution(
        GROUP BY repository_id
      ),
      pr_counts AS (
-       SELECT repository_id AS repo_id, COUNT(*) AS pull_requests
-       FROM pull_requests
-       WHERE github_created_at BETWEEN $1 AND $2
-       GROUP BY repository_id
+       SELECT p.repository_id AS repo_id, COUNT(*) AS pull_requests
+       FROM pull_requests p
+       LEFT JOIN users u ON u.id = p.author_id
+       WHERE p.github_created_at BETWEEN $1 AND $2
+         AND ${DEPENDABOT_FILTER}
+       GROUP BY p.repository_id
      ),
      review_counts AS (
        SELECT pr.repository_id AS repo_id, COUNT(*) AS reviews
        FROM reviews r
        JOIN pull_requests pr ON pr.id = r.pull_request_id
+       LEFT JOIN users u ON u.id = pr.author_id
        WHERE r.github_submitted_at BETWEEN $1 AND $2
+         AND ${DEPENDABOT_FILTER}
        GROUP BY pr.repository_id
      ),
      comment_counts AS (
@@ -1257,7 +1340,9 @@ async function fetchRepoDistribution(
          SELECT p.repository_id AS repository_id
          FROM comments c
          JOIN pull_requests p ON p.id = c.pull_request_id
+         LEFT JOIN users u ON u.id = p.author_id
          WHERE c.github_created_at BETWEEN $1 AND $2
+           AND ${DEPENDABOT_FILTER}
        ) AS combined
        GROUP BY repository_id
      ),
@@ -1317,9 +1402,11 @@ async function fetchRepoComparison(
        FROM issues
        WHERE github_closed_at BETWEEN $1 AND $2${repoFilterIssues}
        UNION
-       SELECT DISTINCT repository_id
-       FROM pull_requests
-       WHERE github_merged_at BETWEEN $1 AND $2${repoFilterPr}
+       SELECT DISTINCT pr.repository_id
+       FROM pull_requests pr
+       LEFT JOIN users u ON u.id = pr.author_id
+       WHERE pr.github_merged_at BETWEEN $1 AND $2${repoFilterPr}
+         AND ${DEPENDABOT_FILTER}
      ),
      issue_counts AS (
        SELECT repository_id, COUNT(*) AS issues_resolved
@@ -1328,10 +1415,12 @@ async function fetchRepoComparison(
        GROUP BY repository_id
      ),
      pr_counts AS (
-       SELECT repository_id, COUNT(*) AS prs_merged
-       FROM pull_requests
-       WHERE github_merged_at BETWEEN $1 AND $2${repoFilterPr}
-       GROUP BY repository_id
+       SELECT pr.repository_id, COUNT(*) AS prs_merged
+       FROM pull_requests pr
+       LEFT JOIN users u ON u.id = pr.author_id
+       WHERE pr.github_merged_at BETWEEN $1 AND $2${repoFilterPr}
+         AND ${DEPENDABOT_FILTER}
+       GROUP BY pr.repository_id
      ),
      first_review_times AS (
        SELECT
@@ -1339,8 +1428,10 @@ async function fetchRepoComparison(
          pr.github_created_at,
          MIN(r.github_submitted_at) AS first_review_at
        FROM pull_requests pr
+       LEFT JOIN users u ON u.id = pr.author_id
        LEFT JOIN reviews r ON r.pull_request_id = pr.id
        WHERE pr.github_created_at BETWEEN $1 AND $2${repoFilterPr}
+         AND ${DEPENDABOT_FILTER}
        GROUP BY pr.repository_id, pr.id, pr.github_created_at
      ),
      first_reviews AS (
@@ -1393,7 +1484,9 @@ async function fetchReviewerActivity(
        COUNT(DISTINCT r.pull_request_id) FILTER (WHERE r.github_submitted_at BETWEEN $1 AND $2) AS prs_reviewed
      FROM reviews r
      JOIN pull_requests pr ON pr.id = r.pull_request_id
+     LEFT JOIN users u ON u.id = pr.author_id
      WHERE r.author_id IS NOT NULL${repoClause}
+       AND ${DEPENDABOT_FILTER}
      GROUP BY r.author_id
      ORDER BY review_count DESC, prs_reviewed DESC
      LIMIT $3`,
@@ -1427,7 +1520,9 @@ async function fetchReviewResponsePairs(
     `WITH pr_scope AS (
        SELECT pr.id, pr.github_created_at, pr.repository_id, pr.author_id
        FROM pull_requests pr
+       LEFT JOIN users u ON u.id = pr.author_id
        WHERE pr.github_created_at BETWEEN $1 AND $2${repoClause}
+         AND ${DEPENDABOT_FILTER}
      ),
      review_requests_scope AS (
        SELECT rr.id, rr.pull_request_id, rr.reviewer_id, rr.requested_at, rr.removed_at
@@ -2580,8 +2675,21 @@ export async function getDashboardAnalytics(
     prsCreated: buildComparison(
       currentPrs.prs_created,
       previousPrs.prs_created,
+      [
+        {
+          label: "Dependabot",
+          current: currentPrs.prs_created_dependabot,
+          previous: previousPrs.prs_created_dependabot,
+        },
+      ],
     ),
-    prsMerged: buildComparison(currentPrs.prs_merged, previousPrs.prs_merged),
+    prsMerged: buildComparison(currentPrs.prs_merged, previousPrs.prs_merged, [
+      {
+        label: "Dependabot",
+        current: currentPrs.prs_merged_dependabot,
+        previous: previousPrs.prs_merged_dependabot,
+      },
+    ]),
     prMergeTime: buildDurationComparison(
       currentPrs.avg_merge_hours,
       previousPrs.avg_merge_hours,

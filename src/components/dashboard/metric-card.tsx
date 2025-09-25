@@ -16,6 +16,7 @@ import {
   changeColor,
   formatChange,
   formatMetricValue,
+  formatNumber,
   type MetricFormat,
   type MetricImpact,
 } from "@/components/dashboard/metric-utils";
@@ -101,8 +102,13 @@ export function MetricCard({
     const entry = (
       props as DotProps & {
         payload?: (typeof historyData)[number];
+        index?: number;
       }
     ).payload;
+    const index =
+      typeof (props as DotProps & { index?: number }).index === "number"
+        ? (props as DotProps & { index?: number }).index
+        : undefined;
     const cx =
       typeof props.cx === "number" ? props.cx : Number(props.cx ?? Number.NaN);
     const cy =
@@ -115,6 +121,7 @@ export function MetricCard({
 
     return (
       <circle
+        key={entry ? `${entry.period}-${index ?? 0}` : (index ?? 0)}
         cx={Number.isFinite(cx) ? cx : 0}
         cy={Number.isFinite(cy) ? cy : 0}
         r={shouldHide ? 0 : 5}
@@ -191,6 +198,15 @@ export function MetricCard({
       </CardHeader>
       <CardContent className="flex flex-col gap-2 pb-4">
         <span className="text-3xl font-semibold">{valueLabel}</span>
+        {metric.breakdown?.length ? (
+          <span className="text-xs text-muted-foreground">
+            (
+            {metric.breakdown
+              .map((entry) => `${entry.label} ${formatNumber(entry.current)}`)
+              .join(", ")}
+            )
+          </span>
+        ) : null}
         <span className={`text-xs font-medium ${changeClass}`}>
           {changeLabel} ({percentLabel})
         </span>

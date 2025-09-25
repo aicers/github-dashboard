@@ -563,7 +563,7 @@ export function AnalyticsView({
             </CardTitle>
             <CardDescription className="text-sm text-muted-foreground">
               리포지토리별 해결 이슈, 머지 PR, 첫 리뷰까지의 평균 시간을
-              비교합니다.
+              비교합니다. Dependabot이 생성한 Pull Request는 제외됩니다.
             </CardDescription>
           </CardHeader>
           <CardContent className="overflow-x-auto">
@@ -602,7 +602,8 @@ export function AnalyticsView({
               리포지토리 활동 비중
             </CardTitle>
             <CardDescription className="text-sm text-muted-foreground">
-              선택한 기간 동안 활동량 비중이 높은 리포지토리 순위
+              선택한 기간 동안 활동량 비중이 높은 리포지토리 순위입니다.
+              Dependabot이 생성한 Pull Request는 제외됩니다.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -620,7 +621,8 @@ export function AnalyticsView({
               리뷰어 활동 Top 10
             </CardTitle>
             <CardDescription className="text-sm text-muted-foreground">
-              리뷰 건수와 참여한 PR 수를 기준으로 한 순위
+              리뷰 건수와 참여한 PR 수를 기준으로 한 순위입니다. Dependabot이
+              생성한 Pull Request는 제외됩니다.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
@@ -658,6 +660,9 @@ export function AnalyticsView({
             <CardTitle className="text-base font-medium">
               협업 품질 지표
             </CardTitle>
+            <CardDescription className="text-sm text-muted-foreground">
+              Dependabot이 생성한 Pull Request는 해당 지표 계산에서 제외됩니다.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div className="flex items-center justify-between">
