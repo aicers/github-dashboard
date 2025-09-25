@@ -158,6 +158,28 @@ export type IndividualMetricSet = {
   discussionComments: ComparisonValue;
 };
 
+export type IndividualMetricHistory = {
+  issuesCreated: MetricHistoryEntry[];
+  issuesClosed: MetricHistoryEntry[];
+  issueResolutionRatio: MetricHistoryEntry[];
+  issueResolutionTime: MetricHistoryEntry[];
+  issueWorkTime: MetricHistoryEntry[];
+  parentIssueResolutionTime: MetricHistoryEntry[];
+  parentIssueWorkTime: MetricHistoryEntry[];
+  childIssueResolutionTime: MetricHistoryEntry[];
+  childIssueWorkTime: MetricHistoryEntry[];
+  prsCreated: MetricHistoryEntry[];
+  prsMerged: MetricHistoryEntry[];
+  reviewsCompleted: MetricHistoryEntry[];
+  reviewResponseTime: MetricHistoryEntry[];
+  prsReviewed: MetricHistoryEntry[];
+  reviewComments: MetricHistoryEntry[];
+  reviewCoverage: MetricHistoryEntry[];
+  reviewParticipation: MetricHistoryEntry[];
+  reopenedIssues: MetricHistoryEntry[];
+  discussionComments: MetricHistoryEntry[];
+};
+
 export type IndividualTrends = {
   monthly: MultiTrendPoint[];
   repoActivity: RepoDistributionItem[];
@@ -166,6 +188,7 @@ export type IndividualTrends = {
 export type IndividualAnalytics = {
   person: UserProfile;
   metrics: IndividualMetricSet;
+  metricHistory: IndividualMetricHistory;
   trends: IndividualTrends;
 };
 

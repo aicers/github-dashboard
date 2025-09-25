@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import { DashboardFilterPanel } from "@/components/dashboard/dashboard-filter-panel";
 import { MetricCard } from "@/components/dashboard/metric-card";
+import { toCardHistory } from "@/components/dashboard/metric-history";
 import { individualMetricTooltips } from "@/components/dashboard/metric-tooltips";
 import { formatNumber } from "@/components/dashboard/metric-utils";
 import { RepoDistributionList } from "@/components/dashboard/repo-distribution-list";
@@ -50,6 +51,7 @@ export function PeopleView({
   const repositories = analytics.repositories;
   const contributors = analytics.contributors;
   const individual = analytics.individual;
+  const individualHistory = individual?.metricHistory;
 
   useEffect(() => {
     if (!filters.personId && contributors.length > 0) {
@@ -155,18 +157,21 @@ export function PeopleView({
               metric={individual.metrics.issuesCreated}
               format="count"
               tooltip={individualMetricTooltips.issuesCreated}
+              history={toCardHistory(individualHistory?.issuesCreated)}
             />
             <MetricCard
               title="이슈 종료"
               metric={individual.metrics.issuesClosed}
               format="count"
               tooltip={individualMetricTooltips.issuesClosed}
+              history={toCardHistory(individualHistory?.issuesClosed)}
             />
             <MetricCard
               title="본인 이슈 해결율"
               metric={individual.metrics.issueResolutionRatio}
               format="ratio"
               tooltip={individualMetricTooltips.issueResolutionRatio}
+              history={toCardHistory(individualHistory?.issueResolutionRatio)}
             />
             <MetricCard
               title="평균 해결 시간"
@@ -174,6 +179,7 @@ export function PeopleView({
               format="hours"
               impact="negative"
               tooltip={individualMetricTooltips.issueResolutionTime}
+              history={toCardHistory(individualHistory?.issueResolutionTime)}
             />
             <MetricCard
               title="평균 작업 시간"
@@ -181,24 +187,28 @@ export function PeopleView({
               format="hours"
               impact="negative"
               tooltip={individualMetricTooltips.issueWorkTime}
+              history={toCardHistory(individualHistory?.issueWorkTime)}
             />
             <MetricCard
               title="PR 생성"
               metric={individual.metrics.prsCreated}
               format="count"
               tooltip={individualMetricTooltips.prsCreated}
+              history={toCardHistory(individualHistory?.prsCreated)}
             />
             <MetricCard
               title="PR 머지"
               metric={individual.metrics.prsMerged}
               format="count"
               tooltip={individualMetricTooltips.prsMerged}
+              history={toCardHistory(individualHistory?.prsMerged)}
             />
             <MetricCard
               title="리뷰 수행"
               metric={individual.metrics.reviewsCompleted}
               format="count"
               tooltip={individualMetricTooltips.reviewsCompleted}
+              history={toCardHistory(individualHistory?.reviewsCompleted)}
             />
             <MetricCard
               title="리뷰 응답 시간"
@@ -206,24 +216,28 @@ export function PeopleView({
               format="hours"
               impact="negative"
               tooltip={individualMetricTooltips.reviewResponseTime}
+              history={toCardHistory(individualHistory?.reviewResponseTime)}
             />
             <MetricCard
               title="PR 리뷰 커버리지"
               metric={individual.metrics.reviewCoverage}
               format="percentage"
               tooltip={individualMetricTooltips.reviewCoverage}
+              history={toCardHistory(individualHistory?.reviewCoverage)}
             />
             <MetricCard
               title="리뷰 참여 비율"
               metric={individual.metrics.reviewParticipation}
               format="percentage"
               tooltip={individualMetricTooltips.reviewParticipation}
+              history={toCardHistory(individualHistory?.reviewParticipation)}
             />
             <MetricCard
               title="토론 참여"
               metric={individual.metrics.discussionComments}
               format="count"
               tooltip={individualMetricTooltips.discussionComments}
+              history={toCardHistory(individualHistory?.discussionComments)}
             />
           </section>
 
@@ -236,6 +250,9 @@ export function PeopleView({
                 format="hours"
                 impact="negative"
                 tooltip={individualMetricTooltips.parentIssueResolutionTime}
+                history={toCardHistory(
+                  individualHistory?.parentIssueResolutionTime,
+                )}
               />
               <MetricCard
                 title="Parent 이슈 작업 시간"
@@ -243,6 +260,7 @@ export function PeopleView({
                 format="hours"
                 impact="negative"
                 tooltip={individualMetricTooltips.parentIssueWorkTime}
+                history={toCardHistory(individualHistory?.parentIssueWorkTime)}
               />
               <MetricCard
                 title="Child 이슈 해결 시간"
@@ -250,6 +268,9 @@ export function PeopleView({
                 format="hours"
                 impact="negative"
                 tooltip={individualMetricTooltips.childIssueResolutionTime}
+                history={toCardHistory(
+                  individualHistory?.childIssueResolutionTime,
+                )}
               />
               <MetricCard
                 title="Child 이슈 작업 시간"
@@ -257,6 +278,7 @@ export function PeopleView({
                 format="hours"
                 impact="negative"
                 tooltip={individualMetricTooltips.childIssueWorkTime}
+                history={toCardHistory(individualHistory?.childIssueWorkTime)}
               />
             </div>
           </section>
