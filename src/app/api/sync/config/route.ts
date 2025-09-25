@@ -8,6 +8,10 @@ const patchSchema = z.object({
   syncIntervalMinutes: z.number().int().positive().optional(),
   timezone: z.string().min(1).optional(),
   weekStart: z.enum(["sunday", "monday"]).optional(),
+  excludedRepositories: z
+    .array(z.string().min(1))
+    .optional()
+    .transform((value) => (value ? Array.from(new Set(value)) : undefined)),
 });
 
 export async function GET() {

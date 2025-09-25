@@ -2342,13 +2342,24 @@ export async function getDashboardAnalytics(
 ): Promise<DashboardAnalytics> {
   const { start, end, repositoryIds = [], personId } = params;
   const range = resolveRange({ start, end });
-  const repositoryFilter = repositoryIds.length ? repositoryIds : undefined;
 
   await ensureSchema();
   const config = await getSyncConfig();
   const timeZone = config?.timezone ?? "UTC";
   const weekStart: WeekStart =
     config?.week_start === "sunday" ? "sunday" : "monday";
+  const excludedRepositoryIds = new Set<string>(
+    Array.isArray(config?.excluded_repository_ids)
+      ? (config?.excluded_repository_ids as string[]).filter(
+          (id) => typeof id === "string" && id.trim().length > 0,
+        )
+      : [],
+  );
+  const allowedRepositoryIds = repositoryIds.filter(
+    (id) => !excludedRepositoryIds.has(id),
+  );
+  const repositoryFilter =
+    allowedRepositoryIds.length > 0 ? allowedRepositoryIds : undefined;
   const targetProject = normalizeText(env.TODO_PROJECT_NAME);
 
   const [
@@ -2527,11 +2538,17 @@ export async function getDashboardAnalytics(
     ),
   ]);
 
+  const filterExcludedRepo = <T extends { repository_id: string }>(rows: T[]) =>
+    rows.filter((row) => !excludedRepositoryIds.has(row.repository_id));
+
+  const filteredRepoDistributionRows = filterExcludedRepo(repoDistributionRows);
+  const filteredRepoComparisonRows = filterExcludedRepo(repoComparisonRows);
+
   const repoIds = new Set<string>();
-  repoDistributionRows.forEach((row) => {
+  filteredRepoDistributionRows.forEach((row) => {
     repoIds.add(row.repository_id);
   });
-  repoComparisonRows.forEach((row) => {
+  filteredRepoComparisonRows.forEach((row) => {
     repoIds.add(row.repository_id);
   });
 
@@ -2575,7 +2592,12 @@ export async function getDashboardAnalytics(
     Array.from(repoIds),
     Array.from(new Set([...reviewerIds, ...leaderboardUserIds])),
   );
-  const repoProfileMap = new Map(repositories.map((repo) => [repo.id, repo]));
+  const filteredRepositories = repositories.filter(
+    (repo) => !excludedRepositoryIds.has(repo.id),
+  );
+  const repoProfileMap = new Map(
+    filteredRepositories.map((repo) => [repo.id, repo]),
+  );
   const userProfileMap = new Map(users.map((user) => [user.id, user]));
 
   if (personId) {
@@ -2864,8 +2886,14 @@ export async function getDashboardAnalytics(
       issueResolutionHours: monthlyDurationTrend,
       reviewHeatmap,
     },
-    repoDistribution: mapRepoDistribution(repoDistributionRows, repoProfileMap),
-    repoComparison: mapRepoComparison(repoComparisonRows, repoProfileMap),
+    repoDistribution: mapRepoDistribution(
+      filteredRepoDistributionRows,
+      repoProfileMap,
+    ),
+    repoComparison: mapRepoComparison(
+      filteredRepoComparisonRows,
+      repoProfileMap,
+    ),
   };
 
   let individual = null;
@@ -2973,6 +3001,8 @@ export async function getDashboardAnalytics(
       ),
     ]);
 
+    const filteredIndividualRepoRows = filterExcludedRepo(individualRepoRows);
+
     const individualDurationCurrent = summarizeIssueDurations(
       individualIssueDurationsCurrent,
       targetProject,
@@ -3077,7 +3107,10 @@ export async function getDashboardAnalytics(
       metrics: individualMetrics,
       trends: {
         monthly: individualMonthly,
-        repoActivity: mapRepoDistribution(individualRepoRows, repoProfileMap),
+        repoActivity: mapRepoDistribution(
+          filteredIndividualRepoRows,
+          repoProfileMap,
+        ),
       },
     };
   }
@@ -3176,7 +3209,7 @@ export async function getDashboardAnalytics(
 
   return {
     range,
-    repositories,
+    repositories: filteredRepositories,
     contributors: contributorProfiles,
     organization,
     individual,

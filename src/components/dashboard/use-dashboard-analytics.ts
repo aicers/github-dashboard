@@ -97,6 +97,19 @@ export function useDashboardAnalytics({
       if (nextAnalytics.weekStart) {
         setWeekStart(nextAnalytics.weekStart);
       }
+      const availableRepoIds = new Set(
+        nextAnalytics.repositories.map((repo) => repo.id),
+      );
+      setFilters((current) => {
+        const filteredRepoIds = current.repositoryIds.filter((id) =>
+          availableRepoIds.has(id),
+        );
+        if (filteredRepoIds.length === current.repositoryIds.length) {
+          return current;
+        }
+
+        return { ...current, repositoryIds: filteredRepoIds };
+      });
     } catch (fetchError) {
       setError(
         fetchError instanceof Error
