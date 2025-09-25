@@ -27,7 +27,7 @@ export type DashboardAnalyticsState = {
   weekStart: WeekStart;
 };
 
-const DEFAULT_PRESET: TimePresetKey = "last_30_days";
+const DEFAULT_PRESET: TimePresetKey = "last_14_days";
 
 function resolveInitialFilters(
   defaultRange: {

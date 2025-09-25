@@ -86,6 +86,7 @@ function mergeTrends(
 
 function toCardHistory(series?: MetricHistoryEntry[]) {
   return HISTORY_KEYS.map((period) => ({
+    period,
     label: HISTORY_LABELS[period],
     value: series?.find((entry) => entry.period === period)?.value ?? null,
   }));

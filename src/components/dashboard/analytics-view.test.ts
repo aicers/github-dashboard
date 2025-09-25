@@ -11,6 +11,23 @@ describe("analytics-view helpers", () => {
 
   test("buildRangeFromPreset computes expected ranges", () => {
     const reference = new Date("2024-05-15T12:00:00Z");
+    const last14 = __analyticsInternals.buildRangeFromPreset(
+      "last_14_days",
+      "UTC",
+      "monday",
+      reference,
+    );
+    expect(last14).not.toBeNull();
+    const startIso = last14?.start ?? null;
+    const endIso = last14?.end ?? null;
+    if (startIso && endIso) {
+      const start = new Date(startIso);
+      const end = new Date(endIso);
+      const diffDays = (end.getTime() - start.getTime()) / 86_400_000;
+      expect(diffDays).toBeGreaterThan(13.9);
+      expect(diffDays).toBeLessThanOrEqual(14.1);
+    }
+
     const last30 = __analyticsInternals.buildRangeFromPreset(
       "last_30_days",
       "UTC",
@@ -18,14 +35,48 @@ describe("analytics-view helpers", () => {
       reference,
     );
     expect(last30).not.toBeNull();
-    const startIso = last30?.start ?? null;
-    const endIso = last30?.end ?? null;
-    if (startIso && endIso) {
-      const start = new Date(startIso);
-      const end = new Date(endIso);
+    const last30Start = last30?.start ?? null;
+    const last30End = last30?.end ?? null;
+    if (last30Start && last30End) {
+      const start = new Date(last30Start);
+      const end = new Date(last30End);
       const diffDays = (end.getTime() - start.getTime()) / 86_400_000;
       expect(diffDays).toBeGreaterThan(28.9);
       expect(diffDays).toBeLessThanOrEqual(30.1);
+    }
+
+    const last60 = __analyticsInternals.buildRangeFromPreset(
+      "last_60_days",
+      "UTC",
+      "monday",
+      reference,
+    );
+    expect(last60).not.toBeNull();
+    const last60Start = last60?.start ?? null;
+    const last60End = last60?.end ?? null;
+    if (last60Start && last60End) {
+      const start = new Date(last60Start);
+      const end = new Date(last60End);
+      const diffDays = (end.getTime() - start.getTime()) / 86_400_000;
+      expect(diffDays).toBeGreaterThan(58.9);
+      expect(diffDays).toBeLessThanOrEqual(60.1);
+    }
+
+    const last90 = __analyticsInternals.buildRangeFromPreset(
+      "last_90_days",
+      "UTC",
+      "monday",
+      reference,
+    );
+    expect(last90).not.toBeNull();
+    const last90Start = last90?.start ?? null;
+    const last90End = last90?.end ?? null;
+    if (last90Start && last90End) {
+      const start = new Date(last90Start);
+      const end = new Date(last90End);
+      const diffDays = (end.getTime() - start.getTime()) / 86_400_000;
+      expect(diffDays).toBeGreaterThan(88.9);
+      expect(diffDays).toBeLessThanOrEqual(90.1);
     }
 
     const thisMonth = __analyticsInternals.buildRangeFromPreset(
