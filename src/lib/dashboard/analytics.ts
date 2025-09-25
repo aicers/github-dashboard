@@ -23,6 +23,7 @@ import {
   getRepositoryProfiles,
   getSyncConfig,
   getUserProfiles,
+  listAllRepositories,
   type RepositoryProfile,
   type UserProfile,
 } from "@/lib/db/operations";
@@ -2355,11 +2356,21 @@ export async function getDashboardAnalytics(
         )
       : [],
   );
-  const allowedRepositoryIds = repositoryIds.filter(
-    (id) => !excludedRepositoryIds.has(id),
+  const availableRepositories = (await listAllRepositories()).filter(
+    (repo) => !excludedRepositoryIds.has(repo.id),
   );
-  const repositoryFilter =
-    allowedRepositoryIds.length > 0 ? allowedRepositoryIds : undefined;
+  const availableRepositoryIds = new Set(
+    availableRepositories.map((repo) => repo.id),
+  );
+  const allowedRepositoryIds = repositoryIds.filter((id) =>
+    availableRepositoryIds.has(id),
+  );
+  const shouldFilterByRepositories =
+    allowedRepositoryIds.length > 0 &&
+    allowedRepositoryIds.length < availableRepositoryIds.size;
+  const repositoryFilter = shouldFilterByRepositories
+    ? allowedRepositoryIds
+    : undefined;
   const targetProject = normalizeText(env.TODO_PROJECT_NAME);
 
   const [
@@ -2588,13 +2599,11 @@ export async function getDashboardAnalytics(
     leaderboardUserIds.add(personId);
   }
 
-  const { repositories, users } = await resolveProfiles(
+  const { users } = await resolveProfiles(
     Array.from(repoIds),
     Array.from(new Set([...reviewerIds, ...leaderboardUserIds])),
   );
-  const filteredRepositories = repositories.filter(
-    (repo) => !excludedRepositoryIds.has(repo.id),
-  );
+  const filteredRepositories = availableRepositories;
   const repoProfileMap = new Map(
     filteredRepositories.map((repo) => [repo.id, repo]),
   );
