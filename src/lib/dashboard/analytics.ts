@@ -1223,11 +1223,11 @@ async function fetchTrend(
   }
 
   const timezoneIndex = params.length + 1;
-  const queryText = `SELECT date_trunc('day', ${alias}.${column} AT TIME ZONE $${timezoneIndex})::date AS bucket, COUNT(*)
+  const queryText = `SELECT date_trunc('day', ${alias}.${column} AT TIME ZONE $${timezoneIndex})::date AS date, COUNT(*)
     FROM ${table} ${alias}
     WHERE ${alias}.${column} BETWEEN $1 AND $2${repoClause}
-    GROUP BY bucket
-    ORDER BY bucket`;
+    GROUP BY date
+    ORDER BY date`;
 
   params.push(timeZone);
   const result = await query<TrendRow>(queryText, params);
