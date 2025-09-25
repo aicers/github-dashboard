@@ -2,8 +2,6 @@ import { Info } from "lucide-react";
 import { type ReactElement, useId } from "react";
 import {
   type DotProps,
-  LabelList,
-  type LabelProps,
   Line,
   LineChart,
   type LineProps,
@@ -99,71 +97,52 @@ export function MetricCard({
   type ChartContentRenderer<Props> = (props: Props) => ReactElement | null;
 
   const renderDot: ChartContentRenderer<DotProps> = (props) => {
-    const entry = (
-      props as DotProps & {
-        payload?: (typeof historyData)[number];
-        index?: number;
-      }
-    ).payload;
-    const index =
-      typeof (props as DotProps & { index?: number }).index === "number"
-        ? (props as DotProps & { index?: number }).index
-        : undefined;
+    const { payload, index } = props as DotProps & {
+      payload?: (typeof historyData)[number];
+      index?: number;
+    };
     const cx =
       typeof props.cx === "number" ? props.cx : Number(props.cx ?? Number.NaN);
     const cy =
       typeof props.cy === "number" ? props.cy : Number(props.cy ?? Number.NaN);
-    const shouldHide =
-      !entry ||
-      !Number.isFinite(cx) ||
-      !Number.isFinite(cy) ||
-      entry.rawValue == null;
+    const hasCoordinates = Number.isFinite(cx) && Number.isFinite(cy);
+    const label = payload?.displayValue?.toString().trim() ?? "";
+    const shouldHide = !payload || payload.rawValue == null || !hasCoordinates;
 
-    return (
+    const circleKey = payload
+      ? `${payload.period}-${index ?? 0}`
+      : (index ?? 0);
+    const circle = (
       <circle
-        key={entry ? `${entry.period}-${index ?? 0}` : (index ?? 0)}
-        cx={Number.isFinite(cx) ? cx : 0}
-        cy={Number.isFinite(cy) ? cy : 0}
+        key={`dot-${circleKey}`}
+        cx={hasCoordinates ? cx : 0}
+        cy={hasCoordinates ? cy : 0}
         r={shouldHide ? 0 : 5}
-        fill={entry?.fill ?? "var(--color-chart-1)"}
+        fill={payload?.fill ?? "var(--color-chart-1)"}
         stroke={shouldHide ? "transparent" : "var(--background)"}
         strokeWidth={shouldHide ? 0 : 2}
       />
     );
-  };
 
-  const renderPointLabel: ChartContentRenderer<LabelProps> = (props) => {
-    const entry = (
-      props as LabelProps & {
-        payload?: (typeof historyData)[number];
-      }
-    ).payload;
-    if (!entry) {
-      return null;
+    if (shouldHide) {
+      return circle;
     }
-
-    const label =
-      typeof props.value === "string" ? props.value : String(props.value ?? "");
-    if (!label) {
-      return null;
-    }
-
-    const numericX =
-      typeof props.x === "number" ? props.x : Number(props.x ?? 0);
-    const numericY =
-      typeof props.y === "number" ? props.y : Number(props.y ?? 0);
-    const offsetY = numericY - 8;
 
     return (
-      <text
-        x={numericX}
-        y={offsetY}
-        textAnchor="middle"
-        fill="var(--foreground)"
-        fontSize={11}
-      >
-        {label}
-      </text>
+      <g key={`dot-group-${circleKey}`}>
+        {circle}
+        {label ? (
+          <text
+            x={cx}
+            y={cy - 10}
+            textAnchor="middle"
+            fill="var(--foreground)"
+            fontSize={11}
+          >
+            {label}
+          </text>
+        ) : null}
+      </g>
     );
   };
 
@@ -232,13 +211,7 @@ export function MetricCard({
                   dot={renderDot as LineProps["dot"]}
                   connectNulls={false}
                   isAnimationActive={false}
-                >
-                  <LabelList
-                    dataKey="displayValue"
-                    position="top"
-                    content={renderPointLabel}
-                  />
-                </Line>
+                />
               </LineChart>
             </ResponsiveContainer>
           </div>
