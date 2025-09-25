@@ -16,6 +16,7 @@ import {
 import { DashboardFilterPanel } from "@/components/dashboard/dashboard-filter-panel";
 import { buildRangeFromPreset } from "@/components/dashboard/dashboard-filters";
 import { MetricCard } from "@/components/dashboard/metric-card";
+import { toCardHistory } from "@/components/dashboard/metric-history";
 import {
   individualMetricTooltips,
   organizationMetricTooltips,
@@ -38,9 +39,7 @@ import type {
   DashboardAnalytics,
   HeatmapCell,
   LeaderboardEntry,
-  MetricHistoryEntry,
   OrganizationAnalytics,
-  PeriodKey,
   RepoComparisonRow,
 } from "@/lib/dashboard/types";
 import { cn } from "@/lib/utils";
@@ -90,21 +89,6 @@ const MAIN_BRANCH_SORT_OPTIONS: Array<{
     label: "순증 라인",
   },
 ];
-
-const HISTORY_KEYS: PeriodKey[] = [
-  "previous4",
-  "previous3",
-  "previous2",
-  "previous",
-  "current",
-];
-const HISTORY_LABELS: Record<PeriodKey, string> = {
-  previous4: "4회 전",
-  previous3: "3회 전",
-  previous2: "2회 전",
-  previous: "이전",
-  current: "이번",
-};
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
@@ -183,14 +167,6 @@ function mergeTrends(
   });
 
   return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
-}
-
-function toCardHistory(series?: MetricHistoryEntry[]) {
-  return HISTORY_KEYS.map((period) => ({
-    period,
-    label: HISTORY_LABELS[period],
-    value: series?.find((entry) => entry.period === period)?.value ?? null,
-  }));
 }
 
 function Heatmap({ data }: { data: HeatmapCell[] }) {

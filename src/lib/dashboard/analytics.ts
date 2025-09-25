@@ -5,6 +5,7 @@ import type {
   DashboardAnalytics,
   DurationComparisonValue,
   HeatmapCell,
+  IndividualMetricHistory,
   LeaderboardEntry,
   LeaderboardSummary,
   MetricHistoryEntry,
@@ -3058,18 +3059,9 @@ export async function getDashboardAnalytics(
     const [
       individualIssuesCurrent,
       individualIssuesPrevious,
-      individualPullRequestsCurrent,
-      individualPullRequestsPrevious,
-      individualReviewsCurrent,
-      individualReviewsPrevious,
-      individualCoverageCurrent,
-      individualCoveragePrevious,
-      individualDiscussionCurrent,
-      individualDiscussionPrevious,
-      individualIssueDurationsCurrent,
-      individualIssueDurationsPrevious,
-      individualMonthly,
-      individualRepoRows,
+      individualIssuesPrevious2,
+      individualIssuesPrevious3,
+      individualIssuesPrevious4,
     ] = await Promise.all([
       fetchIndividualIssueMetrics(
         personProfile.id,
@@ -3083,6 +3075,33 @@ export async function getDashboardAnalytics(
         range.previousEnd,
         repositoryFilter,
       ),
+      fetchIndividualIssueMetrics(
+        personProfile.id,
+        range.previous2Start,
+        range.previous2End,
+        repositoryFilter,
+      ),
+      fetchIndividualIssueMetrics(
+        personProfile.id,
+        range.previous3Start,
+        range.previous3End,
+        repositoryFilter,
+      ),
+      fetchIndividualIssueMetrics(
+        personProfile.id,
+        range.previous4Start,
+        range.previous4End,
+        repositoryFilter,
+      ),
+    ]);
+
+    const [
+      individualPullRequestsCurrent,
+      individualPullRequestsPrevious,
+      individualPullRequestsPrevious2,
+      individualPullRequestsPrevious3,
+      individualPullRequestsPrevious4,
+    ] = await Promise.all([
       fetchIndividualPullRequestMetrics(
         personProfile.id,
         range.start,
@@ -3095,6 +3114,33 @@ export async function getDashboardAnalytics(
         range.previousEnd,
         repositoryFilter,
       ),
+      fetchIndividualPullRequestMetrics(
+        personProfile.id,
+        range.previous2Start,
+        range.previous2End,
+        repositoryFilter,
+      ),
+      fetchIndividualPullRequestMetrics(
+        personProfile.id,
+        range.previous3Start,
+        range.previous3End,
+        repositoryFilter,
+      ),
+      fetchIndividualPullRequestMetrics(
+        personProfile.id,
+        range.previous4Start,
+        range.previous4End,
+        repositoryFilter,
+      ),
+    ]);
+
+    const [
+      individualReviewsCurrent,
+      individualReviewsPrevious,
+      individualReviewsPrevious2,
+      individualReviewsPrevious3,
+      individualReviewsPrevious4,
+    ] = await Promise.all([
       fetchIndividualReviewMetrics(
         personProfile.id,
         range.start,
@@ -3107,6 +3153,33 @@ export async function getDashboardAnalytics(
         range.previousEnd,
         repositoryFilter,
       ),
+      fetchIndividualReviewMetrics(
+        personProfile.id,
+        range.previous2Start,
+        range.previous2End,
+        repositoryFilter,
+      ),
+      fetchIndividualReviewMetrics(
+        personProfile.id,
+        range.previous3Start,
+        range.previous3End,
+        repositoryFilter,
+      ),
+      fetchIndividualReviewMetrics(
+        personProfile.id,
+        range.previous4Start,
+        range.previous4End,
+        repositoryFilter,
+      ),
+    ]);
+
+    const [
+      individualCoverageCurrent,
+      individualCoveragePrevious,
+      individualCoveragePrevious2,
+      individualCoveragePrevious3,
+      individualCoveragePrevious4,
+    ] = await Promise.all([
       fetchIndividualCoverageMetrics(
         personProfile.id,
         range.start,
@@ -3119,6 +3192,33 @@ export async function getDashboardAnalytics(
         range.previousEnd,
         repositoryFilter,
       ),
+      fetchIndividualCoverageMetrics(
+        personProfile.id,
+        range.previous2Start,
+        range.previous2End,
+        repositoryFilter,
+      ),
+      fetchIndividualCoverageMetrics(
+        personProfile.id,
+        range.previous3Start,
+        range.previous3End,
+        repositoryFilter,
+      ),
+      fetchIndividualCoverageMetrics(
+        personProfile.id,
+        range.previous4Start,
+        range.previous4End,
+        repositoryFilter,
+      ),
+    ]);
+
+    const [
+      individualDiscussionCurrent,
+      individualDiscussionPrevious,
+      individualDiscussionPrevious2,
+      individualDiscussionPrevious3,
+      individualDiscussionPrevious4,
+    ] = await Promise.all([
       fetchIndividualDiscussion(
         personProfile.id,
         range.start,
@@ -3131,6 +3231,33 @@ export async function getDashboardAnalytics(
         range.previousEnd,
         repositoryFilter,
       ),
+      fetchIndividualDiscussion(
+        personProfile.id,
+        range.previous2Start,
+        range.previous2End,
+        repositoryFilter,
+      ),
+      fetchIndividualDiscussion(
+        personProfile.id,
+        range.previous3Start,
+        range.previous3End,
+        repositoryFilter,
+      ),
+      fetchIndividualDiscussion(
+        personProfile.id,
+        range.previous4Start,
+        range.previous4End,
+        repositoryFilter,
+      ),
+    ]);
+
+    const [
+      individualIssueDurationsCurrent,
+      individualIssueDurationsPrevious,
+      individualIssueDurationsPrevious2,
+      individualIssueDurationsPrevious3,
+      individualIssueDurationsPrevious4,
+    ] = await Promise.all([
       fetchIssueDurationDetails(
         range.start,
         range.end,
@@ -3143,6 +3270,27 @@ export async function getDashboardAnalytics(
         repositoryFilter,
         personProfile.id,
       ),
+      fetchIssueDurationDetails(
+        range.previous2Start,
+        range.previous2End,
+        repositoryFilter,
+        personProfile.id,
+      ),
+      fetchIssueDurationDetails(
+        range.previous3Start,
+        range.previous3End,
+        repositoryFilter,
+        personProfile.id,
+      ),
+      fetchIssueDurationDetails(
+        range.previous4Start,
+        range.previous4End,
+        repositoryFilter,
+        personProfile.id,
+      ),
+    ]);
+
+    const [individualMonthly, individualRepoRows] = await Promise.all([
       fetchIndividualMonthlyTrends(
         personProfile.id,
         range.start,
@@ -3166,6 +3314,18 @@ export async function getDashboardAnalytics(
     );
     const individualDurationPrevious = summarizeIssueDurations(
       individualIssueDurationsPrevious,
+      targetProject,
+    );
+    const individualDurationPrevious2 = summarizeIssueDurations(
+      individualIssueDurationsPrevious2,
+      targetProject,
+    );
+    const individualDurationPrevious3 = summarizeIssueDurations(
+      individualIssueDurationsPrevious3,
+      targetProject,
+    );
+    const individualDurationPrevious4 = summarizeIssueDurations(
+      individualIssueDurationsPrevious4,
       targetProject,
     );
 
@@ -3259,9 +3419,149 @@ export async function getDashboardAnalytics(
       ),
     };
 
+    const issueResolutionRatioValue = (row: IndividualIssueRow) =>
+      row.created ? row.closed / row.created : 0;
+
+    const individualHistory = {
+      issuesCreated: buildHistorySeries([
+        individualIssuesPrevious4.created,
+        individualIssuesPrevious3.created,
+        individualIssuesPrevious2.created,
+        individualIssuesPrevious.created,
+        individualIssuesCurrent.created,
+      ]),
+      issuesClosed: buildHistorySeries([
+        individualIssuesPrevious4.closed,
+        individualIssuesPrevious3.closed,
+        individualIssuesPrevious2.closed,
+        individualIssuesPrevious.closed,
+        individualIssuesCurrent.closed,
+      ]),
+      issueResolutionRatio: buildHistorySeries([
+        issueResolutionRatioValue(individualIssuesPrevious4),
+        issueResolutionRatioValue(individualIssuesPrevious3),
+        issueResolutionRatioValue(individualIssuesPrevious2),
+        issueResolutionRatioValue(individualIssuesPrevious),
+        issueResolutionRatioValue(individualIssuesCurrent),
+      ]),
+      issueResolutionTime: buildHistorySeries([
+        individualIssuesPrevious4.avg_resolution_hours,
+        individualIssuesPrevious3.avg_resolution_hours,
+        individualIssuesPrevious2.avg_resolution_hours,
+        individualIssuesPrevious.avg_resolution_hours,
+        individualIssuesCurrent.avg_resolution_hours,
+      ]),
+      issueWorkTime: buildHistorySeries([
+        individualDurationPrevious4.overallWork,
+        individualDurationPrevious3.overallWork,
+        individualDurationPrevious2.overallWork,
+        individualDurationPrevious.overallWork,
+        individualDurationCurrent.overallWork,
+      ]),
+      parentIssueResolutionTime: buildHistorySeries([
+        individualDurationPrevious4.parentResolution,
+        individualDurationPrevious3.parentResolution,
+        individualDurationPrevious2.parentResolution,
+        individualDurationPrevious.parentResolution,
+        individualDurationCurrent.parentResolution,
+      ]),
+      parentIssueWorkTime: buildHistorySeries([
+        individualDurationPrevious4.parentWork,
+        individualDurationPrevious3.parentWork,
+        individualDurationPrevious2.parentWork,
+        individualDurationPrevious.parentWork,
+        individualDurationCurrent.parentWork,
+      ]),
+      childIssueResolutionTime: buildHistorySeries([
+        individualDurationPrevious4.childResolution,
+        individualDurationPrevious3.childResolution,
+        individualDurationPrevious2.childResolution,
+        individualDurationPrevious.childResolution,
+        individualDurationCurrent.childResolution,
+      ]),
+      childIssueWorkTime: buildHistorySeries([
+        individualDurationPrevious4.childWork,
+        individualDurationPrevious3.childWork,
+        individualDurationPrevious2.childWork,
+        individualDurationPrevious.childWork,
+        individualDurationCurrent.childWork,
+      ]),
+      prsCreated: buildHistorySeries([
+        individualPullRequestsPrevious4.created,
+        individualPullRequestsPrevious3.created,
+        individualPullRequestsPrevious2.created,
+        individualPullRequestsPrevious.created,
+        individualPullRequestsCurrent.created,
+      ]),
+      prsMerged: buildHistorySeries([
+        individualPullRequestsPrevious4.merged,
+        individualPullRequestsPrevious3.merged,
+        individualPullRequestsPrevious2.merged,
+        individualPullRequestsPrevious.merged,
+        individualPullRequestsCurrent.merged,
+      ]),
+      reviewsCompleted: buildHistorySeries([
+        individualReviewsPrevious4.reviews,
+        individualReviewsPrevious3.reviews,
+        individualReviewsPrevious2.reviews,
+        individualReviewsPrevious.reviews,
+        individualReviewsCurrent.reviews,
+      ]),
+      reviewResponseTime: buildHistorySeries([
+        individualReviewsPrevious4.avg_response_hours,
+        individualReviewsPrevious3.avg_response_hours,
+        individualReviewsPrevious2.avg_response_hours,
+        individualReviewsPrevious.avg_response_hours,
+        individualReviewsCurrent.avg_response_hours,
+      ]),
+      prsReviewed: buildHistorySeries([
+        individualReviewsPrevious4.prs_reviewed,
+        individualReviewsPrevious3.prs_reviewed,
+        individualReviewsPrevious2.prs_reviewed,
+        individualReviewsPrevious.prs_reviewed,
+        individualReviewsCurrent.prs_reviewed,
+      ]),
+      reviewComments: buildHistorySeries([
+        individualReviewsPrevious4.review_comments,
+        individualReviewsPrevious3.review_comments,
+        individualReviewsPrevious2.review_comments,
+        individualReviewsPrevious.review_comments,
+        individualReviewsCurrent.review_comments,
+      ]),
+      reviewCoverage: buildHistorySeries([
+        individualCoveragePrevious4.coverage,
+        individualCoveragePrevious3.coverage,
+        individualCoveragePrevious2.coverage,
+        individualCoveragePrevious.coverage,
+        individualCoverageCurrent.coverage,
+      ]),
+      reviewParticipation: buildHistorySeries([
+        individualCoveragePrevious4.participation,
+        individualCoveragePrevious3.participation,
+        individualCoveragePrevious2.participation,
+        individualCoveragePrevious.participation,
+        individualCoverageCurrent.participation,
+      ]),
+      reopenedIssues: buildHistorySeries([
+        individualIssuesPrevious4.reopened,
+        individualIssuesPrevious3.reopened,
+        individualIssuesPrevious2.reopened,
+        individualIssuesPrevious.reopened,
+        individualIssuesCurrent.reopened,
+      ]),
+      discussionComments: buildHistorySeries([
+        individualDiscussionPrevious4.comments,
+        individualDiscussionPrevious3.comments,
+        individualDiscussionPrevious2.comments,
+        individualDiscussionPrevious.comments,
+        individualDiscussionCurrent.comments,
+      ]),
+    } satisfies IndividualMetricHistory;
+
     individual = {
       person: personProfile,
       metrics: individualMetrics,
+      metricHistory: individualHistory,
       trends: {
         monthly: individualMonthly,
         repoActivity: mapRepoDistribution(
