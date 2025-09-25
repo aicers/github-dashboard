@@ -1,6 +1,7 @@
 "use client";
 
-import { Fragment } from "react";
+import { Info } from "lucide-react";
+import { Fragment, useId } from "react";
 import {
   Bar,
   BarChart,
@@ -153,19 +154,74 @@ function Heatmap({ data }: { data: HeatmapCell[] }) {
   );
 }
 
+function formatHoursAsDaysHours(value: number) {
+  if (!Number.isFinite(value)) {
+    return "–";
+  }
+
+  const totalMinutes = Math.max(0, Math.round(value * 60));
+  let days = Math.floor(totalMinutes / (24 * 60));
+  const remainingMinutes = totalMinutes - days * 24 * 60;
+  const hours = Math.floor(remainingMinutes / 60);
+  const minutes = remainingMinutes - hours * 60;
+
+  if (hours === 24) {
+    days += 1;
+  }
+
+  let carryHours = hours;
+  let carryMinutes = minutes;
+  if (carryMinutes === 60) {
+    carryHours += 1;
+    carryMinutes = 0;
+  }
+
+  const parts: string[] = [];
+  if (days > 0) {
+    parts.push(`${days}일`);
+  }
+  parts.push(`${carryHours}시간`);
+  parts.push(`${carryMinutes}분`);
+  return parts.join(" ");
+}
+
 function LeaderboardTable({
   title,
   entries,
   unit,
+  valueFormatter,
+  tooltip,
 }: {
   title: string;
   entries: LeaderboardEntry[];
   unit?: string;
+  valueFormatter?: (value: number) => string;
+  tooltip?: string;
 }) {
+  const tooltipId = useId();
   return (
     <Card className="border-border/60">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base font-medium">{title}</CardTitle>
+        <CardTitle className="flex items-center gap-1 text-base font-medium">
+          <span>{title}</span>
+          {tooltip && (
+            <button
+              type="button"
+              aria-describedby={tooltipId}
+              aria-label={tooltip}
+              className="group relative inline-flex cursor-help items-center bg-transparent p-0 text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:text-foreground"
+            >
+              <Info className="h-3.5 w-3.5" aria-hidden="true" />
+              <span
+                id={tooltipId}
+                role="tooltip"
+                className="pointer-events-none absolute left-1/2 top-full z-20 w-52 -translate-x-1/2 translate-y-2 rounded-md border border-border/60 bg-background px-2 py-1 text-xs text-muted-foreground opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+              >
+                {tooltip}
+              </span>
+            </button>
+          )}
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         {entries.length === 0 && (
@@ -185,8 +241,9 @@ function LeaderboardTable({
               )}
             </div>
             <span className="font-semibold">
-              {formatNumber(entry.value)}
-              {unit}
+              {valueFormatter
+                ? valueFormatter(entry.value)
+                : `${formatNumber(entry.value)}${unit ?? ""}`}
             </span>
           </div>
         ))}
@@ -839,7 +896,8 @@ export function AnalyticsView({
           <LeaderboardTable
             title="빠른 리뷰 응답"
             entries={analytics.leaderboard.fastestResponders}
-            unit="h"
+            valueFormatter={formatHoursAsDaysHours}
+            tooltip="리뷰 요청 후 첫 응답까지 걸린 평균 시간입니다. 주말과 지정 휴일을 제외하며 Dependabot Pull Request는 포함하지 않습니다."
           />
           <LeaderboardTable
             title="이슈 생성"
