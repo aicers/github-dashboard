@@ -1767,6 +1767,8 @@ type LeaderboardRow = {
   user_id: string;
   value: number;
   secondary_value?: number | null;
+  additions?: number;
+  deletions?: number;
 };
 
 async function fetchLeaderboard(
@@ -1823,7 +1825,11 @@ async function fetchLeaderboard(
     }
     case "prsMerged": {
       const result = await query<LeaderboardRow>(
-        `SELECT pr.author_id AS user_id, COUNT(*) AS value
+        `SELECT
+           pr.author_id AS user_id,
+           COUNT(*) AS value,
+           SUM(COALESCE((pr.data ->> 'additions')::numeric, 0)) AS additions,
+           SUM(COALESCE((pr.data ->> 'deletions')::numeric, 0)) AS deletions
          FROM pull_requests pr
          WHERE pr.author_id IS NOT NULL AND pr.github_merged_at BETWEEN $1 AND $2${repoClausePrs}
          GROUP BY pr.author_id
@@ -2445,16 +2451,41 @@ function mapLeaderboard(
 ): LeaderboardEntry[] {
   return rows
     .filter((row) => row.user_id)
-    .map((row) => ({
-      user: userProfiles.get(row.user_id) ?? {
-        id: row.user_id,
-        login: null,
-        name: null,
-        avatarUrl: null,
-      },
-      value: Number(row.value ?? 0),
-      secondaryValue: row.secondary_value ?? null,
-    }));
+    .map((row) => {
+      const additions = row.additions;
+      const deletions = row.deletions;
+      const hasLineDetails = additions != null || deletions != null;
+
+      return {
+        user: userProfiles.get(row.user_id) ?? {
+          id: row.user_id,
+          login: null,
+          name: null,
+          avatarUrl: null,
+        },
+        value: Number(row.value ?? 0),
+        secondaryValue:
+          row.secondary_value == null ? null : Number(row.secondary_value),
+        ...(hasLineDetails
+          ? {
+              details: [
+                {
+                  label: "+",
+                  value: Number(additions ?? 0),
+                  sign: "positive" as const,
+                  suffix: "라인",
+                },
+                {
+                  label: "-",
+                  value: Number(deletions ?? 0),
+                  sign: "negative" as const,
+                  suffix: "라인",
+                },
+              ],
+            }
+          : {}),
+      } satisfies LeaderboardEntry;
+    });
 }
 
 function toTrend(points: TrendPoint[]): TrendPoint[] {

@@ -397,6 +397,14 @@ function LeaderboardTable({
   );
 }
 
+function getLeaderboardDetailValue(entry: LeaderboardEntry, label: string) {
+  if (!entry.details) {
+    return 0;
+  }
+  const detail = entry.details.find((item) => item.label === label);
+  return Number(detail?.value ?? 0);
+}
+
 export function AnalyticsView({
   initialAnalytics,
   defaultRange,
@@ -582,25 +590,55 @@ export function AnalyticsView({
       secondaryValue: reviewer.pullRequestsReviewed,
     }));
 
+  const rawPrMergedEntries = analytics.leaderboard.prsMerged;
   const rawMainBranchContributionEntries =
     analytics.leaderboard.mainBranchContribution;
 
-  const mainBranchContributionEntries = useMemo(() => {
-    const getDetailValue = (entry: LeaderboardEntry, label: string) => {
-      if (!entry.details) {
-        return 0;
+  const [prMergedSortKey, setPrMergedSortKey] =
+    useState<MainBranchSortKey>("count");
+
+  const prMergedEntries = useMemo(() => {
+    const getSortValue = (entry: LeaderboardEntry) => {
+      if (prMergedSortKey === "additions") {
+        return getLeaderboardDetailValue(entry, "+");
       }
-      const detail = entry.details.find((item) => item.label === label);
-      return Number(detail?.value ?? 0);
+
+      if (prMergedSortKey === "net") {
+        return (
+          getLeaderboardDetailValue(entry, "+") -
+          getLeaderboardDetailValue(entry, "-")
+        );
+      }
+
+      return entry.value;
     };
 
+    const getName = (entry: LeaderboardEntry) =>
+      entry.user.login ?? entry.user.name ?? entry.user.id;
+
+    return [...rawPrMergedEntries].sort((a, b) => {
+      const valueA = getSortValue(a);
+      const valueB = getSortValue(b);
+
+      if (valueA === valueB) {
+        return getName(a).localeCompare(getName(b));
+      }
+
+      return valueB - valueA;
+    });
+  }, [rawPrMergedEntries, prMergedSortKey]);
+
+  const mainBranchContributionEntries = useMemo(() => {
     const getSortValue = (entry: LeaderboardEntry) => {
       if (mainBranchSortKey === "additions") {
-        return getDetailValue(entry, "+");
+        return getLeaderboardDetailValue(entry, "+");
       }
 
       if (mainBranchSortKey === "net") {
-        return getDetailValue(entry, "+") - getDetailValue(entry, "-");
+        return (
+          getLeaderboardDetailValue(entry, "+") -
+          getLeaderboardDetailValue(entry, "-")
+        );
       }
 
       return entry.value;
@@ -639,6 +677,32 @@ export function AnalyticsView({
                   : "text-muted-foreground hover:text-foreground",
               )}
               aria-pressed={isActive}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  const prMergedSortControls = (
+    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <span className="hidden font-medium md:inline">정렬</span>
+      <div className="flex rounded-md border border-border/60 bg-background/80 p-0.5">
+        {MAIN_BRANCH_SORT_OPTIONS.map((option) => {
+          const isActive = prMergedSortKey === option.key;
+          return (
+            <button
+              key={option.key}
+              type="button"
+              onClick={() => setPrMergedSortKey(option.key)}
+              className={cn(
+                "rounded-[6px] px-2 py-1 text-xs font-medium transition-colors",
+                isActive
+                  ? "bg-secondary text-secondary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
             >
               {option.label}
             </button>
@@ -1205,7 +1269,8 @@ export function AnalyticsView({
           />
           <LeaderboardTable
             title="PR 머지"
-            entries={analytics.leaderboard.prsMerged}
+            entries={prMergedEntries}
+            headerActions={prMergedSortControls}
           />
           <LeaderboardTable
             title="PR 머지 수행"
