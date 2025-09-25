@@ -351,7 +351,10 @@ async function fetchIssueAggregates(
          FILTER (WHERE i.github_closed_at BETWEEN $1 AND $2 AND i.github_closed_at IS NOT NULL) AS avg_resolution_hours,
        COUNT(*) FILTER (WHERE i.github_closed_at BETWEEN $1 AND $2 AND i.state = 'OPEN') AS reopened_count,
        AVG(COALESCE((i.data -> 'comments' ->> 'totalCount')::numeric, 0))
-         FILTER (WHERE i.github_created_at BETWEEN $1 AND $2) AS avg_comments_issue
+         FILTER (
+           WHERE i.github_closed_at BETWEEN $1 AND $2
+             AND i.github_closed_at IS NOT NULL
+         ) AS avg_comments_issue
      FROM issues i
      WHERE (i.github_created_at BETWEEN $1 AND $2
         OR i.github_closed_at BETWEEN $1 AND $2)${repoClause}`,
@@ -448,7 +451,8 @@ async function fetchPrAggregates(
          ) AS avg_lines_changed,
        AVG(COALESCE((p.data -> 'comments' ->> 'totalCount')::numeric, 0))
          FILTER (
-           WHERE p.github_created_at BETWEEN $1 AND $2
+           WHERE p.github_merged_at BETWEEN $1 AND $2
+             AND p.github_merged_at IS NOT NULL
              AND NOT p.is_dependabot
          ) AS avg_comments_pr
      FROM pull_requests_with_flags p
@@ -1059,10 +1063,11 @@ async function fetchReviewAggregates(
   const [statsResult, responseRows] = await Promise.all([
     query<ReviewStatsRow>(
       `WITH pr_scope AS (
-         SELECT pr.id, pr.github_created_at, pr.repository_id, pr.author_id
+         SELECT pr.id, pr.github_created_at, pr.github_merged_at, pr.repository_id, pr.author_id
          FROM pull_requests pr
          LEFT JOIN users u ON u.id = pr.author_id
-         WHERE pr.github_created_at BETWEEN $1 AND $2${repoClause}
+         WHERE pr.github_merged_at BETWEEN $1 AND $2${repoClause}
+           AND pr.github_merged_at IS NOT NULL
            AND ${DEPENDABOT_FILTER}
        ),
        reviews_in_range AS (
@@ -1074,7 +1079,8 @@ async function fetchReviewAggregates(
        participation AS (
          SELECT
            pr_scope.id AS pull_request_id,
-           COUNT(DISTINCT r.author_id) FILTER (WHERE r.github_submitted_at BETWEEN $1 AND $2) AS reviewer_count
+           COUNT(DISTINCT r.author_id)
+             FILTER (WHERE r.github_submitted_at BETWEEN $1 AND $2) AS reviewer_count
          FROM pr_scope
          LEFT JOIN reviews r ON r.pull_request_id = pr_scope.id
          GROUP BY pr_scope.id
@@ -1377,8 +1383,12 @@ async function fetchRepoDistribution(
 
 type RepoComparisonRawRow = {
   repository_id: string;
+  issues_created: number;
   issues_resolved: number;
+  prs_created: number;
   prs_merged: number;
+  reviews: number;
+  comments: number;
   avg_first_review_hours: number | string | null;
 };
 
@@ -1403,17 +1413,63 @@ async function fetchRepoComparison(
        FROM issues
        WHERE github_closed_at BETWEEN $1 AND $2${repoFilterIssues}
        UNION
+       SELECT DISTINCT repository_id
+       FROM issues
+       WHERE github_created_at BETWEEN $1 AND $2${repoFilterIssues}
+       UNION
        SELECT DISTINCT pr.repository_id
        FROM pull_requests pr
        LEFT JOIN users u ON u.id = pr.author_id
        WHERE pr.github_merged_at BETWEEN $1 AND $2${repoFilterPr}
          AND ${DEPENDABOT_FILTER}
+       UNION
+       SELECT DISTINCT pr.repository_id
+       FROM pull_requests pr
+       LEFT JOIN users u ON u.id = pr.author_id
+       WHERE pr.github_created_at BETWEEN $1 AND $2${repoFilterPr}
+         AND ${DEPENDABOT_FILTER}
+       UNION
+       SELECT DISTINCT pr.repository_id
+       FROM reviews r
+       JOIN pull_requests pr ON pr.id = r.pull_request_id
+       LEFT JOIN users u ON u.id = pr.author_id
+       WHERE r.github_submitted_at BETWEEN $1 AND $2${repoFilterPr}
+         AND ${DEPENDABOT_FILTER}
+       UNION
+       SELECT DISTINCT repository_id
+       FROM (
+         SELECT i.repository_id AS repository_id
+         FROM comments c
+         JOIN issues i ON i.id = c.issue_id
+         WHERE c.github_created_at BETWEEN $1 AND $2${repoFilterIssues}
+         UNION
+         SELECT p.repository_id AS repository_id
+         FROM comments c
+         JOIN pull_requests p ON p.id = c.pull_request_id
+         LEFT JOIN users u ON u.id = p.author_id
+         WHERE c.github_created_at BETWEEN $1 AND $2${repoFilterPr}
+           AND ${DEPENDABOT_FILTER}
+       ) AS comment_repo_ids
+     ),
+     issue_created_counts AS (
+       SELECT repository_id, COUNT(*) AS issues_created
+       FROM issues
+       WHERE github_created_at BETWEEN $1 AND $2${repoFilterIssues}
+       GROUP BY repository_id
      ),
      issue_counts AS (
        SELECT repository_id, COUNT(*) AS issues_resolved
        FROM issues
        WHERE github_closed_at BETWEEN $1 AND $2${repoFilterIssues}
        GROUP BY repository_id
+     ),
+     pr_created_counts AS (
+       SELECT pr.repository_id, COUNT(*) AS prs_created
+       FROM pull_requests pr
+       LEFT JOIN users u ON u.id = pr.author_id
+       WHERE pr.github_created_at BETWEEN $1 AND $2${repoFilterPr}
+         AND ${DEPENDABOT_FILTER}
+       GROUP BY pr.repository_id
      ),
      pr_counts AS (
        SELECT pr.repository_id, COUNT(*) AS prs_merged
@@ -1422,6 +1478,32 @@ async function fetchRepoComparison(
        WHERE pr.github_merged_at BETWEEN $1 AND $2${repoFilterPr}
          AND ${DEPENDABOT_FILTER}
        GROUP BY pr.repository_id
+     ),
+     review_counts AS (
+       SELECT pr.repository_id, COUNT(*) AS reviews
+       FROM reviews r
+       JOIN pull_requests pr ON pr.id = r.pull_request_id
+       LEFT JOIN users u ON u.id = pr.author_id
+       WHERE r.github_submitted_at BETWEEN $1 AND $2${repoFilterPr}
+         AND ${DEPENDABOT_FILTER}
+       GROUP BY pr.repository_id
+     ),
+     comment_counts AS (
+       SELECT repository_id, COUNT(*) AS comments
+       FROM (
+         SELECT i.repository_id AS repository_id
+         FROM comments c
+         JOIN issues i ON i.id = c.issue_id
+         WHERE c.github_created_at BETWEEN $1 AND $2${repoFilterIssues}
+         UNION ALL
+         SELECT p.repository_id AS repository_id
+         FROM comments c
+         JOIN pull_requests p ON p.id = c.pull_request_id
+         LEFT JOIN users u ON u.id = p.author_id
+         WHERE c.github_created_at BETWEEN $1 AND $2${repoFilterPr}
+           AND ${DEPENDABOT_FILTER}
+       ) AS combined
+       GROUP BY repository_id
      ),
      first_review_times AS (
        SELECT
@@ -1445,12 +1527,20 @@ async function fetchRepoComparison(
      )
      SELECT
        repo_ids.repository_id,
+       COALESCE(issue_created_counts.issues_created, 0) AS issues_created,
        COALESCE(issue_counts.issues_resolved, 0) AS issues_resolved,
+       COALESCE(pr_created_counts.prs_created, 0) AS prs_created,
        COALESCE(pr_counts.prs_merged, 0) AS prs_merged,
+       COALESCE(review_counts.reviews, 0) AS reviews,
+       COALESCE(comment_counts.comments, 0) AS comments,
        first_reviews.avg_first_review_hours
      FROM repo_ids
+     LEFT JOIN issue_created_counts ON issue_created_counts.repository_id = repo_ids.repository_id
      LEFT JOIN issue_counts ON issue_counts.repository_id = repo_ids.repository_id
+     LEFT JOIN pr_created_counts ON pr_created_counts.repository_id = repo_ids.repository_id
      LEFT JOIN pr_counts ON pr_counts.repository_id = repo_ids.repository_id
+     LEFT JOIN review_counts ON review_counts.repository_id = repo_ids.repository_id
+     LEFT JOIN comment_counts ON comment_counts.repository_id = repo_ids.repository_id
      LEFT JOIN first_reviews ON first_reviews.repository_id = repo_ids.repository_id`,
     params,
   );
@@ -2286,8 +2376,12 @@ function mapRepoComparison(
   return rows.map((row) => ({
     repositoryId: row.repository_id,
     repository: repoProfiles.get(row.repository_id) ?? null,
+    issuesCreated: Number(row.issues_created ?? 0),
     issuesResolved: Number(row.issues_resolved ?? 0),
+    pullRequestsCreated: Number(row.prs_created ?? 0),
     pullRequestsMerged: Number(row.prs_merged ?? 0),
+    reviews: Number(row.reviews ?? 0),
+    comments: Number(row.comments ?? 0),
     avgFirstReviewHours: (() => {
       if (row.avg_first_review_hours == null) {
         return null;
@@ -2620,17 +2714,6 @@ export async function getDashboardAnalytics(
     }
   }
 
-  const totalIssuesClosedCurrent = currentIssues.issues_closed || 0;
-  const reopenedRatioCurrent =
-    totalIssuesClosedCurrent > 0
-      ? currentIssues.reopened_count / totalIssuesClosedCurrent
-      : 0;
-  const totalIssuesClosedPrevious = previousIssues.issues_closed || 0;
-  const reopenedRatioPrevious =
-    totalIssuesClosedPrevious > 0
-      ? previousIssues.reopened_count / totalIssuesClosedPrevious
-      : 0;
-
   const issueDurationCurrent = summarizeIssueDurations(
     currentIssueDurationDetails,
     targetProject,
@@ -2855,10 +2938,6 @@ export async function getDashboardAnalytics(
     avgCommentsPerIssue: buildComparison(
       Number(currentIssues.avg_comments_issue ?? 0),
       Number(previousIssues.avg_comments_issue ?? 0),
-    ),
-    reopenedIssuesRatio: buildRatioComparison(
-      reopenedRatioCurrent,
-      reopenedRatioPrevious,
     ),
   };
 

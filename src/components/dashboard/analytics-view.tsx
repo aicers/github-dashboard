@@ -1,7 +1,7 @@
 "use client";
 
-import { Info } from "lucide-react";
-import { Fragment, useId } from "react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Info } from "lucide-react";
+import { Fragment, type ReactNode, useId, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -38,6 +38,7 @@ import type {
   MetricHistoryEntry,
   OrganizationAnalytics,
   PeriodKey,
+  RepoComparisonRow,
 } from "@/lib/dashboard/types";
 
 type AnalyticsViewProps = {
@@ -47,6 +48,25 @@ type AnalyticsViewProps = {
 };
 
 type TrendEntry = Record<string, number> & { date: string };
+type RepoSortKey =
+  | "issuesCreated"
+  | "issuesResolved"
+  | "pullRequestsCreated"
+  | "pullRequestsMerged"
+  | "reviews"
+  | "comments"
+  | "avgFirstReviewHours";
+type RepoSortDirection = "asc" | "desc";
+
+const REPO_SORT_DEFAULT_DIRECTION: Record<RepoSortKey, RepoSortDirection> = {
+  issuesCreated: "desc",
+  issuesResolved: "desc",
+  pullRequestsCreated: "desc",
+  pullRequestsMerged: "desc",
+  reviews: "desc",
+  comments: "desc",
+  avgFirstReviewHours: "asc",
+};
 
 const HISTORY_KEYS: PeriodKey[] = [
   "previous4",
@@ -322,6 +342,149 @@ export function AnalyticsView({
   const contributors = analytics.contributors;
 
   const organization = analytics.organization as OrganizationAnalytics;
+
+  const [repoSort, setRepoSort] = useState<{
+    key: RepoSortKey;
+    direction: RepoSortDirection;
+  }>(() => ({
+    key: "issuesResolved",
+    direction: REPO_SORT_DEFAULT_DIRECTION.issuesResolved,
+  }));
+
+  const sortedRepoComparison = useMemo(() => {
+    const rows = [...organization.repoComparison];
+    const { key, direction } = repoSort;
+
+    const getValue = (row: (typeof rows)[number]): number | null => {
+      switch (key) {
+        case "issuesCreated":
+          return row.issuesCreated;
+        case "issuesResolved":
+          return row.issuesResolved;
+        case "pullRequestsCreated":
+          return row.pullRequestsCreated;
+        case "pullRequestsMerged":
+          return row.pullRequestsMerged;
+        case "reviews":
+          return row.reviews;
+        case "comments":
+          return row.comments;
+        case "avgFirstReviewHours":
+          return row.avgFirstReviewHours;
+        default:
+          return null;
+      }
+    };
+
+    return rows.sort((a, b) => {
+      const valueA = getValue(a);
+      const valueB = getValue(b);
+
+      if (valueA == null && valueB == null) {
+        const nameA = a.repository?.nameWithOwner ?? a.repositoryId;
+        const nameB = b.repository?.nameWithOwner ?? b.repositoryId;
+        return nameA.localeCompare(nameB);
+      }
+
+      if (valueA == null) {
+        return 1;
+      }
+
+      if (valueB == null) {
+        return -1;
+      }
+
+      if (valueA === valueB) {
+        const nameA = a.repository?.nameWithOwner ?? a.repositoryId;
+        const nameB = b.repository?.nameWithOwner ?? b.repositoryId;
+        return nameA.localeCompare(nameB);
+      }
+
+      return direction === "asc" ? valueA - valueB : valueB - valueA;
+    });
+  }, [organization.repoComparison, repoSort]);
+
+  const toggleRepoSort = (key: RepoSortKey) => {
+    setRepoSort((previous) => {
+      if (previous.key === key) {
+        return {
+          key,
+          direction: previous.direction === "asc" ? "desc" : "asc",
+        };
+      }
+
+      return {
+        key,
+        direction: REPO_SORT_DEFAULT_DIRECTION[key],
+      };
+    });
+  };
+
+  const getRepoSortAria = (
+    key: RepoSortKey,
+  ): "ascending" | "descending" | "none" => {
+    if (repoSort.key !== key) {
+      return "none";
+    }
+    return repoSort.direction === "asc" ? "ascending" : "descending";
+  };
+
+  const renderRepoSortIcon = (key: RepoSortKey) => {
+    if (repoSort.key !== key) {
+      return <ArrowUpDown className="h-3 w-3" aria-hidden="true" />;
+    }
+
+    return repoSort.direction === "asc" ? (
+      <ArrowUp className="h-3 w-3" aria-hidden="true" />
+    ) : (
+      <ArrowDown className="h-3 w-3" aria-hidden="true" />
+    );
+  };
+
+  const repoComparisonColumns: Array<{
+    key: RepoSortKey;
+    label: string;
+    render: (row: RepoComparisonRow) => ReactNode;
+  }> = [
+    {
+      key: "issuesCreated",
+      label: "이슈 생성",
+      render: (row) => formatNumber(row.issuesCreated),
+    },
+    {
+      key: "issuesResolved",
+      label: "이슈 해결",
+      render: (row) => formatNumber(row.issuesResolved),
+    },
+    {
+      key: "pullRequestsCreated",
+      label: "PR 생성",
+      render: (row) => formatNumber(row.pullRequestsCreated),
+    },
+    {
+      key: "pullRequestsMerged",
+      label: "PR 머지",
+      render: (row) => formatNumber(row.pullRequestsMerged),
+    },
+    {
+      key: "reviews",
+      label: "리뷰",
+      render: (row) => formatNumber(row.reviews),
+    },
+    {
+      key: "comments",
+      label: "댓글",
+      render: (row) => formatNumber(row.comments),
+    },
+    {
+      key: "avgFirstReviewHours",
+      label: "평균 첫 리뷰(시간)",
+      render: (row) =>
+        row.avgFirstReviewHours == null
+          ? "–"
+          : formatDuration(row.avgFirstReviewHours, "hours"),
+    },
+  ];
 
   const reviewerLeaderboardEntries: LeaderboardEntry[] = organization.reviewers
     .filter((reviewer) => reviewer.reviewCount > 0)
@@ -678,61 +841,59 @@ export function AnalyticsView({
         </Card>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-[2fr_1fr]">
+      <section className="grid gap-4">
         <Card className="border-border/70">
           <CardHeader>
             <CardTitle className="text-base font-medium">
               리포지토리 비교
             </CardTitle>
             <CardDescription className="text-sm text-muted-foreground">
-              리포지토리별 해결 이슈, 머지 PR, 첫 리뷰까지의 평균 시간을
-              비교합니다. Dependabot이 생성한 Pull Request는 제외됩니다.
+              리포지토리별 이슈 생성·해결, PR 생성·머지, 리뷰·댓글, 첫
+              리뷰까지의 평균 시간을 비교합니다. Dependabot이 생성한 Pull
+              Request는 제외됩니다.
             </CardDescription>
           </CardHeader>
           <CardContent className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-sm">
+            <table className="w-full min-w-[760px] text-sm">
               <thead className="text-left text-xs uppercase text-muted-foreground">
                 <tr>
-                  <th className="pb-3">리포지토리</th>
-                  <th className="pb-3">이슈 해결</th>
-                  <th className="pb-3">PR 머지</th>
-                  <th className="pb-3">평균 첫 리뷰(시간)</th>
+                  <th className="pb-3" scope="col">
+                    리포지토리
+                  </th>
+                  {repoComparisonColumns.map((column) => (
+                    <th
+                      key={column.key}
+                      className="pb-3 text-right"
+                      aria-sort={getRepoSortAria(column.key)}
+                      scope="col"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleRepoSort(column.key)}
+                        className="flex w-full items-center justify-end gap-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground"
+                      >
+                        <span>{column.label}</span>
+                        {renderRepoSortIcon(column.key)}
+                      </button>
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/40">
-                {organization.repoComparison.map((row) => (
+                {sortedRepoComparison.map((row) => (
                   <tr key={row.repositoryId} className="h-12">
                     <td className="pr-4">
                       {row.repository?.nameWithOwner ?? row.repositoryId}
                     </td>
-                    <td>{formatNumber(row.issuesResolved)}</td>
-                    <td>{formatNumber(row.pullRequestsMerged)}</td>
-                    <td>
-                      {row.avgFirstReviewHours == null
-                        ? "–"
-                        : formatDuration(row.avgFirstReviewHours, "hours")}
-                    </td>
+                    {repoComparisonColumns.map((column) => (
+                      <td key={column.key} className="text-right">
+                        {column.render(row)}
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
             </table>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/70">
-          <CardHeader>
-            <CardTitle className="text-base font-medium">
-              리포지토리 활동 비중
-            </CardTitle>
-            <CardDescription className="text-sm text-muted-foreground">
-              선택한 기간 동안 활동량 비중이 높은 리포지토리 순위입니다.
-              Dependabot이 생성한 Pull Request는 제외됩니다.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <RepoDistributionList
-              items={organization.repoDistribution.slice(0, 8)}
-            />
           </CardContent>
         </Card>
       </section>
@@ -749,34 +910,25 @@ export function AnalyticsView({
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div className="flex items-center justify-between">
-              <span>평균 PR 크기</span>
+              <span>머지된 PR 평균 크기</span>
               <span className="font-medium">
                 {formatNumber(organization.metrics.avgPrSize.current)} 라인
               </span>
             </div>
             <div className="flex items-center justify-between">
-              <span>PR 당 평균 댓글</span>
+              <span>머지된 PR 평균 댓글</span>
               <span className="font-medium">
                 {organization.metrics.avgCommentsPerPr.current.toFixed(2)}
               </span>
             </div>
             <div className="flex items-center justify-between">
-              <span>이슈 당 평균 댓글</span>
+              <span>해결된 이슈 평균 댓글</span>
               <span className="font-medium">
                 {organization.metrics.avgCommentsPerIssue.current.toFixed(2)}
               </span>
             </div>
             <div className="flex items-center justify-between">
-              <span>재오픈 비율</span>
-              <span className="font-medium">
-                {(
-                  organization.metrics.reopenedIssuesRatio.current * 100
-                ).toFixed(1)}
-                %
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>리뷰 참여 비율</span>
+              <span>머지된 PR 리뷰 참여 비율</span>
               <span className="font-medium">
                 {(
                   organization.metrics.reviewParticipation.current * 100
