@@ -1765,9 +1765,11 @@ async function fetchReviewResponsePairs(
        SELECT rr.id, rr.pull_request_id, rr.reviewer_id, rr.requested_at, rr.removed_at
        FROM review_requests rr
        JOIN pr_scope pr ON pr.id = rr.pull_request_id
+       LEFT JOIN users u ON u.id = pr.author_id
        WHERE rr.reviewer_id IS NOT NULL
          AND rr.requested_at BETWEEN $1 AND $2${reviewerClause}
          AND pr.author_id <> rr.reviewer_id
+         AND ${DEPENDABOT_FILTER}
      ),
      response_events AS (
        SELECT
@@ -2091,17 +2093,21 @@ async function fetchIndividualReviewMetrics(
        SELECT r.pull_request_id
        FROM reviews r
        JOIN pull_requests pr ON pr.id = r.pull_request_id
+       LEFT JOIN users u ON u.id = pr.author_id
        WHERE r.author_id = $1
          AND r.github_submitted_at BETWEEN $2 AND $3${repoClause}
          AND pr.author_id <> $1
+         AND ${DEPENDABOT_FILTER}
      ),
      review_comments AS (
        SELECT COUNT(*) AS review_comments
        FROM comments c
        JOIN pull_requests pr ON pr.id = c.pull_request_id
+       LEFT JOIN users u ON u.id = pr.author_id
        WHERE c.author_id = $1
          AND c.github_created_at BETWEEN $2 AND $3${repoClause}
          AND pr.author_id <> $1
+         AND ${DEPENDABOT_FILTER}
      )
      SELECT
        (SELECT COUNT(*) FROM reviewer_reviews) AS reviews,
@@ -2161,19 +2167,23 @@ async function fetchIndividualCoverageMetrics(
 
   const result = await query<IndividualCoverageRow>(
     `WITH prs_in_range AS (
-       SELECT id
+       SELECT pr.id
        FROM pull_requests pr
+       LEFT JOIN users u ON u.id = pr.author_id
        WHERE pr.github_merged_at IS NOT NULL
          AND pr.github_merged_at BETWEEN $2 AND $3${repoClause}
+         AND ${DEPENDABOT_FILTER}
      ),
      reviewer_prs AS (
        SELECT DISTINCT r.pull_request_id
        FROM reviews r
        JOIN pull_requests pr ON pr.id = r.pull_request_id
+       LEFT JOIN users u ON u.id = pr.author_id
        WHERE r.author_id = $1
          AND r.github_submitted_at BETWEEN $2 AND $3${repoClause}
          AND pr.github_merged_at IS NOT NULL
          AND pr.github_merged_at BETWEEN $2 AND $3
+         AND ${DEPENDABOT_FILTER}
      ),
      participation AS (
        SELECT
@@ -2283,7 +2293,9 @@ async function fetchIndividualMonthlyTrends(
               COUNT(*) AS reviews
        FROM reviews r
        JOIN pull_requests pr ON pr.id = r.pull_request_id
+       LEFT JOIN users u ON u.id = pr.author_id
        WHERE r.author_id = $1 AND r.github_submitted_at BETWEEN $2 AND $3${repoClauseReviews}
+         AND ${DEPENDABOT_FILTER}
        GROUP BY bucket
      ),
      combined AS (
@@ -2336,7 +2348,9 @@ async function fetchIndividualRepoActivity(
        SELECT pr.repository_id AS repo_id, COUNT(*) AS reviews
        FROM reviews r
        JOIN pull_requests pr ON pr.id = r.pull_request_id
+       LEFT JOIN users u ON u.id = pr.author_id
        WHERE r.author_id = $1 AND r.github_submitted_at BETWEEN $2 AND $3
+         AND ${DEPENDABOT_FILTER}
        GROUP BY pr.repository_id
      ),
      comment_counts AS (
