@@ -204,6 +204,13 @@ export function PeopleView({
               history={toCardHistory(individualHistory?.prsMerged)}
             />
             <MetricCard
+              title="PR 머지 수행"
+              metric={individual.metrics.prsMergedBy}
+              format="count"
+              tooltip={individualMetricTooltips.prsMergedBy}
+              history={toCardHistory(individualHistory?.prsMergedBy)}
+            />
+            <MetricCard
               title="리뷰 수행"
               metric={individual.metrics.reviewsCompleted}
               format="count"

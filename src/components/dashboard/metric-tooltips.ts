@@ -31,6 +31,8 @@ export const individualMetricTooltips = {
   prsCreated: "이 구성원이 생성한 Pull Request 개수입니다.",
   prsMerged:
     "이 구성원이 작성한 Pull Request 가운데 선택한 기간 동안 병합된 개수입니다.",
+  prsMergedBy:
+    "이 구성원이 직접 머지 완료한 Pull Request 개수입니다 (본인 PR 포함).",
   reviewsCompleted:
     "이 구성원이 완료한 리뷰 개수입니다. Dependabot이 생성한 Pull Request는 제외됩니다.",
   reviewResponseTime:

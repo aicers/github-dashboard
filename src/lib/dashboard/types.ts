@@ -148,6 +148,7 @@ export type IndividualMetricSet = {
   childIssueWorkTime: DurationComparisonValue;
   prsCreated: ComparisonValue;
   prsMerged: ComparisonValue;
+  prsMergedBy: ComparisonValue;
   reviewsCompleted: ComparisonValue;
   reviewResponseTime: DurationComparisonValue;
   prsReviewed: ComparisonValue;
@@ -170,6 +171,7 @@ export type IndividualMetricHistory = {
   childIssueWorkTime: MetricHistoryEntry[];
   prsCreated: MetricHistoryEntry[];
   prsMerged: MetricHistoryEntry[];
+  prsMergedBy: MetricHistoryEntry[];
   reviewsCompleted: MetricHistoryEntry[];
   reviewResponseTime: MetricHistoryEntry[];
   prsReviewed: MetricHistoryEntry[];

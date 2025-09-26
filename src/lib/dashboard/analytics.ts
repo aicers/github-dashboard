@@ -2043,6 +2043,10 @@ type IndividualPullRequestRow = {
   merged: number;
 };
 
+type IndividualMergedByRow = {
+  merged: number;
+};
+
 async function fetchIndividualPullRequestMetrics(
   personId: string,
   start: string,
@@ -2069,6 +2073,38 @@ async function fetchIndividualPullRequestMetrics(
   return (
     result.rows[0] ?? {
       created: 0,
+      merged: 0,
+    }
+  );
+}
+
+async function fetchIndividualMergedByMetrics(
+  personId: string,
+  start: string,
+  end: string,
+  repositoryIds: string[] | undefined,
+): Promise<IndividualMergedByRow> {
+  const params: unknown[] = [personId, start, end];
+  let repoClause = "";
+  if (repositoryIds?.length) {
+    params.push(repositoryIds);
+    const index = params.length;
+    repoClause = ` AND pr.repository_id = ANY($${index}::text[])`;
+  }
+
+  const result = await query<IndividualMergedByRow>(
+    `SELECT
+       COUNT(*) FILTER (WHERE pr.github_merged_at BETWEEN $2 AND $3) AS merged
+     FROM pull_requests pr
+     LEFT JOIN users u ON u.id = pr.data -> 'mergedBy' ->> 'id'
+     WHERE pr.data -> 'mergedBy' ->> 'id' = $1${repoClause}
+       AND pr.github_merged_at IS NOT NULL
+       AND ${DEPENDABOT_FILTER}`,
+    params,
+  );
+
+  return (
+    result.rows[0] ?? {
       merged: 0,
     }
   );
@@ -3262,6 +3298,45 @@ export async function getDashboardAnalytics(
     ]);
 
     const [
+      individualMergedByCurrent,
+      individualMergedByPrevious,
+      individualMergedByPrevious2,
+      individualMergedByPrevious3,
+      individualMergedByPrevious4,
+    ] = await Promise.all([
+      fetchIndividualMergedByMetrics(
+        personProfile.id,
+        range.start,
+        range.end,
+        repositoryFilter,
+      ),
+      fetchIndividualMergedByMetrics(
+        personProfile.id,
+        range.previousStart,
+        range.previousEnd,
+        repositoryFilter,
+      ),
+      fetchIndividualMergedByMetrics(
+        personProfile.id,
+        range.previous2Start,
+        range.previous2End,
+        repositoryFilter,
+      ),
+      fetchIndividualMergedByMetrics(
+        personProfile.id,
+        range.previous3Start,
+        range.previous3End,
+        repositoryFilter,
+      ),
+      fetchIndividualMergedByMetrics(
+        personProfile.id,
+        range.previous4Start,
+        range.previous4End,
+        repositoryFilter,
+      ),
+    ]);
+
+    const [
       individualReviewsCurrent,
       individualReviewsPrevious,
       individualReviewsPrevious2,
@@ -3491,6 +3566,10 @@ export async function getDashboardAnalytics(
         individualPullRequestsCurrent.merged,
         individualPullRequestsPrevious.merged,
       ),
+      prsMergedBy: buildComparison(
+        individualMergedByCurrent.merged,
+        individualMergedByPrevious.merged,
+      ),
       parentIssueResolutionTime: buildDurationComparison(
         individualDurationCurrent.parentResolution,
         individualDurationPrevious.parentResolution,
@@ -3626,6 +3705,13 @@ export async function getDashboardAnalytics(
         individualPullRequestsPrevious2.merged,
         individualPullRequestsPrevious.merged,
         individualPullRequestsCurrent.merged,
+      ]),
+      prsMergedBy: buildHistorySeries([
+        individualMergedByPrevious4.merged,
+        individualMergedByPrevious3.merged,
+        individualMergedByPrevious2.merged,
+        individualMergedByPrevious.merged,
+        individualMergedByCurrent.merged,
       ]),
       reviewsCompleted: buildHistorySeries([
         individualReviewsPrevious4.reviews,
