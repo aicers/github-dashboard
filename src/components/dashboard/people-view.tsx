@@ -5,8 +5,11 @@ import { DashboardFilterPanel } from "@/components/dashboard/dashboard-filter-pa
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { toCardHistory } from "@/components/dashboard/metric-history";
 import { individualMetricTooltips } from "@/components/dashboard/metric-tooltips";
-import { formatNumber } from "@/components/dashboard/metric-utils";
-import { RepoDistributionList } from "@/components/dashboard/repo-distribution-list";
+import {
+  formatMetricValue,
+  type MetricFormat,
+} from "@/components/dashboard/metric-utils";
+import { RepoActivityTable } from "@/components/dashboard/repo-activity-table";
 import { useDashboardAnalytics } from "@/components/dashboard/use-dashboard-analytics";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,12 +19,81 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { DashboardAnalytics } from "@/lib/dashboard/types";
+import type {
+  DashboardAnalytics,
+  IndividualMetricSet,
+} from "@/lib/dashboard/types";
 
 type PeopleViewProps = {
   initialAnalytics: DashboardAnalytics;
   defaultRange: { start: string; end: string };
 };
+
+const summaryMetricConfigs = [
+  { key: "issuesCreated", label: "이슈 생성", format: "count" },
+  { key: "issuesClosed", label: "이슈 종료", format: "count" },
+  {
+    key: "issueResolutionRatio",
+    label: "본인 이슈 해결율",
+    format: "ratio",
+  },
+  {
+    key: "issueResolutionTime",
+    label: "평균 해결 시간",
+    format: "hours",
+  },
+  { key: "issueWorkTime", label: "평균 작업 시간", format: "hours" },
+  {
+    key: "parentIssueResolutionTime",
+    label: "Parent 해결 시간",
+    format: "hours",
+  },
+  {
+    key: "parentIssueWorkTime",
+    label: "Parent 작업 시간",
+    format: "hours",
+  },
+  {
+    key: "childIssueResolutionTime",
+    label: "Child 해결 시간",
+    format: "hours",
+  },
+  {
+    key: "childIssueWorkTime",
+    label: "Child 작업 시간",
+    format: "hours",
+  },
+  { key: "prsCreated", label: "PR 생성", format: "count" },
+  { key: "prsMerged", label: "PR 머지", format: "count" },
+  { key: "prsMergedBy", label: "PR 머지 수행", format: "count" },
+  { key: "reviewsCompleted", label: "리뷰 수행", format: "count" },
+  {
+    key: "reviewResponseTime",
+    label: "리뷰 응답 시간",
+    format: "hours",
+  },
+  { key: "prsReviewed", label: "PR 리뷰", format: "count" },
+  { key: "reviewComments", label: "리뷰 댓글", format: "count" },
+  {
+    key: "reviewCoverage",
+    label: "PR 리뷰 커버리지",
+    format: "percentage",
+  },
+  {
+    key: "reviewParticipation",
+    label: "리뷰 참여 비율",
+    format: "percentage",
+  },
+  {
+    key: "discussionComments",
+    label: "코멘트 참여",
+    format: "count",
+  },
+] satisfies ReadonlyArray<{
+  key: keyof IndividualMetricSet;
+  label: string;
+  format: MetricFormat;
+}>;
 
 export function PeopleView({
   initialAnalytics,
@@ -52,6 +124,27 @@ export function PeopleView({
   }, [unsortedContributors]);
   const individual = analytics.individual;
   const individualHistory = individual?.metricHistory;
+
+  const summaryItems = useMemo(() => {
+    if (!individual) {
+      return [];
+    }
+
+    return summaryMetricConfigs.map(({ key, label, format }) => ({
+      label,
+      value: formatMetricValue(individual.metrics[key], format),
+    }));
+  }, [individual]);
+
+  const personLabel = useMemo(() => {
+    if (!individual) {
+      return "";
+    }
+
+    return (
+      individual.person.login ?? individual.person.name ?? individual.person.id
+    );
+  }, [individual]);
 
   useEffect(() => {
     if (!filters.personId && contributors.length > 0) {
@@ -121,9 +214,7 @@ export function PeopleView({
           <Card className="border-border/70">
             <CardHeader>
               <CardTitle className="text-base font-medium">
-                {individual.person.login ??
-                  individual.person.name ??
-                  individual.person.id}
+                활동 요약 · {personLabel}
               </CardTitle>
               {individual.person.name && individual.person.login && (
                 <CardDescription className="text-sm text-muted-foreground">
@@ -131,23 +222,22 @@ export function PeopleView({
                 </CardDescription>
               )}
             </CardHeader>
-            <CardContent className="flex flex-wrap gap-6 text-sm text-muted-foreground">
-              <span>
-                이슈 생성{" "}
-                {formatNumber(individual.metrics.issuesCreated.current)}
-              </span>
-              <span>
-                이슈 종료{" "}
-                {formatNumber(individual.metrics.issuesClosed.current)}
-              </span>
-              <span>
-                리뷰 수행{" "}
-                {formatNumber(individual.metrics.reviewsCompleted.current)}
-              </span>
-              <span>
-                논의 댓글{" "}
-                {formatNumber(individual.metrics.discussionComments.current)}
-              </span>
+            <CardContent>
+              <dl className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
+                {summaryItems.map((item) => (
+                  <div
+                    key={item.label}
+                    className="flex flex-col gap-1 rounded-lg border border-border/60 bg-muted/30 p-3"
+                  >
+                    <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      {item.label}
+                    </dt>
+                    <dd className="text-base font-semibold text-foreground">
+                      {item.value}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
             </CardContent>
           </Card>
 
@@ -240,7 +330,7 @@ export function PeopleView({
               history={toCardHistory(individualHistory?.reviewParticipation)}
             />
             <MetricCard
-              title="토론 참여"
+              title="코멘트 참여"
               metric={individual.metrics.discussionComments}
               format="count"
               tooltip={individualMetricTooltips.discussionComments}
@@ -290,21 +380,18 @@ export function PeopleView({
             </div>
           </section>
 
-          <section className="grid gap-4 lg:grid-cols-2">
+          <section className="grid gap-4">
             <Card className="border-border/70">
               <CardHeader>
                 <CardTitle className="text-base font-medium">
                   활동 리포지토리
                 </CardTitle>
                 <CardDescription className="text-sm text-muted-foreground">
-                  해당 기간 동안 활동 비중이 높은 리포지토리
+                  해당 기간 동안 활동한 모든 리포지토리의 세부 지표
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <RepoDistributionList
-                  items={individual.trends.repoActivity}
-                  limit={8}
-                />
+                <RepoActivityTable items={individual.repoComparison} />
               </CardContent>
             </Card>
           </section>

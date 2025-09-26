@@ -68,6 +68,7 @@ export type RepoComparisonRow = {
   issuesResolved: number;
   pullRequestsCreated: number;
   pullRequestsMerged: number;
+  pullRequestsMergedBy: number;
   reviews: number;
   comments: number;
   avgFirstReviewHours: number | null;
@@ -192,6 +193,7 @@ export type IndividualAnalytics = {
   metrics: IndividualMetricSet;
   metricHistory: IndividualMetricHistory;
   trends: IndividualTrends;
+  repoComparison: RepoComparisonRow[];
 };
 
 export type LeaderboardDetail = {
