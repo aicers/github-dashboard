@@ -29,12 +29,14 @@ export const individualMetricTooltips = {
   issueResolutionTime: "이 구성원이 처리한 이슈의 평균 해결 시간입니다.",
   issueWorkTime: "이 구성원의 프로젝트 보드 작업 시간 평균입니다.",
   prsCreated: "이 구성원이 생성한 Pull Request 개수입니다.",
-  prsMerged: "이 구성원이 병합한 Pull Request 개수입니다.",
-  reviewsCompleted: "이 구성원이 완료한 리뷰 개수입니다.",
+  prsMerged:
+    "이 구성원이 작성한 Pull Request 가운데 선택한 기간 동안 병합된 개수입니다.",
+  reviewsCompleted:
+    "이 구성원이 완료한 리뷰 개수입니다. Dependabot이 생성한 Pull Request는 제외됩니다.",
   reviewResponseTime:
-    "이 구성원이 리뷰 요청을 받은 후 응답하기까지 걸린 평균 업무 시간입니다. 주말과 지정 휴일은 제외됩니다.",
+    "이 구성원이 리뷰 요청을 받은 후 응답하기까지 걸린 평균 업무 시간입니다. 주말과 지정 휴일은 제외되며 Dependabot이 생성한 Pull Request는 제외됩니다.",
   reviewCoverage:
-    "선택한 기간 동안 머지된 PR 가운데 이 구성원이 리뷰에 참여한 PR 비율입니다. (리뷰한 PR 수 ÷ 동일 기간 머지된 PR 수)",
+    "선택한 기간 동안 머지된 PR 가운데 이 구성원이 리뷰에 참여한 PR 비율입니다. (리뷰한 PR 수 ÷ 동일 기간 머지된 PR 수) Dependabot이 생성한 Pull Request는 제외됩니다.",
   reviewParticipation: "이 구성원의 리뷰 참여 비율입니다.",
   discussionComments: "이슈와 PR에서 남긴 코멘트 개수입니다.",
   parentIssueResolutionTime:
