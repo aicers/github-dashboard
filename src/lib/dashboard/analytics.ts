@@ -3747,14 +3747,6 @@ export async function getDashboardAnalytics(
         individualIssuesCurrent.closed,
         individualIssuesPrevious.closed,
       ),
-      issueResolutionRatio: buildRatioComparison(
-        individualIssuesCurrent.created
-          ? individualIssuesCurrent.closed / individualIssuesCurrent.created
-          : 0,
-        individualIssuesPrevious.created
-          ? individualIssuesPrevious.closed / individualIssuesPrevious.created
-          : 0,
-      ),
       issueResolutionTime: buildDurationComparison(
         individualIssuesCurrent.avg_resolution_hours,
         individualIssuesPrevious.avg_resolution_hours,
@@ -3832,9 +3824,6 @@ export async function getDashboardAnalytics(
       ),
     };
 
-    const issueResolutionRatioValue = (row: IndividualIssueRow) =>
-      row.created ? row.closed / row.created : 0;
-
     const individualHistory = {
       issuesCreated: buildHistorySeries([
         individualIssuesPrevious4.created,
@@ -3849,13 +3838,6 @@ export async function getDashboardAnalytics(
         individualIssuesPrevious2.closed,
         individualIssuesPrevious.closed,
         individualIssuesCurrent.closed,
-      ]),
-      issueResolutionRatio: buildHistorySeries([
-        issueResolutionRatioValue(individualIssuesPrevious4),
-        issueResolutionRatioValue(individualIssuesPrevious3),
-        issueResolutionRatioValue(individualIssuesPrevious2),
-        issueResolutionRatioValue(individualIssuesPrevious),
-        issueResolutionRatioValue(individualIssuesCurrent),
       ]),
       issueResolutionTime: buildHistorySeries([
         individualIssuesPrevious4.avg_resolution_hours,

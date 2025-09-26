@@ -25,7 +25,6 @@ export const organizationMetricTooltips = {
 export const individualMetricTooltips = {
   issuesCreated: "이 구성원이 생성한 이슈 개수입니다.",
   issuesClosed: "이 구성원이 종료한 이슈 개수입니다.",
-  issueResolutionRatio: "이 구성원이 생성한 이슈 중 해결된 비율입니다.",
   issueResolutionTime: "이 구성원이 처리한 이슈의 평균 해결 시간입니다.",
   issueWorkTime: "이 구성원의 프로젝트 보드 작업 시간 평균입니다.",
   prsCreated: "이 구성원이 생성한 Pull Request 개수입니다.",

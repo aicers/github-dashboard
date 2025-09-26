@@ -140,7 +140,6 @@ export type OrganizationAnalytics = {
 export type IndividualMetricSet = {
   issuesCreated: ComparisonValue;
   issuesClosed: ComparisonValue;
-  issueResolutionRatio: RatioComparisonValue;
   issueResolutionTime: DurationComparisonValue;
   issueWorkTime: DurationComparisonValue;
   parentIssueResolutionTime: DurationComparisonValue;
@@ -163,7 +162,6 @@ export type IndividualMetricSet = {
 export type IndividualMetricHistory = {
   issuesCreated: MetricHistoryEntry[];
   issuesClosed: MetricHistoryEntry[];
-  issueResolutionRatio: MetricHistoryEntry[];
   issueResolutionTime: MetricHistoryEntry[];
   issueWorkTime: MetricHistoryEntry[];
   parentIssueResolutionTime: MetricHistoryEntry[];

@@ -33,11 +33,6 @@ const summaryMetricConfigs = [
   { key: "issuesCreated", label: "이슈 생성", format: "count" },
   { key: "issuesClosed", label: "이슈 종료", format: "count" },
   {
-    key: "issueResolutionRatio",
-    label: "본인 이슈 해결율",
-    format: "ratio",
-  },
-  {
     key: "issueResolutionTime",
     label: "평균 해결 시간",
     format: "hours",
@@ -255,13 +250,6 @@ export function PeopleView({
               format="count"
               tooltip={individualMetricTooltips.issuesClosed}
               history={toCardHistory(individualHistory?.issuesClosed)}
-            />
-            <MetricCard
-              title="본인 이슈 해결율"
-              metric={individual.metrics.issueResolutionRatio}
-              format="ratio"
-              tooltip={individualMetricTooltips.issueResolutionRatio}
-              history={toCardHistory(individualHistory?.issueResolutionRatio)}
             />
             <MetricCard
               title="평균 해결 시간"

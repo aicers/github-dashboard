@@ -1121,11 +1121,6 @@ export function AnalyticsView({
               format="count"
             />
             <MetricCard
-              title="본인 이슈 해결율"
-              metric={individual.metrics.issueResolutionRatio}
-              format="ratio"
-            />
-            <MetricCard
               title="평균 해결 시간"
               metric={individual.metrics.issueResolutionTime}
               format="hours"
