@@ -380,6 +380,7 @@ export async function updateSyncSettings(params: {
   timezone?: string;
   weekStart?: "sunday" | "monday";
   excludedRepositories?: string[];
+  excludedPeople?: string[];
 }) {
   await ensureSchema();
 
@@ -434,6 +435,18 @@ export async function updateSyncSettings(params: {
     );
 
     await updateSyncConfig({ excludedRepositories: normalized });
+  }
+
+  if (params.excludedPeople !== undefined) {
+    const normalized = Array.from(
+      new Set(
+        params.excludedPeople
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0),
+      ),
+    );
+
+    await updateSyncConfig({ excludedUsers: normalized });
   }
 }
 

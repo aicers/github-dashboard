@@ -2563,6 +2563,13 @@ export async function getDashboardAnalytics(
   const timeZone = config?.timezone ?? "UTC";
   const weekStart: WeekStart =
     config?.week_start === "sunday" ? "sunday" : "monday";
+  const excludedUserIds = new Set<string>(
+    Array.isArray(config?.excluded_user_ids)
+      ? (config?.excluded_user_ids as string[]).filter(
+          (id) => typeof id === "string" && id.trim().length > 0,
+        )
+      : [],
+  );
   const excludedRepositoryIds = new Set<string>(
     Array.isArray(config?.excluded_repository_ids)
       ? (config?.excluded_repository_ids as string[]).filter(
@@ -2586,6 +2593,8 @@ export async function getDashboardAnalytics(
     ? allowedRepositoryIds
     : undefined;
   const targetProject = normalizeText(env.TODO_PROJECT_NAME);
+  const effectivePersonId =
+    personId && !excludedUserIds.has(personId) ? personId : null;
 
   const [
     currentIssues,
@@ -2773,6 +2782,52 @@ export async function getDashboardAnalytics(
   const filteredRepoDistributionRows = filterExcludedRepo(repoDistributionRows);
   const filteredRepoComparisonRows = filterExcludedRepo(repoComparisonRows);
 
+  const filterByUser = <T>(
+    rows: T[],
+    getId: (row: T) => string | null | undefined,
+  ) =>
+    rows.filter((row) => {
+      const id = getId(row);
+      return !id || !excludedUserIds.has(id);
+    });
+
+  const reviewerActivityVisibleRows = filterByUser(
+    reviewerActivityRows,
+    (row) => row.reviewer_id,
+  );
+  const mainBranchContributionVisibleRows = filterByUser(
+    mainBranchContributionRows,
+    (row) => row.user_id,
+  );
+  const leaderboardPrsVisible = filterByUser(
+    leaderboardPrs,
+    (row) => row.user_id,
+  );
+  const leaderboardPrsMergedVisible = filterByUser(
+    leaderboardPrsMerged,
+    (row) => row.user_id,
+  );
+  const leaderboardPrsMergedByVisible = filterByUser(
+    leaderboardPrsMergedBy,
+    (row) => row.user_id,
+  );
+  const leaderboardIssuesVisible = filterByUser(
+    leaderboardIssues,
+    (row) => row.user_id,
+  );
+  const leaderboardReviewsVisible = filterByUser(
+    leaderboardReviews,
+    (row) => row.user_id,
+  );
+  const leaderboardRespondersVisible = filterByUser(
+    leaderboardResponders,
+    (row) => row.user_id,
+  );
+  const leaderboardCommentsVisible = filterByUser(
+    leaderboardComments,
+    (row) => row.user_id,
+  );
+
   const repoIds = new Set<string>();
   filteredRepoDistributionRows.forEach((row) => {
     repoIds.add(row.repository_id);
@@ -2782,7 +2837,7 @@ export async function getDashboardAnalytics(
   });
 
   const reviewerIds = new Set<string>();
-  reviewerActivityRows.forEach((row) => {
+  reviewerActivityVisibleRows.forEach((row) => {
     if (row.reviewer_id) {
       reviewerIds.add(row.reviewer_id);
     }
@@ -2790,13 +2845,13 @@ export async function getDashboardAnalytics(
 
   const leaderboardUserIds = new Set<string>();
   [
-    leaderboardPrs,
-    leaderboardPrsMerged,
-    leaderboardPrsMergedBy,
-    leaderboardIssues,
-    leaderboardReviews,
-    leaderboardResponders,
-    leaderboardComments,
+    leaderboardPrsVisible,
+    leaderboardPrsMergedVisible,
+    leaderboardPrsMergedByVisible,
+    leaderboardIssuesVisible,
+    leaderboardReviewsVisible,
+    leaderboardRespondersVisible,
+    leaderboardCommentsVisible,
   ].forEach((rows) => {
     rows.forEach((row) => {
       if (row.user_id) {
@@ -2805,18 +2860,16 @@ export async function getDashboardAnalytics(
     });
   });
 
-  const contributorIds = await fetchActiveContributors(
-    range.start,
-    range.end,
-    repositoryFilter,
-  );
+  const contributorIds = (
+    await fetchActiveContributors(range.start, range.end, repositoryFilter)
+  ).filter((id) => !excludedUserIds.has(id));
   contributorIds.forEach((id) => {
     leaderboardUserIds.add(id);
   });
 
   let personProfile: UserProfile | null = null;
-  if (personId) {
-    leaderboardUserIds.add(personId);
+  if (effectivePersonId) {
+    leaderboardUserIds.add(effectivePersonId);
   }
 
   const { users } = await resolveProfiles(
@@ -2829,10 +2882,10 @@ export async function getDashboardAnalytics(
   );
   const userProfileMap = new Map(users.map((user) => [user.id, user]));
 
-  if (personId) {
-    personProfile = userProfileMap.get(personId) ?? null;
+  if (effectivePersonId) {
+    personProfile = userProfileMap.get(effectivePersonId) ?? null;
     if (!personProfile) {
-      const profiles = await getUserProfiles([personId]);
+      const profiles = await getUserProfiles([effectivePersonId]);
       if (profiles.length) {
         personProfile = profiles[0];
         userProfileMap.set(personProfile.id, personProfile);
@@ -3091,7 +3144,7 @@ export async function getDashboardAnalytics(
     },
     activityBreakdown,
     metricHistory: organizationHistory,
-    reviewers: mapReviewerActivity(reviewerActivityRows, userProfileMap),
+    reviewers: mapReviewerActivity(reviewerActivityVisibleRows, userProfileMap),
     trends: {
       issuesCreated: toTrend(issuesCreatedTrend),
       issuesClosed: toTrend(issuesClosedTrend),
@@ -3629,42 +3682,42 @@ export async function getDashboardAnalytics(
   }
 
   const leaderboardProfiles = new Set<string>();
-  leaderboardPrs.forEach((row) => {
+  leaderboardPrsVisible.forEach((row) => {
     if (row.user_id) {
       leaderboardProfiles.add(row.user_id);
     }
   });
-  leaderboardPrsMerged.forEach((row) => {
+  leaderboardPrsMergedVisible.forEach((row) => {
     if (row.user_id) {
       leaderboardProfiles.add(row.user_id);
     }
   });
-  leaderboardPrsMergedBy.forEach((row) => {
+  leaderboardPrsMergedByVisible.forEach((row) => {
     if (row.user_id) {
       leaderboardProfiles.add(row.user_id);
     }
   });
-  leaderboardIssues.forEach((row) => {
+  leaderboardIssuesVisible.forEach((row) => {
     if (row.user_id) {
       leaderboardProfiles.add(row.user_id);
     }
   });
-  leaderboardReviews.forEach((row) => {
+  leaderboardReviewsVisible.forEach((row) => {
     if (row.user_id) {
       leaderboardProfiles.add(row.user_id);
     }
   });
-  leaderboardResponders.forEach((row) => {
+  leaderboardRespondersVisible.forEach((row) => {
     if (row.user_id) {
       leaderboardProfiles.add(row.user_id);
     }
   });
-  leaderboardComments.forEach((row) => {
+  leaderboardCommentsVisible.forEach((row) => {
     if (row.user_id) {
       leaderboardProfiles.add(row.user_id);
     }
   });
-  mainBranchContributionRows.forEach((row) => {
+  mainBranchContributionVisibleRows.forEach((row) => {
     if (row.user_id) {
       leaderboardProfiles.add(row.user_id);
     }
@@ -3679,7 +3732,7 @@ export async function getDashboardAnalytics(
   });
 
   const mainBranchContributionEntries: LeaderboardEntry[] =
-    mainBranchContributionRows.map((row) => {
+    mainBranchContributionVisibleRows.map((row) => {
       const reviewCount = Number(row.review_count ?? 0);
       const authorCount = Number(row.author_count ?? 0);
       const additions = Number(row.additions ?? 0);
@@ -3718,13 +3771,19 @@ export async function getDashboardAnalytics(
     });
 
   const leaderboard: LeaderboardSummary = {
-    prsCreated: mapLeaderboard(leaderboardPrs, leaderboardMap),
-    prsMerged: mapLeaderboard(leaderboardPrsMerged, leaderboardMap),
-    prsMergedBy: mapLeaderboard(leaderboardPrsMergedBy, leaderboardMap),
-    issuesCreated: mapLeaderboard(leaderboardIssues, leaderboardMap),
-    reviewsCompleted: mapLeaderboard(leaderboardReviews, leaderboardMap),
-    fastestResponders: mapLeaderboard(leaderboardResponders, leaderboardMap),
-    discussionEngagement: mapLeaderboard(leaderboardComments, leaderboardMap),
+    prsCreated: mapLeaderboard(leaderboardPrsVisible, leaderboardMap),
+    prsMerged: mapLeaderboard(leaderboardPrsMergedVisible, leaderboardMap),
+    prsMergedBy: mapLeaderboard(leaderboardPrsMergedByVisible, leaderboardMap),
+    issuesCreated: mapLeaderboard(leaderboardIssuesVisible, leaderboardMap),
+    reviewsCompleted: mapLeaderboard(leaderboardReviewsVisible, leaderboardMap),
+    fastestResponders: mapLeaderboard(
+      leaderboardRespondersVisible,
+      leaderboardMap,
+    ),
+    discussionEngagement: mapLeaderboard(
+      leaderboardCommentsVisible,
+      leaderboardMap,
+    ),
     mainBranchContribution: mainBranchContributionEntries,
   };
 

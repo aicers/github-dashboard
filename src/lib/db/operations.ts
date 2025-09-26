@@ -542,7 +542,7 @@ export async function getSyncState(resource: string) {
 
 export async function getSyncConfig() {
   const result = await query(
-    `SELECT id, org_name, auto_sync_enabled, sync_interval_minutes, timezone, week_start, excluded_repository_ids, last_sync_started_at, last_sync_completed_at, last_successful_sync_at
+    `SELECT id, org_name, auto_sync_enabled, sync_interval_minutes, timezone, week_start, excluded_repository_ids, excluded_user_ids, last_sync_started_at, last_sync_completed_at, last_successful_sync_at
      FROM sync_config
      WHERE id = 'default'`,
   );
@@ -557,6 +557,7 @@ export async function updateSyncConfig(params: {
   timezone?: string;
   weekStart?: "sunday" | "monday";
   excludedRepositories?: string[];
+  excludedUsers?: string[];
   lastSyncStartedAt?: string | null;
   lastSyncCompletedAt?: string | null;
   lastSuccessfulSyncAt?: string | null;
@@ -592,6 +593,11 @@ export async function updateSyncConfig(params: {
   if (Array.isArray(params.excludedRepositories)) {
     fields.push(`excluded_repository_ids = $${fields.length + 1}`);
     values.push(params.excludedRepositories);
+  }
+
+  if (Array.isArray(params.excludedUsers)) {
+    fields.push(`excluded_user_ids = $${fields.length + 1}`);
+    values.push(params.excludedUsers);
   }
 
   if (params.lastSyncStartedAt !== undefined) {
@@ -765,6 +771,23 @@ export async function getUserProfiles(ids: string[]): Promise<UserProfile[]> {
     `SELECT id, login, name, avatar_url FROM users WHERE id = ANY($1::text[])`,
     [ids],
   );
+  return result.rows.map((row) => ({
+    id: row.id,
+    login: row.login,
+    name: row.name,
+    avatarUrl: row.avatar_url,
+  }));
+}
+
+export async function listAllUsers(): Promise<UserProfile[]> {
+  const result = await query<UserProfileRow>(
+    `SELECT id, login, name, avatar_url
+     FROM users
+     ORDER BY
+       COALESCE(NULLIF(LOWER(login), ''), NULLIF(LOWER(name), ''), id),
+       id`,
+  );
+
   return result.rows.map((row) => ({
     id: row.id,
     login: row.login,

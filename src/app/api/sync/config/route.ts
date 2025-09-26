@@ -12,6 +12,10 @@ const patchSchema = z.object({
     .array(z.string().min(1))
     .optional()
     .transform((value) => (value ? Array.from(new Set(value)) : undefined)),
+  excludedPeople: z
+    .array(z.string().min(1))
+    .optional()
+    .transform((value) => (value ? Array.from(new Set(value)) : undefined)),
 });
 
 export async function GET() {

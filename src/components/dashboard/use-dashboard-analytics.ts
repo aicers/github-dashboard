@@ -100,15 +100,30 @@ export function useDashboardAnalytics({
       const availableRepoIds = new Set(
         nextAnalytics.repositories.map((repo) => repo.id),
       );
+      const availableContributorIds = new Set(
+        nextAnalytics.contributors.map((contributor) => contributor.id),
+      );
       setFilters((current) => {
         const filteredRepoIds = current.repositoryIds.filter((id) =>
           availableRepoIds.has(id),
         );
-        if (filteredRepoIds.length === current.repositoryIds.length) {
+        const isRepoUpdated =
+          filteredRepoIds.length !== current.repositoryIds.length;
+        const isPersonAvailable =
+          current.personId === null ||
+          availableContributorIds.has(current.personId);
+
+        if (!isRepoUpdated && isPersonAvailable) {
           return current;
         }
 
-        return { ...current, repositoryIds: filteredRepoIds };
+        return {
+          ...current,
+          repositoryIds: isRepoUpdated
+            ? filteredRepoIds
+            : current.repositoryIds,
+          personId: isPersonAvailable ? current.personId : null,
+        };
       });
     } catch (fetchError) {
       setError(
