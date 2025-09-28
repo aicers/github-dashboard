@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 const tabs = [
   { href: "/dashboard/analytics", label: "Analytics" },
   { href: "/dashboard/people", label: "People" },
+  { href: "/dashboard/attention", label: "Follow-ups" },
   { href: "/dashboard/sync", label: "Sync" },
   { href: "/dashboard/settings", label: "Settings" },
 ];
