@@ -70,6 +70,7 @@ export type RepoComparisonRow = {
   pullRequestsMerged: number;
   pullRequestsMergedBy: number;
   reviews: number;
+  activeReviews: number;
   comments: number;
   avgFirstReviewHours: number | null;
 };
@@ -78,6 +79,7 @@ export type ReviewerActivity = {
   reviewerId: string;
   reviewCount: number;
   pullRequestsReviewed: number;
+  activeReviewCount: number;
   profile: UserProfile | null;
 };
 
@@ -217,6 +219,8 @@ export type LeaderboardSummary = {
   fastestResponders: LeaderboardEntry[];
   discussionEngagement: LeaderboardEntry[];
   mainBranchContribution: LeaderboardEntry[];
+  activeReviewerActivity: LeaderboardEntry[];
+  activeMainBranchContribution: LeaderboardEntry[];
 };
 
 export type RangeSummary = {

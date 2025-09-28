@@ -57,6 +57,7 @@ type RepoSortKey =
   | "pullRequestsCreated"
   | "pullRequestsMerged"
   | "reviews"
+  | "activeReviews"
   | "comments"
   | "avgFirstReviewHours";
 type RepoSortDirection = "asc" | "desc";
@@ -68,6 +69,7 @@ const REPO_SORT_DEFAULT_DIRECTION: Record<RepoSortKey, RepoSortDirection> = {
   pullRequestsCreated: "desc",
   pullRequestsMerged: "desc",
   reviews: "desc",
+  activeReviews: "desc",
   comments: "desc",
   avgFirstReviewHours: "asc",
 };
@@ -434,6 +436,8 @@ export function AnalyticsView({
           return row.pullRequestsMerged;
         case "reviews":
           return row.reviews;
+        case "activeReviews":
+          return row.activeReviews;
         case "comments":
           return row.comments;
         case "avgFirstReviewHours":
@@ -539,6 +543,11 @@ export function AnalyticsView({
       render: (row) => formatNumber(row.reviews),
     },
     {
+      key: "activeReviews",
+      label: "적극 리뷰",
+      render: (row) => formatNumber(row.activeReviews),
+    },
+    {
       key: "comments",
       label: "댓글",
       render: (row) => formatNumber(row.comments),
@@ -565,10 +574,23 @@ export function AnalyticsView({
       value: reviewer.reviewCount,
       secondaryValue: reviewer.pullRequestsReviewed,
     }));
+  const activeReviewerLeaderboardEntries = useMemo(() => {
+    const entries = [...analytics.leaderboard.activeReviewerActivity];
+    return entries.sort((a, b) => {
+      if (b.value === a.value) {
+        const nameA = a.user.login ?? a.user.name ?? a.user.id;
+        const nameB = b.user.login ?? b.user.name ?? b.user.id;
+        return nameA.localeCompare(nameB);
+      }
+      return b.value - a.value;
+    });
+  }, [analytics.leaderboard.activeReviewerActivity]);
 
   const rawPrMergedEntries = analytics.leaderboard.prsMerged;
   const rawMainBranchContributionEntries =
     analytics.leaderboard.mainBranchContribution;
+  const rawActiveMainBranchContributionEntries =
+    analytics.leaderboard.activeMainBranchContribution;
 
   const [prMergedSortKey, setPrMergedSortKey] =
     useState<MainBranchSortKey>("count");
@@ -635,7 +657,38 @@ export function AnalyticsView({
     });
   }, [rawMainBranchContributionEntries, mainBranchSortKey]);
 
-  const mainBranchSortControls = (
+  const activeMainBranchContributionEntries = useMemo(() => {
+    const getSortValue = (entry: LeaderboardEntry) => {
+      if (mainBranchSortKey === "additions") {
+        return getLeaderboardDetailValue(entry, "+");
+      }
+
+      if (mainBranchSortKey === "net") {
+        return (
+          getLeaderboardDetailValue(entry, "+") -
+          getLeaderboardDetailValue(entry, "-")
+        );
+      }
+
+      return entry.value;
+    };
+
+    const getName = (entry: LeaderboardEntry) =>
+      entry.user.login ?? entry.user.name ?? entry.user.id;
+
+    return [...rawActiveMainBranchContributionEntries].sort((a, b) => {
+      const valueA = getSortValue(a);
+      const valueB = getSortValue(b);
+
+      if (valueA === valueB) {
+        return getName(a).localeCompare(getName(b));
+      }
+
+      return valueB - valueA;
+    });
+  }, [rawActiveMainBranchContributionEntries, mainBranchSortKey]);
+
+  const renderMainBranchSortControls = () => (
     <div className="flex items-center gap-2 text-xs text-muted-foreground">
       <span className="hidden font-medium md:inline">정렬</span>
       <div className="flex rounded-md border border-border/60 bg-background/80 p-0.5">
@@ -1209,11 +1262,28 @@ export function AnalyticsView({
         <h2 className="text-2xl font-semibold">리더보드</h2>
         <div className="grid gap-4 lg:grid-cols-2">
           <LeaderboardTable
+            title="적극 리뷰어 활동"
+            entries={activeReviewerLeaderboardEntries}
+            valueFormatter={(value) => `${formatNumber(value)}건`}
+            unit="건"
+            tooltip="APPROVED 상태로 제출된 리뷰만 집계합니다."
+          />
+          <LeaderboardTable
             title="리뷰어 활동"
             entries={reviewerLeaderboardEntries}
             valueFormatter={(value) => `${formatNumber(value)}건`}
             secondaryLabel="참여 PR"
             unit="건"
+            tooltip="APPROVED·CHANGES_REQUESTED·COMMENTED 리뷰를 모두 포함하며 DISMISSED는 제외합니다. 적극 리뷰어 활동은 이 중 APPROVED만 집계합니다."
+          />
+          <LeaderboardTable
+            title="적극 메인 브랜치 기여"
+            entries={activeMainBranchContributionEntries}
+            valueFormatter={(value) => `${formatNumber(value)}건`}
+            secondaryLabel="승인 리뷰"
+            unit="건"
+            tooltip="머지된 PR 기여에 더해 APPROVED 상태 리뷰만 집계합니다. Dependabot Pull Request는 제외됩니다."
+            headerActions={renderMainBranchSortControls()}
           />
           <LeaderboardTable
             title="메인 브랜치 기여"
@@ -1221,8 +1291,14 @@ export function AnalyticsView({
             valueFormatter={(value) => `${formatNumber(value)}건`}
             secondaryLabel="리뷰"
             unit="건"
-            tooltip="리뷰한 PR과 직접 생성한 PR 중에서 머지된 PR 건수를 합산합니다. +/− 값은 병합된 PR들의 코드 추가·삭제 라인 합계입니다. Dependabot Pull Request는 제외됩니다."
-            headerActions={mainBranchSortControls}
+            tooltip={[
+              "머지된 PR에 대한 직접 기여를 더하고",
+              "리뷰 참여는 APPROVED, CHANGES_REQUESTED, COMMENTED만 포함합니다 (DISMISSED 제외).",
+              "적극 메인 브랜치 기여는 여기서 APPROVED만 집계합니다.",
+              "+/− 값은 병합된 PR의 코드 추가·삭제 라인 합계이며",
+              "Dependabot Pull Request는 제외됩니다.",
+            ].join("\n")}
+            headerActions={renderMainBranchSortControls()}
           />
           <LeaderboardTable
             title="빠른 리뷰 응답"
