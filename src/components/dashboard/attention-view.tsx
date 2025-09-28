@@ -875,42 +875,226 @@ function MentionList({
   items: MentionAttentionItem[];
   emptyText: string;
 }) {
+  const [targetFilter, setTargetFilter] = useState("all");
+  const [authorFilter, setAuthorFilter] = useState("all");
+
+  const aggregation = useMemo(() => {
+    const targetMap = new Map<string, RankingEntry>();
+    const authorMap = new Map<string, RankingEntry>();
+
+    items.forEach((item) => {
+      const metricValue = item.waitingDays;
+
+      if (item.target) {
+        const targetEntry = targetMap.get(item.target.id) ?? {
+          key: item.target.id,
+          user: item.target,
+          total: 0,
+          count: 0,
+        };
+        targetEntry.total += metricValue;
+        targetEntry.count += 1;
+        targetMap.set(item.target.id, targetEntry);
+      }
+
+      if (item.author) {
+        const authorEntry = authorMap.get(item.author.id) ?? {
+          key: item.author.id,
+          user: item.author,
+          total: 0,
+          count: 0,
+        };
+        authorEntry.total += metricValue;
+        authorEntry.count += 1;
+        authorMap.set(item.author.id, authorEntry);
+      }
+    });
+
+    return {
+      targets: Array.from(targetMap.values()),
+      authors: Array.from(authorMap.values()),
+    };
+  }, [items]);
+
+  const targetOptions = useMemo(() => {
+    return aggregation.targets
+      .map((entry) => ({ key: entry.key, label: formatUser(entry.user) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [aggregation.targets]);
+
+  const authorOptions = useMemo(() => {
+    return aggregation.authors
+      .map((entry) => ({ key: entry.key, label: formatUser(entry.user) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [aggregation.authors]);
+
+  const filteredItems = useMemo(() => {
+    return items.filter((item) => {
+      const targetMatch =
+        targetFilter === "all" || item.target?.id === targetFilter;
+
+      const authorMatch =
+        authorFilter === "all" || item.author?.id === authorFilter;
+
+      return targetMatch && authorMatch;
+    });
+  }, [items, targetFilter, authorFilter]);
+
+  const targetRankingByTotal = useMemo(() => {
+    return aggregation.targets.slice().sort((a, b) => {
+      if (b.total !== a.total) {
+        return b.total - a.total;
+      }
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+      return formatUser(a.user).localeCompare(formatUser(b.user));
+    });
+  }, [aggregation.targets]);
+
+  const targetRankingByCount = useMemo(() => {
+    return aggregation.targets.slice().sort((a, b) => {
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+      if (b.total !== a.total) {
+        return b.total - a.total;
+      }
+      return formatUser(a.user).localeCompare(formatUser(b.user));
+    });
+  }, [aggregation.targets]);
+
+  const authorRankingByTotal = useMemo(() => {
+    return aggregation.authors.slice().sort((a, b) => {
+      if (b.total !== a.total) {
+        return b.total - a.total;
+      }
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+      return formatUser(a.user).localeCompare(formatUser(b.user));
+    });
+  }, [aggregation.authors]);
+
+  const authorRankingByCount = useMemo(() => {
+    return aggregation.authors.slice().sort((a, b) => {
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+      if (b.total !== a.total) {
+        return b.total - a.total;
+      }
+      return formatUser(a.user).localeCompare(formatUser(b.user));
+    });
+  }, [aggregation.authors]);
+
+  const metricLabel = "경과일수";
+
   if (!items.length) {
     return <p className="text-sm text-muted-foreground">{emptyText}</p>;
   }
 
   return (
-    <ul className="space-y-4">
-      {items.map((item) => {
-        const listKey = `${item.commentId}:${item.target?.id ?? "unknown"}`;
-        return (
-          <li key={listKey}>
-            <div className="rounded-lg border border-border/50 p-4">
-              <div className="flex flex-col gap-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  {renderLink(
-                    item.url,
-                    `${formatRepository(item.container.repository)} #${item.container.number ?? "?"} 코멘트`,
-                  )}
+    <div className="space-y-6">
+      <div className="space-y-4">
+        <div className="flex flex-wrap gap-4">
+          <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+            멘션 대상 필터
+            <select
+              className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={targetFilter}
+              onChange={(event) => setTargetFilter(event.target.value)}
+            >
+              <option value="all">전체</option>
+              {targetOptions.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+            작성자 필터
+            <select
+              className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={authorFilter}
+              onChange={(event) => setAuthorFilter(event.target.value)}
+            >
+              <option value="all">전체</option>
+              {authorOptions.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <RankingCard
+            title={`멘션 대상 ${metricLabel} 합계 순위`}
+            entries={targetRankingByTotal}
+            valueFormatter={(entry) => formatDays(entry.total)}
+            emptyText="멘션 대상 데이터가 없습니다."
+          />
+          <RankingCard
+            title="멘션 대상 건수 순위"
+            entries={targetRankingByCount}
+            valueFormatter={(entry) => formatCount(entry.count)}
+            emptyText="멘션 대상 데이터가 없습니다."
+          />
+          <RankingCard
+            title={`작성자 ${metricLabel} 합계 순위`}
+            entries={authorRankingByTotal}
+            valueFormatter={(entry) => formatDays(entry.total)}
+            emptyText="작성자 데이터가 없습니다."
+          />
+          <RankingCard
+            title="작성자 건수 순위"
+            entries={authorRankingByCount}
+            valueFormatter={(entry) => formatCount(entry.count)}
+            emptyText="작성자 데이터가 없습니다."
+          />
+        </div>
+      </div>
+
+      {filteredItems.length ? (
+        <ul className="space-y-4">
+          {filteredItems.map((item) => {
+            const listKey = `${item.commentId}:${item.target?.id ?? "unknown"}`;
+            return (
+              <li key={listKey}>
+                <div className="rounded-lg border border-border/50 p-4">
+                  <div className="flex flex-col gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {renderLink(
+                        item.url,
+                        `${formatRepository(item.container.repository)} #${item.container.number ?? "?"} 코멘트`,
+                      )}
+                    </div>
+                    {item.commentExcerpt ? (
+                      <p className="text-sm text-muted-foreground">
+                        “{item.commentExcerpt}”
+                      </p>
+                    ) : null}
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                      <span>멘션 대상 {formatUser(item.target)}</span>
+                      <span>작성자 {formatUser(item.author)}</span>
+                      <span className={chipClass}>
+                        {formatDays(item.waitingDays)} 경과
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                {item.commentExcerpt ? (
-                  <p className="text-sm text-muted-foreground">
-                    “{item.commentExcerpt}”
-                  </p>
-                ) : null}
-                <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                  <span>멘션 대상 {formatUser(item.target)}</span>
-                  <span>작성자 {formatUser(item.author)}</span>
-                  <span className={chipClass}>
-                    {formatDays(item.waitingDays)} 경과
-                  </span>
-                </div>
-              </div>
-            </div>
-          </li>
-        );
-      })}
-    </ul>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          선택한 조건에 해당하는 멘션이 없습니다.
+        </p>
+      )}
+    </div>
   );
 }
 
