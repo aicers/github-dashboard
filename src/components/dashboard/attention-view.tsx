@@ -1094,7 +1094,7 @@ function MentionList({
             </select>
           </label>
           <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-            작성자 필터
+            요청자 필터
             <select
               className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               value={authorFilter}
@@ -1123,16 +1123,16 @@ function MentionList({
             emptyText="멘션 대상 데이터가 없습니다."
           />
           <RankingCard
-            title={`작성자 ${metricLabel} 합계 순위`}
+            title={`요청자 ${metricLabel} 합계 순위`}
             entries={authorRankingByTotal}
             valueFormatter={(entry) => formatDays(entry.total)}
-            emptyText="작성자 데이터가 없습니다."
+            emptyText="요청자 데이터가 없습니다."
           />
           <RankingCard
-            title="작성자 건수 순위"
+            title="요청자 건수 순위"
             entries={authorRankingByCount}
             valueFormatter={(entry) => formatCount(entry.count)}
-            emptyText="작성자 데이터가 없습니다."
+            emptyText="요청자 데이터가 없습니다."
           />
         </div>
       </div>
@@ -1162,7 +1162,7 @@ function MentionList({
                         value={formatUser(item.target)}
                       />
                       <InfoBadge
-                        label="작성자"
+                        label="요청자"
                         value={formatUser(item.author)}
                       />
                       <span className={chipClass}>
@@ -1253,10 +1253,10 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
     {
       id: "backlog-issues",
       menuLabel: "정체된 Backlog 이슈",
-      menuDescription: "20일 이상 In Progress로 이동하지 않은 이슈",
-      title: "20일 이상 (주말과 공휴일 제외) In Progress로 이동하지 않은 이슈",
+      menuDescription: "40일 이상 In Progress로 이동하지 않은 이슈",
+      title: "40일 이상 (주말과 공휴일 제외) In Progress로 이동하지 않은 이슈",
       description:
-        "프로젝트에 추가되었지만 주말과 공휴일을 제외한 20일 이상 진행 상태로 전환되지 않은 이슈입니다.",
+        "프로젝트에 추가되었지만 주말과 공휴일을 제외한 40일 이상 진행 상태로 전환되지 않은 이슈입니다.",
       content: (
         <IssueList
           items={insights.backlogIssues}
@@ -1429,7 +1429,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
       {
         id: "backlog-issues",
         title: "정체된 Backlog 이슈",
-        description: "20일 이상 In Progress로 이동하지 않은 이슈",
+        description: "40일 이상 In Progress로 이동하지 않은 이슈",
         count: backlogIssues.length,
         totalMetric: sumMetric(backlogIssues, backlogMetric),
         highlights: [
@@ -1456,7 +1456,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
         totalMetric: sumMetric(mentions, mentionMetric),
         highlights: [
           highlightLine("최다 멘션 대상", findTopByTotal(mentionTargets, 3)),
-          highlightLine("최다 작성자", findTopByTotal(mentionAuthors, 3)),
+          highlightLine("최다 요청자", findTopByTotal(mentionAuthors, 3)),
         ].filter((line): line is string => Boolean(line)),
       },
     ];
