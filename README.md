@@ -79,14 +79,70 @@ curl -X POST http://localhost:3000/api/sync/reset -d '{"preserveLogs":true}' \
 Builds use the standalone Next.js output for small production images.
 
 ```bash
+cp .env.example .env          # if you need a starting point
+vim .env                      # set GITHUB_TOKEN, GITHUB_ORG, DATABASE_URL, etc.
 ./infra/nginx/certs/generate.sh
-GITHUB_TOKEN=ghp_your_token docker compose up --build
+docker compose up --build
 ```
 
-> Tip: Docker Compose reads environment values from a `.env` file in the project
-> root, so you can place `GITHUB_TOKEN=ghp_your_token` there instead of prefixing
-> the command. This file is distinct from `.env.local`, which is used only by
-> the local Next.js dev server.
+Docker Compose reads environment values from `.env` in the project root. This
+file is distinct from `.env.local`, which is used only by the local Next.js dev
+server.
+
+### Build & export a production image
+
+When deploying to a linux/amd64 host (for example, from an Apple Silicon
+workstation), build the image with `docker buildx`, verify it behind the HTTPS
+proxy, and ship it as a tarball.
+
+1. Build for the target platform and tag the image:
+
+   ```bash
+   docker buildx build --platform linux/amd64 -t github-dashboard:0.1.0 .
+   ```
+
+   > Replace `github-dashboard:0.1.0` with the tag you plan to deploy. The
+   > command automatically uses your default builder (create one with
+   > `docker buildx create --use` if missing).
+
+2. Optionally smoke-test locally over HTTPS:
+
+   ```bash
+   ./infra/nginx/certs/generate.sh   # creates local.crt/local.key for localhost
+   docker compose up --build
+   ```
+
+   Visit `https://localhost` (accept the self-signed certificate if prompted),
+   then stop the stack with `docker compose down`. Provide `GITHUB_TOKEN` and
+   other secrets via `.env` before running.
+
+3. Export the image to a tarball and transfer it to the server (copy your
+   production TLS certificate and key alongside the tarball, or re-run the
+   generation script there with the appropriate host names):
+
+   ```bash
+   docker save github-dashboard:0.1.0 -o github-dashboard-0.1.0.tar
+   scp github-dashboard-0.1.0.tar user@server:/path/to/github-dashboard/
+   ```
+
+   > The bundled script issues certificates for `localhost`; replace
+   > `infra/nginx/certs/local.crt` and `local.key` with files signed for your
+   > real domain before serving traffic publicly.
+
+4. On the server, load the tarball, install the HTTPS certificate, and restart
+   the containers (adjust the commands to your setup):
+
+<!-- markdownlint-disable MD013 -->
+   ```bash
+   docker load -i /path/to/github-dashboard/github-dashboard-0.1.0.tar
+   # ensure /path/to/github-dashboard/infra/nginx/certs/local.crt and local.key contain your server certs
+   docker compose down
+   docker compose up -d --force-recreate
+   ```
+<!-- markdownlint-enable MD013 -->
+
+   > If you manage the container manually, use `docker stop <container>` followed
+   > by `docker run ... github-dashboard:0.1.0` instead of the Compose commands.
 
 The nginx proxy listens only on HTTPS (`https://localhost`) and redirects any
 HTTP attempts to the secure endpoint.
