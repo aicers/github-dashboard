@@ -98,6 +98,29 @@ export function DashboardFilterPanel({
       ? ""
       : "md:col-span-2 xl:col-span-2";
 
+  const previousRanges = [
+    {
+      label: "이전 기간",
+      start: range.previousStart,
+      end: range.previousEnd,
+    },
+    {
+      label: "2회 전 기간",
+      start: range.previous2Start,
+      end: range.previous2End,
+    },
+    {
+      label: "3회 전 기간",
+      start: range.previous3Start,
+      end: range.previous3End,
+    },
+    {
+      label: "4회 전 기간",
+      start: range.previous4Start,
+      end: range.previous4End,
+    },
+  ];
+
   return (
     <section className="rounded-2xl border border-border/60 bg-background/80 p-4 shadow-sm backdrop-blur md:p-6">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 xl:gap-5">
@@ -235,13 +258,18 @@ export function DashboardFilterPanel({
                   {toDateInputValue(filters.end, timeZone)}
                 </dd>
               </div>
-              <div className="flex items-center justify-between gap-3">
-                <dt className={helperTextClass}>이전 기간</dt>
-                <dd className="text-sm text-muted-foreground">
-                  {toDateInputValue(range.previousStart, timeZone)} ~{" "}
-                  {toDateInputValue(range.previousEnd, timeZone)}
-                </dd>
-              </div>
+              {previousRanges.map((period) => (
+                <div
+                  key={period.label}
+                  className="flex items-center justify-between gap-3"
+                >
+                  <dt className={helperTextClass}>{period.label}</dt>
+                  <dd className="text-sm text-muted-foreground">
+                    {toDateInputValue(period.start, timeZone)} ~{" "}
+                    {toDateInputValue(period.end, timeZone)}
+                  </dd>
+                </div>
+              ))}
               <div className="flex items-center justify-between gap-3">
                 <dt className={helperTextClass}>시간대</dt>
                 <dd className="text-sm text-muted-foreground">{timeZone}</dd>
