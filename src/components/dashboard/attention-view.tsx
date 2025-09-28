@@ -435,6 +435,32 @@ function PullRequestList({
   return (
     <div className="space-y-6">
       <div className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-2">
+          <RankingCard
+            title={`생성자 ${metricLabel} 합계 순위`}
+            entries={authorRankingByTotal}
+            valueFormatter={(entry) => formatDays(entry.total)}
+            emptyText="생성자 데이터가 없습니다."
+          />
+          <RankingCard
+            title="생성자 건수 순위"
+            entries={authorRankingByCount}
+            valueFormatter={(entry) => formatCount(entry.count)}
+            emptyText="생성자 데이터가 없습니다."
+          />
+          <RankingCard
+            title={`리뷰어 ${metricLabel} 합계 순위`}
+            entries={reviewerRankingByTotal}
+            valueFormatter={(entry) => formatDays(entry.total)}
+            emptyText="리뷰어 데이터가 없습니다."
+          />
+          <RankingCard
+            title="리뷰어 건수 순위"
+            entries={reviewerRankingByCount}
+            valueFormatter={(entry) => formatCount(entry.count)}
+            emptyText="리뷰어 데이터가 없습니다."
+          />
+        </div>
         <div className="flex flex-wrap gap-4">
           <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
             생성자 필터
@@ -468,32 +494,6 @@ function PullRequestList({
               </select>
             </label>
           ) : null}
-        </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          <RankingCard
-            title={`생성자 ${metricLabel} 합계 순위`}
-            entries={authorRankingByTotal}
-            valueFormatter={(entry) => formatDays(entry.total)}
-            emptyText="생성자 데이터가 없습니다."
-          />
-          <RankingCard
-            title="생성자 건수 순위"
-            entries={authorRankingByCount}
-            valueFormatter={(entry) => formatCount(entry.count)}
-            emptyText="생성자 데이터가 없습니다."
-          />
-          <RankingCard
-            title={`리뷰어 ${metricLabel} 합계 순위`}
-            entries={reviewerRankingByTotal}
-            valueFormatter={(entry) => formatDays(entry.total)}
-            emptyText="리뷰어 데이터가 없습니다."
-          />
-          <RankingCard
-            title="리뷰어 건수 순위"
-            entries={reviewerRankingByCount}
-            valueFormatter={(entry) => formatCount(entry.count)}
-            emptyText="리뷰어 데이터가 없습니다."
-          />
         </div>
       </div>
 
@@ -645,6 +645,32 @@ function ReviewRequestList({
   return (
     <div className="space-y-6">
       <div className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-2">
+          <RankingCard
+            title={`생성자 ${metricLabel} 합계 순위`}
+            entries={authorRankingByTotal}
+            valueFormatter={(entry) => formatDays(entry.total)}
+            emptyText="생성자 데이터가 없습니다."
+          />
+          <RankingCard
+            title="생성자 건수 순위"
+            entries={authorRankingByCount}
+            valueFormatter={(entry) => formatCount(entry.count)}
+            emptyText="생성자 데이터가 없습니다."
+          />
+          <RankingCard
+            title={`리뷰어 ${metricLabel} 합계 순위`}
+            entries={reviewerRankingByTotal}
+            valueFormatter={(entry) => formatDays(entry.total)}
+            emptyText="리뷰어 데이터가 없습니다."
+          />
+          <RankingCard
+            title="리뷰어 건수 순위"
+            entries={reviewerRankingByCount}
+            valueFormatter={(entry) => formatCount(entry.count)}
+            emptyText="리뷰어 데이터가 없습니다."
+          />
+        </div>
         <div className="flex flex-wrap gap-4">
           <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
             생성자 필터
@@ -678,32 +704,6 @@ function ReviewRequestList({
               </select>
             </label>
           ) : null}
-        </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          <RankingCard
-            title={`생성자 ${metricLabel} 합계 순위`}
-            entries={authorRankingByTotal}
-            valueFormatter={(entry) => formatDays(entry.total)}
-            emptyText="생성자 데이터가 없습니다."
-          />
-          <RankingCard
-            title="생성자 건수 순위"
-            entries={authorRankingByCount}
-            valueFormatter={(entry) => formatCount(entry.count)}
-            emptyText="생성자 데이터가 없습니다."
-          />
-          <RankingCard
-            title={`리뷰어 ${metricLabel} 합계 순위`}
-            entries={reviewerRankingByTotal}
-            valueFormatter={(entry) => formatDays(entry.total)}
-            emptyText="리뷰어 데이터가 없습니다."
-          />
-          <RankingCard
-            title="리뷰어 건수 순위"
-            entries={reviewerRankingByCount}
-            valueFormatter={(entry) => formatCount(entry.count)}
-            emptyText="리뷰어 데이터가 없습니다."
-          />
         </div>
       </div>
 
@@ -869,6 +869,32 @@ function IssueList({
   return (
     <div className="space-y-6">
       <div className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-2">
+          <RankingCard
+            title={`생성자 ${metricLabel} 합계 순위`}
+            entries={authorRankingByTotal}
+            valueFormatter={(entry) => formatDays(entry.total)}
+            emptyText="생성자 데이터가 없습니다."
+          />
+          <RankingCard
+            title="생성자 건수 순위"
+            entries={authorRankingByCount}
+            valueFormatter={(entry) => formatCount(entry.count)}
+            emptyText="생성자 데이터가 없습니다."
+          />
+          <RankingCard
+            title={`담당자 ${metricLabel} 합계 순위`}
+            entries={assigneeRankingByTotal}
+            valueFormatter={(entry) => formatDays(entry.total)}
+            emptyText="담당자 데이터가 없습니다."
+          />
+          <RankingCard
+            title="담당자 건수 순위"
+            entries={assigneeRankingByCount}
+            valueFormatter={(entry) => formatCount(entry.count)}
+            emptyText="담당자 데이터가 없습니다."
+          />
+        </div>
         <div className="flex flex-wrap gap-4">
           <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
             생성자 필터
@@ -902,32 +928,6 @@ function IssueList({
               </select>
             </label>
           ) : null}
-        </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          <RankingCard
-            title={`생성자 ${metricLabel} 합계 순위`}
-            entries={authorRankingByTotal}
-            valueFormatter={(entry) => formatDays(entry.total)}
-            emptyText="생성자 데이터가 없습니다."
-          />
-          <RankingCard
-            title="생성자 건수 순위"
-            entries={authorRankingByCount}
-            valueFormatter={(entry) => formatCount(entry.count)}
-            emptyText="생성자 데이터가 없습니다."
-          />
-          <RankingCard
-            title={`담당자 ${metricLabel} 합계 순위`}
-            entries={assigneeRankingByTotal}
-            valueFormatter={(entry) => formatDays(entry.total)}
-            emptyText="담당자 데이터가 없습니다."
-          />
-          <RankingCard
-            title="담당자 건수 순위"
-            entries={assigneeRankingByCount}
-            valueFormatter={(entry) => formatCount(entry.count)}
-            emptyText="담당자 데이터가 없습니다."
-          />
         </div>
       </div>
 
@@ -1077,6 +1077,32 @@ function MentionList({
   return (
     <div className="space-y-6">
       <div className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-2">
+          <RankingCard
+            title={`멘션 대상 ${metricLabel} 합계 순위`}
+            entries={targetRankingByTotal}
+            valueFormatter={(entry) => formatDays(entry.total)}
+            emptyText="멘션 대상 데이터가 없습니다."
+          />
+          <RankingCard
+            title="멘션 대상 건수 순위"
+            entries={targetRankingByCount}
+            valueFormatter={(entry) => formatCount(entry.count)}
+            emptyText="멘션 대상 데이터가 없습니다."
+          />
+          <RankingCard
+            title={`요청자 ${metricLabel} 합계 순위`}
+            entries={authorRankingByTotal}
+            valueFormatter={(entry) => formatDays(entry.total)}
+            emptyText="요청자 데이터가 없습니다."
+          />
+          <RankingCard
+            title="요청자 건수 순위"
+            entries={authorRankingByCount}
+            valueFormatter={(entry) => formatCount(entry.count)}
+            emptyText="요청자 데이터가 없습니다."
+          />
+        </div>
         <div className="flex flex-wrap gap-4">
           <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
             멘션 대상 필터
@@ -1108,32 +1134,6 @@ function MentionList({
               ))}
             </select>
           </label>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          <RankingCard
-            title={`멘션 대상 ${metricLabel} 합계 순위`}
-            entries={targetRankingByTotal}
-            valueFormatter={(entry) => formatDays(entry.total)}
-            emptyText="멘션 대상 데이터가 없습니다."
-          />
-          <RankingCard
-            title="멘션 대상 건수 순위"
-            entries={targetRankingByCount}
-            valueFormatter={(entry) => formatCount(entry.count)}
-            emptyText="멘션 대상 데이터가 없습니다."
-          />
-          <RankingCard
-            title={`요청자 ${metricLabel} 합계 순위`}
-            entries={authorRankingByTotal}
-            valueFormatter={(entry) => formatDays(entry.total)}
-            emptyText="요청자 데이터가 없습니다."
-          />
-          <RankingCard
-            title="요청자 건수 순위"
-            entries={authorRankingByCount}
-            valueFormatter={(entry) => formatCount(entry.count)}
-            emptyText="요청자 데이터가 없습니다."
-          />
         </div>
       </div>
 
@@ -1477,7 +1477,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
       </header>
 
       <div className="flex items-center gap-3 text-sm text-foreground">
-        <span>데이터 생성 시각: {generatedAtLabel}</span>
+        <span>통계 생성 시각: {generatedAtLabel}</span>
         <button
           type="button"
           onClick={handleRefresh}
@@ -1485,7 +1485,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
           className={cn(
             "inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background text-foreground transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70",
           )}
-          aria-label="Follow-ups 데이터 새로 고침"
+          aria-label="Follow-ups 통계 새로 고침"
         >
           <RefreshCcw
             className={cn("h-4 w-4", isRefreshing ? "animate-spin" : "")}
