@@ -519,7 +519,9 @@ function PullRequestList({
                       value={formatUserList(item.reviewers)}
                     />
                     <span className={chipClass}>
-                      {formatDays(item.ageDays)} 경과
+                      {showUpdated
+                        ? `생성 ${formatDays(item.ageDays)} 경과`
+                        : `${formatDays(item.ageDays)} 경과`}
                     </span>
                     {showUpdated && item.inactivityDays !== undefined ? (
                       <span className={chipClass}>
@@ -953,7 +955,9 @@ function IssueList({
                       value={formatUserList(item.assignees)}
                     />
                     <span className={chipClass}>
-                      {formatDays(item.ageDays)} 경과
+                      {highlightInProgress
+                        ? `생성 ${formatDays(item.ageDays)} 경과`
+                        : `${formatDays(item.ageDays)} 경과`}
                     </span>
                     {highlightInProgress &&
                     item.inProgressAgeDays !== undefined ? (
