@@ -61,6 +61,11 @@ const summaryMetricConfigs = [
   { key: "prsCreated", label: "PR 생성", format: "count" },
   { key: "prsMerged", label: "PR 머지", format: "count" },
   { key: "prsMergedBy", label: "PR 머지 수행", format: "count" },
+  {
+    key: "prCompleteness",
+    label: "PR 완성도",
+    format: "ratio",
+  },
   { key: "reviewsCompleted", label: "리뷰 수행", format: "count" },
   {
     key: "activeReviewsCompleted",
@@ -292,6 +297,14 @@ export function PeopleView({
               format="count"
               tooltip={individualMetricTooltips.prsMergedBy}
               history={toCardHistory(individualHistory?.prsMergedBy)}
+            />
+            <MetricCard
+              title="PR 완성도"
+              metric={individual.metrics.prCompleteness}
+              format="ratio"
+              impact="negative"
+              tooltip={individualMetricTooltips.prCompleteness}
+              history={toCardHistory(individualHistory?.prCompleteness)}
             />
             <MetricCard
               title="리뷰 수행"

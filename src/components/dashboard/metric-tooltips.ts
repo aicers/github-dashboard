@@ -32,6 +32,8 @@ export const individualMetricTooltips = {
     "이 구성원이 작성한 Pull Request 가운데 선택한 기간 동안 병합된 개수입니다.",
   prsMergedBy:
     "이 구성원이 직접 머지 완료한 Pull Request 개수입니다 (본인 PR 포함).",
+  prCompleteness:
+    "이 구성원이 작성해 머지된 PR 한 건당 다른 리뷰어가 남긴 COMMENTED 및 CHANGES_REQUESTED 리뷰 수의 평균입니다.",
   reviewsCompleted:
     "이 구성원이 완료한 리뷰 개수입니다. APPROVED, CHANGES_REQUESTED, COMMENTED만 포함하며 DISMISSED는 제외됩니다. Dependabot Pull Request는 제외됩니다.",
   activeReviewsCompleted:
