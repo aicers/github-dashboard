@@ -1384,15 +1384,15 @@ async function fetchRepoDistribution(
          AND ${DEPENDABOT_FILTER}
        GROUP BY p.repository_id
      ),
-     review_counts AS (
-       SELECT pr.repository_id AS repo_id, COUNT(*) AS reviews
-       FROM reviews r
-       JOIN pull_requests pr ON pr.id = r.pull_request_id
-       LEFT JOIN users u ON u.id = pr.author_id
-       WHERE r.github_submitted_at BETWEEN $1 AND $2
-         AND ${DEPENDABOT_FILTER}
-       GROUP BY pr.repository_id
-     ),
+    review_counts AS (
+      SELECT pr.repository_id AS repo_id, COUNT(*) AS reviews
+      FROM reviews r
+      JOIN pull_requests pr ON pr.id = r.pull_request_id
+      LEFT JOIN users u ON u.id = pr.author_id
+      WHERE r.github_submitted_at BETWEEN $1 AND $2
+        AND ${DEPENDABOT_FILTER}
+      GROUP BY pr.repository_id
+    ),
      comment_counts AS (
        SELECT repository_id AS repo_id, COUNT(*) AS comments
        FROM (
@@ -1410,24 +1410,24 @@ async function fetchRepoDistribution(
        ) AS combined
        GROUP BY repository_id
      ),
-     combined AS (
-       SELECT
-         COALESCE(ic.repo_id, pc.repo_id, rc.repo_id, cc.repo_id) AS repository_id,
-         COALESCE(ic.issues, 0) AS issues,
-         COALESCE(pc.pull_requests, 0) AS pull_requests,
-         COALESCE(rc.reviews, 0) AS reviews,
-         COALESCE(cc.comments, 0) AS comments
-       FROM issue_counts ic
-       FULL OUTER JOIN pr_counts pc ON pc.repo_id = ic.repo_id
-       FULL OUTER JOIN review_counts rc ON rc.repo_id = COALESCE(ic.repo_id, pc.repo_id)
-       FULL OUTER JOIN comment_counts cc ON cc.repo_id = COALESCE(ic.repo_id, pc.repo_id, rc.repo_id)
-     )
+    combined AS (
+      SELECT
+        COALESCE(ic.repo_id, pc.repo_id, rc.repo_id, cc.repo_id) AS repository_id,
+        COALESCE(ic.issues, 0) AS issues,
+        COALESCE(pc.pull_requests, 0) AS pull_requests,
+        COALESCE(rc.reviews, 0) AS reviews,
+        COALESCE(cc.comments, 0) AS comments
+      FROM issue_counts ic
+      FULL OUTER JOIN pr_counts pc ON pc.repo_id = ic.repo_id
+      FULL OUTER JOIN review_counts rc ON rc.repo_id = COALESCE(ic.repo_id, pc.repo_id)
+      FULL OUTER JOIN comment_counts cc ON cc.repo_id = COALESCE(ic.repo_id, pc.repo_id, rc.repo_id)
+    )
      SELECT
        repository_id,
        issues,
        pull_requests,
-       reviews,
-       comments,
+      reviews,
+      comments,
        (issues + pull_requests + reviews + comments) AS total_events
      FROM combined
      WHERE repository_id IS NOT NULL${repoFilter}
@@ -1446,6 +1446,7 @@ type RepoComparisonRawRow = {
   prs_merged: number;
   prs_merged_by: number;
   reviews: number;
+  active_reviews: number;
   comments: number;
   avg_first_review_hours: number | string | null;
 };
@@ -1547,7 +1548,10 @@ async function fetchRepoComparison(
       GROUP BY pr.repository_id
     ),
     review_counts AS (
-      SELECT pr.repository_id, COUNT(*) AS reviews
+      SELECT
+        pr.repository_id,
+        COUNT(*) AS reviews,
+        COUNT(*) FILTER (WHERE r.state = 'APPROVED') AS active_reviews
       FROM reviews r
       JOIN pull_requests pr ON pr.id = r.pull_request_id
        LEFT JOIN users u ON u.id = pr.author_id
@@ -1621,14 +1625,18 @@ type ReviewerActivityRow = {
   reviewer_id: string;
   review_count: number;
   prs_reviewed: number;
+  active_review_count: number;
 };
 
 type MainBranchContributionRow = {
   user_id: string;
   review_count: number;
+  active_review_count: number;
   author_count: number;
   additions: number;
   deletions: number;
+  active_additions: number;
+  active_deletions: number;
 };
 
 async function fetchReviewerActivity(
@@ -1655,11 +1663,15 @@ async function fetchReviewerActivity(
     `SELECT
        r.author_id AS reviewer_id,
        COUNT(*) FILTER (WHERE r.github_submitted_at BETWEEN $1 AND $2) AS review_count,
-       COUNT(DISTINCT r.pull_request_id) FILTER (WHERE r.github_submitted_at BETWEEN $1 AND $2) AS prs_reviewed
+       COUNT(DISTINCT r.pull_request_id) FILTER (WHERE r.github_submitted_at BETWEEN $1 AND $2) AS prs_reviewed,
+       COUNT(DISTINCT r.pull_request_id) FILTER (
+        WHERE r.github_submitted_at BETWEEN $1 AND $2 AND r.state = 'APPROVED'
+      ) AS active_review_count
      FROM reviews r
      JOIN pull_requests pr ON pr.id = r.pull_request_id
      LEFT JOIN users u ON u.id = pr.author_id
      WHERE r.author_id IS NOT NULL${repoClause}
+       AND COALESCE(r.state, '') <> 'DISMISSED'
        AND ${DEPENDABOT_FILTER}
      GROUP BY r.author_id
      ORDER BY review_count DESC, prs_reviewed DESC${limitClause}`,
@@ -1705,40 +1717,49 @@ async function fetchMainBranchContribution(
        WHERE mp.author_id IS NOT NULL
        GROUP BY mp.author_id
      ),
-     review_prs AS (
-       SELECT DISTINCT
-         r.author_id AS reviewer_id,
-         mp.id,
-         mp.additions,
-         mp.deletions
-       FROM merged_prs mp
-       JOIN reviews r ON r.pull_request_id = mp.id
-       LEFT JOIN users u ON u.id = r.author_id
-       WHERE r.author_id IS NOT NULL
-         AND ${DEPENDABOT_FILTER}
-         AND r.github_submitted_at BETWEEN $1 AND $2
-         AND r.author_id <> mp.author_id
-     ),
-     review_contrib AS (
-       SELECT
-         reviewer_id AS user_id,
-         COUNT(*) AS review_count,
-         SUM(additions) AS additions,
-         SUM(deletions) AS deletions
-       FROM review_prs
-       GROUP BY reviewer_id
-     )
-     SELECT
-       COALESCE(author_contrib.user_id, review_contrib.user_id) AS user_id,
-       COALESCE(review_contrib.review_count, 0) AS review_count,
-       COALESCE(author_contrib.author_count, 0) AS author_count,
-       COALESCE(author_contrib.additions, 0) + COALESCE(review_contrib.additions, 0) AS additions,
-       COALESCE(author_contrib.deletions, 0) + COALESCE(review_contrib.deletions, 0) AS deletions
-     FROM author_contrib
-     FULL OUTER JOIN review_contrib ON author_contrib.user_id = review_contrib.user_id
-     WHERE COALESCE(author_contrib.author_count, 0) + COALESCE(review_contrib.review_count, 0) > 0
-     ORDER BY (COALESCE(author_contrib.author_count, 0) + COALESCE(review_contrib.review_count, 0)) DESC,
-              COALESCE(author_contrib.additions, 0) + COALESCE(review_contrib.additions, 0) DESC`,
+    review_prs AS (
+      SELECT
+        r.author_id AS reviewer_id,
+        mp.id,
+        mp.additions,
+        mp.deletions,
+        BOOL_OR(r.state = 'APPROVED') AS has_approved
+      FROM merged_prs mp
+      JOIN reviews r ON r.pull_request_id = mp.id
+      LEFT JOIN users u ON u.id = r.author_id
+      WHERE r.author_id IS NOT NULL
+        AND ${DEPENDABOT_FILTER}
+        AND r.github_submitted_at BETWEEN $1 AND $2
+        AND COALESCE(r.state, '') <> 'DISMISSED'
+        AND r.author_id <> mp.author_id
+      GROUP BY r.author_id, mp.id, mp.additions, mp.deletions
+    ),
+    review_contrib AS (
+      SELECT
+        reviewer_id AS user_id,
+        COUNT(*) AS review_count,
+        SUM(CASE WHEN has_approved THEN 1 ELSE 0 END) AS active_review_count,
+        SUM(additions) AS additions,
+        SUM(deletions) AS deletions,
+        SUM(CASE WHEN has_approved THEN additions ELSE 0 END) AS active_additions,
+        SUM(CASE WHEN has_approved THEN deletions ELSE 0 END) AS active_deletions
+      FROM review_prs
+      GROUP BY reviewer_id
+    )
+    SELECT
+      COALESCE(author_contrib.user_id, review_contrib.user_id) AS user_id,
+      COALESCE(review_contrib.review_count, 0) AS review_count,
+      COALESCE(review_contrib.active_review_count, 0) AS active_review_count,
+      COALESCE(author_contrib.author_count, 0) AS author_count,
+      COALESCE(author_contrib.additions, 0) + COALESCE(review_contrib.additions, 0) AS additions,
+      COALESCE(author_contrib.deletions, 0) + COALESCE(review_contrib.deletions, 0) AS deletions,
+      COALESCE(author_contrib.additions, 0) + COALESCE(review_contrib.active_additions, 0) AS active_additions,
+      COALESCE(author_contrib.deletions, 0) + COALESCE(review_contrib.active_deletions, 0) AS active_deletions
+    FROM author_contrib
+    FULL OUTER JOIN review_contrib ON author_contrib.user_id = review_contrib.user_id
+    WHERE COALESCE(author_contrib.author_count, 0) + COALESCE(review_contrib.review_count, 0) > 0
+    ORDER BY (COALESCE(author_contrib.author_count, 0) + COALESCE(review_contrib.review_count, 0)) DESC,
+             COALESCE(author_contrib.additions, 0) + COALESCE(review_contrib.additions, 0) DESC`,
     params,
   );
 
@@ -2724,6 +2745,7 @@ function mapRepoComparison(
     pullRequestsMerged: Number(row.prs_merged ?? 0),
     pullRequestsMergedBy: Number(row.prs_merged_by ?? 0),
     reviews: Number(row.reviews ?? 0),
+    activeReviews: Number(row.active_reviews ?? 0),
     comments: Number(row.comments ?? 0),
     avgFirstReviewHours: (() => {
       if (row.avg_first_review_hours == null) {
@@ -2746,6 +2768,7 @@ function mapReviewerActivity(
       reviewerId: row.reviewer_id,
       reviewCount: Number(row.review_count ?? 0),
       pullRequestsReviewed: Number(row.prs_reviewed ?? 0),
+      activeReviewCount: Number(row.active_review_count ?? 0),
       profile: userProfiles.get(row.reviewer_id) ?? null,
     }));
 }
@@ -4019,6 +4042,11 @@ export async function getDashboardAnalytics(
       leaderboardProfiles.add(row.user_id);
     }
   });
+  organization.reviewers.forEach((reviewer) => {
+    if (reviewer.reviewerId) {
+      leaderboardProfiles.add(reviewer.reviewerId);
+    }
+  });
 
   const leaderboardMap = new Map<string, UserProfile>();
   leaderboardProfiles.forEach((id) => {
@@ -4028,21 +4056,52 @@ export async function getDashboardAnalytics(
     }
   });
 
+  const activeMainBranchContributionEntries: LeaderboardEntry[] = [];
   const mainBranchContributionEntries: LeaderboardEntry[] =
     mainBranchContributionVisibleRows.map((row) => {
       const reviewCount = Number(row.review_count ?? 0);
+      const activeReviewCount = Number(row.active_review_count ?? 0);
       const authorCount = Number(row.author_count ?? 0);
       const additions = Number(row.additions ?? 0);
       const deletions = Number(row.deletions ?? 0);
+      const activeAdditions = Number(row.active_additions ?? 0);
+      const activeDeletions = Number(row.active_deletions ?? 0);
+
+      const user = leaderboardMap.get(row.user_id) ??
+        userProfileMap.get(row.user_id) ?? {
+          id: row.user_id,
+          login: null,
+          name: null,
+          avatarUrl: null,
+        };
+
+      activeMainBranchContributionEntries.push({
+        user,
+        value: authorCount + activeReviewCount,
+        secondaryValue: activeReviewCount,
+        details: [
+          {
+            label: "PR",
+            value: authorCount,
+            suffix: "건",
+          },
+          {
+            label: "+",
+            value: activeAdditions,
+            sign: "positive",
+            suffix: "라인",
+          },
+          {
+            label: "-",
+            value: activeDeletions,
+            sign: "negative",
+            suffix: "라인",
+          },
+        ],
+      });
 
       return {
-        user: leaderboardMap.get(row.user_id) ??
-          userProfileMap.get(row.user_id) ?? {
-            id: row.user_id,
-            login: null,
-            name: null,
-            avatarUrl: null,
-          },
+        user,
         value: reviewCount + authorCount,
         secondaryValue: reviewCount,
         details: [
@@ -4067,6 +4126,31 @@ export async function getDashboardAnalytics(
       } satisfies LeaderboardEntry;
     });
 
+  const activeReviewerEntries: LeaderboardEntry[] = organization.reviewers
+    .map((reviewer) => {
+      const activeCount = Number(reviewer.activeReviewCount ?? 0);
+      const user = reviewer.profile ?? {
+        id: reviewer.reviewerId,
+        login: null,
+        name: null,
+        avatarUrl: null,
+      };
+
+      return {
+        user,
+        value: activeCount,
+      } satisfies LeaderboardEntry;
+    })
+    .filter((entry) => entry.value > 0)
+    .sort((a, b) => {
+      if (b.value === a.value) {
+        const nameA = a.user.login ?? a.user.name ?? a.user.id;
+        const nameB = b.user.login ?? b.user.name ?? b.user.id;
+        return nameA.localeCompare(nameB);
+      }
+      return b.value - a.value;
+    });
+
   const leaderboard: LeaderboardSummary = {
     prsCreated: mapLeaderboard(leaderboardPrsVisible, leaderboardMap),
     prsMerged: mapLeaderboard(leaderboardPrsMergedVisible, leaderboardMap),
@@ -4081,6 +4165,8 @@ export async function getDashboardAnalytics(
       leaderboardCommentsVisible,
       leaderboardMap,
     ),
+    activeReviewerActivity: activeReviewerEntries,
+    activeMainBranchContribution: activeMainBranchContributionEntries,
     mainBranchContribution: mainBranchContributionEntries,
   };
 
