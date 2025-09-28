@@ -121,11 +121,27 @@ export function PeopleView({
     const displayName = (person: (typeof unsortedContributors)[number]) =>
       person.login ?? person.name ?? person.id;
 
-    return [...unsortedContributors].sort((first, second) =>
-      displayName(first).localeCompare(displayName(second), undefined, {
+    const priorityOf = (person: (typeof unsortedContributors)[number]) => {
+      const identifier = displayName(person).toLowerCase();
+      if (identifier === "octoaide") {
+        return 0;
+      }
+      if (identifier === "codecov") {
+        return 1;
+      }
+      return 2;
+    };
+
+    return [...unsortedContributors].sort((first, second) => {
+      const priorityDiff = priorityOf(first) - priorityOf(second);
+      if (priorityDiff !== 0) {
+        return priorityDiff;
+      }
+
+      return displayName(first).localeCompare(displayName(second), undefined, {
         sensitivity: "base",
-      }),
-    );
+      });
+    });
   }, [unsortedContributors]);
   const individual = analytics.individual;
   const individualHistory = individual?.metricHistory;
