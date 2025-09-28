@@ -518,45 +518,55 @@ export function AnalyticsView({
     );
   };
 
+  const repoMetricColumnClass = "w-[7.25rem]";
+
   const repoComparisonColumns: Array<{
     key: RepoSortKey;
     label: string;
     render: (row: RepoComparisonRow) => ReactNode;
+    className?: string;
   }> = [
     {
       key: "issuesCreated",
       label: "이슈 생성",
       render: (row) => formatNumber(row.issuesCreated),
+      className: repoMetricColumnClass,
     },
     {
       key: "issuesResolved",
       label: "이슈 해결",
       render: (row) => formatNumber(row.issuesResolved),
+      className: repoMetricColumnClass,
     },
     {
       key: "pullRequestsCreated",
       label: "PR 생성",
       render: (row) => formatNumber(row.pullRequestsCreated),
+      className: repoMetricColumnClass,
     },
     {
       key: "pullRequestsMerged",
       label: "PR 머지",
       render: (row) => formatNumber(row.pullRequestsMerged),
+      className: repoMetricColumnClass,
     },
     {
       key: "reviews",
       label: "리뷰",
       render: (row) => formatNumber(row.reviews),
+      className: repoMetricColumnClass,
     },
     {
       key: "activeReviews",
       label: "적극 리뷰",
       render: (row) => formatNumber(row.activeReviews),
+      className: repoMetricColumnClass,
     },
     {
       key: "comments",
       label: "댓글",
       render: (row) => formatNumber(row.comments),
+      className: repoMetricColumnClass,
     },
     {
       key: "avgFirstReviewHours",
@@ -565,6 +575,7 @@ export function AnalyticsView({
         row.avgFirstReviewHours == null
           ? "–"
           : formatDuration(row.avgFirstReviewHours, "hours"),
+      className: "w-[8.5rem]",
     },
   ];
 
@@ -1068,7 +1079,7 @@ export function AnalyticsView({
                   {repoComparisonColumns.map((column) => (
                     <th
                       key={column.key}
-                      className="pb-3 text-right"
+                      className={cn("pb-3 px-3 text-right", column.className)}
                       aria-sort={getRepoSortAria(column.key)}
                       scope="col"
                     >
@@ -1091,7 +1102,13 @@ export function AnalyticsView({
                       {row.repository?.nameWithOwner ?? row.repositoryId}
                     </td>
                     {repoComparisonColumns.map((column) => (
-                      <td key={column.key} className="text-right">
+                      <td
+                        key={column.key}
+                        className={cn(
+                          "px-3 text-right tabular-nums",
+                          column.className,
+                        )}
+                      >
                         {column.render(row)}
                       </td>
                     ))}

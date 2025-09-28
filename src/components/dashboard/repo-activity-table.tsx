@@ -7,6 +7,7 @@ import {
   formatNumber,
 } from "@/components/dashboard/metric-utils";
 import type { RepoComparisonRow } from "@/lib/dashboard/types";
+import { cn } from "@/lib/utils";
 
 type RepoActivitySortKey =
   | "issuesCreated"
@@ -24,50 +25,61 @@ type RepoActivityTableProps = {
   items: RepoComparisonRow[];
 };
 
+const repoMetricColumnClass = "w-[7.25rem]";
+
 const repoActivityColumns: Array<{
   key: RepoActivitySortKey;
   label: string;
   render: (row: RepoComparisonRow) => string;
+  className?: string;
 }> = [
   {
     key: "issuesCreated",
     label: "이슈 생성",
     render: (row) => formatNumber(row.issuesCreated),
+    className: repoMetricColumnClass,
   },
   {
     key: "issuesResolved",
     label: "이슈 해결",
     render: (row) => formatNumber(row.issuesResolved),
+    className: repoMetricColumnClass,
   },
   {
     key: "pullRequestsCreated",
     label: "PR 생성",
     render: (row) => formatNumber(row.pullRequestsCreated),
+    className: repoMetricColumnClass,
   },
   {
     key: "pullRequestsMerged",
     label: "PR 머지",
     render: (row) => formatNumber(row.pullRequestsMerged),
+    className: repoMetricColumnClass,
   },
   {
     key: "pullRequestsMergedBy",
     label: "PR 머지 수행",
     render: (row) => formatNumber(row.pullRequestsMergedBy),
+    className: repoMetricColumnClass,
   },
   {
     key: "reviews",
     label: "리뷰",
     render: (row) => formatNumber(row.reviews),
+    className: repoMetricColumnClass,
   },
   {
     key: "activeReviews",
     label: "적극 리뷰",
     render: (row) => formatNumber(row.activeReviews),
+    className: repoMetricColumnClass,
   },
   {
     key: "comments",
     label: "댓글",
     render: (row) => formatNumber(row.comments),
+    className: repoMetricColumnClass,
   },
   {
     key: "avgFirstReviewHours",
@@ -76,6 +88,7 @@ const repoActivityColumns: Array<{
       row.avgFirstReviewHours == null
         ? "–"
         : formatDuration(row.avgFirstReviewHours, "hours"),
+    className: "w-[8.5rem]",
   },
 ];
 
@@ -219,14 +232,14 @@ export function RepoActivityTable({ items }: RepoActivityTableProps) {
             {repoActivityColumns.map((column) => (
               <th
                 key={column.key}
-                className="pb-3 text-right"
+                className={cn("pb-3 px-3 text-right", column.className)}
                 aria-sort={getAriaSort(column.key)}
                 scope="col"
               >
                 <button
                   type="button"
                   onClick={() => toggleSort(column.key)}
-                  className="flex w-full items-center justify-end gap-1 whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground"
+                  className="flex w-full items-center justify-end gap-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground"
                 >
                   <span>{column.label}</span>
                   {renderSortIcon(column.key)}
@@ -242,7 +255,13 @@ export function RepoActivityTable({ items }: RepoActivityTableProps) {
                 {row.repository?.nameWithOwner ?? row.repositoryId}
               </td>
               {repoActivityColumns.map((column) => (
-                <td key={column.key} className="text-right">
+                <td
+                  key={column.key}
+                  className={cn(
+                    "px-3 text-right tabular-nums",
+                    column.className,
+                  )}
+                >
                   {column.render(row)}
                 </td>
               ))}
