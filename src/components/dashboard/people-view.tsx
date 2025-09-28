@@ -63,6 +63,11 @@ const summaryMetricConfigs = [
   { key: "prsMergedBy", label: "PR 머지 수행", format: "count" },
   { key: "reviewsCompleted", label: "리뷰 수행", format: "count" },
   {
+    key: "activeReviewsCompleted",
+    label: "적극 리뷰 수행",
+    format: "count",
+  },
+  {
     key: "reviewResponseTime",
     label: "리뷰 응답 시간",
     format: "hours",
@@ -294,6 +299,13 @@ export function PeopleView({
               format="count"
               tooltip={individualMetricTooltips.reviewsCompleted}
               history={toCardHistory(individualHistory?.reviewsCompleted)}
+            />
+            <MetricCard
+              title="적극 리뷰 수행"
+              metric={individual.metrics.activeReviewsCompleted}
+              format="count"
+              tooltip={individualMetricTooltips.activeReviewsCompleted}
+              history={toCardHistory(individualHistory?.activeReviewsCompleted)}
             />
             <MetricCard
               title="리뷰 응답 시간"

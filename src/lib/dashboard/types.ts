@@ -152,6 +152,7 @@ export type IndividualMetricSet = {
   prsMerged: ComparisonValue;
   prsMergedBy: ComparisonValue;
   reviewsCompleted: ComparisonValue;
+  activeReviewsCompleted: ComparisonValue;
   reviewResponseTime: DurationComparisonValue;
   prsReviewed: ComparisonValue;
   reviewComments: ComparisonValue;
@@ -174,6 +175,7 @@ export type IndividualMetricHistory = {
   prsMerged: MetricHistoryEntry[];
   prsMergedBy: MetricHistoryEntry[];
   reviewsCompleted: MetricHistoryEntry[];
+  activeReviewsCompleted: MetricHistoryEntry[];
   reviewResponseTime: MetricHistoryEntry[];
   prsReviewed: MetricHistoryEntry[];
   reviewComments: MetricHistoryEntry[];

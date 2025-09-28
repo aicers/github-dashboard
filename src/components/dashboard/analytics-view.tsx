@@ -1274,7 +1274,7 @@ export function AnalyticsView({
             valueFormatter={(value) => `${formatNumber(value)}건`}
             secondaryLabel="참여 PR"
             unit="건"
-            tooltip="APPROVED·CHANGES_REQUESTED·COMMENTED 리뷰를 모두 포함하며 DISMISSED는 제외합니다. 적극 리뷰어 활동은 이 중 APPROVED만 집계합니다."
+            tooltip="APPROVED, CHANGES_REQUESTED, COMMENTED 리뷰를 모두 포함하며 DISMISSED는 제외합니다. 적극 리뷰어 활동은 이 중 APPROVED만 집계합니다."
           />
           <LeaderboardTable
             title="적극 메인 브랜치 기여"
