@@ -88,15 +88,19 @@ export function DashboardFilterPanel({
     }));
   };
 
+  const hasPersonSelector = showPersonSelector && contributors.length > 0;
+
   const panelSectionClass =
     "flex h-full flex-col gap-4 rounded-xl border border-border/50 bg-card p-4 text-sm shadow-sm";
   const sectionLabelClass =
     "text-xs font-semibold uppercase tracking-wide text-muted-foreground";
   const helperTextClass = "text-xs text-muted-foreground";
-  const actionPanelSpanClass =
-    showPersonSelector && contributors.length > 0
-      ? ""
-      : "md:col-span-2 xl:col-span-2";
+  const actionPanelSpanClass = hasPersonSelector
+    ? "md:col-span-2 xl:col-span-2"
+    : "";
+  const gridClassName = hasPersonSelector
+    ? "grid gap-4 md:grid-cols-2 xl:grid-cols-4 xl:gap-5"
+    : "grid gap-4 md:grid-cols-3 xl:grid-cols-3 xl:gap-5";
 
   const previousRanges = [
     {
@@ -123,7 +127,7 @@ export function DashboardFilterPanel({
 
   return (
     <section className="rounded-2xl border border-border/60 bg-background/80 p-4 shadow-sm backdrop-blur md:p-6">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 xl:gap-5">
+      <div className={gridClassName}>
         <div className={panelSectionClass}>
           <div className="flex flex-col gap-1">
             <span className={sectionLabelClass}>기간 선택</span>

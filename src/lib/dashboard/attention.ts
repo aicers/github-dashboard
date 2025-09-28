@@ -87,6 +87,7 @@ export type MentionAttentionItem = {
 
 export type AttentionInsights = {
   generatedAt: string;
+  timezone: string;
   staleOpenPrs: PullRequestAttentionItem[];
   idleOpenPrs: PullRequestAttentionItem[];
   stuckReviewRequests: ReviewRequestAttentionItem[];
@@ -1107,6 +1108,7 @@ export async function getAttentionInsights(): Promise<AttentionInsights> {
         )
       : [],
   );
+  const timezone = config?.timezone ?? "UTC";
   const excludedUsersArray = Array.from(excludedUserIds);
   const excludedReposArray = Array.from(excludedRepositoryIds);
   const now = new Date();
@@ -1233,6 +1235,7 @@ export async function getAttentionInsights(): Promise<AttentionInsights> {
 
   return {
     generatedAt: now.toISOString(),
+    timezone,
     staleOpenPrs,
     idleOpenPrs,
     stuckReviewRequests,
