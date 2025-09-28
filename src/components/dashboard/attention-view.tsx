@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import {
   Card,
   CardContent,
@@ -21,6 +21,13 @@ import { cn } from "@/lib/utils";
 
 const chipClass =
   "inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs font-medium text-muted-foreground";
+
+type RankingEntry = {
+  key: string;
+  user: UserReference | null;
+  total: number;
+  count: number;
+};
 
 function formatUser(user: UserReference | null) {
   if (!user) {
@@ -89,51 +96,298 @@ function formatTimestamp(iso: string) {
   return `${year}-${month}-${day} ${hours}:${minutes} UTC`;
 }
 
+function formatCount(value: number) {
+  return `${value.toLocaleString()}건`;
+}
+
+function RankingCard({
+  title,
+  entries,
+  valueFormatter,
+  emptyText,
+}: {
+  title: string;
+  entries: RankingEntry[];
+  valueFormatter: (entry: RankingEntry) => string;
+  emptyText: string;
+}) {
+  return (
+    <div className="rounded-md border border-border/50 p-3">
+      <div className="text-sm font-semibold text-foreground">{title}</div>
+      {entries.length ? (
+        <ol className="mt-2 space-y-1 text-sm text-muted-foreground">
+          {entries.map((entry, index) => (
+            <li
+              key={entry.key}
+              className="flex items-center justify-between gap-3"
+            >
+              <span>
+                <span className="font-medium text-foreground">
+                  {index + 1}.
+                </span>{" "}
+                {formatUser(entry.user)}
+              </span>
+              <span className="font-medium text-foreground">
+                {valueFormatter(entry)}
+              </span>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="mt-2 text-xs text-muted-foreground">{emptyText}</p>
+      )}
+    </div>
+  );
+}
+
 function PullRequestList({
   items,
   emptyText,
   showUpdated,
+  metricKey = "ageDays",
+  metricLabel = "경과일수",
 }: {
   items: PullRequestAttentionItem[];
   emptyText: string;
   showUpdated?: boolean;
+  metricKey?: "ageDays" | "inactivityDays";
+  metricLabel?: string;
 }) {
+  const [authorFilter, setAuthorFilter] = useState("all");
+  const [reviewerFilter, setReviewerFilter] = useState("all");
+
+  const aggregation = useMemo(() => {
+    const authorMap = new Map<string, RankingEntry>();
+    const reviewerMap = new Map<string, RankingEntry>();
+
+    items.forEach((item) => {
+      const metricValue =
+        metricKey === "inactivityDays"
+          ? (item.inactivityDays ?? 0)
+          : item.ageDays;
+
+      if (item.author) {
+        const authorKey = item.author.id;
+        const authorEntry = authorMap.get(authorKey) ?? {
+          key: authorKey,
+          user: item.author,
+          total: 0,
+          count: 0,
+        };
+        authorEntry.total += metricValue;
+        authorEntry.count += 1;
+        authorMap.set(authorKey, authorEntry);
+      }
+
+      item.reviewers.forEach((reviewer) => {
+        const reviewerEntry = reviewerMap.get(reviewer.id) ?? {
+          key: reviewer.id,
+          user: reviewer,
+          total: 0,
+          count: 0,
+        };
+        reviewerEntry.total += metricValue;
+        reviewerEntry.count += 1;
+        reviewerMap.set(reviewer.id, reviewerEntry);
+      });
+    });
+
+    return {
+      authors: Array.from(authorMap.values()),
+      reviewers: Array.from(reviewerMap.values()),
+    };
+  }, [items, metricKey]);
+
+  const authorOptions = useMemo(() => {
+    return aggregation.authors
+      .map((entry) => ({
+        key: entry.key,
+        label: formatUser(entry.user),
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [aggregation.authors]);
+
+  const reviewerOptions = useMemo(() => {
+    return aggregation.reviewers
+      .map((entry) => ({
+        key: entry.key,
+        label: formatUser(entry.user),
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [aggregation.reviewers]);
+
+  const filteredItems = useMemo(() => {
+    return items.filter((item) => {
+      const authorMatch =
+        authorFilter === "all" || item.author?.id === authorFilter;
+
+      const reviewerMatch =
+        reviewerFilter === "all" ||
+        item.reviewers.some((reviewer) => reviewer.id === reviewerFilter);
+
+      return authorMatch && reviewerMatch;
+    });
+  }, [items, authorFilter, reviewerFilter]);
+
+  const authorRankingByTotal = useMemo(() => {
+    return aggregation.authors.slice().sort((a, b) => {
+      if (b.total !== a.total) {
+        return b.total - a.total;
+      }
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+      return formatUser(a.user).localeCompare(formatUser(b.user));
+    });
+  }, [aggregation.authors]);
+
+  const authorRankingByCount = useMemo(() => {
+    return aggregation.authors.slice().sort((a, b) => {
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+      if (b.total !== a.total) {
+        return b.total - a.total;
+      }
+      return formatUser(a.user).localeCompare(formatUser(b.user));
+    });
+  }, [aggregation.authors]);
+
+  const reviewerRankingByTotal = useMemo(() => {
+    return aggregation.reviewers.slice().sort((a, b) => {
+      if (b.total !== a.total) {
+        return b.total - a.total;
+      }
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+      return formatUser(a.user).localeCompare(formatUser(b.user));
+    });
+  }, [aggregation.reviewers]);
+
+  const reviewerRankingByCount = useMemo(() => {
+    return aggregation.reviewers.slice().sort((a, b) => {
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+      if (b.total !== a.total) {
+        return b.total - a.total;
+      }
+      return formatUser(a.user).localeCompare(formatUser(b.user));
+    });
+  }, [aggregation.reviewers]);
+
+  const hasReviewerFilter = reviewerOptions.length > 0;
+
   if (!items.length) {
     return <p className="text-sm text-muted-foreground">{emptyText}</p>;
   }
 
   return (
-    <ul className="space-y-4">
-      {items.map((item) => (
-        <li key={item.id}>
-          <div className="rounded-lg border border-border/50 p-4">
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                {renderLink(
-                  item.url,
-                  `${formatRepository(item.repository)} #${item.number.toString()}`,
-                )}
+    <div className="space-y-6">
+      <div className="space-y-4">
+        <div className="flex flex-wrap gap-4">
+          <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+            작성자 필터
+            <select
+              className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={authorFilter}
+              onChange={(event) => setAuthorFilter(event.target.value)}
+            >
+              <option value="all">전체</option>
+              {authorOptions.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {hasReviewerFilter ? (
+            <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+              리뷰어 필터
+              <select
+                className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={reviewerFilter}
+                onChange={(event) => setReviewerFilter(event.target.value)}
+              >
+                <option value="all">전체</option>
+                {reviewerOptions.map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <RankingCard
+            title={`작성자 ${metricLabel} 합계 순위`}
+            entries={authorRankingByTotal}
+            valueFormatter={(entry) => formatDays(entry.total)}
+            emptyText="작성자 데이터가 없습니다."
+          />
+          <RankingCard
+            title="작성자 건수 순위"
+            entries={authorRankingByCount}
+            valueFormatter={(entry) => formatCount(entry.count)}
+            emptyText="작성자 데이터가 없습니다."
+          />
+          <RankingCard
+            title={`리뷰어 ${metricLabel} 합계 순위`}
+            entries={reviewerRankingByTotal}
+            valueFormatter={(entry) => formatDays(entry.total)}
+            emptyText="리뷰어 데이터가 없습니다."
+          />
+          <RankingCard
+            title="리뷰어 건수 순위"
+            entries={reviewerRankingByCount}
+            valueFormatter={(entry) => formatCount(entry.count)}
+            emptyText="리뷰어 데이터가 없습니다."
+          />
+        </div>
+      </div>
+
+      {filteredItems.length ? (
+        <ul className="space-y-4">
+          {filteredItems.map((item) => (
+            <li key={item.id}>
+              <div className="rounded-lg border border-border/50 p-4">
+                <div className="flex flex-col gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {renderLink(
+                      item.url,
+                      `${formatRepository(item.repository)} #${item.number.toString()}`,
+                    )}
+                  </div>
+                  {item.title ? (
+                    <p className="text-sm text-muted-foreground">
+                      {item.title}
+                    </p>
+                  ) : null}
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                    <span>작성자 {formatUser(item.author)}</span>
+                    <span>리뷰어 {formatUserList(item.reviewers)}</span>
+                    <span className={chipClass}>
+                      {formatDays(item.ageDays)} 경과
+                    </span>
+                    {showUpdated && item.inactivityDays !== undefined ? (
+                      <span className={chipClass}>
+                        마지막 업데이트 {formatDays(item.inactivityDays)} 전
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
               </div>
-              {item.title ? (
-                <p className="text-sm text-muted-foreground">{item.title}</p>
-              ) : null}
-              <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                <span>작성자 {formatUser(item.author)}</span>
-                <span>리뷰어 {formatUserList(item.reviewers)}</span>
-                <span className={chipClass}>
-                  {formatDays(item.ageDays)} 경과
-                </span>
-                {showUpdated && item.inactivityDays !== undefined ? (
-                  <span className={chipClass}>
-                    마지막 업데이트 {formatDays(item.inactivityDays)} 전
-                  </span>
-                ) : null}
-              </div>
-            </div>
-          </div>
-        </li>
-      ))}
-    </ul>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          선택한 조건에 해당하는 PR이 없습니다.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -144,39 +398,228 @@ function ReviewRequestList({
   items: ReviewRequestAttentionItem[];
   emptyText: string;
 }) {
+  const [authorFilter, setAuthorFilter] = useState("all");
+  const [reviewerFilter, setReviewerFilter] = useState("all");
+
+  const aggregation = useMemo(() => {
+    const authorMap = new Map<string, RankingEntry>();
+    const reviewerMap = new Map<string, RankingEntry>();
+
+    items.forEach((item) => {
+      const metricValue = item.waitingDays;
+
+      const author = item.pullRequest.author;
+      if (author) {
+        const authorEntry = authorMap.get(author.id) ?? {
+          key: author.id,
+          user: author,
+          total: 0,
+          count: 0,
+        };
+        authorEntry.total += metricValue;
+        authorEntry.count += 1;
+        authorMap.set(author.id, authorEntry);
+      }
+
+      const reviewer = item.reviewer;
+      if (reviewer) {
+        const reviewerEntry = reviewerMap.get(reviewer.id) ?? {
+          key: reviewer.id,
+          user: reviewer,
+          total: 0,
+          count: 0,
+        };
+        reviewerEntry.total += metricValue;
+        reviewerEntry.count += 1;
+        reviewerMap.set(reviewer.id, reviewerEntry);
+      }
+    });
+
+    return {
+      authors: Array.from(authorMap.values()),
+      reviewers: Array.from(reviewerMap.values()),
+    };
+  }, [items]);
+
+  const authorOptions = useMemo(() => {
+    return aggregation.authors
+      .map((entry) => ({ key: entry.key, label: formatUser(entry.user) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [aggregation.authors]);
+
+  const reviewerOptions = useMemo(() => {
+    return aggregation.reviewers
+      .map((entry) => ({ key: entry.key, label: formatUser(entry.user) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [aggregation.reviewers]);
+
+  const filteredItems = useMemo(() => {
+    return items.filter((item) => {
+      const authorMatch =
+        authorFilter === "all" || item.pullRequest.author?.id === authorFilter;
+
+      const reviewerMatch =
+        reviewerFilter === "all" || item.reviewer?.id === reviewerFilter;
+
+      return authorMatch && reviewerMatch;
+    });
+  }, [items, authorFilter, reviewerFilter]);
+
+  const authorRankingByTotal = useMemo(() => {
+    return aggregation.authors.slice().sort((a, b) => {
+      if (b.total !== a.total) {
+        return b.total - a.total;
+      }
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+      return formatUser(a.user).localeCompare(formatUser(b.user));
+    });
+  }, [aggregation.authors]);
+
+  const authorRankingByCount = useMemo(() => {
+    return aggregation.authors.slice().sort((a, b) => {
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+      if (b.total !== a.total) {
+        return b.total - a.total;
+      }
+      return formatUser(a.user).localeCompare(formatUser(b.user));
+    });
+  }, [aggregation.authors]);
+
+  const reviewerRankingByTotal = useMemo(() => {
+    return aggregation.reviewers.slice().sort((a, b) => {
+      if (b.total !== a.total) {
+        return b.total - a.total;
+      }
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+      return formatUser(a.user).localeCompare(formatUser(b.user));
+    });
+  }, [aggregation.reviewers]);
+
+  const reviewerRankingByCount = useMemo(() => {
+    return aggregation.reviewers.slice().sort((a, b) => {
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+      if (b.total !== a.total) {
+        return b.total - a.total;
+      }
+      return formatUser(a.user).localeCompare(formatUser(b.user));
+    });
+  }, [aggregation.reviewers]);
+
+  const hasReviewerFilter = reviewerOptions.length > 0;
+  const metricLabel = "대기일수";
+
   if (!items.length) {
     return <p className="text-sm text-muted-foreground">{emptyText}</p>;
   }
 
   return (
-    <ul className="space-y-4">
-      {items.map((item) => (
-        <li key={item.id}>
-          <div className="rounded-lg border border-border/50 p-4">
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                {renderLink(
-                  item.pullRequest.url,
-                  `${formatRepository(item.pullRequest.repository)} #${item.pullRequest.number.toString()}`,
-                )}
+    <div className="space-y-6">
+      <div className="space-y-4">
+        <div className="flex flex-wrap gap-4">
+          <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+            작성자 필터
+            <select
+              className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={authorFilter}
+              onChange={(event) => setAuthorFilter(event.target.value)}
+            >
+              <option value="all">전체</option>
+              {authorOptions.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {hasReviewerFilter ? (
+            <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+              리뷰어 필터
+              <select
+                className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={reviewerFilter}
+                onChange={(event) => setReviewerFilter(event.target.value)}
+              >
+                <option value="all">전체</option>
+                {reviewerOptions.map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <RankingCard
+            title={`작성자 ${metricLabel} 합계 순위`}
+            entries={authorRankingByTotal}
+            valueFormatter={(entry) => formatDays(entry.total)}
+            emptyText="작성자 데이터가 없습니다."
+          />
+          <RankingCard
+            title="작성자 건수 순위"
+            entries={authorRankingByCount}
+            valueFormatter={(entry) => formatCount(entry.count)}
+            emptyText="작성자 데이터가 없습니다."
+          />
+          <RankingCard
+            title={`리뷰어 ${metricLabel} 합계 순위`}
+            entries={reviewerRankingByTotal}
+            valueFormatter={(entry) => formatDays(entry.total)}
+            emptyText="리뷰어 데이터가 없습니다."
+          />
+          <RankingCard
+            title="리뷰어 건수 순위"
+            entries={reviewerRankingByCount}
+            valueFormatter={(entry) => formatCount(entry.count)}
+            emptyText="리뷰어 데이터가 없습니다."
+          />
+        </div>
+      </div>
+
+      {filteredItems.length ? (
+        <ul className="space-y-4">
+          {filteredItems.map((item) => (
+            <li key={item.id}>
+              <div className="rounded-lg border border-border/50 p-4">
+                <div className="flex flex-col gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {renderLink(
+                      item.pullRequest.url,
+                      `${formatRepository(item.pullRequest.repository)} #${item.pullRequest.number.toString()}`,
+                    )}
+                  </div>
+                  {item.pullRequest.title ? (
+                    <p className="text-sm text-muted-foreground">
+                      {item.pullRequest.title}
+                    </p>
+                  ) : null}
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                    <span>작성자 {formatUser(item.pullRequest.author)}</span>
+                    <span>대기 중 리뷰어 {formatUser(item.reviewer)}</span>
+                    <span className={chipClass}>
+                      {formatDays(item.waitingDays)} 경과
+                    </span>
+                  </div>
+                </div>
               </div>
-              {item.pullRequest.title ? (
-                <p className="text-sm text-muted-foreground">
-                  {item.pullRequest.title}
-                </p>
-              ) : null}
-              <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                <span>작성자 {formatUser(item.pullRequest.author)}</span>
-                <span>대기 중 리뷰어 {formatUser(item.reviewer)}</span>
-                <span className={chipClass}>
-                  {formatDays(item.waitingDays)} 경과
-                </span>
-              </div>
-            </div>
-          </div>
-        </li>
-      ))}
-    </ul>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          선택한 조건에 해당하는 리뷰 요청이 없습니다.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -313,6 +756,8 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
           items={insights.idleOpenPrs}
           emptyText="현재 조건을 만족하는 PR이 없습니다."
           showUpdated
+          metricKey="inactivityDays"
+          metricLabel="미업데이트 경과일수"
         />
       ),
     },
