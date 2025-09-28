@@ -109,18 +109,35 @@ function formatDays(value: number | null | undefined) {
   return `${value.toLocaleString()}일`;
 }
 
-function formatTimestamp(iso: string) {
+function formatTimestamp(iso: string, timeZone: string) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) {
     return iso;
   }
 
-  const year = date.getUTCFullYear();
-  const month = `${date.getUTCMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getUTCDate()}`.padStart(2, "0");
-  const hours = `${date.getUTCHours()}`.padStart(2, "0");
-  const minutes = `${date.getUTCMinutes()}`.padStart(2, "0");
-  return `${year}-${month}-${day} ${hours}:${minutes} UTC`;
+  try {
+    const formatter = new Intl.DateTimeFormat("sv-SE", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    const formatted = formatter.format(date);
+    return `${formatted} (${timeZone})`;
+  } catch (error) {
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Failed to format timestamp", error);
+    }
+    const year = date.getUTCFullYear();
+    const month = `${date.getUTCMonth() + 1}`.padStart(2, "0");
+    const day = `${date.getUTCDate()}`.padStart(2, "0");
+    const hours = `${date.getUTCHours()}`.padStart(2, "0");
+    const minutes = `${date.getUTCMinutes()}`.padStart(2, "0");
+    return `${year}-${month}-${day} ${hours}:${minutes} UTC`;
+  }
 }
 
 function formatCount(value: number) {
@@ -1198,7 +1215,10 @@ type FollowUpSection = {
 };
 
 export function AttentionView({ insights }: { insights: AttentionInsights }) {
-  const generatedAtLabel = formatTimestamp(insights.generatedAt);
+  const generatedAtLabel = formatTimestamp(
+    insights.generatedAt,
+    insights.timezone,
+  );
   const router = useRouter();
   const [isRefreshing, startTransition] = useTransition();
 
