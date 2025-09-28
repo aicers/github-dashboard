@@ -1,6 +1,8 @@
 "use client";
 
-import { type ReactNode, useMemo, useState } from "react";
+import { RefreshCcw } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { type ReactNode, useMemo, useState, useTransition } from "react";
 import {
   Card,
   CardContent,
@@ -22,6 +24,15 @@ import { cn } from "@/lib/utils";
 const chipClass =
   "inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs font-medium text-muted-foreground";
 
+function InfoBadge({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <span className="flex items-center gap-1 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-medium text-foreground">{value}</span>
+    </span>
+  );
+}
+
 type RankingEntry = {
   key: string;
   user: UserReference | null;
@@ -39,6 +50,22 @@ function formatUser(user: UserReference | null) {
   }
 
   return user.name ?? (user.login ? `@${user.login}` : user.id);
+}
+
+function formatUserDisplayName(user: UserReference | null) {
+  if (!user) {
+    return "알 수 없음";
+  }
+
+  if (user.name && user.name.trim().length > 0) {
+    return user.name;
+  }
+
+  if (user.login && user.login.trim().length > 0) {
+    return user.login;
+  }
+
+  return "알 수 없음";
 }
 
 function formatUserList(users: UserReference[]) {
@@ -140,6 +167,149 @@ function RankingCard({
   );
 }
 
+function aggregateUsers<T>(
+  items: T[],
+  getUsers: (item: T) => (UserReference | null)[],
+  getMetricValue: (item: T) => number,
+): RankingEntry[] {
+  const map = new Map<string, RankingEntry>();
+
+  items.forEach((item) => {
+    const metricValue = getMetricValue(item);
+    const safeMetric = Number.isFinite(metricValue) ? metricValue : 0;
+    const users = getUsers(item);
+    users.forEach((user) => {
+      if (!user?.id) {
+        return;
+      }
+
+      const existing =
+        map.get(user.id) ??
+        ({
+          key: user.id,
+          user,
+          total: 0,
+          count: 0,
+        } satisfies RankingEntry);
+
+      existing.total += safeMetric;
+      existing.count += 1;
+      map.set(user.id, existing);
+    });
+  });
+
+  return Array.from(map.values());
+}
+
+function sortRankingByTotal(entries: RankingEntry[]) {
+  return entries.slice().sort((a, b) => {
+    if (b.total !== a.total) {
+      return b.total - a.total;
+    }
+    if (b.count !== a.count) {
+      return b.count - a.count;
+    }
+    return formatUser(a.user).localeCompare(formatUser(b.user));
+  });
+}
+
+function sortRankingByCount(entries: RankingEntry[]) {
+  return entries.slice().sort((a, b) => {
+    if (b.count !== a.count) {
+      return b.count - a.count;
+    }
+    if (b.total !== a.total) {
+      return b.total - a.total;
+    }
+    return formatUser(a.user).localeCompare(formatUser(b.user));
+  });
+}
+
+function findTopByTotal(entries: RankingEntry[], limit = 1) {
+  return sortRankingByTotal(entries).slice(0, limit);
+}
+
+function sumMetric<T>(items: T[], getMetric: (item: T) => number) {
+  return items.reduce((acc, item) => {
+    const value = getMetric(item);
+    if (!Number.isFinite(value)) {
+      return acc;
+    }
+    return acc + value;
+  }, 0);
+}
+
+type FollowUpSummary = {
+  id: string;
+  title: string;
+  description: string;
+  count: number;
+  totalMetric: number;
+  highlights: string[];
+};
+
+function FollowUpOverview({
+  summaries,
+  onSelect,
+}: {
+  summaries: FollowUpSummary[];
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div className="space-y-6">
+      <p className="text-sm text-foreground/80">
+        각 하위 메뉴의 항목 수와 누적 경과일수를 요약했습니다. 자세한 내역은
+        왼쪽 메뉴에서 원하는 항목을 선택해 확인하세요.
+      </p>
+      <div className="grid gap-4 lg:grid-cols-2">
+        {summaries.map((summary) => (
+          <div
+            key={summary.id}
+            className="flex flex-col gap-3 rounded-md border border-border/50 p-4"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <div className="text-sm font-semibold text-foreground">
+                  {summary.title}
+                </div>
+                <p className="mt-1 text-xs text-foreground/80">
+                  {summary.description}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onSelect(summary.id)}
+                className="text-xs font-medium text-primary underline-offset-2 hover:underline"
+              >
+                바로 보기
+              </button>
+            </div>
+            <dl className="grid gap-2 text-sm text-foreground">
+              <div className="flex items-center justify-between">
+                <dt className="text-foreground/70">항목 수</dt>
+                <dd className="font-semibold">{formatCount(summary.count)}</dd>
+              </div>
+              <div className="flex items-center justify-between">
+                <dt className="text-foreground/70">누적 경과일수</dt>
+                <dd className="font-semibold">
+                  {formatDays(summary.totalMetric)}
+                </dd>
+              </div>
+            </dl>
+            {summary.highlights.length ? (
+              <ul className="space-y-1 text-sm text-foreground">
+                {summary.highlights.map((line) => (
+                  <li key={`${summary.id}-${line}`}>{line}</li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function PullRequestList({
   items,
   emptyText,
@@ -160,11 +330,13 @@ function PullRequestList({
     const authorMap = new Map<string, RankingEntry>();
     const reviewerMap = new Map<string, RankingEntry>();
 
+    const getMetric = (item: PullRequestAttentionItem) =>
+      metricKey === "inactivityDays"
+        ? (item.inactivityDays ?? item.ageDays ?? 0)
+        : (item.ageDays ?? 0);
+
     items.forEach((item) => {
-      const metricValue =
-        metricKey === "inactivityDays"
-          ? (item.inactivityDays ?? 0)
-          : item.ageDays;
+      const metricValue = getMetric(item);
 
       if (item.author) {
         const authorKey = item.author.id;
@@ -229,52 +401,29 @@ function PullRequestList({
     });
   }, [items, authorFilter, reviewerFilter]);
 
+  const sortedItems = useMemo(() => {
+    const getMetric = (item: PullRequestAttentionItem) =>
+      metricKey === "inactivityDays"
+        ? (item.inactivityDays ?? item.ageDays ?? 0)
+        : (item.ageDays ?? 0);
+
+    return filteredItems.slice().sort((a, b) => getMetric(b) - getMetric(a));
+  }, [filteredItems, metricKey]);
+
   const authorRankingByTotal = useMemo(() => {
-    return aggregation.authors.slice().sort((a, b) => {
-      if (b.total !== a.total) {
-        return b.total - a.total;
-      }
-      if (b.count !== a.count) {
-        return b.count - a.count;
-      }
-      return formatUser(a.user).localeCompare(formatUser(b.user));
-    });
+    return sortRankingByTotal(aggregation.authors);
   }, [aggregation.authors]);
 
   const authorRankingByCount = useMemo(() => {
-    return aggregation.authors.slice().sort((a, b) => {
-      if (b.count !== a.count) {
-        return b.count - a.count;
-      }
-      if (b.total !== a.total) {
-        return b.total - a.total;
-      }
-      return formatUser(a.user).localeCompare(formatUser(b.user));
-    });
+    return sortRankingByCount(aggregation.authors);
   }, [aggregation.authors]);
 
   const reviewerRankingByTotal = useMemo(() => {
-    return aggregation.reviewers.slice().sort((a, b) => {
-      if (b.total !== a.total) {
-        return b.total - a.total;
-      }
-      if (b.count !== a.count) {
-        return b.count - a.count;
-      }
-      return formatUser(a.user).localeCompare(formatUser(b.user));
-    });
+    return sortRankingByTotal(aggregation.reviewers);
   }, [aggregation.reviewers]);
 
   const reviewerRankingByCount = useMemo(() => {
-    return aggregation.reviewers.slice().sort((a, b) => {
-      if (b.count !== a.count) {
-        return b.count - a.count;
-      }
-      if (b.total !== a.total) {
-        return b.total - a.total;
-      }
-      return formatUser(a.user).localeCompare(formatUser(b.user));
-    });
+    return sortRankingByCount(aggregation.reviewers);
   }, [aggregation.reviewers]);
 
   const hasReviewerFilter = reviewerOptions.length > 0;
@@ -348,9 +497,9 @@ function PullRequestList({
         </div>
       </div>
 
-      {filteredItems.length ? (
+      {sortedItems.length ? (
         <ul className="space-y-4">
-          {filteredItems.map((item) => (
+          {sortedItems.map((item) => (
             <li key={item.id}>
               <div className="rounded-lg border border-border/50 p-4">
                 <div className="flex flex-col gap-2">
@@ -361,13 +510,14 @@ function PullRequestList({
                     )}
                   </div>
                   {item.title ? (
-                    <p className="text-sm text-muted-foreground">
-                      {item.title}
-                    </p>
+                    <p className="text-sm text-foreground">{item.title}</p>
                   ) : null}
-                  <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                    <span>작성자 {formatUser(item.author)}</span>
-                    <span>리뷰어 {formatUserList(item.reviewers)}</span>
+                  <div className="flex flex-wrap items-center gap-3 text-xs">
+                    <InfoBadge label="작성자" value={formatUser(item.author)} />
+                    <InfoBadge
+                      label="리뷰어"
+                      value={formatUserList(item.reviewers)}
+                    />
                     <span className={chipClass}>
                       {formatDays(item.ageDays)} 경과
                     </span>
@@ -465,52 +615,24 @@ function ReviewRequestList({
     });
   }, [items, authorFilter, reviewerFilter]);
 
+  const sortedItems = useMemo(() => {
+    return filteredItems.slice().sort((a, b) => b.waitingDays - a.waitingDays);
+  }, [filteredItems]);
+
   const authorRankingByTotal = useMemo(() => {
-    return aggregation.authors.slice().sort((a, b) => {
-      if (b.total !== a.total) {
-        return b.total - a.total;
-      }
-      if (b.count !== a.count) {
-        return b.count - a.count;
-      }
-      return formatUser(a.user).localeCompare(formatUser(b.user));
-    });
+    return sortRankingByTotal(aggregation.authors);
   }, [aggregation.authors]);
 
   const authorRankingByCount = useMemo(() => {
-    return aggregation.authors.slice().sort((a, b) => {
-      if (b.count !== a.count) {
-        return b.count - a.count;
-      }
-      if (b.total !== a.total) {
-        return b.total - a.total;
-      }
-      return formatUser(a.user).localeCompare(formatUser(b.user));
-    });
+    return sortRankingByCount(aggregation.authors);
   }, [aggregation.authors]);
 
   const reviewerRankingByTotal = useMemo(() => {
-    return aggregation.reviewers.slice().sort((a, b) => {
-      if (b.total !== a.total) {
-        return b.total - a.total;
-      }
-      if (b.count !== a.count) {
-        return b.count - a.count;
-      }
-      return formatUser(a.user).localeCompare(formatUser(b.user));
-    });
+    return sortRankingByTotal(aggregation.reviewers);
   }, [aggregation.reviewers]);
 
   const reviewerRankingByCount = useMemo(() => {
-    return aggregation.reviewers.slice().sort((a, b) => {
-      if (b.count !== a.count) {
-        return b.count - a.count;
-      }
-      if (b.total !== a.total) {
-        return b.total - a.total;
-      }
-      return formatUser(a.user).localeCompare(formatUser(b.user));
-    });
+    return sortRankingByCount(aggregation.reviewers);
   }, [aggregation.reviewers]);
 
   const hasReviewerFilter = reviewerOptions.length > 0;
@@ -585,9 +707,9 @@ function ReviewRequestList({
         </div>
       </div>
 
-      {filteredItems.length ? (
+      {sortedItems.length ? (
         <ul className="space-y-4">
-          {filteredItems.map((item) => (
+          {sortedItems.map((item) => (
             <li key={item.id}>
               <div className="rounded-lg border border-border/50 p-4">
                 <div className="flex flex-col gap-2">
@@ -598,13 +720,19 @@ function ReviewRequestList({
                     )}
                   </div>
                   {item.pullRequest.title ? (
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-sm text-foreground">
                       {item.pullRequest.title}
                     </p>
                   ) : null}
-                  <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                    <span>작성자 {formatUser(item.pullRequest.author)}</span>
-                    <span>대기 중 리뷰어 {formatUser(item.reviewer)}</span>
+                  <div className="flex flex-wrap items-center gap-3 text-xs">
+                    <InfoBadge
+                      label="작성자"
+                      value={formatUser(item.pullRequest.author)}
+                    />
+                    <InfoBadge
+                      label="대기 중 리뷰어"
+                      value={formatUser(item.reviewer)}
+                    />
                     <span className={chipClass}>
                       {formatDays(item.waitingDays)} 경과
                     </span>
@@ -643,11 +771,13 @@ function IssueList({
     const authorMap = new Map<string, RankingEntry>();
     const assigneeMap = new Map<string, RankingEntry>();
 
+    const getMetric = (item: IssueAttentionItem) =>
+      metricKey === "inProgressAgeDays"
+        ? (item.inProgressAgeDays ?? item.ageDays ?? 0)
+        : (item.ageDays ?? 0);
+
     items.forEach((item) => {
-      const metricValue =
-        metricKey === "inProgressAgeDays"
-          ? (item.inProgressAgeDays ?? item.ageDays)
-          : item.ageDays;
+      const metricValue = getMetric(item);
 
       if (item.author) {
         const authorEntry = authorMap.get(item.author.id) ?? {
@@ -705,52 +835,29 @@ function IssueList({
     });
   }, [items, authorFilter, assigneeFilter]);
 
+  const sortedItems = useMemo(() => {
+    const metricFor = (item: IssueAttentionItem) =>
+      metricKey === "inProgressAgeDays"
+        ? (item.inProgressAgeDays ?? item.ageDays ?? 0)
+        : (item.ageDays ?? 0);
+
+    return filteredItems.slice().sort((a, b) => metricFor(b) - metricFor(a));
+  }, [filteredItems, metricKey]);
+
   const authorRankingByTotal = useMemo(() => {
-    return aggregation.authors.slice().sort((a, b) => {
-      if (b.total !== a.total) {
-        return b.total - a.total;
-      }
-      if (b.count !== a.count) {
-        return b.count - a.count;
-      }
-      return formatUser(a.user).localeCompare(formatUser(b.user));
-    });
+    return sortRankingByTotal(aggregation.authors);
   }, [aggregation.authors]);
 
   const authorRankingByCount = useMemo(() => {
-    return aggregation.authors.slice().sort((a, b) => {
-      if (b.count !== a.count) {
-        return b.count - a.count;
-      }
-      if (b.total !== a.total) {
-        return b.total - a.total;
-      }
-      return formatUser(a.user).localeCompare(formatUser(b.user));
-    });
+    return sortRankingByCount(aggregation.authors);
   }, [aggregation.authors]);
 
   const assigneeRankingByTotal = useMemo(() => {
-    return aggregation.assignees.slice().sort((a, b) => {
-      if (b.total !== a.total) {
-        return b.total - a.total;
-      }
-      if (b.count !== a.count) {
-        return b.count - a.count;
-      }
-      return formatUser(a.user).localeCompare(formatUser(b.user));
-    });
+    return sortRankingByTotal(aggregation.assignees);
   }, [aggregation.assignees]);
 
   const assigneeRankingByCount = useMemo(() => {
-    return aggregation.assignees.slice().sort((a, b) => {
-      if (b.count !== a.count) {
-        return b.count - a.count;
-      }
-      if (b.total !== a.total) {
-        return b.total - a.total;
-      }
-      return formatUser(a.user).localeCompare(formatUser(b.user));
-    });
+    return sortRankingByCount(aggregation.assignees);
   }, [aggregation.assignees]);
 
   const hasAssigneeFilter = assigneeOptions.length > 0;
@@ -824,9 +931,9 @@ function IssueList({
         </div>
       </div>
 
-      {filteredItems.length ? (
+      {sortedItems.length ? (
         <ul className="space-y-4">
-          {filteredItems.map((item) => (
+          {sortedItems.map((item) => (
             <li key={item.id}>
               <div className="rounded-lg border border-border/50 p-4">
                 <div className="flex flex-col gap-2">
@@ -837,13 +944,14 @@ function IssueList({
                     )}
                   </div>
                   {item.title ? (
-                    <p className="text-sm text-muted-foreground">
-                      {item.title}
-                    </p>
+                    <p className="text-sm text-foreground">{item.title}</p>
                   ) : null}
-                  <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                    <span>작성자 {formatUser(item.author)}</span>
-                    <span>담당자 {formatUserList(item.assignees)}</span>
+                  <div className="flex flex-wrap items-center gap-3 text-xs">
+                    <InfoBadge label="작성자" value={formatUser(item.author)} />
+                    <InfoBadge
+                      label="담당자"
+                      value={formatUserList(item.assignees)}
+                    />
                     <span className={chipClass}>
                       {formatDays(item.ageDays)} 경과
                     </span>
@@ -940,52 +1048,24 @@ function MentionList({
     });
   }, [items, targetFilter, authorFilter]);
 
+  const sortedItems = useMemo(() => {
+    return filteredItems.slice().sort((a, b) => b.waitingDays - a.waitingDays);
+  }, [filteredItems]);
+
   const targetRankingByTotal = useMemo(() => {
-    return aggregation.targets.slice().sort((a, b) => {
-      if (b.total !== a.total) {
-        return b.total - a.total;
-      }
-      if (b.count !== a.count) {
-        return b.count - a.count;
-      }
-      return formatUser(a.user).localeCompare(formatUser(b.user));
-    });
+    return sortRankingByTotal(aggregation.targets);
   }, [aggregation.targets]);
 
   const targetRankingByCount = useMemo(() => {
-    return aggregation.targets.slice().sort((a, b) => {
-      if (b.count !== a.count) {
-        return b.count - a.count;
-      }
-      if (b.total !== a.total) {
-        return b.total - a.total;
-      }
-      return formatUser(a.user).localeCompare(formatUser(b.user));
-    });
+    return sortRankingByCount(aggregation.targets);
   }, [aggregation.targets]);
 
   const authorRankingByTotal = useMemo(() => {
-    return aggregation.authors.slice().sort((a, b) => {
-      if (b.total !== a.total) {
-        return b.total - a.total;
-      }
-      if (b.count !== a.count) {
-        return b.count - a.count;
-      }
-      return formatUser(a.user).localeCompare(formatUser(b.user));
-    });
+    return sortRankingByTotal(aggregation.authors);
   }, [aggregation.authors]);
 
   const authorRankingByCount = useMemo(() => {
-    return aggregation.authors.slice().sort((a, b) => {
-      if (b.count !== a.count) {
-        return b.count - a.count;
-      }
-      if (b.total !== a.total) {
-        return b.total - a.total;
-      }
-      return formatUser(a.user).localeCompare(formatUser(b.user));
-    });
+    return sortRankingByCount(aggregation.authors);
   }, [aggregation.authors]);
 
   const metricLabel = "경과일수";
@@ -1057,9 +1137,9 @@ function MentionList({
         </div>
       </div>
 
-      {filteredItems.length ? (
+      {sortedItems.length ? (
         <ul className="space-y-4">
-          {filteredItems.map((item) => {
+          {sortedItems.map((item) => {
             const listKey = `${item.commentId}:${item.target?.id ?? "unknown"}`;
             return (
               <li key={listKey}>
@@ -1076,9 +1156,15 @@ function MentionList({
                         “{item.commentExcerpt}”
                       </p>
                     ) : null}
-                    <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                      <span>멘션 대상 {formatUser(item.target)}</span>
-                      <span>작성자 {formatUser(item.author)}</span>
+                    <div className="flex flex-wrap items-center gap-3 text-xs">
+                      <InfoBadge
+                        label="멘션 대상"
+                        value={formatUser(item.target)}
+                      />
+                      <InfoBadge
+                        label="작성자"
+                        value={formatUser(item.author)}
+                      />
                       <span className={chipClass}>
                         {formatDays(item.waitingDays)} 경과
                       </span>
@@ -1109,6 +1195,14 @@ type FollowUpSection = {
 
 export function AttentionView({ insights }: { insights: AttentionInsights }) {
   const generatedAtLabel = formatTimestamp(insights.generatedAt);
+  const router = useRouter();
+  const [isRefreshing, startTransition] = useTransition();
+
+  const handleRefresh = () => {
+    startTransition(() => {
+      router.refresh();
+    });
+  };
 
   const sections: FollowUpSection[] = [
     {
@@ -1204,24 +1298,200 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
     },
   ];
 
-  const [activeSectionId, setActiveSectionId] = useState(
-    () => sections[0]?.id ?? "",
-  );
-  const activeSection =
-    sections.find((section) => section.id === activeSectionId) ?? sections[0];
+  const summaries = useMemo<FollowUpSummary[]>(() => {
+    const highlightLine = (label: string, topEntries: RankingEntry[]) => {
+      if (!topEntries.length) {
+        return null;
+      }
+      const ranked = topEntries
+        .map(
+          (entry, index) =>
+            `${index + 1}위 ${formatUserDisplayName(entry.user)}`,
+        )
+        .join(", ");
+      return `${label}: ${ranked}`;
+    };
+
+    const stalePrs = insights.staleOpenPrs;
+    const staleMetric = (item: PullRequestAttentionItem) => item.ageDays ?? 0;
+    const staleAuthors = aggregateUsers(
+      stalePrs,
+      (item) => (item.author ? [item.author] : []),
+      staleMetric,
+    );
+    const staleReviewers = aggregateUsers(
+      stalePrs,
+      (item) => item.reviewers,
+      staleMetric,
+    );
+
+    const idlePrs = insights.idleOpenPrs;
+    const idleMetric = (item: PullRequestAttentionItem) =>
+      item.inactivityDays ?? item.ageDays ?? 0;
+    const idleAuthors = aggregateUsers(
+      idlePrs,
+      (item) => (item.author ? [item.author] : []),
+      idleMetric,
+    );
+    const idleReviewers = aggregateUsers(
+      idlePrs,
+      (item) => item.reviewers,
+      idleMetric,
+    );
+
+    const reviewRequests = insights.stuckReviewRequests;
+    const reviewMetric = (item: ReviewRequestAttentionItem) => item.waitingDays;
+    const reviewAuthors = aggregateUsers(
+      reviewRequests,
+      (item) => (item.pullRequest.author ? [item.pullRequest.author] : []),
+      reviewMetric,
+    );
+    const reviewReviewers = aggregateUsers(
+      reviewRequests,
+      (item) => (item.reviewer ? [item.reviewer] : []),
+      reviewMetric,
+    );
+
+    const backlogIssues = insights.backlogIssues;
+    const backlogMetric = (item: IssueAttentionItem) => item.ageDays ?? 0;
+    const backlogAuthors = aggregateUsers(
+      backlogIssues,
+      (item) => (item.author ? [item.author] : []),
+      backlogMetric,
+    );
+    const backlogAssignees = aggregateUsers(
+      backlogIssues,
+      (item) => item.assignees,
+      backlogMetric,
+    );
+
+    const stalledIssues = insights.stalledInProgressIssues;
+    const stalledMetric = (item: IssueAttentionItem) =>
+      item.inProgressAgeDays ?? item.ageDays ?? 0;
+    const stalledAuthors = aggregateUsers(
+      stalledIssues,
+      (item) => (item.author ? [item.author] : []),
+      stalledMetric,
+    );
+    const stalledAssignees = aggregateUsers(
+      stalledIssues,
+      (item) => item.assignees,
+      stalledMetric,
+    );
+
+    const mentions = insights.unansweredMentions;
+    const mentionMetric = (item: MentionAttentionItem) => item.waitingDays;
+    const mentionTargets = aggregateUsers(
+      mentions,
+      (item) => (item.target ? [item.target] : []),
+      mentionMetric,
+    );
+    const mentionAuthors = aggregateUsers(
+      mentions,
+      (item) => (item.author ? [item.author] : []),
+      mentionMetric,
+    );
+
+    return [
+      {
+        id: "stale-open-prs",
+        title: "오래된 PR",
+        description: "20일 이상 머지되지 않은 PR",
+        count: stalePrs.length,
+        totalMetric: sumMetric(stalePrs, staleMetric),
+        highlights: [
+          highlightLine("최다 작성자", findTopByTotal(staleAuthors, 3)),
+          highlightLine("최다 리뷰어", findTopByTotal(staleReviewers, 3)),
+        ].filter((line): line is string => Boolean(line)),
+      },
+      {
+        id: "idle-open-prs",
+        title: "업데이트 없는 PR",
+        description: "10일 이상 업데이트가 없는 열린 PR",
+        count: idlePrs.length,
+        totalMetric: sumMetric(idlePrs, idleMetric),
+        highlights: [
+          highlightLine("최다 작성자", findTopByTotal(idleAuthors, 3)),
+          highlightLine("최다 리뷰어", findTopByTotal(idleReviewers, 3)),
+        ].filter((line): line is string => Boolean(line)),
+      },
+      {
+        id: "stuck-review-requests",
+        title: "응답 없는 리뷰 요청",
+        description: "5일 이상 응답이 없는 리뷰 요청",
+        count: reviewRequests.length,
+        totalMetric: sumMetric(reviewRequests, reviewMetric),
+        highlights: [
+          highlightLine("최다 작성자", findTopByTotal(reviewAuthors, 3)),
+          highlightLine("최다 대기 리뷰어", findTopByTotal(reviewReviewers, 3)),
+        ].filter((line): line is string => Boolean(line)),
+      },
+      {
+        id: "backlog-issues",
+        title: "정체된 Backlog 이슈",
+        description: "20일 이상 In Progress로 이동하지 않은 이슈",
+        count: backlogIssues.length,
+        totalMetric: sumMetric(backlogIssues, backlogMetric),
+        highlights: [
+          highlightLine("최다 작성자", findTopByTotal(backlogAuthors, 3)),
+          highlightLine("최다 담당자", findTopByTotal(backlogAssignees, 3)),
+        ].filter((line): line is string => Boolean(line)),
+      },
+      {
+        id: "stalled-in-progress-issues",
+        title: "정체된 In Progress 이슈",
+        description: "In Progress에서 20일 이상 머문 이슈",
+        count: stalledIssues.length,
+        totalMetric: sumMetric(stalledIssues, stalledMetric),
+        highlights: [
+          highlightLine("최다 작성자", findTopByTotal(stalledAuthors, 3)),
+          highlightLine("최다 담당자", findTopByTotal(stalledAssignees, 3)),
+        ].filter((line): line is string => Boolean(line)),
+      },
+      {
+        id: "unanswered-mentions",
+        title: "응답 없는 멘션",
+        description: "5일 이상 응답 없는 멘션",
+        count: mentions.length,
+        totalMetric: sumMetric(mentions, mentionMetric),
+        highlights: [
+          highlightLine("최다 멘션 대상", findTopByTotal(mentionTargets, 3)),
+          highlightLine("최다 작성자", findTopByTotal(mentionAuthors, 3)),
+        ].filter((line): line is string => Boolean(line)),
+      },
+    ];
+  }, [insights]);
+
+  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
+  const activeSection = activeSectionId
+    ? sections.find((section) => section.id === activeSectionId)
+    : undefined;
 
   return (
     <section className="flex flex-col gap-8">
       <header className="flex flex-col gap-2">
         <h1 className="text-3xl font-semibold">Follow-ups</h1>
         <p className="text-sm text-muted-foreground">
-          중요하지만 오래 머물러 있는 작업과 응답이 필요한 항목을 한눈에
-          확인하세요.
+          오래 머물러 있는 작업과 응답이 필요한 항목을 한눈에 확인하세요.
         </p>
       </header>
 
-      <div className="text-sm text-muted-foreground">
-        데이터 생성 시각: {generatedAtLabel}
+      <div className="flex items-center gap-3 text-sm text-foreground">
+        <span>데이터 생성 시각: {generatedAtLabel}</span>
+        <button
+          type="button"
+          onClick={handleRefresh}
+          disabled={isRefreshing}
+          className={cn(
+            "inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background text-foreground transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70",
+          )}
+          aria-label="Follow-ups 데이터 새로 고침"
+        >
+          <RefreshCcw
+            className={cn("h-4 w-4", isRefreshing ? "animate-spin" : "")}
+            aria-hidden="true"
+          />
+        </button>
       </div>
 
       <div className="flex flex-col gap-6 md:flex-row md:items-start">
@@ -1229,8 +1499,32 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
           className="flex w-full flex-col gap-2 md:w-72"
           aria-label="Follow-ups 하위 메뉴"
         >
+          <div className="mb-2 flex flex-col gap-2">
+            <span className="text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-primary/80">
+              Overview
+            </span>
+            <button
+              type="button"
+              onClick={() => setActiveSectionId(null)}
+              className={cn(
+                "group relative overflow-hidden rounded-lg border-2 px-4 py-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                "before:absolute before:-left-6 before:top-0 before:h-full before:w-20 before:-skew-x-12 before:bg-primary/10 before:transition-opacity before:content-['']",
+                activeSectionId === null
+                  ? "border-primary bg-primary/10 text-primary shadow-sm before:opacity-100"
+                  : "border-muted-foreground/40 bg-muted/20 text-foreground hover:border-primary/60 hover:bg-primary/10 before:opacity-50 hover:before:opacity-80",
+              )}
+              aria-current={activeSectionId === null ? "true" : undefined}
+            >
+              <div className="relative z-[1]">
+                <div className="text-sm font-semibold">Follow-ups 개요</div>
+                <p className="mt-2 text-xs text-foreground/80">
+                  전체 하위 메뉴의 요약 통계를 한눈에 확인합니다.
+                </p>
+              </div>
+            </button>
+          </div>
           {sections.map((section) => {
-            const selected = section.id === activeSection?.id;
+            const selected = section.id === activeSectionId;
             return (
               <button
                 key={section.id}
@@ -1254,23 +1548,33 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
         </nav>
 
         <div className="flex-1">
-          {activeSection ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>{activeSection.title}</CardTitle>
-                <CardDescription>{activeSection.description}</CardDescription>
-              </CardHeader>
-              <CardContent>{activeSection.content}</CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  표시할 Follow-up 항목이 없습니다.
-                </p>
-              </CardContent>
-            </Card>
-          )}
+          <Card>
+            {activeSection ? (
+              <>
+                <CardHeader>
+                  <CardTitle>{activeSection.title}</CardTitle>
+                  <CardDescription>{activeSection.description}</CardDescription>
+                </CardHeader>
+                <CardContent>{activeSection.content}</CardContent>
+              </>
+            ) : (
+              <>
+                <CardHeader>
+                  <CardTitle>Follow-ups 개요</CardTitle>
+                  <CardDescription>
+                    전체 현황을 확인하거나 자세한 내용을 보려면 왼쪽 메뉴에서
+                    항목을 선택하세요.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <FollowUpOverview
+                    summaries={summaries}
+                    onSelect={(id) => setActiveSectionId(id)}
+                  />
+                </CardContent>
+              </>
+            )}
+          </Card>
         </div>
       </div>
     </section>
