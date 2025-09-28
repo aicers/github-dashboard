@@ -33,7 +33,9 @@ export const individualMetricTooltips = {
   prsMergedBy:
     "이 구성원이 직접 머지 완료한 Pull Request 개수입니다 (본인 PR 포함).",
   reviewsCompleted:
-    "이 구성원이 완료한 리뷰 개수입니다. Dependabot이 생성한 Pull Request는 제외됩니다.",
+    "이 구성원이 완료한 리뷰 개수입니다. APPROVED, CHANGES_REQUESTED, COMMENTED만 포함하며 DISMISSED는 제외됩니다. Dependabot Pull Request는 제외됩니다.",
+  activeReviewsCompleted:
+    "이 구성원이 APPROVED로 제출한 리뷰 개수입니다. Dependabot Pull Request는 제외됩니다.",
   reviewResponseTime:
     "이 구성원이 리뷰 요청을 받은 후 응답하기까지 걸린 평균 업무 시간입니다. 주말과 지정 휴일은 제외되며 Dependabot이 생성한 Pull Request는 제외됩니다.",
   reviewCoverage:

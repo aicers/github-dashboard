@@ -15,6 +15,7 @@ type RepoActivitySortKey =
   | "pullRequestsMerged"
   | "pullRequestsMergedBy"
   | "reviews"
+  | "activeReviews"
   | "comments"
   | "avgFirstReviewHours";
 type RepoActivitySortDirection = "asc" | "desc";
@@ -59,6 +60,11 @@ const repoActivityColumns: Array<{
     render: (row) => formatNumber(row.reviews),
   },
   {
+    key: "activeReviews",
+    label: "적극 리뷰",
+    render: (row) => formatNumber(row.activeReviews),
+  },
+  {
     key: "comments",
     label: "댓글",
     render: (row) => formatNumber(row.comments),
@@ -83,6 +89,7 @@ const REPO_ACTIVITY_SORT_DEFAULT_DIRECTION: Record<
   pullRequestsMerged: "desc",
   pullRequestsMergedBy: "desc",
   reviews: "desc",
+  activeReviews: "desc",
   comments: "desc",
   avgFirstReviewHours: "asc",
 };
@@ -104,6 +111,8 @@ function getSortValue(
       return row.pullRequestsMergedBy;
     case "reviews":
       return row.reviews;
+    case "activeReviews":
+      return row.activeReviews;
     case "comments":
       return row.comments;
     case "avgFirstReviewHours":

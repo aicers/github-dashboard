@@ -2060,14 +2060,18 @@ async function fetchIndividualIssueMetrics(
 
 type IndividualReviewRow = {
   reviews: number;
+  active_reviews: number;
   avg_response_hours: number | null;
   prs_reviewed: number;
+  active_prs_reviewed: number;
   review_comments: number;
 };
 
 type IndividualReviewBaseRow = {
   reviews: number;
   prs_reviewed: number;
+  active_reviews: number;
+  active_prs_reviewed: number;
   review_comments: number;
 };
 
@@ -2166,6 +2170,18 @@ async function fetchIndividualReviewMetrics(
        WHERE r.author_id = $1
          AND r.github_submitted_at BETWEEN $2 AND $3${repoClause}
          AND pr.author_id <> $1
+         AND COALESCE(r.state, '') <> 'DISMISSED'
+         AND ${DEPENDABOT_FILTER}
+     ),
+     approved_reviews AS (
+       SELECT r.pull_request_id
+       FROM reviews r
+       JOIN pull_requests pr ON pr.id = r.pull_request_id
+       LEFT JOIN users u ON u.id = pr.author_id
+       WHERE r.author_id = $1
+         AND r.github_submitted_at BETWEEN $2 AND $3${repoClause}
+         AND pr.author_id <> $1
+         AND r.state = 'APPROVED'
          AND ${DEPENDABOT_FILTER}
      ),
      review_comments AS (
@@ -2181,6 +2197,8 @@ async function fetchIndividualReviewMetrics(
      SELECT
        (SELECT COUNT(*) FROM reviewer_reviews) AS reviews,
        (SELECT COUNT(DISTINCT pull_request_id) FROM reviewer_reviews) AS prs_reviewed,
+       (SELECT COUNT(*) FROM approved_reviews) AS active_reviews,
+       (SELECT COUNT(DISTINCT pull_request_id) FROM approved_reviews) AS active_prs_reviewed,
        (SELECT review_comments FROM review_comments) AS review_comments
      `,
     params,
@@ -2189,6 +2207,8 @@ async function fetchIndividualReviewMetrics(
   const statsRow = statsResult.rows[0] ?? {
     reviews: 0,
     prs_reviewed: 0,
+    active_reviews: 0,
+    active_prs_reviewed: 0,
     review_comments: 0,
   };
 
@@ -2209,7 +2229,9 @@ async function fetchIndividualReviewMetrics(
 
   return {
     reviews: Number(statsRow.reviews ?? 0),
+    active_reviews: Number(statsRow.active_reviews ?? 0),
     prs_reviewed: Number(statsRow.prs_reviewed ?? 0),
+    active_prs_reviewed: Number(statsRow.active_prs_reviewed ?? 0),
     avg_response_hours: avgResponseHours,
     review_comments: Number(statsRow.review_comments ?? 0),
   };
@@ -2564,16 +2586,20 @@ async function fetchIndividualRepoComparison(
          AND ${DEPENDABOT_FILTER}
        GROUP BY pr.repository_id
      ),
-     review_counts AS (
-       SELECT pr.repository_id, COUNT(*) AS reviews
-       FROM reviews r
-       JOIN pull_requests pr ON pr.id = r.pull_request_id
-       LEFT JOIN users u ON u.id = pr.author_id
-       WHERE r.author_id = $1
-         AND r.github_submitted_at BETWEEN $2 AND $3${repoFilterPr}
-         AND ${DEPENDABOT_FILTER}
-       GROUP BY pr.repository_id
-     ),
+    review_counts AS (
+      SELECT
+        pr.repository_id,
+        COUNT(*) AS reviews,
+        COUNT(*) FILTER (WHERE r.state = 'APPROVED') AS active_reviews
+      FROM reviews r
+      JOIN pull_requests pr ON pr.id = r.pull_request_id
+      LEFT JOIN users u ON u.id = pr.author_id
+      WHERE r.author_id = $1
+        AND r.github_submitted_at BETWEEN $2 AND $3${repoFilterPr}
+        AND COALESCE(r.state, '') <> 'DISMISSED'
+        AND ${DEPENDABOT_FILTER}
+      GROUP BY pr.repository_id
+    ),
      comment_counts AS (
        SELECT repository_id, COUNT(*) AS comments
        FROM (
@@ -2622,6 +2648,7 @@ async function fetchIndividualRepoComparison(
        COALESCE(pr_counts.prs_merged, 0) AS prs_merged,
        COALESCE(pr_merged_by_counts.prs_merged_by, 0) AS prs_merged_by,
        COALESCE(review_counts.reviews, 0) AS reviews,
+       COALESCE(review_counts.active_reviews, 0) AS active_reviews,
        COALESCE(comment_counts.comments, 0) AS comments,
        first_reviews.avg_first_review_hours
      FROM repo_ids
@@ -3816,6 +3843,10 @@ export async function getDashboardAnalytics(
         individualReviewsCurrent.reviews,
         individualReviewsPrevious.reviews,
       ),
+      activeReviewsCompleted: buildComparison(
+        individualReviewsCurrent.active_reviews,
+        individualReviewsPrevious.active_reviews,
+      ),
       reviewResponseTime: buildDurationComparison(
         individualReviewsCurrent.avg_response_hours,
         individualReviewsPrevious.avg_response_hours,
@@ -3931,6 +3962,13 @@ export async function getDashboardAnalytics(
         individualReviewsPrevious2.reviews,
         individualReviewsPrevious.reviews,
         individualReviewsCurrent.reviews,
+      ]),
+      activeReviewsCompleted: buildHistorySeries([
+        individualReviewsPrevious4.active_reviews,
+        individualReviewsPrevious3.active_reviews,
+        individualReviewsPrevious2.active_reviews,
+        individualReviewsPrevious.active_reviews,
+        individualReviewsCurrent.active_reviews,
       ]),
       reviewResponseTime: buildHistorySeries([
         individualReviewsPrevious4.avg_response_hours,
