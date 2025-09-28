@@ -627,47 +627,244 @@ function IssueList({
   items,
   emptyText,
   highlightInProgress,
+  metricKey = "ageDays",
+  metricLabel = "경과일수",
 }: {
   items: IssueAttentionItem[];
   emptyText: string;
   highlightInProgress?: boolean;
+  metricKey?: "ageDays" | "inProgressAgeDays";
+  metricLabel?: string;
 }) {
+  const [authorFilter, setAuthorFilter] = useState("all");
+  const [assigneeFilter, setAssigneeFilter] = useState("all");
+
+  const aggregation = useMemo(() => {
+    const authorMap = new Map<string, RankingEntry>();
+    const assigneeMap = new Map<string, RankingEntry>();
+
+    items.forEach((item) => {
+      const metricValue =
+        metricKey === "inProgressAgeDays"
+          ? (item.inProgressAgeDays ?? item.ageDays)
+          : item.ageDays;
+
+      if (item.author) {
+        const authorEntry = authorMap.get(item.author.id) ?? {
+          key: item.author.id,
+          user: item.author,
+          total: 0,
+          count: 0,
+        };
+        authorEntry.total += metricValue;
+        authorEntry.count += 1;
+        authorMap.set(item.author.id, authorEntry);
+      }
+
+      item.assignees.forEach((assignee) => {
+        const assigneeEntry = assigneeMap.get(assignee.id) ?? {
+          key: assignee.id,
+          user: assignee,
+          total: 0,
+          count: 0,
+        };
+        assigneeEntry.total += metricValue;
+        assigneeEntry.count += 1;
+        assigneeMap.set(assignee.id, assigneeEntry);
+      });
+    });
+
+    return {
+      authors: Array.from(authorMap.values()),
+      assignees: Array.from(assigneeMap.values()),
+    };
+  }, [items, metricKey]);
+
+  const authorOptions = useMemo(() => {
+    return aggregation.authors
+      .map((entry) => ({ key: entry.key, label: formatUser(entry.user) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [aggregation.authors]);
+
+  const assigneeOptions = useMemo(() => {
+    return aggregation.assignees
+      .map((entry) => ({ key: entry.key, label: formatUser(entry.user) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [aggregation.assignees]);
+
+  const filteredItems = useMemo(() => {
+    return items.filter((item) => {
+      const authorMatch =
+        authorFilter === "all" || item.author?.id === authorFilter;
+
+      const assigneeMatch =
+        assigneeFilter === "all" ||
+        item.assignees.some((assignee) => assignee.id === assigneeFilter);
+
+      return authorMatch && assigneeMatch;
+    });
+  }, [items, authorFilter, assigneeFilter]);
+
+  const authorRankingByTotal = useMemo(() => {
+    return aggregation.authors.slice().sort((a, b) => {
+      if (b.total !== a.total) {
+        return b.total - a.total;
+      }
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+      return formatUser(a.user).localeCompare(formatUser(b.user));
+    });
+  }, [aggregation.authors]);
+
+  const authorRankingByCount = useMemo(() => {
+    return aggregation.authors.slice().sort((a, b) => {
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+      if (b.total !== a.total) {
+        return b.total - a.total;
+      }
+      return formatUser(a.user).localeCompare(formatUser(b.user));
+    });
+  }, [aggregation.authors]);
+
+  const assigneeRankingByTotal = useMemo(() => {
+    return aggregation.assignees.slice().sort((a, b) => {
+      if (b.total !== a.total) {
+        return b.total - a.total;
+      }
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+      return formatUser(a.user).localeCompare(formatUser(b.user));
+    });
+  }, [aggregation.assignees]);
+
+  const assigneeRankingByCount = useMemo(() => {
+    return aggregation.assignees.slice().sort((a, b) => {
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+      if (b.total !== a.total) {
+        return b.total - a.total;
+      }
+      return formatUser(a.user).localeCompare(formatUser(b.user));
+    });
+  }, [aggregation.assignees]);
+
+  const hasAssigneeFilter = assigneeOptions.length > 0;
+
   if (!items.length) {
     return <p className="text-sm text-muted-foreground">{emptyText}</p>;
   }
 
   return (
-    <ul className="space-y-4">
-      {items.map((item) => (
-        <li key={item.id}>
-          <div className="rounded-lg border border-border/50 p-4">
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                {renderLink(
-                  item.url,
-                  `${formatRepository(item.repository)} #${item.number.toString()}`,
-                )}
+    <div className="space-y-6">
+      <div className="space-y-4">
+        <div className="flex flex-wrap gap-4">
+          <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+            작성자 필터
+            <select
+              className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={authorFilter}
+              onChange={(event) => setAuthorFilter(event.target.value)}
+            >
+              <option value="all">전체</option>
+              {authorOptions.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {hasAssigneeFilter ? (
+            <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+              담당자 필터
+              <select
+                className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={assigneeFilter}
+                onChange={(event) => setAssigneeFilter(event.target.value)}
+              >
+                <option value="all">전체</option>
+                {assigneeOptions.map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <RankingCard
+            title={`작성자 ${metricLabel} 합계 순위`}
+            entries={authorRankingByTotal}
+            valueFormatter={(entry) => formatDays(entry.total)}
+            emptyText="작성자 데이터가 없습니다."
+          />
+          <RankingCard
+            title="작성자 건수 순위"
+            entries={authorRankingByCount}
+            valueFormatter={(entry) => formatCount(entry.count)}
+            emptyText="작성자 데이터가 없습니다."
+          />
+          <RankingCard
+            title={`담당자 ${metricLabel} 합계 순위`}
+            entries={assigneeRankingByTotal}
+            valueFormatter={(entry) => formatDays(entry.total)}
+            emptyText="담당자 데이터가 없습니다."
+          />
+          <RankingCard
+            title="담당자 건수 순위"
+            entries={assigneeRankingByCount}
+            valueFormatter={(entry) => formatCount(entry.count)}
+            emptyText="담당자 데이터가 없습니다."
+          />
+        </div>
+      </div>
+
+      {filteredItems.length ? (
+        <ul className="space-y-4">
+          {filteredItems.map((item) => (
+            <li key={item.id}>
+              <div className="rounded-lg border border-border/50 p-4">
+                <div className="flex flex-col gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {renderLink(
+                      item.url,
+                      `${formatRepository(item.repository)} #${item.number.toString()}`,
+                    )}
+                  </div>
+                  {item.title ? (
+                    <p className="text-sm text-muted-foreground">
+                      {item.title}
+                    </p>
+                  ) : null}
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                    <span>작성자 {formatUser(item.author)}</span>
+                    <span>담당자 {formatUserList(item.assignees)}</span>
+                    <span className={chipClass}>
+                      {formatDays(item.ageDays)} 경과
+                    </span>
+                    {highlightInProgress &&
+                    item.inProgressAgeDays !== undefined ? (
+                      <span className={chipClass}>
+                        In Progress {formatDays(item.inProgressAgeDays)} 경과
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
               </div>
-              {item.title ? (
-                <p className="text-sm text-muted-foreground">{item.title}</p>
-              ) : null}
-              <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                <span>작성자 {formatUser(item.author)}</span>
-                <span>담당자 {formatUserList(item.assignees)}</span>
-                <span className={chipClass}>
-                  {formatDays(item.ageDays)} 경과
-                </span>
-                {highlightInProgress && item.inProgressAgeDays !== undefined ? (
-                  <span className={chipClass}>
-                    In Progress {formatDays(item.inProgressAgeDays)} 경과
-                  </span>
-                ) : null}
-              </div>
-            </div>
-          </div>
-        </li>
-      ))}
-    </ul>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          선택한 조건에 해당하는 이슈가 없습니다.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -786,6 +983,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
         <IssueList
           items={insights.backlogIssues}
           emptyText="현재 조건을 만족하는 이슈가 없습니다."
+          metricLabel="경과일수"
         />
       ),
     },
@@ -801,6 +999,8 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
           items={insights.stalledInProgressIssues}
           emptyText="현재 조건을 만족하는 이슈가 없습니다."
           highlightInProgress
+          metricKey="inProgressAgeDays"
+          metricLabel="In Progress 경과일수"
         />
       ),
     },
