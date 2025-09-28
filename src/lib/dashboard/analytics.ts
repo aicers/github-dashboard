@@ -1,3 +1,8 @@
+import {
+  calculateBusinessHoursBetween,
+  formatDateKey,
+  HOLIDAY_SET,
+} from "@/lib/dashboard/business-days";
 import type {
   AnalyticsParams,
   ComparisonBreakdownEntry,
@@ -29,8 +34,6 @@ import {
   type UserProfile,
 } from "@/lib/db/operations";
 import { env } from "@/lib/env";
-
-const HOLIDAY_SET = buildHolidaySet(env.HOLIDAYS);
 
 const DEPENDABOT_FILTER =
   "NOT (COALESCE(LOWER(u.login), '') LIKE 'dependabot%' OR COALESCE(LOWER(u.login), '') = 'app/dependabot')";
@@ -161,93 +164,6 @@ function normalizeText(value: unknown): string | null {
 
   const trimmed = value.trim().toLowerCase();
   return trimmed.length ? trimmed : null;
-}
-
-function buildHolidaySet(dates: string[]): Set<string> {
-  const set = new Set<string>();
-  dates.forEach((date) => {
-    const normalized = normalizeHolidayDate(date);
-    if (normalized) {
-      set.add(normalized);
-    }
-  });
-  return set;
-}
-
-function normalizeHolidayDate(value: string | null | undefined) {
-  if (!value) {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  const directMatch = /^\d{4}-\d{2}-\d{2}$/.exec(trimmed);
-  if (directMatch) {
-    return trimmed;
-  }
-
-  const parsed = new Date(trimmed);
-  if (Number.isNaN(parsed.getTime())) {
-    return null;
-  }
-
-  return `${parsed.getUTCFullYear()}-${`${parsed.getUTCMonth() + 1}`.padStart(2, "0")}-${`${parsed.getUTCDate()}`.padStart(2, "0")}`;
-}
-
-function formatDateKey(date: Date) {
-  return `${date.getUTCFullYear()}-${`${date.getUTCMonth() + 1}`.padStart(2, "0")}-${`${date.getUTCDate()}`.padStart(2, "0")}`;
-}
-
-function isBusinessDay(date: Date, holidays: Set<string>) {
-  const day = date.getUTCDay();
-  if (day === 0 || day === 6) {
-    return false;
-  }
-
-  return !holidays.has(formatDateKey(date));
-}
-
-function calculateBusinessHoursBetween(
-  startIso: string | null,
-  endIso: string | null,
-  holidays: Set<string>,
-) {
-  if (!startIso || !endIso) {
-    return null;
-  }
-
-  const start = new Date(startIso);
-  const end = new Date(endIso);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-    return null;
-  }
-
-  if (end <= start) {
-    return 0;
-  }
-
-  let cursor = start.getTime();
-  const endMs = end.getTime();
-  let totalMs = 0;
-
-  while (cursor < endMs) {
-    const cursorDate = new Date(cursor);
-    const nextDayUtc = Date.UTC(
-      cursorDate.getUTCFullYear(),
-      cursorDate.getUTCMonth(),
-      cursorDate.getUTCDate() + 1,
-    );
-    const segmentEnd = Math.min(nextDayUtc, endMs);
-    if (isBusinessDay(cursorDate, holidays)) {
-      totalMs += segmentEnd - cursor;
-    }
-    cursor = segmentEnd;
-  }
-
-  return totalMs / 3_600_000;
 }
 
 function averageBusinessResponseHours(

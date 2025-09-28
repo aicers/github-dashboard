@@ -290,9 +290,12 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
       <div className="grid grid-cols-1 gap-6">
         <Card>
           <CardHeader>
-            <CardTitle>4주 이상 머지되지 않은 PR</CardTitle>
+            <CardTitle>
+              20일 이상 (주말과 공휴일 제외) 머지되지 않은 PR
+            </CardTitle>
             <CardDescription>
-              열린 상태로 28일 이상 유지되고 있는 PR 목록입니다.
+              열린 상태로 주말과 공휴일을 제외한 20일 이상 유지되고 있는 PR
+              목록입니다.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -305,9 +308,12 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
 
         <Card>
           <CardHeader>
-            <CardTitle>2주 이상 업데이트가 없는 열린 PR</CardTitle>
+            <CardTitle>
+              10일 이상 (주말과 공휴일 제외) 업데이트가 없는 열린 PR
+            </CardTitle>
             <CardDescription>
-              최근 업데이트가 14일 이상 없었던 열린 PR을 보여줍니다.
+              최근 업데이트가 주말과 공휴일을 제외한 10일 이상 없었던 열린 PR을
+              보여줍니다.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -321,9 +327,12 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
 
         <Card>
           <CardHeader>
-            <CardTitle>1주 이상 응답이 없는 리뷰 요청</CardTitle>
+            <CardTitle>
+              5일 이상 (주말과 공휴일 제외) 응답이 없는 리뷰 요청
+            </CardTitle>
             <CardDescription>
-              7일 이상 리뷰나 반응이 없었던 요청을 모았습니다.
+              주말과 공휴일을 제외하고 5일 이상 리뷰나 반응이 없었던 요청을
+              모았습니다.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -336,9 +345,12 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
 
         <Card>
           <CardHeader>
-            <CardTitle>4주 이상 In Progress로 이동하지 않은 이슈</CardTitle>
+            <CardTitle>
+              20일 이상 (주말과 공휴일 제외) In Progress로 이동하지 않은 이슈
+            </CardTitle>
             <CardDescription>
-              프로젝트에 추가되었지만 진행 상태로 전환되지 않은 이슈입니다.
+              프로젝트에 추가되었지만 주말과 공휴일을 제외한 20일 이상 진행
+              상태로 전환되지 않은 이슈입니다.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -351,9 +363,12 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
 
         <Card>
           <CardHeader>
-            <CardTitle>In Progress에서 4주 이상 정체된 이슈</CardTitle>
+            <CardTitle>
+              In Progress에서 20일 이상 (주말과 공휴일 제외) 정체된 이슈
+            </CardTitle>
             <CardDescription>
-              In Progress 상태로 전환된 후 28일 이상 종료되지 않은 이슈입니다.
+              In Progress 상태로 전환된 후 주말과 공휴일을 제외한 20일 이상
+              종료되지 않은 이슈입니다.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -367,9 +382,12 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
 
         <Card>
           <CardHeader>
-            <CardTitle>1주 이상 응답이 없는 멘션</CardTitle>
+            <CardTitle>
+              5일 이상 (주말과 공휴일 제외) 응답이 없는 멘션
+            </CardTitle>
             <CardDescription>
-              7일 넘게 댓글이나 반응이 없었던 멘션을 모았습니다.
+              주말과 공휴일을 제외하고 5일 넘게 댓글이나 반응이 없었던 멘션을
+              모았습니다.
             </CardDescription>
           </CardHeader>
           <CardContent>

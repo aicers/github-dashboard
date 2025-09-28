@@ -1,3 +1,8 @@
+import {
+  differenceInBusinessDays,
+  differenceInBusinessDaysOrNull,
+  HOLIDAY_SET,
+} from "@/lib/dashboard/business-days";
 import { ensureSchema } from "@/lib/db";
 import { query } from "@/lib/db/client";
 import {
@@ -245,8 +250,12 @@ type ProjectStatusEntry = {
   occurredAt: string;
 };
 
-const DAY_IN_MS = 86_400_000;
-const FOUR_WEEKS_DAYS = 28;
+const STALE_PR_BUSINESS_DAYS = 20;
+const IDLE_PR_BUSINESS_DAYS = 10;
+const STUCK_REVIEW_BUSINESS_DAYS = 5;
+const BACKLOG_ISSUE_BUSINESS_DAYS = 20;
+const STALLED_IN_PROGRESS_BUSINESS_DAYS = 20;
+const UNANSWERED_MENTION_BUSINESS_DAYS = 5;
 
 function parseDate(value: Maybe<string>) {
   if (!value) {
@@ -258,31 +267,11 @@ function parseDate(value: Maybe<string>) {
 }
 
 function differenceInDays(value: Maybe<string>, now: Date) {
-  const parsed = parseDate(value);
-  if (parsed === null) {
-    return 0;
-  }
-
-  const diff = now.getTime() - parsed;
-  if (!Number.isFinite(diff) || diff <= 0) {
-    return 0;
-  }
-
-  return Math.floor(diff / DAY_IN_MS);
+  return differenceInBusinessDays(value ?? null, now, HOLIDAY_SET);
 }
 
 function differenceInDaysOrNull(value: Maybe<string>, now: Date) {
-  const parsed = parseDate(value);
-  if (parsed === null) {
-    return null;
-  }
-
-  const diff = now.getTime() - parsed;
-  if (!Number.isFinite(diff) || diff <= 0) {
-    return 0;
-  }
-
-  return Math.floor(diff / DAY_IN_MS);
+  return differenceInBusinessDaysOrNull(value ?? null, now, HOLIDAY_SET);
 }
 
 function toUserReference(
@@ -575,7 +564,7 @@ async function fetchStalePullRequests(
      FROM pull_requests pr
      JOIN repositories repo ON repo.id = pr.repository_id
      WHERE (COALESCE(LOWER(pr.state), '') = 'open' OR pr.github_closed_at IS NULL)
-       AND pr.github_created_at <= NOW() - INTERVAL '28 days'
+       AND pr.github_created_at <= NOW() - INTERVAL '26 days'
        AND NOT (pr.repository_id = ANY($1::text[]))
        AND (pr.author_id IS NULL OR NOT (pr.author_id = ANY($2::text[])))
      ORDER BY pr.github_created_at ASC`,
@@ -586,7 +575,14 @@ async function fetchStalePullRequests(
   const reviewerMap = await fetchReviewerMap(prIds, excludedUserIds);
 
   const userIds = new Set<string>();
-  const items = result.rows.map<RawPullRequestItem>((row) => {
+  const items: RawPullRequestItem[] = [];
+
+  result.rows.forEach((row) => {
+    const ageDays = differenceInDays(row.github_created_at, now);
+    if (ageDays < STALE_PR_BUSINESS_DAYS) {
+      return;
+    }
+
     const reviewers = reviewerMap.get(row.id) ?? new Set<string>();
     const reviewerIds = Array.from(reviewers);
     addUserId(userIds, row.author_id);
@@ -594,7 +590,7 @@ async function fetchStalePullRequests(
       addUserId(userIds, id);
     });
 
-    return {
+    items.push({
       id: row.id,
       number: row.number,
       title: row.title,
@@ -606,8 +602,8 @@ async function fetchStalePullRequests(
       reviewerIds,
       createdAt: row.github_created_at,
       updatedAt: row.github_updated_at,
-      ageDays: differenceInDays(row.github_created_at, now),
-    } satisfies RawPullRequestItem;
+      ageDays,
+    });
   });
 
   return { items, userIds };
@@ -633,8 +629,8 @@ async function fetchIdlePullRequests(
      FROM pull_requests pr
      JOIN repositories repo ON repo.id = pr.repository_id
      WHERE (COALESCE(LOWER(pr.state), '') = 'open' OR pr.github_closed_at IS NULL)
-       AND pr.github_updated_at <= NOW() - INTERVAL '14 days'
-       AND pr.github_created_at <= NOW() - INTERVAL '14 days'
+       AND pr.github_updated_at <= NOW() - INTERVAL '12 days'
+       AND pr.github_created_at <= NOW() - INTERVAL '12 days'
        AND NOT (pr.repository_id = ANY($1::text[]))
        AND (pr.author_id IS NULL OR NOT (pr.author_id = ANY($2::text[])))
      ORDER BY pr.github_updated_at ASC NULLS LAST`,
@@ -645,7 +641,18 @@ async function fetchIdlePullRequests(
   const reviewerMap = await fetchReviewerMap(prIds, excludedUserIds);
 
   const userIds = new Set<string>();
-  const items = result.rows.map<RawPullRequestItem>((row) => {
+  const items: RawPullRequestItem[] = [];
+
+  result.rows.forEach((row) => {
+    const ageDays = differenceInDays(row.github_created_at, now);
+    const inactivityDays = differenceInDays(row.github_updated_at, now);
+    if (
+      ageDays < IDLE_PR_BUSINESS_DAYS ||
+      inactivityDays < IDLE_PR_BUSINESS_DAYS
+    ) {
+      return;
+    }
+
     const reviewers = reviewerMap.get(row.id) ?? new Set<string>();
     const reviewerIds = Array.from(reviewers);
     addUserId(userIds, row.author_id);
@@ -653,7 +660,7 @@ async function fetchIdlePullRequests(
       addUserId(userIds, id);
     });
 
-    return {
+    items.push({
       id: row.id,
       number: row.number,
       title: row.title,
@@ -665,9 +672,9 @@ async function fetchIdlePullRequests(
       reviewerIds,
       createdAt: row.github_created_at,
       updatedAt: row.github_updated_at,
-      ageDays: differenceInDays(row.github_created_at, now),
-      inactivityDays: differenceInDays(row.github_updated_at, now),
-    } satisfies RawPullRequestItem;
+      ageDays,
+      inactivityDays,
+    });
   });
 
   return { items, userIds };
@@ -697,7 +704,7 @@ async function fetchStuckReviewRequests(
        JOIN repositories repo ON repo.id = pr.repository_id
        WHERE rr.reviewer_id IS NOT NULL
          AND rr.removed_at IS NULL
-         AND rr.requested_at <= NOW() - INTERVAL '7 days'
+         AND rr.requested_at <= NOW() - INTERVAL '5 days'
          AND (COALESCE(LOWER(pr.state), '') = 'open' OR pr.github_closed_at IS NULL)
          AND NOT (pr.repository_id = ANY($1::text[]))
          AND (pr.author_id IS NULL OR NOT (pr.author_id = ANY($2::text[])))
@@ -766,7 +773,14 @@ async function fetchStuckReviewRequests(
     excludedUserIds,
   );
 
-  const items = result.rows.map<ReviewRequestRawItem>((row) => {
+  const items: ReviewRequestRawItem[] = [];
+
+  result.rows.forEach((row) => {
+    const waitingDays = differenceInDays(row.requested_at, now);
+    if (waitingDays < STUCK_REVIEW_BUSINESS_DAYS) {
+      return;
+    }
+
     const reviewerSet =
       prReviewerMap.get(row.pull_request_id) ?? new Set<string>();
     const combinedReviewers = new Set<string>(reviewerSet);
@@ -786,9 +800,7 @@ async function fetchStuckReviewRequests(
     addUserId(userIds, row.pr_author_id);
     addUserId(userIds, row.reviewer_id);
 
-    const waitingDays = differenceInDays(row.requested_at, now);
-
-    return {
+    items.push({
       id: row.id,
       requestedAt: row.requested_at,
       waitingDays,
@@ -804,7 +816,7 @@ async function fetchStuckReviewRequests(
         authorId: row.pr_author_id,
         reviewerIds,
       },
-    } satisfies ReviewRequestRawItem;
+    });
   });
 
   return { items, userIds };
@@ -837,7 +849,7 @@ async function fetchIssueInsights(
      FROM issues i
      JOIN repositories repo ON repo.id = i.repository_id
      WHERE (COALESCE(LOWER(i.state), '') = 'open' OR i.github_closed_at IS NULL)
-       AND i.github_created_at <= NOW() - INTERVAL '28 days'
+       AND i.github_created_at <= NOW() - INTERVAL '26 days'
        AND NOT (i.repository_id = ANY($1::text[]))
        AND (i.author_id IS NULL OR NOT (i.author_id = ANY($2::text[])))
      ORDER BY i.github_created_at ASC`,
@@ -877,14 +889,16 @@ async function fetchIssueInsights(
       row.github_closed_at;
 
     if (!work.startedAt) {
-      backlogItems.push(baseItem);
-      addUserId(backlogUserIds, row.author_id);
-      assigneeIds.forEach((id) => {
-        addUserId(backlogUserIds, id);
-      });
+      if (baseItem.ageDays >= BACKLOG_ISSUE_BUSINESS_DAYS) {
+        backlogItems.push(baseItem);
+        addUserId(backlogUserIds, row.author_id);
+        assigneeIds.forEach((id) => {
+          addUserId(backlogUserIds, id);
+        });
+      }
     } else if (!isClosed) {
       const inProgressDays = baseItem.inProgressAgeDays ?? 0;
-      if (inProgressDays >= FOUR_WEEKS_DAYS) {
+      if (inProgressDays >= STALLED_IN_PROGRESS_BUSINESS_DAYS) {
         stalledItems.push(baseItem);
         addUserId(stalledUserIds, row.author_id);
         assigneeIds.forEach((id) => {
@@ -921,7 +935,7 @@ async function fetchUnansweredMentions(
        LEFT JOIN reviews review ON review.id = c.review_id
        CROSS JOIN LATERAL regexp_matches(COALESCE(c.data->>'body', ''), '@([A-Za-z0-9_-]+)', 'g') AS match(captures)
        LEFT JOIN users u ON LOWER(u.login) = LOWER(match.captures[1])
-       WHERE c.github_created_at <= NOW() - INTERVAL '7 days'
+       WHERE c.github_created_at <= NOW() - INTERVAL '5 days'
          AND u.id IS NOT NULL
          AND (c.author_id IS NULL OR c.author_id <> u.id)
          AND (c.author_id IS NULL OR NOT (c.author_id = ANY($2::text[])))
@@ -984,7 +998,14 @@ async function fetchUnansweredMentions(
   );
 
   const userIds = new Set<string>();
-  const items = result.rows.map<MentionRawItem>((row) => {
+  const items: MentionRawItem[] = [];
+
+  result.rows.forEach((row) => {
+    const waitingDays = differenceInDays(row.mentioned_at, now);
+    if (waitingDays < UNANSWERED_MENTION_BUSINESS_DAYS) {
+      return;
+    }
+
     addUserId(userIds, row.mentioned_user_id);
     addUserId(userIds, row.comment_author_id);
 
@@ -997,9 +1018,7 @@ async function fetchUnansweredMentions(
     const containerUrl = containerIsPr ? row.pr_url : row.issue_url;
     const repositoryId = row.repository_id;
 
-    const waitingDays = differenceInDays(row.mentioned_at, now);
-
-    return {
+    items.push({
       commentId: row.comment_id,
       url: row.comment_url,
       mentionedAt: row.mentioned_at,
@@ -1017,7 +1036,7 @@ async function fetchUnansweredMentions(
         repositoryNameWithOwner: row.repository_name_with_owner,
       },
       commentExcerpt: extractCommentExcerpt(row.comment_body),
-    } satisfies MentionRawItem;
+    });
   });
 
   return { items, userIds };
