@@ -6,26 +6,25 @@ export const dynamic = "force-dynamic";
 
 export default function Home() {
   return (
-    <main className="flex min-h-screen flex-col gap-12 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 px-6 py-16 text-slate-100">
-      <section className="mx-auto flex w-full max-w-3xl flex-col items-center gap-6 text-center">
-        <span className="rounded-full border border-slate-700/60 bg-slate-900/60 px-4 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-          GitHub Dashboard
+    <main className="min-h-screen bg-slate-950 px-6 py-20 text-slate-100">
+      <section className="mx-auto flex w-full max-w-4xl flex-col gap-6 mb-16 sm:mb-20">
+        <span className="w-fit rounded-full border border-slate-700/70 bg-slate-900/80 px-4 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">
+          GitHub Control Room
         </span>
         <h1 className="text-balance text-4xl font-bold leading-tight sm:text-5xl">
-          Monitor GitHub activity, insights, and workflows from a single
-          dashboard.
+          Keep every repository and team workflow moving from one hub.
         </h1>
-        <p className="text-balance text-base text-slate-300 sm:text-lg">
-          This project scaffolds a modern Next.js app with Tailwind CSS,
-          shadcn/ui, typed forms, and testing. Use it as the foundation for
-          building compelling GitHub experiences.
+        <p className="max-w-xl text-balance text-base text-slate-300 sm:text-lg">
+          Dive into live contribution trends, unblock stalled work, and
+          spotlight team wins without leaving this dashboard.
         </p>
-        <div className="mt-2 flex flex-wrap items-center justify-center gap-3">
-          <Button asChild size="lg">
-            <Link href="/dashboard">Open the data dashboard</Link>
-          </Button>
-          <Button asChild size="lg" variant="secondary">
-            <Link href="/github-test">Open the GitHub test page</Link>
+        <div className="mt-2">
+          <Button
+            asChild
+            size="lg"
+            className="bg-blue-500 text-white shadow-lg shadow-blue-900/40 hover:bg-blue-400"
+          >
+            <Link href="/dashboard">Go to dashboard</Link>
           </Button>
         </div>
       </section>
@@ -33,24 +32,24 @@ export default function Home() {
       <section className="mx-auto grid w-full max-w-5xl gap-6 md:grid-cols-3">
         {[
           {
-            title: "Live GitHub data",
+            title: "Repository pulse",
             description:
-              "Fetch and display organization or repository insights with the GitHub API.",
+              "Spot activity spikes, review progress, and recent contributions in seconds.",
           },
           {
-            title: "Polished UI",
+            title: "Team workload",
             description:
-              "Tailwind CSS plus shadcn/ui components offer a consistent, accessible design system.",
+              "Balance reviews and assignments so no pull request waits longer than it should.",
           },
           {
-            title: "Ready to ship",
+            title: "Delivery rhythm",
             description:
-              "Typed forms, Vitest, Docker, and CI ensure the app is production-ready from day one.",
+              "Track project momentum, celebrate wins, and keep outcomes visible for everyone.",
           },
         ].map(({ title, description }) => (
           <article
             key={title}
-            className="flex flex-col gap-3 rounded-xl border border-slate-800/80 bg-slate-900/60 p-6 shadow-lg shadow-slate-950/50"
+            className="flex flex-col gap-3 rounded-xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-xl shadow-slate-950/40"
           >
             <h2 className="text-lg font-semibold text-slate-100">{title}</h2>
             <p className="text-sm text-slate-300">{description}</p>
