@@ -255,6 +255,12 @@ function formatHoursAsDaysHours(value: number) {
   return parts.join(" ");
 }
 
+function formatReviewsPerPr(value: number) {
+  const safeValue = Number.isFinite(value) ? value : 0;
+  const digits = safeValue >= 10 ? 0 : safeValue >= 1 ? 1 : 2;
+  return `${safeValue.toFixed(digits)}건/PR`;
+}
+
 function LeaderboardTable({
   title,
   entries,
@@ -1322,6 +1328,17 @@ export function AnalyticsView({
           <LeaderboardTable
             title="PR 머지 수행"
             entries={analytics.leaderboard.prsMergedBy}
+          />
+          <LeaderboardTable
+            title="PR 완성도"
+            entries={analytics.leaderboard.prCompleteness}
+            unit="건"
+            secondaryLabel="PR 머지"
+            valueFormatter={formatReviewsPerPr}
+            tooltip={[
+              "머지된 PR 한 건당 다른 리뷰어가 남긴 COMMENTED, CHANGES_REQUESTED 리뷰 수를 집계합니다.",
+              "값이 낮을수록 PR이 깔끔하게 마무리된 것입니다.",
+            ].join("\n")}
           />
           <LeaderboardTable
             title="토론 참여"

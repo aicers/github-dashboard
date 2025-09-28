@@ -1863,6 +1863,14 @@ type LeaderboardRow = {
   deletions?: number;
 };
 
+type PrCompletionLeaderboardRow = {
+  user_id: string;
+  value: number;
+  merged_prs: number;
+  commented_count: number;
+  changes_requested_count: number;
+};
+
 async function fetchLeaderboard(
   metric:
     | "issues"
@@ -2015,6 +2023,78 @@ async function fetchLeaderboard(
   }
 }
 
+async function fetchPrCompletionLeaderboard(
+  start: string,
+  end: string,
+  repositoryIds: string[] | undefined,
+): Promise<PrCompletionLeaderboardRow[]> {
+  const params: unknown[] = [start, end];
+  let repoClause = "";
+  if (repositoryIds?.length) {
+    params.push(repositoryIds);
+    repoClause = ` AND pr.repository_id = ANY($${params.length}::text[])`;
+  }
+
+  const result = await query<PrCompletionLeaderboardRow>(
+    `WITH merged_prs AS (
+       SELECT
+         pr.id,
+         pr.author_id,
+         pr.github_merged_at,
+         pr.repository_id
+       FROM pull_requests pr
+       LEFT JOIN users u ON u.id = pr.author_id
+       WHERE pr.github_merged_at BETWEEN $1 AND $2
+         AND pr.github_merged_at IS NOT NULL
+         AND pr.author_id IS NOT NULL
+         AND ${DEPENDABOT_FILTER}
+         ${repoClause}
+     ),
+     review_totals AS (
+       SELECT
+         mp.id,
+         mp.author_id,
+         COUNT(*) FILTER (WHERE r.state = 'COMMENTED') AS commented_count,
+         COUNT(*) FILTER (WHERE r.state = 'CHANGES_REQUESTED') AS changes_requested_count
+       FROM merged_prs mp
+       LEFT JOIN reviews r
+         ON r.pull_request_id = mp.id
+        AND r.author_id IS NOT NULL
+        AND r.author_id <> mp.author_id
+        AND r.state IN ('COMMENTED', 'CHANGES_REQUESTED')
+        AND (r.github_submitted_at IS NULL OR r.github_submitted_at <= mp.github_merged_at)
+       GROUP BY mp.id, mp.author_id
+     ),
+     author_totals AS (
+       SELECT
+         author_id,
+         COUNT(*) AS merged_prs,
+         SUM(commented_count) AS commented_count,
+         SUM(changes_requested_count) AS changes_requested_count
+       FROM review_totals
+       GROUP BY author_id
+     )
+     SELECT
+       author_id AS user_id,
+       COALESCE(((commented_count + changes_requested_count)::numeric) / NULLIF(merged_prs, 0), 0) AS value,
+       merged_prs,
+       commented_count,
+       changes_requested_count
+     FROM author_totals
+     WHERE merged_prs > 0
+     ORDER BY value ASC, merged_prs DESC, author_id`,
+    params,
+  );
+
+  return result.rows.map((row) => ({
+    user_id: row.user_id,
+    value: Number(row.value ?? 0),
+    merged_prs: Number(row.merged_prs ?? 0),
+    commented_count: Number(row.commented_count ?? 0),
+    changes_requested_count: Number(row.changes_requested_count ?? 0),
+  }));
+}
+
 type IndividualIssueRow = {
   created: number;
   closed: number;
@@ -2084,6 +2164,12 @@ type IndividualMergedByRow = {
   merged: number;
 };
 
+type IndividualPrCompletionRow = {
+  merged_prs: number;
+  commented_count: number;
+  changes_requested_count: number;
+};
+
 async function fetchIndividualPullRequestMetrics(
   personId: string,
   start: string,
@@ -2143,6 +2229,67 @@ async function fetchIndividualMergedByMetrics(
   return (
     result.rows[0] ?? {
       merged: 0,
+    }
+  );
+}
+
+async function fetchIndividualPrCompletionMetrics(
+  personId: string,
+  start: string,
+  end: string,
+  repositoryIds: string[] | undefined,
+): Promise<IndividualPrCompletionRow> {
+  const params: unknown[] = [personId, start, end];
+  let repoClause = "";
+  if (repositoryIds?.length) {
+    params.push(repositoryIds);
+    const index = params.length;
+    repoClause = ` AND pr.repository_id = ANY($${index}::text[])`;
+  }
+
+  const result = await query<IndividualPrCompletionRow>(
+    `WITH merged_prs AS (
+       SELECT
+         pr.id,
+         pr.author_id,
+         pr.github_merged_at,
+         pr.repository_id
+       FROM pull_requests pr
+       LEFT JOIN users u ON u.id = pr.author_id
+       WHERE pr.github_merged_at BETWEEN $2 AND $3
+         AND pr.github_merged_at IS NOT NULL
+         AND pr.author_id = $1
+         AND ${DEPENDABOT_FILTER}
+         ${repoClause}
+     ),
+     review_totals AS (
+       SELECT
+         mp.id,
+         COUNT(*) FILTER (WHERE r.state = 'COMMENTED') AS commented_count,
+         COUNT(*) FILTER (WHERE r.state = 'CHANGES_REQUESTED') AS changes_requested_count
+       FROM merged_prs mp
+       LEFT JOIN reviews r
+         ON r.pull_request_id = mp.id
+        AND r.author_id IS NOT NULL
+        AND r.author_id <> mp.author_id
+        AND r.state IN ('COMMENTED', 'CHANGES_REQUESTED')
+        AND (r.github_submitted_at IS NULL OR r.github_submitted_at <= mp.github_merged_at)
+       GROUP BY mp.id
+     )
+     SELECT
+       COUNT(*) AS merged_prs,
+       COALESCE(SUM(review_totals.commented_count), 0) AS commented_count,
+       COALESCE(SUM(review_totals.changes_requested_count), 0) AS changes_requested_count
+     FROM merged_prs
+     LEFT JOIN review_totals ON review_totals.id = merged_prs.id`,
+    params,
+  );
+
+  return (
+    result.rows[0] ?? {
+      merged_prs: 0,
+      commented_count: 0,
+      changes_requested_count: 0,
     }
   );
 }
@@ -2843,6 +2990,40 @@ function mapLeaderboard(
     });
 }
 
+function mapPrCompletionLeaderboard(
+  rows: PrCompletionLeaderboardRow[],
+  userProfiles: Map<string, UserProfile>,
+): LeaderboardEntry[] {
+  return rows
+    .filter((row) => row.user_id)
+    .map((row) => {
+      const user = userProfiles.get(row.user_id) ?? {
+        id: row.user_id,
+        login: null,
+        name: null,
+        avatarUrl: null,
+      };
+
+      return {
+        user,
+        value: Number(row.value ?? 0),
+        secondaryValue: Number(row.merged_prs ?? 0),
+        details: [
+          {
+            label: "COMMENTED",
+            value: Number(row.commented_count ?? 0),
+            suffix: "건",
+          },
+          {
+            label: "CHANGES_REQUESTED",
+            value: Number(row.changes_requested_count ?? 0),
+            suffix: "건",
+          },
+        ],
+      } satisfies LeaderboardEntry;
+    });
+}
+
 function toTrend(points: TrendPoint[]): TrendPoint[] {
   return points.map((point) => ({
     date: point.date,
@@ -2997,6 +3178,7 @@ export async function getDashboardAnalytics(
     leaderboardPrs,
     leaderboardPrsMerged,
     leaderboardPrsMergedBy,
+    leaderboardPrCompleteness,
     leaderboardIssues,
     leaderboardReviews,
     leaderboardResponders,
@@ -3047,6 +3229,7 @@ export async function getDashboardAnalytics(
     fetchLeaderboard("prs", range.start, range.end, repositoryFilter),
     fetchLeaderboard("prsMerged", range.start, range.end, repositoryFilter),
     fetchLeaderboard("prsMergedBy", range.start, range.end, repositoryFilter),
+    fetchPrCompletionLeaderboard(range.start, range.end, repositoryFilter),
     fetchLeaderboard("issues", range.start, range.end, repositoryFilter),
     fetchLeaderboard("reviews", range.start, range.end, repositoryFilter),
     fetchLeaderboard("response", range.start, range.end, repositoryFilter),
@@ -3109,6 +3292,10 @@ export async function getDashboardAnalytics(
     leaderboardPrsMergedBy,
     (row) => row.user_id,
   );
+  const leaderboardPrCompletenessVisible = filterByUser(
+    leaderboardPrCompleteness,
+    (row) => row.user_id,
+  );
   const leaderboardIssuesVisible = filterByUser(
     leaderboardIssues,
     (row) => row.user_id,
@@ -3146,6 +3333,7 @@ export async function getDashboardAnalytics(
     leaderboardPrsVisible,
     leaderboardPrsMergedVisible,
     leaderboardPrsMergedByVisible,
+    leaderboardPrCompletenessVisible,
     leaderboardIssuesVisible,
     leaderboardReviewsVisible,
     leaderboardRespondersVisible,
@@ -3581,6 +3769,45 @@ export async function getDashboardAnalytics(
     ]);
 
     const [
+      individualPrCompletionCurrent,
+      individualPrCompletionPrevious,
+      individualPrCompletionPrevious2,
+      individualPrCompletionPrevious3,
+      individualPrCompletionPrevious4,
+    ] = await Promise.all([
+      fetchIndividualPrCompletionMetrics(
+        personProfile.id,
+        range.start,
+        range.end,
+        repositoryFilter,
+      ),
+      fetchIndividualPrCompletionMetrics(
+        personProfile.id,
+        range.previousStart,
+        range.previousEnd,
+        repositoryFilter,
+      ),
+      fetchIndividualPrCompletionMetrics(
+        personProfile.id,
+        range.previous2Start,
+        range.previous2End,
+        repositoryFilter,
+      ),
+      fetchIndividualPrCompletionMetrics(
+        personProfile.id,
+        range.previous3Start,
+        range.previous3End,
+        repositoryFilter,
+      ),
+      fetchIndividualPrCompletionMetrics(
+        personProfile.id,
+        range.previous4Start,
+        range.previous4End,
+        repositoryFilter,
+      ),
+    ]);
+
+    const [
       individualReviewsCurrent,
       individualReviewsPrevious,
       individualReviewsPrevious2,
@@ -3788,6 +4015,16 @@ export async function getDashboardAnalytics(
       targetProject,
     );
 
+    const calculatePrCompletenessValue = (row: IndividualPrCompletionRow) => {
+      if (!row || row.merged_prs <= 0) {
+        return 0;
+      }
+      const totalFeedback =
+        Number(row.commented_count ?? 0) +
+        Number(row.changes_requested_count ?? 0);
+      return totalFeedback / row.merged_prs;
+    };
+
     const individualMetrics = {
       issuesCreated: buildComparison(
         individualIssuesCurrent.created,
@@ -3818,6 +4055,33 @@ export async function getDashboardAnalytics(
       prsMergedBy: buildComparison(
         individualMergedByCurrent.merged,
         individualMergedByPrevious.merged,
+      ),
+      prCompleteness: buildComparison(
+        calculatePrCompletenessValue(individualPrCompletionCurrent),
+        calculatePrCompletenessValue(individualPrCompletionPrevious),
+        [
+          {
+            label: "PR 머지",
+            current: Number(individualPrCompletionCurrent.merged_prs ?? 0),
+            previous: Number(individualPrCompletionPrevious.merged_prs ?? 0),
+          },
+          {
+            label: "COMMENTED",
+            current: Number(individualPrCompletionCurrent.commented_count ?? 0),
+            previous: Number(
+              individualPrCompletionPrevious.commented_count ?? 0,
+            ),
+          },
+          {
+            label: "CHANGES_REQUESTED",
+            current: Number(
+              individualPrCompletionCurrent.changes_requested_count ?? 0,
+            ),
+            previous: Number(
+              individualPrCompletionPrevious.changes_requested_count ?? 0,
+            ),
+          },
+        ],
       ),
       parentIssueResolutionTime: buildDurationComparison(
         individualDurationCurrent.parentResolution,
@@ -3956,6 +4220,13 @@ export async function getDashboardAnalytics(
         individualMergedByPrevious.merged,
         individualMergedByCurrent.merged,
       ]),
+      prCompleteness: buildHistorySeries([
+        calculatePrCompletenessValue(individualPrCompletionPrevious4),
+        calculatePrCompletenessValue(individualPrCompletionPrevious3),
+        calculatePrCompletenessValue(individualPrCompletionPrevious2),
+        calculatePrCompletenessValue(individualPrCompletionPrevious),
+        calculatePrCompletenessValue(individualPrCompletionCurrent),
+      ]),
       reviewsCompleted: buildHistorySeries([
         individualReviewsPrevious4.reviews,
         individualReviewsPrevious3.reviews,
@@ -4051,6 +4322,11 @@ export async function getDashboardAnalytics(
     }
   });
   leaderboardPrsMergedByVisible.forEach((row) => {
+    if (row.user_id) {
+      leaderboardProfiles.add(row.user_id);
+    }
+  });
+  leaderboardPrCompletenessVisible.forEach((row) => {
     if (row.user_id) {
       leaderboardProfiles.add(row.user_id);
     }
@@ -4193,6 +4469,10 @@ export async function getDashboardAnalytics(
     prsCreated: mapLeaderboard(leaderboardPrsVisible, leaderboardMap),
     prsMerged: mapLeaderboard(leaderboardPrsMergedVisible, leaderboardMap),
     prsMergedBy: mapLeaderboard(leaderboardPrsMergedByVisible, leaderboardMap),
+    prCompleteness: mapPrCompletionLeaderboard(
+      leaderboardPrCompletenessVisible,
+      leaderboardMap,
+    ),
     issuesCreated: mapLeaderboard(leaderboardIssuesVisible, leaderboardMap),
     reviewsCompleted: mapLeaderboard(leaderboardReviewsVisible, leaderboardMap),
     fastestResponders: mapLeaderboard(

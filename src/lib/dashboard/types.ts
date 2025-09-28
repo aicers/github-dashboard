@@ -151,6 +151,7 @@ export type IndividualMetricSet = {
   prsCreated: ComparisonValue;
   prsMerged: ComparisonValue;
   prsMergedBy: ComparisonValue;
+  prCompleteness: ComparisonValue;
   reviewsCompleted: ComparisonValue;
   activeReviewsCompleted: ComparisonValue;
   reviewResponseTime: DurationComparisonValue;
@@ -174,6 +175,7 @@ export type IndividualMetricHistory = {
   prsCreated: MetricHistoryEntry[];
   prsMerged: MetricHistoryEntry[];
   prsMergedBy: MetricHistoryEntry[];
+  prCompleteness: MetricHistoryEntry[];
   reviewsCompleted: MetricHistoryEntry[];
   activeReviewsCompleted: MetricHistoryEntry[];
   reviewResponseTime: MetricHistoryEntry[];
@@ -216,6 +218,7 @@ export type LeaderboardSummary = {
   prsCreated: LeaderboardEntry[];
   prsMerged: LeaderboardEntry[];
   prsMergedBy: LeaderboardEntry[];
+  prCompleteness: LeaderboardEntry[];
   issuesCreated: LeaderboardEntry[];
   reviewsCompleted: LeaderboardEntry[];
   fastestResponders: LeaderboardEntry[];
