@@ -437,7 +437,7 @@ function PullRequestList({
       <div className="space-y-4">
         <div className="flex flex-wrap gap-4">
           <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-            작성자 필터
+            생성자 필터
             <select
               className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               value={authorFilter}
@@ -471,16 +471,16 @@ function PullRequestList({
         </div>
         <div className="grid gap-4 md:grid-cols-2">
           <RankingCard
-            title={`작성자 ${metricLabel} 합계 순위`}
+            title={`생성자 ${metricLabel} 합계 순위`}
             entries={authorRankingByTotal}
             valueFormatter={(entry) => formatDays(entry.total)}
-            emptyText="작성자 데이터가 없습니다."
+            emptyText="생성자 데이터가 없습니다."
           />
           <RankingCard
-            title="작성자 건수 순위"
+            title="생성자 건수 순위"
             entries={authorRankingByCount}
             valueFormatter={(entry) => formatCount(entry.count)}
-            emptyText="작성자 데이터가 없습니다."
+            emptyText="생성자 데이터가 없습니다."
           />
           <RankingCard
             title={`리뷰어 ${metricLabel} 합계 순위`}
@@ -513,7 +513,7 @@ function PullRequestList({
                     <p className="text-sm text-foreground">{item.title}</p>
                   ) : null}
                   <div className="flex flex-wrap items-center gap-3 text-xs">
-                    <InfoBadge label="작성자" value={formatUser(item.author)} />
+                    <InfoBadge label="생성자" value={formatUser(item.author)} />
                     <InfoBadge
                       label="리뷰어"
                       value={formatUserList(item.reviewers)}
@@ -647,7 +647,7 @@ function ReviewRequestList({
       <div className="space-y-4">
         <div className="flex flex-wrap gap-4">
           <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-            작성자 필터
+            생성자 필터
             <select
               className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               value={authorFilter}
@@ -681,16 +681,16 @@ function ReviewRequestList({
         </div>
         <div className="grid gap-4 md:grid-cols-2">
           <RankingCard
-            title={`작성자 ${metricLabel} 합계 순위`}
+            title={`생성자 ${metricLabel} 합계 순위`}
             entries={authorRankingByTotal}
             valueFormatter={(entry) => formatDays(entry.total)}
-            emptyText="작성자 데이터가 없습니다."
+            emptyText="생성자 데이터가 없습니다."
           />
           <RankingCard
-            title="작성자 건수 순위"
+            title="생성자 건수 순위"
             entries={authorRankingByCount}
             valueFormatter={(entry) => formatCount(entry.count)}
-            emptyText="작성자 데이터가 없습니다."
+            emptyText="생성자 데이터가 없습니다."
           />
           <RankingCard
             title={`리뷰어 ${metricLabel} 합계 순위`}
@@ -726,7 +726,7 @@ function ReviewRequestList({
                   ) : null}
                   <div className="flex flex-wrap items-center gap-3 text-xs">
                     <InfoBadge
-                      label="작성자"
+                      label="생성자"
                       value={formatUser(item.pullRequest.author)}
                     />
                     <InfoBadge
@@ -871,7 +871,7 @@ function IssueList({
       <div className="space-y-4">
         <div className="flex flex-wrap gap-4">
           <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-            작성자 필터
+            생성자 필터
             <select
               className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               value={authorFilter}
@@ -905,16 +905,16 @@ function IssueList({
         </div>
         <div className="grid gap-4 md:grid-cols-2">
           <RankingCard
-            title={`작성자 ${metricLabel} 합계 순위`}
+            title={`생성자 ${metricLabel} 합계 순위`}
             entries={authorRankingByTotal}
             valueFormatter={(entry) => formatDays(entry.total)}
-            emptyText="작성자 데이터가 없습니다."
+            emptyText="생성자 데이터가 없습니다."
           />
           <RankingCard
-            title="작성자 건수 순위"
+            title="생성자 건수 순위"
             entries={authorRankingByCount}
             valueFormatter={(entry) => formatCount(entry.count)}
-            emptyText="작성자 데이터가 없습니다."
+            emptyText="생성자 데이터가 없습니다."
           />
           <RankingCard
             title={`담당자 ${metricLabel} 합계 순위`}
@@ -947,7 +947,7 @@ function IssueList({
                     <p className="text-sm text-foreground">{item.title}</p>
                   ) : null}
                   <div className="flex flex-wrap items-center gap-3 text-xs">
-                    <InfoBadge label="작성자" value={formatUser(item.author)} />
+                    <InfoBadge label="생성자" value={formatUser(item.author)} />
                     <InfoBadge
                       label="담당자"
                       value={formatUserList(item.assignees)}
@@ -1400,7 +1400,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
         count: stalePrs.length,
         totalMetric: sumMetric(stalePrs, staleMetric),
         highlights: [
-          highlightLine("최다 작성자", findTopByTotal(staleAuthors, 3)),
+          highlightLine("최다 생성자", findTopByTotal(staleAuthors, 3)),
           highlightLine("최다 리뷰어", findTopByTotal(staleReviewers, 3)),
         ].filter((line): line is string => Boolean(line)),
       },
@@ -1411,7 +1411,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
         count: idlePrs.length,
         totalMetric: sumMetric(idlePrs, idleMetric),
         highlights: [
-          highlightLine("최다 작성자", findTopByTotal(idleAuthors, 3)),
+          highlightLine("최다 생성자", findTopByTotal(idleAuthors, 3)),
           highlightLine("최다 리뷰어", findTopByTotal(idleReviewers, 3)),
         ].filter((line): line is string => Boolean(line)),
       },
@@ -1422,7 +1422,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
         count: reviewRequests.length,
         totalMetric: sumMetric(reviewRequests, reviewMetric),
         highlights: [
-          highlightLine("최다 작성자", findTopByTotal(reviewAuthors, 3)),
+          highlightLine("최다 생성자", findTopByTotal(reviewAuthors, 3)),
           highlightLine("최다 대기 리뷰어", findTopByTotal(reviewReviewers, 3)),
         ].filter((line): line is string => Boolean(line)),
       },
@@ -1433,7 +1433,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
         count: backlogIssues.length,
         totalMetric: sumMetric(backlogIssues, backlogMetric),
         highlights: [
-          highlightLine("최다 작성자", findTopByTotal(backlogAuthors, 3)),
+          highlightLine("최다 생성자", findTopByTotal(backlogAuthors, 3)),
           highlightLine("최다 담당자", findTopByTotal(backlogAssignees, 3)),
         ].filter((line): line is string => Boolean(line)),
       },
@@ -1444,7 +1444,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
         count: stalledIssues.length,
         totalMetric: sumMetric(stalledIssues, stalledMetric),
         highlights: [
-          highlightLine("최다 작성자", findTopByTotal(stalledAuthors, 3)),
+          highlightLine("최다 생성자", findTopByTotal(stalledAuthors, 3)),
           highlightLine("최다 담당자", findTopByTotal(stalledAssignees, 3)),
         ].filter((line): line is string => Boolean(line)),
       },
