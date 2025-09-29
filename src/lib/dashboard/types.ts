@@ -104,6 +104,7 @@ export type OrganizationAnalytics = {
     avgPrSize: ComparisonValue;
     avgCommentsPerIssue: ComparisonValue;
     avgCommentsPerPr: ComparisonValue;
+    avgReviewsPerPr: ComparisonValue;
     totalEvents: ComparisonValue;
   };
   activityBreakdown: {
@@ -123,6 +124,12 @@ export type OrganizationAnalytics = {
     childIssueWorkTime: MetricHistoryEntry[];
     prsCreated: MetricHistoryEntry[];
     prsMerged: MetricHistoryEntry[];
+    avgPrAdditions: MetricHistoryEntry[];
+    avgPrNet: MetricHistoryEntry[];
+    avgCommentsPerPr: MetricHistoryEntry[];
+    avgReviewsPerPr: MetricHistoryEntry[];
+    mergeWithoutReviewRatio: MetricHistoryEntry[];
+    avgCommentsPerIssue: MetricHistoryEntry[];
     reviewParticipation: MetricHistoryEntry[];
     reviewResponseTime: MetricHistoryEntry[];
   };

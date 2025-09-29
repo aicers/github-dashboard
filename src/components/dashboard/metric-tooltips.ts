@@ -8,6 +8,15 @@ export const organizationMetricTooltips = {
     "선택한 기간 동안 생성된 Pull Request 개수입니다. Dependabot PR은 제외됩니다.",
   prsMerged:
     "선택한 기간 동안 병합된 Pull Request 개수입니다. Dependabot PR은 제외됩니다.",
+  avgPrSize:
+    "머지된 PR 한 건당 평균 코드 변경 라인 수입니다. 상단 버튼으로 추가 라인 기준과 순증 라인 기준을 전환할 수 있으며, 그래프도 선택한 기준에 맞춰 표시됩니다. Dependabot PR은 제외됩니다.",
+  avgCommentsPerPr:
+    "머지된 Pull Request 하나당 남긴 일반 댓글 수의 평균입니다. Dependabot PR은 제외됩니다.",
+  avgReviewsPerPr:
+    "머지된 Pull Request 하나당 제출된 코드 리뷰 수의 평균입니다. Dependabot PR은 제외됩니다.",
+  mergeWithoutReviewRatio:
+    "리뷰 없이 머지된 Pull Request 비율입니다. (리뷰 없는 머지 건수 ÷ 전체 머지 건수) Dependabot PR은 제외됩니다.",
+  avgCommentsPerIssue: "해결된 이슈 한 건당 남긴 댓글 수의 평균입니다.",
   reviewParticipation:
     "리뷰 요청에 응답한 구성원의 비율(응답한 리뷰어 수 ÷ 요청된 리뷰어 수)입니다. Dependabot PR은 제외됩니다.",
   reviewResponseTime:
