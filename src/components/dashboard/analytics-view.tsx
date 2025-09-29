@@ -1,7 +1,15 @@
 "use client";
 
 import { ArrowDown, ArrowUp, ArrowUpDown, Info } from "lucide-react";
-import { Fragment, type ReactNode, useId, useMemo, useState } from "react";
+import {
+  type Dispatch,
+  Fragment,
+  type ReactNode,
+  type SetStateAction,
+  useId,
+  useMemo,
+  useState,
+} from "react";
 import {
   CartesianGrid,
   Legend,
@@ -420,6 +428,8 @@ export function AnalyticsView({
 
   const [mainBranchSortKey, setMainBranchSortKey] =
     useState<MainBranchSortKey>("count");
+  const [activeMainBranchSortKey, setActiveMainBranchSortKey] =
+    useState<MainBranchSortKey>("count");
 
   const dateKeys = useMemo(
     () => buildDateKeys(analytics.range.start, analytics.range.end),
@@ -676,11 +686,11 @@ export function AnalyticsView({
 
   const activeMainBranchContributionEntries = useMemo(() => {
     const getSortValue = (entry: LeaderboardEntry) => {
-      if (mainBranchSortKey === "additions") {
+      if (activeMainBranchSortKey === "additions") {
         return getLeaderboardDetailValue(entry, "+");
       }
 
-      if (mainBranchSortKey === "net") {
+      if (activeMainBranchSortKey === "net") {
         return (
           getLeaderboardDetailValue(entry, "+") -
           getLeaderboardDetailValue(entry, "-")
@@ -703,19 +713,22 @@ export function AnalyticsView({
 
       return valueB - valueA;
     });
-  }, [rawActiveMainBranchContributionEntries, mainBranchSortKey]);
+  }, [rawActiveMainBranchContributionEntries, activeMainBranchSortKey]);
 
-  const renderMainBranchSortControls = () => (
+  const renderMainBranchSortControls = (
+    sortKey: MainBranchSortKey,
+    onSortChange: Dispatch<SetStateAction<MainBranchSortKey>>,
+  ) => (
     <div className="flex items-center gap-2 text-xs text-muted-foreground">
       <span className="hidden font-medium md:inline">정렬</span>
       <div className="flex rounded-md border border-border/60 bg-background/80 p-0.5">
         {MAIN_BRANCH_SORT_OPTIONS.map((option) => {
-          const isActive = mainBranchSortKey === option.key;
+          const isActive = sortKey === option.key;
           return (
             <button
               key={option.key}
               type="button"
-              onClick={() => setMainBranchSortKey(option.key)}
+              onClick={() => onSortChange(option.key)}
               className={cn(
                 "rounded-[6px] px-2 py-1 text-xs font-medium transition-colors",
                 isActive
@@ -1306,7 +1319,10 @@ export function AnalyticsView({
             secondaryLabel="승인 리뷰"
             unit="건"
             tooltip="머지된 PR 기여에 더해 APPROVED 상태 리뷰만 집계합니다. Dependabot Pull Request는 제외됩니다."
-            headerActions={renderMainBranchSortControls()}
+            headerActions={renderMainBranchSortControls(
+              activeMainBranchSortKey,
+              setActiveMainBranchSortKey,
+            )}
           />
           <LeaderboardTable
             title="메인 브랜치 기여"
@@ -1321,7 +1337,10 @@ export function AnalyticsView({
               "+/− 값은 병합된 PR의 코드 추가·삭제 라인 합계이며",
               "Dependabot Pull Request는 제외됩니다.",
             ].join("\n")}
-            headerActions={renderMainBranchSortControls()}
+            headerActions={renderMainBranchSortControls(
+              mainBranchSortKey,
+              setMainBranchSortKey,
+            )}
           />
           <LeaderboardTable
             title="빠른 리뷰 응답"
