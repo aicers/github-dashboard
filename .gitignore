@@ -23,6 +23,7 @@
 # misc
 .DS_Store
 *.pem
+github-dashboard-*.tar
 
 # debug
 npm-debug.log*
