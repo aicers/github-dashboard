@@ -157,6 +157,19 @@ function buildHistorySeries(
   }));
 }
 
+function roundToOneDecimal(value: number | null | undefined): number {
+  if (value === null || value === undefined) {
+    return 0;
+  }
+
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return 0;
+  }
+
+  return Math.round(numeric * 10) / 10;
+}
+
 function normalizeText(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
@@ -297,7 +310,10 @@ type PrAggregateRow = {
   avg_merge_hours: number | null;
   merge_without_review: number;
   avg_lines_changed: number | null;
+  avg_additions: number | null;
+  avg_deletions: number | null;
   avg_comments_pr: number | null;
+  avg_reviews_pr: number | null;
 };
 
 async function fetchPrAggregates(
@@ -321,7 +337,10 @@ async function fetchPrAggregates(
     avg_merge_hours: number | null;
     merge_without_review: number | null;
     avg_lines_changed: number | null;
+    avg_additions: number | null;
+    avg_deletions: number | null;
     avg_comments_pr: number | null;
+    avg_reviews_pr: number | null;
   }>(
     `WITH review_counts AS (
        SELECT r.pull_request_id, COUNT(*) FILTER (WHERE r.github_submitted_at IS NOT NULL) AS review_count
@@ -365,13 +384,31 @@ async function fetchPrAggregates(
          FILTER (
            WHERE p.github_merged_at BETWEEN $1 AND $2
              AND NOT p.is_dependabot
-         ) AS avg_lines_changed,
+        ) AS avg_lines_changed,
+       AVG(COALESCE((p.data ->> 'additions')::numeric, 0))
+         FILTER (
+           WHERE p.github_merged_at BETWEEN $1 AND $2
+             AND p.github_merged_at IS NOT NULL
+             AND NOT p.is_dependabot
+         ) AS avg_additions,
+       AVG(COALESCE((p.data ->> 'deletions')::numeric, 0))
+         FILTER (
+           WHERE p.github_merged_at BETWEEN $1 AND $2
+             AND p.github_merged_at IS NOT NULL
+             AND NOT p.is_dependabot
+         ) AS avg_deletions,
        AVG(COALESCE((p.data -> 'comments' ->> 'totalCount')::numeric, 0))
          FILTER (
            WHERE p.github_merged_at BETWEEN $1 AND $2
              AND p.github_merged_at IS NOT NULL
              AND NOT p.is_dependabot
-         ) AS avg_comments_pr
+        ) AS avg_comments_pr,
+       AVG(COALESCE(rc.review_count, 0))
+         FILTER (
+           WHERE p.github_merged_at BETWEEN $1 AND $2
+             AND p.github_merged_at IS NOT NULL
+             AND NOT p.is_dependabot
+        ) AS avg_reviews_pr
      FROM pull_requests_with_flags p
      LEFT JOIN review_counts rc ON rc.pull_request_id = p.id
      WHERE (p.github_created_at BETWEEN $1 AND $2
@@ -390,7 +427,10 @@ async function fetchPrAggregates(
       avg_merge_hours: null,
       merge_without_review: 0,
       avg_lines_changed: null,
+      avg_additions: null,
+      avg_deletions: null,
       avg_comments_pr: null,
+      avg_reviews_pr: null,
     };
   }
 
@@ -407,7 +447,10 @@ async function fetchPrAggregates(
     avg_merge_hours: row.avg_merge_hours,
     merge_without_review: Number(row.merge_without_review ?? 0),
     avg_lines_changed: row.avg_lines_changed,
+    avg_additions: row.avg_additions,
+    avg_deletions: row.avg_deletions,
     avg_comments_pr: row.avg_comments_pr,
+    avg_reviews_pr: row.avg_reviews_pr,
   };
 }
 
@@ -3441,6 +3484,73 @@ export async function getDashboardAnalytics(
       previousPrs.prs_merged,
       currentPrs.prs_merged,
     ]),
+    avgPrAdditions: buildHistorySeries([
+      roundToOneDecimal(previous4Prs.avg_additions),
+      roundToOneDecimal(previous3Prs.avg_additions),
+      roundToOneDecimal(previous2Prs.avg_additions),
+      roundToOneDecimal(previousPrs.avg_additions),
+      roundToOneDecimal(currentPrs.avg_additions),
+    ]),
+    avgPrNet: buildHistorySeries([
+      roundToOneDecimal(
+        Number(previous4Prs.avg_additions ?? 0) -
+          Number(previous4Prs.avg_deletions ?? 0),
+      ),
+      roundToOneDecimal(
+        Number(previous3Prs.avg_additions ?? 0) -
+          Number(previous3Prs.avg_deletions ?? 0),
+      ),
+      roundToOneDecimal(
+        Number(previous2Prs.avg_additions ?? 0) -
+          Number(previous2Prs.avg_deletions ?? 0),
+      ),
+      roundToOneDecimal(
+        Number(previousPrs.avg_additions ?? 0) -
+          Number(previousPrs.avg_deletions ?? 0),
+      ),
+      roundToOneDecimal(
+        Number(currentPrs.avg_additions ?? 0) -
+          Number(currentPrs.avg_deletions ?? 0),
+      ),
+    ]),
+    avgCommentsPerPr: buildHistorySeries([
+      Number(previous4Prs.avg_comments_pr ?? 0),
+      Number(previous3Prs.avg_comments_pr ?? 0),
+      Number(previous2Prs.avg_comments_pr ?? 0),
+      Number(previousPrs.avg_comments_pr ?? 0),
+      Number(currentPrs.avg_comments_pr ?? 0),
+    ]),
+    avgReviewsPerPr: buildHistorySeries([
+      Number(previous4Prs.avg_reviews_pr ?? 0),
+      Number(previous3Prs.avg_reviews_pr ?? 0),
+      Number(previous2Prs.avg_reviews_pr ?? 0),
+      Number(previousPrs.avg_reviews_pr ?? 0),
+      Number(currentPrs.avg_reviews_pr ?? 0),
+    ]),
+    mergeWithoutReviewRatio: buildHistorySeries([
+      previous4Prs.prs_merged
+        ? previous4Prs.merge_without_review / previous4Prs.prs_merged
+        : 0,
+      previous3Prs.prs_merged
+        ? previous3Prs.merge_without_review / previous3Prs.prs_merged
+        : 0,
+      previous2Prs.prs_merged
+        ? previous2Prs.merge_without_review / previous2Prs.prs_merged
+        : 0,
+      previousPrs.prs_merged
+        ? previousPrs.merge_without_review / previousPrs.prs_merged
+        : 0,
+      currentPrs.prs_merged
+        ? currentPrs.merge_without_review / currentPrs.prs_merged
+        : 0,
+    ]),
+    avgCommentsPerIssue: buildHistorySeries([
+      Number(previous4Issues.avg_comments_issue ?? 0),
+      Number(previous3Issues.avg_comments_issue ?? 0),
+      Number(previous2Issues.avg_comments_issue ?? 0),
+      Number(previousIssues.avg_comments_issue ?? 0),
+      Number(currentIssues.avg_comments_issue ?? 0),
+    ]),
     reviewParticipation: buildHistorySeries([
       previous4Reviews.avg_participation,
       previous3Reviews.avg_participation,
@@ -3489,13 +3599,36 @@ export async function getDashboardAnalytics(
         ? previousPrs.merge_without_review / previousPrs.prs_merged
         : 0,
     ),
-    avgPrSize: buildComparison(
-      Number(currentPrs.avg_lines_changed ?? 0),
-      Number(previousPrs.avg_lines_changed ?? 0),
-    ),
+    avgPrSize: (() => {
+      const currentTotal = roundToOneDecimal(currentPrs.avg_lines_changed);
+      const previousTotal = roundToOneDecimal(previousPrs.avg_lines_changed);
+      const currentAdditions = roundToOneDecimal(currentPrs.avg_additions);
+      const previousAdditions = roundToOneDecimal(previousPrs.avg_additions);
+      const currentDeletions = roundToOneDecimal(currentPrs.avg_deletions);
+      const previousDeletions = roundToOneDecimal(previousPrs.avg_deletions);
+
+      const comparison = buildComparison(currentTotal, previousTotal);
+      comparison.breakdown = [
+        {
+          label: "+ 합계",
+          current: currentAdditions,
+          previous: previousAdditions,
+        },
+        {
+          label: "- 합계",
+          current: currentDeletions,
+          previous: previousDeletions,
+        },
+      ];
+      return comparison;
+    })(),
     avgCommentsPerPr: buildComparison(
       Number(currentPrs.avg_comments_pr ?? 0),
       Number(previousPrs.avg_comments_pr ?? 0),
+    ),
+    avgReviewsPerPr: buildComparison(
+      Number(currentPrs.avg_reviews_pr ?? 0),
+      Number(previousPrs.avg_reviews_pr ?? 0),
     ),
   };
 

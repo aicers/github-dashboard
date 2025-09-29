@@ -1,5 +1,5 @@
 import { Info } from "lucide-react";
-import { type ReactElement, useId } from "react";
+import { type ReactElement, type ReactNode, useId } from "react";
 import {
   type DotProps,
   Line,
@@ -14,12 +14,12 @@ import {
   changeColor,
   formatChange,
   formatMetricValue,
-  formatNumber,
   type MetricFormat,
   type MetricImpact,
 } from "@/components/dashboard/metric-utils";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -47,6 +47,8 @@ type MetricCardProps = {
   impact?: MetricImpact;
   tooltip?: string;
   history?: Array<{ period: PeriodKey; label: string; value: number | null }>;
+  actions?: ReactNode;
+  valueOverride?: string;
 };
 
 export function MetricCard({
@@ -57,6 +59,8 @@ export function MetricCard({
   impact = "positive",
   tooltip,
   history,
+  actions,
+  valueOverride,
 }: MetricCardProps) {
   const tooltipId = useId();
   const metricUnit = "unit" in metric ? metric.unit : undefined;
@@ -64,7 +68,7 @@ export function MetricCard({
     metricUnit != null
       ? { current: metric.current, unit: metricUnit }
       : { current: metric.current };
-  const valueLabel = formatMetricValue(valueMetric, format);
+  const valueLabel = valueOverride ?? formatMetricValue(valueMetric, format);
   const { changeLabel, percentLabel } = formatChange(metric, format);
   const changeClass = changeColor(impact, metric.absoluteChange);
   const historyData = (history ?? []).map((entry) => {
@@ -169,6 +173,7 @@ export function MetricCard({
             </button>
           )}
         </CardTitle>
+        {actions ? <CardAction>{actions}</CardAction> : null}
         {description && (
           <CardDescription className="text-xs text-muted-foreground">
             {description}
@@ -177,15 +182,6 @@ export function MetricCard({
       </CardHeader>
       <CardContent className="flex flex-col gap-2 pb-4">
         <span className="text-3xl font-semibold">{valueLabel}</span>
-        {metric.breakdown?.length ? (
-          <span className="text-xs text-muted-foreground">
-            (
-            {metric.breakdown
-              .map((entry) => `${entry.label} ${formatNumber(entry.current)}`)
-              .join(", ")}
-            )
-          </span>
-        ) : null}
         <span className={`text-xs font-medium ${changeClass}`}>
           {changeLabel} ({percentLabel})
         </span>

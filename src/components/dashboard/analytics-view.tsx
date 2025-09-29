@@ -35,6 +35,7 @@ import {
 } from "@/components/dashboard/metric-utils";
 import { RepoDistributionList } from "@/components/dashboard/repo-distribution-list";
 import { useDashboardAnalytics } from "@/components/dashboard/use-dashboard-analytics";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardAction,
@@ -44,6 +45,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import type {
+  ComparisonValue,
   DashboardAnalytics,
   HeatmapCell,
   LeaderboardEntry,
@@ -70,6 +72,7 @@ type RepoSortKey =
   | "avgFirstReviewHours";
 type RepoSortDirection = "asc" | "desc";
 type MainBranchSortKey = "count" | "additions" | "net";
+type AvgPrSizeMode = "additions" | "net";
 
 const REPO_SORT_DEFAULT_DIRECTION: Record<RepoSortKey, RepoSortDirection> = {
   issuesCreated: "desc",
@@ -101,6 +104,18 @@ const MAIN_BRANCH_SORT_OPTIONS: Array<{
 ];
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
+
+const LINE_DECIMAL_FORMATTER = new Intl.NumberFormat(undefined, {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
+
+function roundToOneDecimal(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.round(value * 10) / 10;
+}
 
 function formatDateKey(date: Date) {
   return `${date.getUTCFullYear()}-${`${date.getUTCMonth() + 1}`.padStart(2, "0")}-${`${date.getUTCDate()}`.padStart(2, "0")}`;
@@ -417,6 +432,111 @@ export function AnalyticsView({
   const contributors = analytics.contributors;
 
   const organization = analytics.organization as OrganizationAnalytics;
+
+  const [avgPrSizeMode, setAvgPrSizeMode] =
+    useState<AvgPrSizeMode>("additions");
+
+  const {
+    additionsDisplay: avgPrSizeAdditionsDisplay,
+    deletionsDisplay: avgPrSizeDeletionsDisplay,
+    additionsMetric: avgPrSizeAdditionsMetric,
+    netMetric: avgPrSizeNetMetric,
+  } = useMemo(() => {
+    const baseMetric = organization.metrics.avgPrSize;
+    const breakdown = baseMetric.breakdown ?? [];
+    const additionsEntry = breakdown.find((entry) => entry.label === "+ 합계");
+    const deletionsEntry = breakdown.find((entry) => entry.label === "- 합계");
+
+    const fallbackCurrent = roundToOneDecimal(baseMetric.current ?? 0);
+    const fallbackPrevious = roundToOneDecimal(baseMetric.previous ?? 0);
+
+    const additionsCurrent = roundToOneDecimal(
+      Number(additionsEntry?.current ?? fallbackCurrent),
+    );
+    const additionsPrevious = roundToOneDecimal(
+      Number(additionsEntry?.previous ?? fallbackPrevious),
+    );
+    const deletionsCurrent = roundToOneDecimal(
+      Number(deletionsEntry?.current ?? 0),
+    );
+    const deletionsPrevious = roundToOneDecimal(
+      Number(deletionsEntry?.previous ?? 0),
+    );
+
+    const netCurrent = roundToOneDecimal(additionsCurrent - deletionsCurrent);
+    const netPrevious = roundToOneDecimal(
+      additionsPrevious - deletionsPrevious,
+    );
+
+    const toComparisonValue = (
+      current: number,
+      previous: number,
+    ): ComparisonValue => {
+      const absoluteChange = roundToOneDecimal(current - previous);
+      const percentChange =
+        previous === 0 ? null : (current - previous) / previous;
+      const value: ComparisonValue = {
+        current,
+        previous,
+        absoluteChange,
+        percentChange,
+      };
+      if (breakdown.length) {
+        value.breakdown = breakdown;
+      }
+      return value;
+    };
+
+    return {
+      additionsDisplay: LINE_DECIMAL_FORMATTER.format(additionsCurrent),
+      deletionsDisplay: LINE_DECIMAL_FORMATTER.format(deletionsCurrent),
+      additionsMetric: toComparisonValue(additionsCurrent, additionsPrevious),
+      netMetric: toComparisonValue(netCurrent, netPrevious),
+    };
+  }, [organization.metrics.avgPrSize]);
+
+  const avgPrSizeValueLabel = `+${avgPrSizeAdditionsDisplay} / -${avgPrSizeDeletionsDisplay} 라인`;
+  const avgPrSizeMetric =
+    avgPrSizeMode === "additions"
+      ? avgPrSizeAdditionsMetric
+      : avgPrSizeNetMetric;
+
+  const avgPrSizeHistory = useMemo(
+    () =>
+      toCardHistory(
+        avgPrSizeMode === "additions"
+          ? organization.metricHistory.avgPrAdditions
+          : organization.metricHistory.avgPrNet,
+      ),
+    [
+      avgPrSizeMode,
+      organization.metricHistory.avgPrAdditions,
+      organization.metricHistory.avgPrNet,
+    ],
+  );
+
+  const avgPrSizeModeActions = (
+    <div className="flex gap-1">
+      <Button
+        type="button"
+        size="sm"
+        variant={avgPrSizeMode === "additions" ? "default" : "outline"}
+        aria-pressed={avgPrSizeMode === "additions"}
+        onClick={() => setAvgPrSizeMode("additions")}
+      >
+        추가 라인
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        variant={avgPrSizeMode === "net" ? "default" : "outline"}
+        aria-pressed={avgPrSizeMode === "net"}
+        onClick={() => setAvgPrSizeMode("net")}
+      >
+        순증 라인
+      </Button>
+    </div>
+  );
 
   const [repoSort, setRepoSort] = useState<{
     key: RepoSortKey;
@@ -896,6 +1016,30 @@ export function AnalyticsView({
           history={toCardHistory(organization.metricHistory.prsMerged)}
         />
         <MetricCard
+          title="PR 평균 크기"
+          metric={avgPrSizeMetric}
+          format="count"
+          impact="negative"
+          tooltip={organizationMetricTooltips.avgPrSize}
+          history={avgPrSizeHistory}
+          actions={avgPrSizeModeActions}
+          valueOverride={avgPrSizeValueLabel}
+        />
+        <MetricCard
+          title="PR 평균 댓글"
+          metric={organization.metrics.avgCommentsPerPr}
+          format="ratio"
+          tooltip={organizationMetricTooltips.avgCommentsPerPr}
+          history={toCardHistory(organization.metricHistory.avgCommentsPerPr)}
+        />
+        <MetricCard
+          title="PR 평균 리뷰"
+          metric={organization.metrics.avgReviewsPerPr}
+          format="ratio"
+          tooltip={organizationMetricTooltips.avgReviewsPerPr}
+          history={toCardHistory(organization.metricHistory.avgReviewsPerPr)}
+        />
+        <MetricCard
           title="리뷰 참여 비율"
           metric={organization.metrics.reviewParticipation}
           format="percentage"
@@ -911,6 +1055,24 @@ export function AnalyticsView({
           impact="negative"
           tooltip={organizationMetricTooltips.reviewResponseTime}
           history={toCardHistory(organization.metricHistory.reviewResponseTime)}
+        />
+        <MetricCard
+          title="리뷰 없는 머지 비율"
+          metric={organization.metrics.mergeWithoutReviewRatio}
+          format="percentage"
+          tooltip={organizationMetricTooltips.mergeWithoutReviewRatio}
+          history={toCardHistory(
+            organization.metricHistory.mergeWithoutReviewRatio,
+          )}
+        />
+        <MetricCard
+          title="해결된 이슈 평균 댓글"
+          metric={organization.metrics.avgCommentsPerIssue}
+          format="ratio"
+          tooltip={organizationMetricTooltips.avgCommentsPerIssue}
+          history={toCardHistory(
+            organization.metricHistory.avgCommentsPerIssue,
+          )}
         />
       </section>
 
@@ -1129,57 +1291,6 @@ export function AnalyticsView({
                 ))}
               </tbody>
             </table>
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="grid gap-4">
-        <Card className="border-border/70">
-          <CardHeader>
-            <CardTitle className="text-base font-medium">
-              협업 품질 지표
-            </CardTitle>
-            <CardDescription className="text-sm text-muted-foreground">
-              Dependabot이 생성한 Pull Request는 해당 지표 계산에서 제외됩니다.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex items-center justify-between">
-              <span>머지된 PR 평균 크기</span>
-              <span className="font-medium">
-                {formatNumber(organization.metrics.avgPrSize.current)} 라인
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>머지된 PR 평균 댓글</span>
-              <span className="font-medium">
-                {organization.metrics.avgCommentsPerPr.current.toFixed(2)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>해결된 이슈 평균 댓글</span>
-              <span className="font-medium">
-                {organization.metrics.avgCommentsPerIssue.current.toFixed(2)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>머지된 PR 리뷰 참여 비율</span>
-              <span className="font-medium">
-                {(
-                  organization.metrics.reviewParticipation.current * 100
-                ).toFixed(1)}
-                %
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>리뷰 없는 머지 비율</span>
-              <span className="font-medium">
-                {(
-                  organization.metrics.mergeWithoutReviewRatio.current * 100
-                ).toFixed(1)}
-                %
-              </span>
-            </div>
           </CardContent>
         </Card>
       </section>
