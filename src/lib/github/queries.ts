@@ -246,6 +246,30 @@ export const repositoryPullRequestsQuery = gql`
               avatarUrl(size: 200)
             }
           }
+          mergedBy {
+            __typename
+            ... on User {
+              id
+              login
+              name
+              avatarUrl(size: 200)
+              createdAt
+              updatedAt
+            }
+            ... on Organization {
+              id
+              login
+              name
+              avatarUrl(size: 200)
+              createdAt
+              updatedAt
+            }
+            ... on Bot {
+              id
+              login
+              avatarUrl(size: 200)
+            }
+          }
           comments(first: 0) {
             totalCount
           }
