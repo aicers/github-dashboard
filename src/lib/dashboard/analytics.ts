@@ -1722,6 +1722,7 @@ async function fetchRepoComparison(
       COALESCE(pr_counts.prs_merged, 0) AS prs_merged,
       COALESCE(pr_merged_by_counts.prs_merged_by, 0) AS prs_merged_by,
       COALESCE(review_counts.reviews, 0) AS reviews,
+      COALESCE(review_counts.active_reviews, 0) AS active_reviews,
       COALESCE(comment_counts.comments, 0) AS comments,
       first_reviews.avg_first_review_hours
     FROM repo_ids
