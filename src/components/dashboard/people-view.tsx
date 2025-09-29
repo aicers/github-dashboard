@@ -372,7 +372,7 @@ export function PeopleView({
             />
           </section>
 
-          <section className="grid gap-4 lg:grid-cols-2">
+          <section className="flex flex-col gap-4">
             <Card className="border-border/70">
               <CardHeader>
                 <CardTitle className="text-base font-medium">
