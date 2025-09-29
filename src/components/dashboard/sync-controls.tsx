@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useId, useState, useTransition } from "react";
+import { useEffect, useId, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -26,7 +26,37 @@ type ApiResponse<T> = {
   result?: T;
 };
 
-function formatDateTime(value?: string | null) {
+async function parseApiResponse<T>(
+  response: Response,
+): Promise<ApiResponse<T>> {
+  const rawBody = await response.text();
+  const body = rawBody.trim();
+
+  if (!body) {
+    const statusLabel = response.statusText
+      ? `${response.status} ${response.statusText}`
+      : `${response.status}`;
+    throw new Error(`서버에서 빈 응답이 반환되었습니다. (${statusLabel})`);
+  }
+
+  try {
+    return JSON.parse(body) as ApiResponse<T>;
+  } catch (error) {
+    const statusLabel = response.statusText
+      ? `${response.status} ${response.statusText}`
+      : `${response.status}`;
+    const preview = body.replace(/\s+/g, " ").slice(0, 120);
+    console.error("Unexpected non-JSON response", {
+      status: response.status,
+      statusText: response.statusText,
+      preview,
+      error,
+    });
+    throw new Error(`서버 응답을 해석하지 못했습니다. (${statusLabel})`);
+  }
+}
+
+function formatDateTime(value?: string | null, timeZone?: string | null) {
   if (!value) {
     return "–";
   }
@@ -36,7 +66,29 @@ function formatDateTime(value?: string | null) {
     return value;
   }
 
-  return date.toLocaleString();
+  const baseOptions: Intl.DateTimeFormatOptions = {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  };
+
+  try {
+    if (timeZone) {
+      return date.toLocaleString(undefined, {
+        ...baseOptions,
+        timeZone,
+        timeZoneName: "short",
+      });
+    }
+
+    return date.toLocaleString(undefined, baseOptions);
+  } catch (error) {
+    console.error("Failed to format date", { value, timeZone, error });
+    return date.toLocaleString();
+  }
 }
 
 function capitalize(value: string) {
@@ -52,6 +104,7 @@ const statusColors: Record<string, string> = {
 export function SyncControls({ status }: SyncControlsProps) {
   const router = useRouter();
   const config = status.config;
+  const timeZone = config?.timezone ?? null;
   const backfillInputId = useId();
   const [autoEnabled, setAutoEnabled] = useState(
     config?.auto_sync_enabled ?? false,
@@ -68,8 +121,12 @@ export function SyncControls({ status }: SyncControlsProps) {
   const [isTogglingAuto, startToggleAuto] = useTransition();
   const [isResetting, startReset] = useTransition();
 
+  useEffect(() => {
+    setAutoEnabled(config?.auto_sync_enabled ?? false);
+  }, [config?.auto_sync_enabled]);
+
   function formatRange(startIso: string | null, endIso: string | null) {
-    return `${formatDateTime(startIso)} → ${formatDateTime(endIso)}`;
+    return `${formatDateTime(startIso, timeZone)} → ${formatDateTime(endIso, timeZone)}`;
   }
 
   async function handleBackfill() {
@@ -87,7 +144,7 @@ export function SyncControls({ status }: SyncControlsProps) {
           },
           body: JSON.stringify({ startDate: backfillDate }),
         });
-        const data = (await response.json()) as ApiResponse<BackfillResult>;
+        const data = await parseApiResponse<BackfillResult>(response);
 
         if (!data.success) {
           throw new Error(data.message ?? "백필 실행에 실패했습니다.");
@@ -138,7 +195,7 @@ export function SyncControls({ status }: SyncControlsProps) {
             intervalMinutes: intervalValue,
           }),
         });
-        const data = (await response.json()) as ApiResponse<unknown>;
+        const data = await parseApiResponse<unknown>(response);
 
         if (!data.success) {
           throw new Error(data.message ?? "자동 동기화 설정에 실패했습니다.");
@@ -175,7 +232,7 @@ export function SyncControls({ status }: SyncControlsProps) {
           },
           body: JSON.stringify({ preserveLogs: true }),
         });
-        const data = (await response.json()) as ApiResponse<unknown>;
+        const data = await parseApiResponse<unknown>(response);
 
         if (!data.success) {
           throw new Error(data.message ?? "데이터 초기화에 실패했습니다.");
@@ -247,9 +304,17 @@ export function SyncControls({ status }: SyncControlsProps) {
             </CardAction>
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <p>최근 동기화: {formatDateTime(config?.last_sync_completed_at)}</p>
             <p>
-              마지막 성공: {formatDateTime(config?.last_successful_sync_at)}
+              최근 동기화:{" "}
+              <span>
+                {formatDateTime(config?.last_sync_completed_at, timeZone)}
+              </span>
+            </p>
+            <p>
+              마지막 성공:{" "}
+              <span>
+                {formatDateTime(config?.last_successful_sync_at, timeZone)}
+              </span>
             </p>
             <p>
               주기: {(config?.sync_interval_minutes ?? 60).toLocaleString()}분
@@ -383,8 +448,8 @@ export function SyncControls({ status }: SyncControlsProps) {
                 </span>
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
-                {formatDateTime(log.started_at)} →{" "}
-                {formatDateTime(log.finished_at)}
+                {formatDateTime(log.started_at, timeZone)} →{" "}
+                {formatDateTime(log.finished_at, timeZone)}
               </p>
               {log.message && <p className="mt-1 text-sm">{log.message}</p>}
             </div>
