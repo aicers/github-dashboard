@@ -98,12 +98,13 @@ proxy, and ship it as a tarball.
 1. Build for the target platform and tag the image:
 
    ```bash
-   docker buildx build --platform linux/amd64 -t github-dashboard:0.1.0 .
+   docker buildx build --platform linux/amd64 -t github-dashboard:0.1.0 --load .
    ```
 
    > Replace `github-dashboard:0.1.0` with the tag you plan to deploy. The
    > command automatically uses your default builder (create one with
-   > `docker buildx create --use` if missing).
+   > `docker buildx create --use` if missing). `--load` pulls the built image
+   > into the local Docker daemon so the tar export in the next step works.
 
 2. Optionally smoke-test locally over HTTPS:
 
@@ -134,9 +135,9 @@ proxy, and ship it as a tarball.
 
 <!-- markdownlint-disable MD013 -->
    ```bash
+   docker compose down
    docker load -i /path/to/github-dashboard/github-dashboard-0.1.0.tar
    # ensure /path/to/github-dashboard/infra/nginx/certs/local.crt and local.key contain your server certs
-   docker compose down
    docker compose up -d --force-recreate
    ```
 <!-- markdownlint-enable MD013 -->
