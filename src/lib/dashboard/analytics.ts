@@ -1306,6 +1306,165 @@ async function fetchReviewHeatmap(
   }));
 }
 
+async function fetchIndividualReviewHeatmap(
+  personId: string,
+  start: string,
+  end: string,
+  repositoryIds: string[] | undefined,
+  timeZone: string,
+): Promise<HeatmapCell[]> {
+  const params: unknown[] = [personId, start, end];
+  let repoClause = "";
+  if (repositoryIds?.length) {
+    params.push(repositoryIds);
+    const index = params.length;
+    repoClause = ` AND pr.repository_id = ANY($${index}::text[])`;
+  }
+
+  const timezoneIndex = params.length + 1;
+  const result = await query<HeatmapRow>(
+    `SELECT
+       EXTRACT(DOW FROM (r.github_submitted_at AT TIME ZONE $${timezoneIndex}))::int AS dow,
+       EXTRACT(HOUR FROM (r.github_submitted_at AT TIME ZONE $${timezoneIndex}))::int AS hour,
+       COUNT(*)
+     FROM reviews r
+     JOIN pull_requests pr ON pr.id = r.pull_request_id
+     LEFT JOIN users u ON u.id = pr.author_id
+     WHERE r.author_id = $1
+       AND r.github_submitted_at BETWEEN $2 AND $3${repoClause}
+       AND pr.author_id <> $1
+       AND COALESCE(r.state, '') <> 'DISMISSED'
+       AND ${DEPENDABOT_FILTER}
+     GROUP BY dow, hour
+     ORDER BY dow, hour`,
+    [...params, timeZone],
+  );
+
+  return result.rows.map((row) => ({
+    day: row.dow,
+    hour: row.hour,
+    count: Number(row.count ?? 0),
+  }));
+}
+
+async function fetchIndividualActivityHeatmap(
+  personId: string,
+  start: string,
+  end: string,
+  repositoryIds: string[] | undefined,
+  timeZone: string,
+): Promise<HeatmapCell[]> {
+  const params: unknown[] = [personId, start, end];
+  let repoClauseIssues = "";
+  let repoClausePrAuthored = "";
+  let repoClausePrMerged = "";
+  let repoClauseReview = "";
+  let repoClauseCommentIssue = "";
+  let repoClauseCommentPr = "";
+  if (repositoryIds?.length) {
+    params.push(repositoryIds);
+    const index = params.length;
+    repoClauseIssues = ` AND i.repository_id = ANY($${index}::text[])`;
+    repoClausePrAuthored = ` AND p.repository_id = ANY($${index}::text[])`;
+    repoClausePrMerged = ` AND pr.repository_id = ANY($${index}::text[])`;
+    repoClauseReview = ` AND pr.repository_id = ANY($${index}::text[])`;
+    repoClauseCommentIssue = ` AND i.repository_id = ANY($${index}::text[])`;
+    repoClauseCommentPr = ` AND pr.repository_id = ANY($${index}::text[])`;
+  }
+
+  const timezoneIndex = params.length + 1;
+  const result = await query<HeatmapRow>(
+    `WITH issue_events AS (
+       SELECT
+         EXTRACT(DOW FROM (i.github_created_at AT TIME ZONE $${timezoneIndex}))::int AS dow,
+         EXTRACT(HOUR FROM (i.github_created_at AT TIME ZONE $${timezoneIndex}))::int AS hour,
+         COUNT(*) AS count
+       FROM issues i
+       WHERE i.author_id = $1
+         AND i.github_created_at BETWEEN $2 AND $3${repoClauseIssues}
+       GROUP BY dow, hour
+     ),
+     pr_created_events AS (
+       SELECT
+         EXTRACT(DOW FROM (p.github_created_at AT TIME ZONE $${timezoneIndex}))::int AS dow,
+         EXTRACT(HOUR FROM (p.github_created_at AT TIME ZONE $${timezoneIndex}))::int AS hour,
+         COUNT(*) AS count
+       FROM pull_requests p
+       LEFT JOIN users u ON u.id = p.author_id
+       WHERE p.author_id = $1
+         AND p.github_created_at BETWEEN $2 AND $3${repoClausePrAuthored}
+         AND ${DEPENDABOT_FILTER}
+       GROUP BY dow, hour
+     ),
+     pr_merged_events AS (
+       SELECT
+         EXTRACT(DOW FROM (pr.github_merged_at AT TIME ZONE $${timezoneIndex}))::int AS dow,
+         EXTRACT(HOUR FROM (pr.github_merged_at AT TIME ZONE $${timezoneIndex}))::int AS hour,
+         COUNT(*) AS count
+       FROM pull_requests pr
+       LEFT JOIN users u ON u.id = pr.author_id
+       WHERE pr.data -> 'mergedBy' ->> 'id' = $1
+         AND pr.github_merged_at IS NOT NULL
+         AND pr.github_merged_at BETWEEN $2 AND $3${repoClausePrMerged}
+         AND ${DEPENDABOT_FILTER}
+       GROUP BY dow, hour
+     ),
+     review_events AS (
+       SELECT
+         EXTRACT(DOW FROM (r.github_submitted_at AT TIME ZONE $${timezoneIndex}))::int AS dow,
+         EXTRACT(HOUR FROM (r.github_submitted_at AT TIME ZONE $${timezoneIndex}))::int AS hour,
+         COUNT(*) AS count
+       FROM reviews r
+       JOIN pull_requests pr ON pr.id = r.pull_request_id
+       LEFT JOIN users u ON u.id = pr.author_id
+       WHERE r.author_id = $1
+         AND r.github_submitted_at BETWEEN $2 AND $3${repoClauseReview}
+         AND pr.author_id <> $1
+         AND COALESCE(r.state, '') <> 'DISMISSED'
+         AND ${DEPENDABOT_FILTER}
+       GROUP BY dow, hour
+     ),
+     comment_events AS (
+       SELECT
+         EXTRACT(DOW FROM (c.github_created_at AT TIME ZONE $${timezoneIndex}))::int AS dow,
+         EXTRACT(HOUR FROM (c.github_created_at AT TIME ZONE $${timezoneIndex}))::int AS hour,
+         COUNT(*) AS count
+       FROM comments c
+       LEFT JOIN issues i ON i.id = c.issue_id
+       LEFT JOIN pull_requests pr ON pr.id = c.pull_request_id
+       WHERE c.author_id = $1
+         AND c.github_created_at BETWEEN $2 AND $3
+         AND (
+           (c.issue_id IS NOT NULL${repoClauseCommentIssue})
+           OR (c.pull_request_id IS NOT NULL${repoClauseCommentPr})
+         )
+       GROUP BY dow, hour
+     ),
+     combined AS (
+       SELECT * FROM issue_events
+       UNION ALL
+       SELECT * FROM pr_created_events
+       UNION ALL
+       SELECT * FROM pr_merged_events
+       UNION ALL
+       SELECT * FROM review_events
+       UNION ALL
+       SELECT * FROM comment_events
+     )
+     SELECT dow, hour, SUM(count) AS count
+     FROM combined
+     GROUP BY dow, hour
+     ORDER BY dow, hour`,
+    [...params, timeZone],
+  );
+
+  return result.rows.map((row) => ({
+    day: row.dow,
+    hour: row.hour,
+    count: Number(row.count ?? 0),
+  }));
+}
+
 type RepoDistributionRow = {
   repository_id: string;
   issues: number;
@@ -4016,6 +4175,8 @@ export async function getDashboardAnalytics(
       individualMonthly,
       individualRepoRows,
       individualRepoComparisonRows,
+      individualReviewHeatmap,
+      individualActivityHeatmap,
     ] = await Promise.all([
       fetchIndividualMonthlyTrends(
         personProfile.id,
@@ -4035,6 +4196,20 @@ export async function getDashboardAnalytics(
         range.start,
         range.end,
         repositoryFilter,
+      ),
+      fetchIndividualReviewHeatmap(
+        personProfile.id,
+        range.start,
+        range.end,
+        repositoryFilter,
+        timeZone,
+      ),
+      fetchIndividualActivityHeatmap(
+        personProfile.id,
+        range.start,
+        range.end,
+        repositoryFilter,
+        timeZone,
       ),
     ]);
 
@@ -4351,6 +4526,8 @@ export async function getDashboardAnalytics(
           filteredIndividualRepoRows,
           repoProfileMap,
         ),
+        reviewHeatmap: individualReviewHeatmap,
+        activityHeatmap: individualActivityHeatmap,
       },
       repoComparison: mapRepoComparison(
         filteredIndividualRepoComparisonRows,
