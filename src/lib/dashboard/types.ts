@@ -197,6 +197,8 @@ export type IndividualMetricHistory = {
 export type IndividualTrends = {
   monthly: MultiTrendPoint[];
   repoActivity: RepoDistributionItem[];
+  reviewHeatmap: HeatmapCell[];
+  activityHeatmap: HeatmapCell[];
 };
 
 export type IndividualAnalytics = {

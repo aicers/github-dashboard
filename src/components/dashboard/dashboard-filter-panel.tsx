@@ -258,8 +258,8 @@ export function DashboardFilterPanel({
               <div className="flex items-center justify-between gap-3">
                 <dt className={helperTextClass}>현재 기간</dt>
                 <dd className="font-medium">
-                  {toDateInputValue(filters.start, timeZone)} ~{" "}
-                  {toDateInputValue(filters.end, timeZone)}
+                  {toDateInputValue(range.start, timeZone)} ~{" "}
+                  {toDateInputValue(range.end, timeZone)}
                 </dd>
               </div>
               {previousRanges.map((period) => (

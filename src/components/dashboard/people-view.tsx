@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
+import { ActivityHeatmap } from "@/components/dashboard/activity-heatmap";
 import { DashboardFilterPanel } from "@/components/dashboard/dashboard-filter-panel";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { toCardHistory } from "@/components/dashboard/metric-history";
@@ -145,6 +146,10 @@ export function PeopleView({
   }, [unsortedContributors]);
   const individual = analytics.individual;
   const individualHistory = individual?.metricHistory;
+  const reviewHeatmapData = individual?.trends.reviewHeatmap ?? [];
+  const activityHeatmapData = individual?.trends.activityHeatmap ?? [];
+  const hasReviewHeatmap = reviewHeatmapData.some((cell) => cell.count > 0);
+  const hasActivityHeatmap = activityHeatmapData.some((cell) => cell.count > 0);
 
   const summaryItems = useMemo(() => {
     if (!individual) {
@@ -365,6 +370,51 @@ export function PeopleView({
               tooltip={individualMetricTooltips.discussionComments}
               history={toCardHistory(individualHistory?.discussionComments)}
             />
+          </section>
+
+          <section className="grid gap-4 lg:grid-cols-2">
+            <Card className="border-border/70">
+              <CardHeader>
+                <CardTitle className="text-base font-medium">
+                  리뷰 활동 히트맵
+                </CardTitle>
+                <CardDescription className="text-sm text-muted-foreground">
+                  요일·시간대별 리뷰 집중도
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {hasReviewHeatmap ? (
+                  <ActivityHeatmap data={reviewHeatmapData} valueLabel="리뷰" />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    선택한 기간에는 리뷰 활동이 없습니다.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/70">
+              <CardHeader>
+                <CardTitle className="text-base font-medium">
+                  전체 활동 히트맵
+                </CardTitle>
+                <CardDescription className="text-sm text-muted-foreground">
+                  이슈 생성, 리뷰, PR 생성·머지, 코멘트 등 모든 활동
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {hasActivityHeatmap ? (
+                  <ActivityHeatmap
+                    data={activityHeatmapData}
+                    valueLabel="활동"
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    선택한 기간에는 활동 데이터가 없습니다.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
           </section>
 
           <section className="flex flex-col gap-3">

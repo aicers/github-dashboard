@@ -103,26 +103,51 @@ export function useDashboardAnalytics({
       const availableContributorIds = new Set(
         nextAnalytics.contributors.map((contributor) => contributor.id),
       );
-      setFilters((current) => {
-        const filteredRepoIds = current.repositoryIds.filter((id) =>
-          availableRepoIds.has(id),
-        );
-        const isRepoUpdated =
-          filteredRepoIds.length !== current.repositoryIds.length;
-        const isPersonAvailable =
-          current.personId === null ||
-          availableContributorIds.has(current.personId);
+      const sanitizedRepoIds = targetFilters.repositoryIds.filter((id) =>
+        availableRepoIds.has(id),
+      );
+      const nextRepoIds =
+        sanitizedRepoIds.length === targetFilters.repositoryIds.length
+          ? targetFilters.repositoryIds
+          : sanitizedRepoIds;
+      const nextPersonId =
+        targetFilters.personId &&
+        availableContributorIds.has(targetFilters.personId)
+          ? targetFilters.personId
+          : null;
 
-        if (!isRepoUpdated && isPersonAvailable) {
-          return current;
+      setFilters((current) => {
+        // Keep any newer in-flight edits if the user changed filters while this request was running.
+        if (current !== targetFilters) {
+          const filteredRepoIds = current.repositoryIds.filter((id) =>
+            availableRepoIds.has(id),
+          );
+          const repoChanged =
+            filteredRepoIds.length !== current.repositoryIds.length;
+          const personFromCurrent =
+            current.personId && availableContributorIds.has(current.personId)
+              ? current.personId
+              : null;
+
+          if (!repoChanged && personFromCurrent === current.personId) {
+            return current;
+          }
+
+          return {
+            ...current,
+            repositoryIds: repoChanged
+              ? filteredRepoIds
+              : current.repositoryIds,
+            personId: personFromCurrent,
+          };
         }
 
         return {
-          ...current,
-          repositoryIds: isRepoUpdated
-            ? filteredRepoIds
-            : current.repositoryIds,
-          personId: isPersonAvailable ? current.personId : null,
+          ...targetFilters,
+          start: nextAnalytics.range.start,
+          end: nextAnalytics.range.end,
+          repositoryIds: nextRepoIds,
+          personId: nextPersonId,
         };
       });
     } catch (fetchError) {
