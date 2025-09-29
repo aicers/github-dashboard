@@ -133,14 +133,18 @@ proxy, and ship it as a tarball.
 4. On the server, load the tarball, install the HTTPS certificate, and restart
    the containers (adjust the commands to your setup):
 
-<!-- markdownlint-disable MD013 -->
    ```bash
    docker compose down
    docker load -i /path/to/github-dashboard/github-dashboard-0.1.0.tar
-   # ensure /path/to/github-dashboard/infra/nginx/certs/local.crt and local.key contain your server certs
    docker compose up -d --force-recreate
    ```
-<!-- markdownlint-enable MD013 -->
+
+   Ensure `/path/to/github-dashboard/infra/nginx/certs/local.crt` and
+   `/path/to/github-dashboard/infra/nginx/certs/local.key` contain the
+   certificate and key signed for your server before restarting the stack. The
+   `--force-recreate` flag tears down and rebuilds all containers even when the
+   configuration or images have not changed, guaranteeing that the freshly
+   loaded image is used.
 
    > If you manage the container manually, use `docker stop <container>` followed
    > by `docker run ... github-dashboard:0.1.0` instead of the Compose commands.
