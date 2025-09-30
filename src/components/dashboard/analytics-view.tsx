@@ -238,6 +238,7 @@ function LeaderboardTable({
   secondaryLabel,
   tooltip,
   headerActions,
+  valueTooltip,
 }: {
   title: string;
   entries: LeaderboardEntry[];
@@ -246,8 +247,10 @@ function LeaderboardTable({
   secondaryLabel?: string;
   tooltip?: string;
   headerActions?: ReactNode;
+  valueTooltip?: (entry: LeaderboardEntry) => string | null;
 }) {
   const tooltipId = useId();
+  const valueTooltipPrefix = useId();
   return (
     <Card className="border-border/60">
       <CardHeader className="pb-3">
@@ -291,11 +294,37 @@ function LeaderboardTable({
               )}
             </div>
             <div className="flex flex-col items-end text-right">
-              <span className="font-semibold">
-                {valueFormatter
-                  ? valueFormatter(entry.value)
-                  : `${formatNumber(entry.value)}${unit ?? ""}`}
-              </span>
+              <div className="flex items-center justify-end gap-1">
+                <span className="font-semibold">
+                  {valueFormatter
+                    ? valueFormatter(entry.value)
+                    : `${formatNumber(entry.value)}${unit ?? ""}`}
+                </span>
+                {(() => {
+                  const valueTooltipText = valueTooltip?.(entry) ?? null;
+                  if (!valueTooltipText) {
+                    return null;
+                  }
+                  const entryTooltipId = `${valueTooltipPrefix}-${index}`;
+                  return (
+                    <button
+                      type="button"
+                      aria-describedby={entryTooltipId}
+                      aria-label={valueTooltipText}
+                      className="group relative inline-flex cursor-help items-center bg-transparent p-0 text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:text-foreground"
+                    >
+                      <Info className="h-3 w-3" aria-hidden="true" />
+                      <span
+                        id={entryTooltipId}
+                        role="tooltip"
+                        className="pointer-events-none absolute right-1/2 top-full z-20 w-48 translate-x-1/2 translate-y-2 rounded-md border border-border/60 bg-background px-2 py-1 text-xs text-muted-foreground opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+                      >
+                        {valueTooltipText}
+                      </span>
+                    </button>
+                  );
+                })()}
+              </div>
               {(secondaryLabel && entry.secondaryValue != null) ||
               entry.details?.length ? (
                 <div className="flex flex-col items-end text-right text-xs text-muted-foreground">
@@ -1403,7 +1432,16 @@ export function AnalyticsView({
             title="빠른 리뷰 응답"
             entries={analytics.leaderboard.fastestResponders}
             valueFormatter={formatHoursAsDaysHours}
-            tooltip="리뷰 요청 후 첫 응답까지 걸린 평균 시간입니다. 주말과 지정 휴일을 제외하며 Dependabot Pull Request는 포함하지 않습니다."
+            tooltip={[
+              "리뷰 요청 후 첫 응답(리뷰 제출, 댓글, 리액션 포함)까지 걸린 평균 시간입니다.",
+              "주말과 지정 휴일에 발생한 응답은 0시간으로 계산되며",
+              "Dependabot Pull Request는 포함하지 않습니다.",
+            ].join(" ")}
+            valueTooltip={(entry) =>
+              entry.value === 0
+                ? "주말이나 휴일에 응답하여 근무시간 기준으로 0시간 0분으로 표시됩니다."
+                : null
+            }
           />
           <LeaderboardTable
             title="이슈 생성"

@@ -20,7 +20,7 @@ export const organizationMetricTooltips = {
   reviewParticipation:
     "리뷰 요청에 응답한 구성원의 비율(응답한 리뷰어 수 ÷ 요청된 리뷰어 수)입니다. Dependabot PR은 제외됩니다.",
   reviewResponseTime:
-    "리뷰 요청이 생성된 후 첫 응답까지 걸린 평균 업무 시간입니다. 주말과 지정 휴일은 제외하며 Dependabot PR은 제외됩니다.",
+    "리뷰 요청이 생성된 후 첫 응답(리뷰 제출, 댓글, 리액션 포함)까지 걸린 평균 시간입니다. 주말과 지정 휴일에 발생한 응답은 0시간으로 계산되며 Dependabot PR은 제외됩니다.",
   parentIssueResolutionTime:
     "부모 이슈(다른 이슈를 하위 이슈로 포함하는 이슈)의 생성부터 종료까지 걸린 평균 시간입니다.",
   parentIssueWorkTime:
@@ -48,7 +48,7 @@ export const individualMetricTooltips = {
   activeReviewsCompleted:
     "이 구성원이 APPROVED로 제출한 리뷰 개수입니다. Dependabot Pull Request는 제외됩니다.",
   reviewResponseTime:
-    "이 구성원이 리뷰 요청을 받은 후 응답하기까지 걸린 평균 업무 시간입니다. 주말과 지정 휴일은 제외되며 Dependabot이 생성한 Pull Request는 제외됩니다.",
+    "이 구성원이 리뷰 요청을 받은 후 첫 응답(리뷰 제출, 댓글, 리액션 포함)까지 걸린 평균 시간입니다. 주말과 지정 휴일에 발생한 응답은 0시간으로 계산되며 Dependabot이 생성한 Pull Request는 제외됩니다.",
   reviewCoverage:
     "선택한 기간 동안 머지된 PR 가운데 이 구성원이 리뷰에 참여한 PR 비율입니다. (리뷰한 PR 수 ÷ 동일 기간 머지된 PR 수) Dependabot이 생성한 Pull Request는 제외됩니다.",
   reviewParticipation: "이 구성원의 리뷰 참여 비율입니다.",
