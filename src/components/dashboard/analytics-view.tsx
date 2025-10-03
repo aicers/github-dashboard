@@ -198,7 +198,12 @@ function formatHoursAsDaysHours(value: number) {
     return "–";
   }
 
-  const totalMinutes = Math.max(0, Math.round(value * 60));
+  const safeHours = Math.max(0, value);
+  if (safeHours * 60 < 1) {
+    return "1분 미만";
+  }
+
+  const totalMinutes = Math.round(safeHours * 60);
   let days = Math.floor(totalMinutes / (24 * 60));
   const remainingMinutes = totalMinutes - days * 24 * 60;
   const hours = Math.floor(remainingMinutes / 60);
@@ -234,6 +239,7 @@ function LeaderboardTable({
   title,
   entries,
   unit,
+  secondaryUnit,
   valueFormatter,
   secondaryLabel,
   tooltip,
@@ -243,6 +249,7 @@ function LeaderboardTable({
   title: string;
   entries: LeaderboardEntry[];
   unit?: string;
+  secondaryUnit?: string;
   valueFormatter?: (value: number) => string;
   secondaryLabel?: string;
   tooltip?: string;
@@ -332,10 +339,11 @@ function LeaderboardTable({
                     const lines: string[] = [];
                     const countParts: string[] = [];
                     const lineParts: string[] = [];
+                    const secondaryUnitText = secondaryUnit ?? unit ?? "";
 
                     if (secondaryLabel && entry.secondaryValue != null) {
                       countParts.push(
-                        `${secondaryLabel} ${formatNumber(entry.secondaryValue)}${unit ?? ""}`,
+                        `${secondaryLabel} ${formatNumber(entry.secondaryValue)}${secondaryUnitText}`,
                       );
                     }
 
@@ -1432,16 +1440,13 @@ export function AnalyticsView({
             title="빠른 리뷰 응답"
             entries={analytics.leaderboard.fastestResponders}
             valueFormatter={formatHoursAsDaysHours}
+            secondaryLabel="응답 수"
+            secondaryUnit="건"
             tooltip={[
               "리뷰 요청 후 첫 응답(리뷰 제출, 댓글, 리액션 포함)까지 걸린 평균 시간입니다.",
               "주말과 지정 휴일에 발생한 응답은 0시간으로 계산되며",
               "Dependabot Pull Request는 포함하지 않습니다.",
             ].join(" ")}
-            valueTooltip={(entry) =>
-              entry.value === 0
-                ? "주말이나 휴일에 응답하여 근무시간 기준으로 0시간 0분으로 표시됩니다."
-                : null
-            }
           />
           <LeaderboardTable
             title="이슈 생성"

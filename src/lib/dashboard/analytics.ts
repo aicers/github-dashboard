@@ -2116,7 +2116,7 @@ async function fetchLeaderboard(
         .map(([userId, { sum, count }]) => ({
           user_id: userId,
           value: sum / count,
-          secondary_value: null,
+          secondary_value: count,
         }))
         .sort((a, b) => a.value - b.value);
     }
