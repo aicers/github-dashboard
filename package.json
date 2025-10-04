@@ -10,6 +10,7 @@
     "format:check": "biome check --formatter-enabled true --linter-enabled false",
     "lint:md": "markdownlint \"**/*.md\"",
     "test": "vitest run",
+    "test:db": "vitest run --config vitest.db.config.ts",
     "test:watch": "vitest",
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit",
@@ -36,6 +37,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.2.5",
     "@tailwindcss/postcss": "^4",
+    "@testcontainers/postgresql": "^11.7.1",
     "@testing-library/jest-dom": "^6.8.0",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
