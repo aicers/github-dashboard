@@ -14,7 +14,7 @@
     "test:watch": "vitest",
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit",
-    "ci": "npm run lint && npm run typecheck && npm run test"
+    "ci": "biome ci --error-on-warnings . && npm run typecheck && npm run test && npm run test:db"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

@@ -7,10 +7,17 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  esbuild: {
+    jsx: "automatic",
+    jsxDev: true,
+  },
   test: {
     globals: true,
     environment: "node",
-    include: ["**/*.db.test.ts"],
+    include: [
+      "**/*.db.test.ts",
+      "**/analytics.issue-creation-closure.metrics.test.ts",
+    ],
     exclude: configDefaults.exclude,
   },
 });
