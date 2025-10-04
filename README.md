@@ -69,10 +69,22 @@ curl -X POST http://localhost:3000/api/sync/reset -d '{"preserveLogs":true}' \
 
 - `npm run lint` — Biome linting (Rust binary via CI and local npm package)
 - `npm run format` — Biome formatter (writes changes)
+- `biome ci --error-on-warnings .` — direct CLI run that combines Biome's
+  formatter and linter checks without writing files; it subsumes `npm run lint`
+  (lint-only wrapper) while differing from `npm run format`, which applies
+  formatting edits instead of reporting them
 - `npm run typecheck` — `tsc --noEmit`
 - `npm run test` — Vitest unit and component tests
+- `npm run test:db` — PostgreSQL integration suite scoped by `vitest.db.config.ts`
+  to `*.db.test.ts` specs; each spec imports `tests/helpers/postgres-container`
+  to launch a disposable PostgreSQL 16 Testcontainer, injects its connection URI
+  into `DATABASE_URL`, runs `ensureSchema()` so tables exist, and stops the
+  container once the suite finishes. Ensure Docker (or Colima on macOS) is
+  running first, and keep each spec responsible for cleaning its tables (for
+  example with `TRUNCATE`) to stay isolated.
 - `npm run test:watch` — watch mode
-- `npm run ci` — run lint, typecheck, and tests together
+- `npm run ci` — sequentially runs `biome ci --error-on-warnings .`,
+  `npm run typecheck`, `npm run test`, and `npm run test:db`
 
 ## Docker
 
@@ -164,7 +176,12 @@ executes:
 1. `npm ci`
 2. Biome linting (`biomejs/setup-biome@v2`)
 3. Type checking via `tsc --noEmit`
-4. Vitest test suite
+4. Markdown linting (`articulate/actions-markdownlint@v1`)
+5. Vitest unit and component tests (`npm run test`)
+6. PostgreSQL integration tests (`npm run test:db`) after pulling the
+   `postgres:16` image for Testcontainers
+7. Production image build via Docker Buildx (sanity check only; image is tagged
+   `github-dashboard:test`)
 
 ## Project Structure
 

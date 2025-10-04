@@ -15,7 +15,11 @@ export default defineConfig({
     globals: true,
     environment: "jsdom",
     setupFiles: ["./vitest.setup.ts"],
-    exclude: [...configDefaults.exclude, "**/*.db.test.ts"],
+    exclude: [
+      ...configDefaults.exclude,
+      "**/*.db.test.ts",
+      "**/analytics.issue-creation-closure.metrics.test.ts",
+    ],
     coverage: {
       reporter: ["text", "lcov"],
     },

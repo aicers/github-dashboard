@@ -4730,3 +4730,9 @@ export async function getDashboardAnalytics(
     weekStart,
   };
 }
+
+export const __test__ = {
+  buildDurationComparison,
+  buildHistorySeries,
+  summarizeIssueDurations,
+};
