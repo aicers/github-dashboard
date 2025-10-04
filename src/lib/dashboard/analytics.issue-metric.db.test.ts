@@ -20,14 +20,14 @@ async function insertIssue(issue: DbIssue) {
   await upsertIssue(issue);
 }
 
-describe("analytics issue creation metric", () => {
+describe("analytics issue metrics", () => {
   beforeEach(async () => {
     await query(
       "TRUNCATE TABLE issues, pull_requests, reviews, comments, reactions, review_requests, repositories, users RESTART IDENTITY CASCADE",
     );
   });
 
-  it("counts issues created across current and previous ranges", async () => {
+  it("builds issue creation metrics with five-period history", async () => {
     const actor: DbActor = {
       id: "user-1",
       login: "octocat",
@@ -46,56 +46,80 @@ describe("analytics issue creation metric", () => {
     };
     await upsertRepository(repository);
 
-    const issues: DbIssue[] = [
-      {
-        id: "issue-current-1",
-        number: 1,
+    let issueNumber = 1;
+    const makeIssue = ({
+      id,
+      createdAt,
+      closedAt,
+      state,
+    }: {
+      id: string;
+      createdAt: string;
+      closedAt?: string | null;
+      state?: DbIssue["state"];
+    }): DbIssue => {
+      const resolvedClosedAt = closedAt ?? null;
+      const resolvedState = state ?? (resolvedClosedAt ? "CLOSED" : "OPEN");
+      const updatedAt = resolvedClosedAt ?? createdAt;
+      return {
+        id,
+        number: issueNumber++,
         repositoryId: repository.id,
         authorId: actor.id,
-        title: "Current window issue",
-        state: "OPEN",
-        createdAt: "2024-01-02T10:00:00.000Z",
-        updatedAt: "2024-01-02T10:00:00.000Z",
-        closedAt: null,
-        raw: { title: "Current window issue" },
-      },
-      {
-        id: "issue-current-2",
-        number: 2,
-        repositoryId: repository.id,
-        authorId: actor.id,
-        title: "Another current issue",
-        state: "CLOSED",
-        createdAt: "2024-01-05T09:00:00.000Z",
-        updatedAt: "2024-01-05T09:00:00.000Z",
-        closedAt: "2024-01-06T09:00:00.000Z",
-        raw: { title: "Another current issue" },
-      },
-      {
-        id: "issue-previous-1",
-        number: 3,
-        repositoryId: repository.id,
-        authorId: actor.id,
-        title: "Previous window issue",
-        state: "OPEN",
-        createdAt: "2023-12-27T12:00:00.000Z",
-        updatedAt: "2023-12-27T12:00:00.000Z",
-        closedAt: null,
-        raw: { title: "Previous window issue" },
-      },
-      {
-        id: "issue-outside-1",
-        number: 4,
-        repositoryId: repository.id,
-        authorId: actor.id,
-        title: "Outside range issue",
-        state: "OPEN",
+        title: id,
+        state: resolvedState,
+        createdAt,
+        updatedAt,
+        closedAt: resolvedClosedAt,
+        raw: { title: id },
+      };
+    };
+
+    const creationGroups = {
+      previous4: [
+        "2023-12-04T10:00:00.000Z",
+        "2023-12-05T11:30:00.000Z",
+        "2023-12-06T14:45:00.000Z",
+        "2023-12-08T09:15:00.000Z",
+        "2023-12-09T16:20:00.000Z",
+      ],
+      previous3: ["2023-12-13T12:00:00.000Z"],
+      previous2: [
+        "2023-12-19T08:00:00.000Z",
+        "2023-12-21T15:30:00.000Z",
+        "2023-12-23T19:45:00.000Z",
+      ],
+      previous: ["2023-12-26T11:00:00.000Z", "2023-12-30T13:30:00.000Z"],
+      current: [
+        "2024-01-01T09:00:00.000Z",
+        "2024-01-03T10:15:00.000Z",
+        "2024-01-05T14:45:00.000Z",
+        "2024-01-07T18:30:00.000Z",
+      ],
+    } as const;
+
+    const issues: DbIssue[] = [];
+    (
+      Object.entries(creationGroups) as Array<
+        [keyof typeof creationGroups, readonly string[]]
+      >
+    ).forEach(([period, timestamps]) => {
+      timestamps.forEach((createdAt, index) => {
+        issues.push(
+          makeIssue({
+            id: `issue-${period}-${index + 1}`,
+            createdAt,
+          }),
+        );
+      });
+    });
+
+    issues.push(
+      makeIssue({
+        id: "issue-outside-created",
         createdAt: "2023-11-15T12:00:00.000Z",
-        updatedAt: "2023-11-15T12:00:00.000Z",
-        closedAt: null,
-        raw: { title: "Outside range issue" },
-      },
-    ];
+      }),
+    );
 
     for (const issue of issues) {
       await insertIssue(issue);
@@ -107,21 +131,39 @@ describe("analytics issue creation metric", () => {
     });
 
     const issuesCreated = analytics.organization.metrics.issuesCreated;
-    expect(issuesCreated.current).toBe(2);
-    expect(issuesCreated.previous).toBe(1);
-    expect(issuesCreated.absoluteChange).toBe(1);
+    const expectedHistory = {
+      previous4: creationGroups.previous4.length,
+      previous3: creationGroups.previous3.length,
+      previous2: creationGroups.previous2.length,
+      previous: creationGroups.previous.length,
+      current: creationGroups.current.length,
+    } as const;
+
+    const expectedAbsoluteChange =
+      expectedHistory.current - expectedHistory.previous;
+    const expectedPercentChange =
+      (expectedAbsoluteChange / expectedHistory.previous) * 100;
+
+    expect(issuesCreated.current).toBe(expectedHistory.current);
+    expect(issuesCreated.previous).toBe(expectedHistory.previous);
+    expect(issuesCreated.absoluteChange).toBe(expectedAbsoluteChange);
     expect(issuesCreated.percentChange).not.toBeNull();
-    expect(issuesCreated.percentChange ?? 0).toBeCloseTo(100, 5);
+    expect(issuesCreated.percentChange ?? 0).toBeCloseTo(
+      expectedPercentChange,
+      5,
+    );
 
     const history = analytics.organization.metricHistory.issuesCreated;
-    const currentEntry = history.find((entry) => entry.period === "current");
-    const previousEntry = history.find((entry) => entry.period === "previous");
-
-    expect(currentEntry?.value).toBe(2);
-    expect(previousEntry?.value).toBe(1);
+    expect(history).toEqual([
+      { period: "previous4", value: expectedHistory.previous4 },
+      { period: "previous3", value: expectedHistory.previous3 },
+      { period: "previous2", value: expectedHistory.previous2 },
+      { period: "previous", value: expectedHistory.previous },
+      { period: "current", value: expectedHistory.current },
+    ]);
   });
 
-  it("counts issues closed across current and previous ranges", async () => {
+  it("builds issue closure metrics with five-period history", async () => {
     const actor: DbActor = {
       id: "user-2",
       login: "octolead",
@@ -140,68 +182,144 @@ describe("analytics issue creation metric", () => {
     };
     await upsertRepository(repository);
 
-    const issues: DbIssue[] = [
-      {
-        id: "issue-closed-current-1",
-        number: 10,
+    let issueNumber = 100;
+    const makeIssue = ({
+      id,
+      createdAt,
+      closedAt,
+      state,
+    }: {
+      id: string;
+      createdAt: string;
+      closedAt?: string | null;
+      state?: DbIssue["state"];
+    }): DbIssue => {
+      const resolvedClosedAt = closedAt ?? null;
+      const resolvedState = state ?? (resolvedClosedAt ? "CLOSED" : "OPEN");
+      const updatedAt = resolvedClosedAt ?? createdAt;
+      return {
+        id,
+        number: issueNumber++,
         repositoryId: repository.id,
         authorId: actor.id,
-        title: "Closed in current window",
-        state: "CLOSED",
-        createdAt: "2023-12-30T08:00:00.000Z",
-        updatedAt: "2024-01-03T12:00:00.000Z",
-        closedAt: "2024-01-03T12:00:00.000Z",
-        raw: { title: "Closed in current window" },
-      },
-      {
-        id: "issue-closed-current-2",
-        number: 11,
-        repositoryId: repository.id,
-        authorId: actor.id,
-        title: "Opened and closed in current window",
-        state: "CLOSED",
-        createdAt: "2024-01-04T09:30:00.000Z",
-        updatedAt: "2024-01-05T14:00:00.000Z",
-        closedAt: "2024-01-05T14:00:00.000Z",
-        raw: { title: "Opened and closed in current window" },
-      },
-      {
-        id: "issue-closed-previous-1",
-        number: 12,
-        repositoryId: repository.id,
-        authorId: actor.id,
-        title: "Closed in previous window",
-        state: "CLOSED",
-        createdAt: "2023-12-20T10:00:00.000Z",
-        updatedAt: "2023-12-29T16:00:00.000Z",
-        closedAt: "2023-12-29T16:00:00.000Z",
-        raw: { title: "Closed in previous window" },
-      },
-      {
-        id: "issue-closed-outside-1",
-        number: 13,
-        repositoryId: repository.id,
-        authorId: actor.id,
-        title: "Closed outside tracked windows",
-        state: "CLOSED",
+        title: id,
+        state: resolvedState,
+        createdAt,
+        updatedAt,
+        closedAt: resolvedClosedAt,
+        raw: { title: id },
+      };
+    };
+
+    const closureGroups = {
+      previous4: [
+        {
+          createdAt: "2023-12-01T09:00:00.000Z",
+          closedAt: "2023-12-06T12:00:00.000Z",
+        },
+      ],
+      previous3: [
+        {
+          createdAt: "2023-12-05T10:00:00.000Z",
+          closedAt: "2023-12-11T11:30:00.000Z",
+        },
+        {
+          createdAt: "2023-12-10T08:00:00.000Z",
+          closedAt: "2023-12-16T15:45:00.000Z",
+        },
+      ],
+      previous2: [
+        {
+          createdAt: "2023-12-14T07:00:00.000Z",
+          closedAt: "2023-12-19T09:15:00.000Z",
+        },
+        {
+          createdAt: "2023-12-15T11:00:00.000Z",
+          closedAt: "2023-12-21T10:30:00.000Z",
+        },
+        {
+          createdAt: "2023-12-17T18:00:00.000Z",
+          closedAt: "2023-12-23T18:05:00.000Z",
+        },
+      ],
+      previous: [
+        {
+          createdAt: "2023-12-20T09:00:00.000Z",
+          closedAt: "2023-12-26T11:00:00.000Z",
+        },
+        {
+          createdAt: "2023-12-24T12:30:00.000Z",
+          closedAt: "2023-12-28T14:30:00.000Z",
+        },
+        {
+          createdAt: "2023-12-26T07:45:00.000Z",
+          closedAt: "2023-12-30T09:45:00.000Z",
+        },
+        {
+          createdAt: "2023-12-27T16:15:00.000Z",
+          closedAt: "2023-12-31T16:15:00.000Z",
+        },
+      ],
+      current: [
+        {
+          createdAt: "2023-12-29T08:00:00.000Z",
+          closedAt: "2024-01-02T08:00:00.000Z",
+        },
+        {
+          createdAt: "2023-12-30T13:00:00.000Z",
+          closedAt: "2024-01-03T13:00:00.000Z",
+        },
+        {
+          createdAt: "2023-12-31T17:30:00.000Z",
+          closedAt: "2024-01-04T17:30:00.000Z",
+        },
+        {
+          createdAt: "2024-01-02T09:15:00.000Z",
+          closedAt: "2024-01-06T09:15:00.000Z",
+        },
+        {
+          createdAt: "2024-01-03T18:45:00.000Z",
+          closedAt: "2024-01-07T18:45:00.000Z",
+        },
+      ],
+    } as const;
+
+    const issues: DbIssue[] = [];
+    (
+      Object.entries(closureGroups) as Array<
+        [
+          keyof typeof closureGroups,
+          readonly { createdAt: string; closedAt: string }[],
+        ]
+      >
+    ).forEach(([period, entries]) => {
+      entries.forEach((entry, index) => {
+        issues.push(
+          makeIssue({
+            id: `issue-${period}-closed-${index + 1}`,
+            createdAt: entry.createdAt,
+            closedAt: entry.closedAt,
+          }),
+        );
+      });
+    });
+
+    issues.push(
+      makeIssue({
+        id: "issue-closed-outside",
         createdAt: "2023-10-01T10:00:00.000Z",
-        updatedAt: "2023-11-15T12:00:00.000Z",
         closedAt: "2023-11-15T12:00:00.000Z",
-        raw: { title: "Closed outside tracked windows" },
-      },
-      {
-        id: "issue-open-current-1",
-        number: 14,
-        repositoryId: repository.id,
-        authorId: actor.id,
-        title: "Still open in current window",
-        state: "OPEN",
-        createdAt: "2024-01-06T08:00:00.000Z",
-        updatedAt: "2024-01-06T08:00:00.000Z",
+      }),
+    );
+
+    issues.push(
+      makeIssue({
+        id: "issue-still-open-current",
+        createdAt: "2024-01-05T08:00:00.000Z",
         closedAt: null,
-        raw: { title: "Still open in current window" },
-      },
-    ];
+        state: "OPEN",
+      }),
+    );
 
     for (const issue of issues) {
       await insertIssue(issue);
@@ -213,17 +331,35 @@ describe("analytics issue creation metric", () => {
     });
 
     const issuesClosed = analytics.organization.metrics.issuesClosed;
-    expect(issuesClosed.current).toBe(2);
-    expect(issuesClosed.previous).toBe(1);
-    expect(issuesClosed.absoluteChange).toBe(1);
+    const expectedHistory = {
+      previous4: closureGroups.previous4.length,
+      previous3: closureGroups.previous3.length,
+      previous2: closureGroups.previous2.length,
+      previous: closureGroups.previous.length,
+      current: closureGroups.current.length,
+    } as const;
+
+    const expectedAbsoluteChange =
+      expectedHistory.current - expectedHistory.previous;
+    const expectedPercentChange =
+      (expectedAbsoluteChange / expectedHistory.previous) * 100;
+
+    expect(issuesClosed.current).toBe(expectedHistory.current);
+    expect(issuesClosed.previous).toBe(expectedHistory.previous);
+    expect(issuesClosed.absoluteChange).toBe(expectedAbsoluteChange);
     expect(issuesClosed.percentChange).not.toBeNull();
-    expect(issuesClosed.percentChange ?? 0).toBeCloseTo(100, 5);
+    expect(issuesClosed.percentChange ?? 0).toBeCloseTo(
+      expectedPercentChange,
+      5,
+    );
 
     const history = analytics.organization.metricHistory.issuesClosed;
-    const currentEntry = history.find((entry) => entry.period === "current");
-    const previousEntry = history.find((entry) => entry.period === "previous");
-
-    expect(currentEntry?.value).toBe(2);
-    expect(previousEntry?.value).toBe(1);
+    expect(history).toEqual([
+      { period: "previous4", value: expectedHistory.previous4 },
+      { period: "previous3", value: expectedHistory.previous3 },
+      { period: "previous2", value: expectedHistory.previous2 },
+      { period: "previous", value: expectedHistory.previous },
+      { period: "current", value: expectedHistory.current },
+    ]);
   });
 });
