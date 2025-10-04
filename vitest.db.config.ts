@@ -7,17 +7,10 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
-  esbuild: {
-    jsx: "automatic",
-    jsxDev: true,
-  },
   test: {
     globals: true,
-    environment: "jsdom",
-    setupFiles: ["./vitest.setup.ts"],
-    exclude: [...configDefaults.exclude, "**/*.db.test.ts"],
-    coverage: {
-      reporter: ["text", "lcov"],
-    },
+    environment: "node",
+    include: ["**/*.db.test.ts"],
+    exclude: configDefaults.exclude,
   },
 });
