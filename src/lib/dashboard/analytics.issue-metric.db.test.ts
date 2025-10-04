@@ -120,4 +120,110 @@ describe("analytics issue creation metric", () => {
     expect(currentEntry?.value).toBe(2);
     expect(previousEntry?.value).toBe(1);
   });
+
+  it("counts issues closed across current and previous ranges", async () => {
+    const actor: DbActor = {
+      id: "user-2",
+      login: "octolead",
+      name: "Octo Lead",
+      createdAt: CURRENT_RANGE_START,
+      updatedAt: CURRENT_RANGE_START,
+    };
+    await upsertUser(actor);
+
+    const repository: DbRepository = {
+      id: "repo-2",
+      name: "closure-repo",
+      nameWithOwner: "octo/closure-repo",
+      ownerId: actor.id,
+      raw: { id: "repo-2" },
+    };
+    await upsertRepository(repository);
+
+    const issues: DbIssue[] = [
+      {
+        id: "issue-closed-current-1",
+        number: 10,
+        repositoryId: repository.id,
+        authorId: actor.id,
+        title: "Closed in current window",
+        state: "CLOSED",
+        createdAt: "2023-12-30T08:00:00.000Z",
+        updatedAt: "2024-01-03T12:00:00.000Z",
+        closedAt: "2024-01-03T12:00:00.000Z",
+        raw: { title: "Closed in current window" },
+      },
+      {
+        id: "issue-closed-current-2",
+        number: 11,
+        repositoryId: repository.id,
+        authorId: actor.id,
+        title: "Opened and closed in current window",
+        state: "CLOSED",
+        createdAt: "2024-01-04T09:30:00.000Z",
+        updatedAt: "2024-01-05T14:00:00.000Z",
+        closedAt: "2024-01-05T14:00:00.000Z",
+        raw: { title: "Opened and closed in current window" },
+      },
+      {
+        id: "issue-closed-previous-1",
+        number: 12,
+        repositoryId: repository.id,
+        authorId: actor.id,
+        title: "Closed in previous window",
+        state: "CLOSED",
+        createdAt: "2023-12-20T10:00:00.000Z",
+        updatedAt: "2023-12-29T16:00:00.000Z",
+        closedAt: "2023-12-29T16:00:00.000Z",
+        raw: { title: "Closed in previous window" },
+      },
+      {
+        id: "issue-closed-outside-1",
+        number: 13,
+        repositoryId: repository.id,
+        authorId: actor.id,
+        title: "Closed outside tracked windows",
+        state: "CLOSED",
+        createdAt: "2023-10-01T10:00:00.000Z",
+        updatedAt: "2023-11-15T12:00:00.000Z",
+        closedAt: "2023-11-15T12:00:00.000Z",
+        raw: { title: "Closed outside tracked windows" },
+      },
+      {
+        id: "issue-open-current-1",
+        number: 14,
+        repositoryId: repository.id,
+        authorId: actor.id,
+        title: "Still open in current window",
+        state: "OPEN",
+        createdAt: "2024-01-06T08:00:00.000Z",
+        updatedAt: "2024-01-06T08:00:00.000Z",
+        closedAt: null,
+        raw: { title: "Still open in current window" },
+      },
+    ];
+
+    for (const issue of issues) {
+      await insertIssue(issue);
+    }
+
+    const analytics = await getDashboardAnalytics({
+      start: CURRENT_RANGE_START,
+      end: CURRENT_RANGE_END,
+    });
+
+    const issuesClosed = analytics.organization.metrics.issuesClosed;
+    expect(issuesClosed.current).toBe(2);
+    expect(issuesClosed.previous).toBe(1);
+    expect(issuesClosed.absoluteChange).toBe(1);
+    expect(issuesClosed.percentChange).not.toBeNull();
+    expect(issuesClosed.percentChange ?? 0).toBeCloseTo(100, 5);
+
+    const history = analytics.organization.metricHistory.issuesClosed;
+    const currentEntry = history.find((entry) => entry.period === "current");
+    const previousEntry = history.find((entry) => entry.period === "previous");
+
+    expect(currentEntry?.value).toBe(2);
+    expect(previousEntry?.value).toBe(1);
+  });
 });
