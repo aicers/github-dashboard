@@ -451,29 +451,33 @@ describe("analytics PR average size metrics", () => {
       ),
     );
 
-    const additionsCard = screen
+    const additionsCardElement = screen
       .getByText("PR 평균 크기 (추가)")
-      .closest('[data-slot="card"]') as HTMLElement | null;
-    const netCard = screen
+      .closest('[data-slot="card"]');
+    const netCardElement = screen
       .getByText("PR 평균 크기 (순증)")
-      .closest('[data-slot="card"]') as HTMLElement | null;
-    expect(additionsCard).not.toBeNull();
-    expect(netCard).not.toBeNull();
-    if (!additionsCard || !netCard) {
+      .closest('[data-slot="card"]');
+
+    if (
+      !(additionsCardElement instanceof HTMLElement) ||
+      !(netCardElement instanceof HTMLElement)
+    ) {
       throw new Error("metric cards not rendered");
     }
 
-    expect(within(additionsCard).getByText(valueLabel)).toBeInTheDocument();
+    expect(
+      within(additionsCardElement).getByText(valueLabel),
+    ).toBeInTheDocument();
     const additionsChange = formatChange(additionsMetric, "count");
     expect(
-      within(additionsCard).getByText(
+      within(additionsCardElement).getByText(
         `${additionsChange.changeLabel} (${additionsChange.percentLabel})`,
       ),
     ).toBeInTheDocument();
 
     const netChange = formatChange(netMetric, "count");
     expect(
-      within(netCard).getByText(
+      within(netCardElement).getByText(
         `${netChange.changeLabel} (${netChange.percentLabel})`,
       ),
     ).toBeInTheDocument();
@@ -612,29 +616,33 @@ describe("analytics PR average size metrics", () => {
       ),
     );
 
-    const additionsCard = screen
+    const additionsCardElement = screen
       .getByText("PR 평균 크기 (추가)")
       .closest('[data-slot="card"]');
-    const netCard = screen
+    const netCardElement = screen
       .getByText("PR 평균 크기 (순증)")
       .closest('[data-slot="card"]');
-    expect(additionsCard).not.toBeNull();
-    expect(netCard).not.toBeNull();
-    if (!additionsCard || !netCard) {
+
+    if (
+      !(additionsCardElement instanceof HTMLElement) ||
+      !(netCardElement instanceof HTMLElement)
+    ) {
       throw new Error("zero baseline cards not rendered");
     }
 
-    expect(within(additionsCard).getByText(valueLabel)).toBeInTheDocument();
+    expect(
+      within(additionsCardElement).getByText(valueLabel),
+    ).toBeInTheDocument();
     const additionsChange = formatChange(additionsMetric, "count");
     expect(
-      within(additionsCard).getByText(
+      within(additionsCardElement).getByText(
         `${additionsChange.changeLabel} (${additionsChange.percentLabel})`,
       ),
     ).toBeInTheDocument();
 
     const netChange = formatChange(netMetric, "count");
     expect(
-      within(netCard).getByText(
+      within(netCardElement).getByText(
         `${netChange.changeLabel} (${netChange.percentLabel})`,
       ),
     ).toBeInTheDocument();
