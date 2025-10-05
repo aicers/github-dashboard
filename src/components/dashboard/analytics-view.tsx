@@ -193,6 +193,35 @@ function mergeTrends(
   return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
 }
 
+function buildNetTrend(
+  dateKeys: readonly string[],
+  entries: TrendEntry[],
+  positiveKey: string,
+  negativeKey: string,
+) {
+  const normalizeNumeric = (value: unknown) => {
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? value : 0;
+    }
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : 0;
+  };
+
+  const map = new Map(
+    entries.map((entry) => [normalizeTrendDateKey(entry.date), entry]),
+  );
+
+  return dateKeys.map((date) => {
+    const entry = map.get(date);
+    const positive = normalizeNumeric(entry?.[positiveKey]);
+    const negative = normalizeNumeric(entry?.[negativeKey]);
+    return {
+      date,
+      delta: positive - negative,
+    };
+  });
+}
+
 function formatHoursAsDaysHours(value: number) {
   if (!Number.isFinite(value)) {
     return "–";
@@ -881,18 +910,10 @@ export function AnalyticsView({
     "closed",
   );
 
-  const issuesNetTrend = useMemo(() => {
-    const map = new Map(issuesLineData.map((entry) => [entry.date, entry]));
-    return dateKeys.map((date) => {
-      const entry = map.get(date);
-      const created = entry?.created ?? 0;
-      const closed = entry?.closed ?? 0;
-      return {
-        date,
-        delta: created - closed,
-      };
-    });
-  }, [dateKeys, issuesLineData]);
+  const issuesNetTrend = useMemo(
+    () => buildNetTrend(dateKeys, issuesLineData, "created", "closed"),
+    [dateKeys, issuesLineData],
+  );
 
   const prLineData = mergeTrends(
     organization.trends.prsCreated,
@@ -901,18 +922,10 @@ export function AnalyticsView({
     "merged",
   );
 
-  const prNetTrend = useMemo(() => {
-    const map = new Map(prLineData.map((entry) => [entry.date, entry]));
-    return dateKeys.map((date) => {
-      const entry = map.get(date);
-      const created = entry?.created ?? 0;
-      const merged = entry?.merged ?? 0;
-      return {
-        date,
-        delta: created - merged,
-      };
-    });
-  }, [dateKeys, prLineData]);
+  const prNetTrend = useMemo(
+    () => buildNetTrend(dateKeys, prLineData, "created", "merged"),
+    [dateKeys, prLineData],
+  );
 
   const reviewHeatmap = organization.trends.reviewHeatmap;
 
@@ -1491,4 +1504,5 @@ export const __analyticsInternals = {
   formatDuration,
   buildRangeFromPreset,
   mergeTrends,
+  buildNetTrend,
 };

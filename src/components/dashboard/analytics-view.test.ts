@@ -135,4 +135,55 @@ describe("analytics-view helpers", () => {
       { date: "2024-01-03", left: 0, right: 2 },
     ]);
   });
+
+  test("buildNetTrend computes issue net deltas across the selected range", () => {
+    const { mergeTrends, buildNetTrend } = __analyticsInternals;
+    const dateKeys = ["2024-01-01", "2024-01-02", "2024-01-03"];
+
+    const issuesCreated = [
+      { date: "2024-01-01", value: 5 },
+      { date: "2024-01-02", value: 2 },
+    ];
+    const issuesClosed = [
+      { date: "2024-01-01", value: 1 },
+      { date: "2024-01-03", value: 4 },
+    ];
+
+    const merged = mergeTrends(
+      issuesCreated,
+      issuesClosed,
+      "created",
+      "closed",
+    );
+    const netTrend = buildNetTrend(dateKeys, merged, "created", "closed");
+
+    expect(netTrend).toEqual([
+      { date: "2024-01-01", delta: 4 },
+      { date: "2024-01-02", delta: 2 },
+      { date: "2024-01-03", delta: -4 },
+    ]);
+  });
+
+  test("buildNetTrend normalizes PR deltas when data is missing or non-finite", () => {
+    const { mergeTrends, buildNetTrend } = __analyticsInternals;
+    const dateKeys = ["2024-02-10", "2024-02-11", "2024-02-12"];
+
+    const prsCreated = [
+      { date: "2024-02-10", value: 3 },
+      { date: "2024-02-11T09:30:00Z", value: 4 },
+    ];
+    const prsMerged = [
+      { date: "2024-02-10", value: 5 },
+      { date: "2024-02-11", value: Number.NaN },
+    ];
+
+    const merged = mergeTrends(prsCreated, prsMerged, "created", "merged");
+    const netTrend = buildNetTrend(dateKeys, merged, "created", "merged");
+
+    expect(netTrend).toEqual([
+      { date: "2024-02-10", delta: -2 },
+      { date: "2024-02-11", delta: 4 },
+      { date: "2024-02-12", delta: 0 },
+    ]);
+  });
 });

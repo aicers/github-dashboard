@@ -1239,7 +1239,7 @@ async function fetchTrend(
   }
 
   const timezoneIndex = params.length + 1;
-  const queryText = `SELECT date_trunc('day', ${alias}.${column} AT TIME ZONE $${timezoneIndex})::date AS date, COUNT(*)
+  const queryText = `SELECT to_char(date_trunc('day', ${alias}.${column} AT TIME ZONE $${timezoneIndex}), 'YYYY-MM-DD') AS date, COUNT(*)
     FROM ${table} ${alias}
     WHERE ${alias}.${column} BETWEEN $1 AND $2${repoClause}
     GROUP BY date
@@ -1252,10 +1252,7 @@ async function fetchTrend(
     if (row.date instanceof Date) {
       normalizedDate = formatDateKey(row.date);
     } else if (typeof row.date === "string") {
-      const parsed = new Date(row.date);
-      normalizedDate = Number.isNaN(parsed.getTime())
-        ? row.date
-        : formatDateKey(parsed);
+      normalizedDate = row.date;
     }
 
     return {
