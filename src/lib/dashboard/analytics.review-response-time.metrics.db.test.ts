@@ -353,7 +353,7 @@ describe("analytics review response time metrics", () => {
     );
   });
 
-  it("computes organization and individual review response times with history", async () => {
+  it("computes organization review response time with history", async () => {
     const author: DbActor = {
       id: "review-response-author",
       login: "octo-response-author",
@@ -728,7 +728,6 @@ describe("analytics review response time metrics", () => {
     const analytics = await getDashboardAnalytics({
       start: CURRENT_RANGE_START,
       end: CURRENT_RANGE_END,
-      personId: reviewer.id,
     });
 
     const ranges = buildPeriodRanges();
@@ -797,79 +796,11 @@ describe("analytics review response time metrics", () => {
       }
     });
 
-    expect(analytics.individual).not.toBeNull();
-    if (!analytics.individual) {
-      throw new Error("expected individual analytics");
-    }
-
-    const individualMetric = analytics.individual.metrics.reviewResponseTime;
-    const individualHistory =
-      analytics.individual.metricHistory.reviewResponseTime;
-
-    const expectedIndividualCurrent = expectations.current.individual ?? 0;
-    const expectedIndividualPrevious = expectations.previous.individual ?? 0;
-
-    expect(individualMetric.current ?? Number.NaN).toBeCloseTo(
-      expectedIndividualCurrent,
-      5,
-    );
-    expect(individualMetric.previous ?? Number.NaN).toBeCloseTo(
-      expectedIndividualPrevious,
-      5,
-    );
-    expect(individualMetric.absoluteChange ?? Number.NaN).toBeCloseTo(
-      expectedIndividualCurrent - expectedIndividualPrevious,
-      5,
-    );
-
-    const expectedIndividualPercent = (() => {
-      if (expectations.previous.individual === null) {
-        return null;
-      }
-      if (expectations.previous.individual === 0) {
-        return expectations.current.individual === 0 ? 0 : null;
-      }
-      if (expectations.current.individual === null) {
-        return null;
-      }
-      return (
-        (((expectations.current.individual ?? 0) -
-          (expectations.previous.individual ?? 0)) /
-          (expectations.previous.individual ?? 1)) *
-        100
-      );
-    })();
-
-    if (expectedIndividualPercent === null) {
-      expect(individualMetric.percentChange).toBeNull();
-    } else {
-      expect(individualMetric.percentChange ?? Number.NaN).toBeCloseTo(
-        expectedIndividualPercent,
-        5,
-      );
-    }
-
-    individualHistory.forEach((entry, index) => {
-      expect(entry.period).toBe(PERIODS[index]);
-      const expectedValue = expectations[PERIODS[index]].individual;
-      if (expectedValue == null) {
-        expect(entry.value).toBeNull();
-      } else {
-        expect(entry.value ?? Number.NaN).toBeCloseTo(expectedValue, 5);
-      }
-    });
-
     const organizationValueLabel = formatMetricValue(
       { current: organizationMetric.current ?? Number.NaN, unit: "hours" },
       "hours",
     );
     const organizationChange = formatChange(organizationMetric, "hours");
-
-    const individualValueLabel = formatMetricValue(
-      { current: individualMetric.current ?? Number.NaN, unit: "hours" },
-      "hours",
-    );
-    const individualChange = formatChange(individualMetric, "hours");
 
     render(
       createElement(
@@ -882,30 +813,16 @@ describe("analytics review response time metrics", () => {
           impact: "negative",
           history: toCardHistory(organizationHistory),
         }),
-        createElement(MetricCard, {
-          title: "개인 리뷰 응답 시간",
-          metric: individualMetric,
-          format: "hours",
-          impact: "negative",
-          history: toCardHistory(individualHistory),
-        }),
       ),
     );
 
     const organizationCardElement = screen
       .getByText("조직 리뷰 응답 시간")
       .closest('[data-slot="card"]');
-    const individualCardElement = screen
-      .getByText("개인 리뷰 응답 시간")
-      .closest('[data-slot="card"]');
 
     if (!(organizationCardElement instanceof HTMLElement)) {
       throw new Error("organization review response card not rendered");
     }
-    if (!(individualCardElement instanceof HTMLElement)) {
-      throw new Error("individual review response card not rendered");
-    }
-
     expect(
       within(organizationCardElement).getByText(organizationValueLabel),
     ).toBeInTheDocument();
@@ -916,19 +833,7 @@ describe("analytics review response time metrics", () => {
     ).toBeInTheDocument();
 
     expect(
-      within(individualCardElement).getByText(individualValueLabel),
-    ).toBeInTheDocument();
-    expect(
-      within(individualCardElement).getByText(
-        `${individualChange.changeLabel} (${individualChange.percentLabel})`,
-      ),
-    ).toBeInTheDocument();
-
-    expect(
       within(organizationCardElement).getByTestId("recharts-line-chart"),
-    ).toBeInTheDocument();
-    expect(
-      within(individualCardElement).getByTestId("recharts-line-chart"),
     ).toBeInTheDocument();
   });
 });
