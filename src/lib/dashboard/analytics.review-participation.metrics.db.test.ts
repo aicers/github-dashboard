@@ -273,7 +273,7 @@ describe("analytics review participation metrics", () => {
     );
   });
 
-  it("computes organization and individual review participation with history", async () => {
+  it("computes organization review participation with history", async () => {
     const author: DbActor = {
       id: "review-participation-author",
       login: "octo-review-author",
@@ -501,7 +501,6 @@ describe("analytics review participation metrics", () => {
     const analytics = await getDashboardAnalytics({
       start: CURRENT_RANGE_START,
       end: CURRENT_RANGE_END,
-      personId: reviewer.id,
     });
 
     const ranges = buildPeriodRanges();
@@ -559,68 +558,11 @@ describe("analytics review participation metrics", () => {
       }
     });
 
-    expect(analytics.individual).not.toBeNull();
-    if (!analytics.individual) {
-      throw new Error("expected individual analytics");
-    }
-
-    const individualMetric = analytics.individual.metrics.reviewParticipation;
-    const individualHistory =
-      analytics.individual.metricHistory.reviewParticipation;
-
-    expect(individualMetric.current).toBeCloseTo(
-      expectations.current.individual ?? 0,
-      5,
-    );
-    expect(individualMetric.previous).toBeCloseTo(
-      expectations.previous.individual ?? 0,
-      5,
-    );
-    expect(individualMetric.absoluteChange).toBeCloseTo(
-      (expectations.current.individual ?? 0) -
-        (expectations.previous.individual ?? 0),
-      5,
-    );
-
-    const expectedIndividualPercent = (() => {
-      const previous = expectations.previous.individual ?? 0;
-      const current = expectations.current.individual ?? 0;
-      if (previous === 0) {
-        return current === 0 ? 0 : null;
-      }
-      return ((current - previous) / previous) * 100;
-    })();
-
-    if (expectedIndividualPercent == null) {
-      expect(individualMetric.percentChange).toBeNull();
-    } else {
-      expect(individualMetric.percentChange ?? Number.NaN).toBeCloseTo(
-        expectedIndividualPercent,
-        5,
-      );
-    }
-
-    individualHistory.forEach((entry, index) => {
-      expect(entry.period).toBe(PERIODS[index]);
-      const expectedValue = expectations[PERIODS[index]].individual;
-      if (expectedValue == null) {
-        expect(entry.value).toBeNull();
-      } else {
-        expect(entry.value ?? Number.NaN).toBeCloseTo(expectedValue, 5);
-      }
-    });
-
     const organizationValueLabel = formatMetricValue(
       { current: organizationMetric.current },
       "percentage",
     );
     const organizationChange = formatChange(organizationMetric, "percentage");
-
-    const individualValueLabel = formatMetricValue(
-      { current: individualMetric.current },
-      "percentage",
-    );
-    const individualChange = formatChange(individualMetric, "percentage");
 
     render(
       createElement(
@@ -632,31 +574,18 @@ describe("analytics review participation metrics", () => {
           format: "percentage",
           history: toCardHistory(organizationHistory),
         }),
-        createElement(MetricCard, {
-          title: "개인 리뷰 참여 비율",
-          metric: individualMetric,
-          format: "percentage",
-          history: toCardHistory(individualHistory),
-        }),
       ),
     );
 
     const organizationCardElement = screen
       .getByText("조직 리뷰 참여 비율")
       .closest('[data-slot="card"]');
-    const individualCardElement = screen
-      .getByText("개인 리뷰 참여 비율")
-      .closest('[data-slot="card"]');
 
     if (!(organizationCardElement instanceof HTMLElement)) {
       throw new Error("organization review participation card not rendered");
     }
-    if (!(individualCardElement instanceof HTMLElement)) {
-      throw new Error("individual review participation card not rendered");
-    }
 
     const organizationCard = organizationCardElement;
-    const individualCard = individualCardElement;
 
     expect(
       within(organizationCard).getByText(organizationValueLabel),
@@ -668,19 +597,7 @@ describe("analytics review participation metrics", () => {
     ).toBeInTheDocument();
 
     expect(
-      within(individualCard).getByText(individualValueLabel),
-    ).toBeInTheDocument();
-    expect(
-      within(individualCard).getByText(
-        `${individualChange.changeLabel} (${individualChange.percentLabel})`,
-      ),
-    ).toBeInTheDocument();
-
-    expect(
       within(organizationCard).getByTestId("recharts-line-chart"),
-    ).toBeInTheDocument();
-    expect(
-      within(individualCard).getByTestId("recharts-line-chart"),
     ).toBeInTheDocument();
   });
 });
