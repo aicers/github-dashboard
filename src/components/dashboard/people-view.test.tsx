@@ -1,12 +1,12 @@
 import { render, screen, within } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { PeopleView } from "@/components/dashboard/people-view";
 import { PRESETS } from "@/components/dashboard/dashboard-filters";
+import { PeopleView } from "@/components/dashboard/people-view";
 import {
-  useDashboardAnalytics,
   type DashboardAnalyticsState,
   type FilterState,
+  useDashboardAnalytics,
 } from "@/components/dashboard/use-dashboard-analytics";
 import type {
   ComparisonValue,
@@ -290,10 +290,13 @@ function createMockState(): DashboardAnalyticsState {
     personId: analytics.contributors[0]?.id ?? null,
   };
 
-  const setFilters = vi.fn() as unknown as DashboardAnalyticsState["setFilters"];
+  const setFilters =
+    vi.fn() as unknown as DashboardAnalyticsState["setFilters"];
   const applyFilters = vi
     .fn()
-    .mockResolvedValue(undefined) as unknown as DashboardAnalyticsState["applyFilters"];
+    .mockResolvedValue(
+      undefined,
+    ) as unknown as DashboardAnalyticsState["applyFilters"];
 
   return {
     analytics,

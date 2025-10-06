@@ -25,7 +25,7 @@ import {
   CURRENT_RANGE_START,
   resetDashboardTables,
   seedPersonAndRepo,
-} from "../../../tests/helpers/people-metrics";
+} from "../../../tests/helpers/dashboard-metrics";
 
 describe("people activity heatmap", () => {
   beforeEach(async () => {

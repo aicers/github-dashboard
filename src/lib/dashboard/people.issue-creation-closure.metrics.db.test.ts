@@ -14,7 +14,7 @@ import {
   resetDashboardTables,
   seedPersonAndRepo,
   shiftHours,
-} from "../../../tests/helpers/people-metrics";
+} from "../../../tests/helpers/dashboard-metrics";
 
 describe("people issue creation and closure metrics", () => {
   beforeEach(async () => {

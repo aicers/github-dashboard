@@ -5,7 +5,6 @@ import "../../../tests/helpers/postgres-container";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
-import { query } from "@/lib/db/client";
 import {
   type DbActor,
   type DbPullRequest,
@@ -16,15 +15,10 @@ import {
   upsertReview,
   upsertUser,
 } from "@/lib/db/operations";
+import { resetDashboardTables } from "../../../tests/helpers/dashboard-metrics";
 
 const RANGE_START = "2024-07-01T00:00:00.000Z";
 const RANGE_END = "2024-07-31T23:59:59.999Z";
-
-async function resetDatabase() {
-  await query(
-    "TRUNCATE TABLE issues, pull_requests, reviews, comments, reactions, review_requests, repositories, users RESTART IDENTITY CASCADE",
-  );
-}
 
 function buildActor(id: string, login: string, name?: string): DbActor {
   return {
@@ -111,7 +105,7 @@ function createReview(params: {
 
 describe("analytics PR completeness leaderboard", () => {
   beforeEach(async () => {
-    await resetDatabase();
+    await resetDashboardTables();
   });
 
   it("builds average peer review counts per merged PR and surfaces review state breakdown", async () => {

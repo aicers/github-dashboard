@@ -16,7 +16,6 @@ import {
 } from "@/components/dashboard/metric-utils";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import type { PeriodKey } from "@/lib/dashboard/types";
-import { query } from "@/lib/db/client";
 import {
   type DbActor,
   type DbPullRequest,
@@ -27,6 +26,12 @@ import {
   upsertReview,
   upsertUser,
 } from "@/lib/db/operations";
+import {
+  CURRENT_RANGE_END,
+  CURRENT_RANGE_START,
+  PERIOD_KEYS,
+  resetDashboardTables,
+} from "../../../tests/helpers/dashboard-metrics";
 
 vi.mock("recharts", () => {
   const { createElement: createReactElement } =
@@ -46,15 +51,7 @@ vi.mock("recharts", () => {
   };
 });
 
-const CURRENT_RANGE_START = "2024-01-01T00:00:00.000Z";
-const CURRENT_RANGE_END = "2024-01-07T23:59:59.999Z";
-const PERIODS = [
-  "previous4",
-  "previous3",
-  "previous2",
-  "previous",
-  "current",
-] as const satisfies PeriodKey[];
+const PERIODS = PERIOD_KEYS;
 
 type EngagementSpec = {
   mergedAt: string;
@@ -172,9 +169,7 @@ function computePeriodStats(
 
 describe("analytics PR engagement metrics", () => {
   beforeEach(async () => {
-    await query(
-      "TRUNCATE TABLE issues, pull_requests, reviews, comments, reactions, review_requests, repositories, users RESTART IDENTITY CASCADE",
-    );
+    await resetDashboardTables();
   });
 
   it("builds average PR comments and reviews metrics with histories", async () => {

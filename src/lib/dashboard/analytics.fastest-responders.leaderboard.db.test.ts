@@ -5,7 +5,6 @@ import "../../../tests/helpers/postgres-container";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
-import { query } from "@/lib/db/client";
 import {
   type DbActor,
   type DbComment,
@@ -23,15 +22,10 @@ import {
   upsertReviewRequest,
   upsertUser,
 } from "@/lib/db/operations";
+import { resetDashboardTables } from "../../../tests/helpers/dashboard-metrics";
 
 const RANGE_START = "2024-05-01T00:00:00.000Z";
 const RANGE_END = "2024-05-31T23:59:59.999Z";
-
-async function resetDatabase() {
-  await query(
-    "TRUNCATE TABLE issues, pull_requests, reviews, comments, reactions, review_requests, repositories, users RESTART IDENTITY CASCADE",
-  );
-}
 
 function buildActor(id: string, login: string, name?: string): DbActor {
   return {
@@ -162,7 +156,7 @@ function createReaction(params: {
 
 describe("analytics leaderboard fastest responders", () => {
   beforeEach(async () => {
-    await resetDatabase();
+    await resetDashboardTables();
   });
 
   it("ranks reviewers by average response time across response types", async () => {

@@ -71,6 +71,11 @@ export async function resetDashboardTables() {
   );
 }
 
+export async function resetDashboardAndSyncTables() {
+  await resetDashboardTables();
+  await query("TRUNCATE TABLE sync_log, sync_state RESTART IDENTITY CASCADE");
+}
+
 export async function seedPersonAndRepo() {
   const actor: DbActor = {
     id: "person-actor",
@@ -91,6 +96,18 @@ export async function seedPersonAndRepo() {
   await upsertRepository(repository);
 
   return { actor, repository };
+}
+
+export async function seedActors(actors: readonly DbActor[]) {
+  for (const actor of actors) {
+    await upsertUser(actor);
+  }
+}
+
+export async function seedRepositories(repositories: readonly DbRepository[]) {
+  for (const repository of repositories) {
+    await upsertRepository(repository);
+  }
 }
 
 export function shiftHours(baseIso: string, hours: number) {

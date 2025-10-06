@@ -5,7 +5,6 @@ import "../../../tests/helpers/postgres-container";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
-import { query } from "@/lib/db/client";
 import {
   type DbActor,
   type DbIssue,
@@ -14,17 +13,12 @@ import {
   upsertRepository,
   upsertUser,
 } from "@/lib/db/operations";
+import { resetDashboardTables } from "../../../tests/helpers/dashboard-metrics";
 
 const RANGE_START = "2024-05-01T00:00:00.000Z";
 const RANGE_END = "2024-05-31T23:59:59.999Z";
 
 let issueNumber = 1;
-
-async function resetDatabase() {
-  await query(
-    "TRUNCATE TABLE issues, pull_requests, reviews, comments, reactions, review_requests, repositories, users RESTART IDENTITY CASCADE",
-  );
-}
 
 function buildActor(id: string, login: string, name?: string): DbActor {
   return {
@@ -82,7 +76,7 @@ function createIssue(params: {
 describe("analytics issue creation leaderboard", () => {
   beforeEach(async () => {
     issueNumber = 1;
-    await resetDatabase();
+    await resetDashboardTables();
   });
 
   it("counts issues per author within the selected range", async () => {

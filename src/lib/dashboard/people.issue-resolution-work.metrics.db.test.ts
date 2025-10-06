@@ -14,7 +14,7 @@ import {
   resetDashboardTables,
   seedPersonAndRepo,
   shiftHours,
-} from "../../../tests/helpers/people-metrics";
+} from "../../../tests/helpers/dashboard-metrics";
 
 const TARGET_PROJECT = "To-Do List";
 type RoleKey = "parent" | "child";

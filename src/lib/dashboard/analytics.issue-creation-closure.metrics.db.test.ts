@@ -11,7 +11,6 @@ import { MetricCard } from "@/components/dashboard/metric-card";
 import { toCardHistory } from "@/components/dashboard/metric-history";
 import { formatNumber } from "@/components/dashboard/metric-utils";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
-import { query } from "@/lib/db/client";
 import {
   type DbActor,
   type DbIssue,
@@ -20,6 +19,11 @@ import {
   upsertRepository,
   upsertUser,
 } from "@/lib/db/operations";
+import {
+  CURRENT_RANGE_END,
+  CURRENT_RANGE_START,
+  resetDashboardTables,
+} from "../../../tests/helpers/dashboard-metrics";
 
 vi.mock("recharts", () => {
   const { createElement: createReactElement } =
@@ -39,18 +43,13 @@ vi.mock("recharts", () => {
   };
 });
 
-const CURRENT_RANGE_START = "2024-01-01T00:00:00.000Z";
-const CURRENT_RANGE_END = "2024-01-07T23:59:59.999Z";
-
 async function insertIssue(issue: DbIssue) {
   await upsertIssue(issue);
 }
 
 describe("analytics issue metrics", () => {
   beforeEach(async () => {
-    await query(
-      "TRUNCATE TABLE issues, pull_requests, reviews, comments, reactions, review_requests, repositories, users RESTART IDENTITY CASCADE",
-    );
+    await resetDashboardTables();
   });
 
   it("builds issue creation metrics with five-period history", async () => {
