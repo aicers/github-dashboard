@@ -256,7 +256,7 @@ function sumMetric<T>(items: T[], getMetric: (item: T) => number) {
   }, 0);
 }
 
-type FollowUpSummary = {
+export type FollowUpSummary = {
   id: string;
   title: string;
   description: string;
@@ -264,6 +264,171 @@ type FollowUpSummary = {
   totalMetric: number;
   highlights: string[];
 };
+
+export function buildFollowUpSummaries(
+  insights: AttentionInsights,
+): FollowUpSummary[] {
+  const highlightLine = (label: string, topEntries: RankingEntry[]) => {
+    if (!topEntries.length) {
+      return null;
+    }
+    const ranked = topEntries
+      .map(
+        (entry, index) => `${index + 1}위 ${formatUserDisplayName(entry.user)}`,
+      )
+      .join(", ");
+    return `${label}: ${ranked}`;
+  };
+
+  const stalePrs = insights.staleOpenPrs;
+  const staleMetric = (item: PullRequestAttentionItem) => item.ageDays ?? 0;
+  const staleAuthors = aggregateUsers(
+    stalePrs,
+    (item) => (item.author ? [item.author] : []),
+    staleMetric,
+  );
+  const staleReviewers = aggregateUsers(
+    stalePrs,
+    (item) => item.reviewers,
+    staleMetric,
+  );
+
+  const idlePrs = insights.idleOpenPrs;
+  const idleMetric = (item: PullRequestAttentionItem) =>
+    item.inactivityDays ?? item.ageDays ?? 0;
+  const idleAuthors = aggregateUsers(
+    idlePrs,
+    (item) => (item.author ? [item.author] : []),
+    idleMetric,
+  );
+  const idleReviewers = aggregateUsers(
+    idlePrs,
+    (item) => item.reviewers,
+    idleMetric,
+  );
+
+  const reviewRequests = insights.stuckReviewRequests;
+  const reviewMetric = (item: ReviewRequestAttentionItem) => item.waitingDays;
+  const reviewAuthors = aggregateUsers(
+    reviewRequests,
+    (item) => (item.pullRequest.author ? [item.pullRequest.author] : []),
+    reviewMetric,
+  );
+  const reviewReviewers = aggregateUsers(
+    reviewRequests,
+    (item) => (item.reviewer ? [item.reviewer] : []),
+    reviewMetric,
+  );
+
+  const backlogIssues = insights.backlogIssues;
+  const backlogMetric = (item: IssueAttentionItem) => item.ageDays ?? 0;
+  const backlogAuthors = aggregateUsers(
+    backlogIssues,
+    (item) => (item.author ? [item.author] : []),
+    backlogMetric,
+  );
+  const backlogAssignees = aggregateUsers(
+    backlogIssues,
+    (item) => item.assignees,
+    backlogMetric,
+  );
+
+  const stalledIssues = insights.stalledInProgressIssues;
+  const stalledMetric = (item: IssueAttentionItem) =>
+    item.inProgressAgeDays ?? item.ageDays ?? 0;
+  const stalledAuthors = aggregateUsers(
+    stalledIssues,
+    (item) => (item.author ? [item.author] : []),
+    stalledMetric,
+  );
+  const stalledAssignees = aggregateUsers(
+    stalledIssues,
+    (item) => item.assignees,
+    stalledMetric,
+  );
+
+  const mentions = insights.unansweredMentions;
+  const mentionMetric = (item: MentionAttentionItem) => item.waitingDays;
+  const mentionTargets = aggregateUsers(
+    mentions,
+    (item) => (item.target ? [item.target] : []),
+    mentionMetric,
+  );
+  const mentionAuthors = aggregateUsers(
+    mentions,
+    (item) => (item.author ? [item.author] : []),
+    mentionMetric,
+  );
+
+  return [
+    {
+      id: "stale-open-prs",
+      title: "오래된 PR",
+      description: "20일 이상 머지되지 않은 PR",
+      count: stalePrs.length,
+      totalMetric: sumMetric(stalePrs, staleMetric),
+      highlights: [
+        highlightLine("최다 생성자", findTopByTotal(staleAuthors, 3)),
+        highlightLine("최다 리뷰어", findTopByTotal(staleReviewers, 3)),
+      ].filter((line): line is string => Boolean(line)),
+    },
+    {
+      id: "idle-open-prs",
+      title: "업데이트 없는 PR",
+      description: "10일 이상 업데이트가 없는 열린 PR",
+      count: idlePrs.length,
+      totalMetric: sumMetric(idlePrs, idleMetric),
+      highlights: [
+        highlightLine("최다 생성자", findTopByTotal(idleAuthors, 3)),
+        highlightLine("최다 리뷰어", findTopByTotal(idleReviewers, 3)),
+      ].filter((line): line is string => Boolean(line)),
+    },
+    {
+      id: "stuck-review-requests",
+      title: "응답 없는 리뷰 요청",
+      description: "5일 이상 응답이 없는 리뷰 요청",
+      count: reviewRequests.length,
+      totalMetric: sumMetric(reviewRequests, reviewMetric),
+      highlights: [
+        highlightLine("최다 생성자", findTopByTotal(reviewAuthors, 3)),
+        highlightLine("최다 대기 리뷰어", findTopByTotal(reviewReviewers, 3)),
+      ].filter((line): line is string => Boolean(line)),
+    },
+    {
+      id: "backlog-issues",
+      title: "정체된 Backlog 이슈",
+      description: "40일 이상 In Progress로 이동하지 않은 이슈",
+      count: backlogIssues.length,
+      totalMetric: sumMetric(backlogIssues, backlogMetric),
+      highlights: [
+        highlightLine("최다 생성자", findTopByTotal(backlogAuthors, 3)),
+        highlightLine("최다 담당자", findTopByTotal(backlogAssignees, 3)),
+      ].filter((line): line is string => Boolean(line)),
+    },
+    {
+      id: "stalled-in-progress-issues",
+      title: "정체된 In Progress 이슈",
+      description: "In Progress에서 20일 이상 머문 이슈",
+      count: stalledIssues.length,
+      totalMetric: sumMetric(stalledIssues, stalledMetric),
+      highlights: [
+        highlightLine("최다 생성자", findTopByTotal(stalledAuthors, 3)),
+        highlightLine("최다 담당자", findTopByTotal(stalledAssignees, 3)),
+      ].filter((line): line is string => Boolean(line)),
+    },
+    {
+      id: "unanswered-mentions",
+      title: "응답 없는 멘션",
+      description: "5일 이상 응답 없는 멘션",
+      count: mentions.length,
+      totalMetric: sumMetric(mentions, mentionMetric),
+      highlights: [
+        highlightLine("최다 멘션 대상", findTopByTotal(mentionTargets, 3)),
+        highlightLine("최다 요청자", findTopByTotal(mentionAuthors, 3)),
+      ].filter((line): line is string => Boolean(line)),
+    },
+  ];
+}
 
 function FollowUpOverview({
   summaries,
@@ -283,6 +448,7 @@ function FollowUpOverview({
           <div
             key={summary.id}
             className="flex flex-col gap-3 rounded-md border border-border/50 p-4"
+            data-testid={`follow-up-summary-${summary.id}`}
           >
             <div className="flex items-start justify-between gap-2">
               <div>
@@ -1325,167 +1491,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
   ];
 
   const summaries = useMemo<FollowUpSummary[]>(() => {
-    const highlightLine = (label: string, topEntries: RankingEntry[]) => {
-      if (!topEntries.length) {
-        return null;
-      }
-      const ranked = topEntries
-        .map(
-          (entry, index) =>
-            `${index + 1}위 ${formatUserDisplayName(entry.user)}`,
-        )
-        .join(", ");
-      return `${label}: ${ranked}`;
-    };
-
-    const stalePrs = insights.staleOpenPrs;
-    const staleMetric = (item: PullRequestAttentionItem) => item.ageDays ?? 0;
-    const staleAuthors = aggregateUsers(
-      stalePrs,
-      (item) => (item.author ? [item.author] : []),
-      staleMetric,
-    );
-    const staleReviewers = aggregateUsers(
-      stalePrs,
-      (item) => item.reviewers,
-      staleMetric,
-    );
-
-    const idlePrs = insights.idleOpenPrs;
-    const idleMetric = (item: PullRequestAttentionItem) =>
-      item.inactivityDays ?? item.ageDays ?? 0;
-    const idleAuthors = aggregateUsers(
-      idlePrs,
-      (item) => (item.author ? [item.author] : []),
-      idleMetric,
-    );
-    const idleReviewers = aggregateUsers(
-      idlePrs,
-      (item) => item.reviewers,
-      idleMetric,
-    );
-
-    const reviewRequests = insights.stuckReviewRequests;
-    const reviewMetric = (item: ReviewRequestAttentionItem) => item.waitingDays;
-    const reviewAuthors = aggregateUsers(
-      reviewRequests,
-      (item) => (item.pullRequest.author ? [item.pullRequest.author] : []),
-      reviewMetric,
-    );
-    const reviewReviewers = aggregateUsers(
-      reviewRequests,
-      (item) => (item.reviewer ? [item.reviewer] : []),
-      reviewMetric,
-    );
-
-    const backlogIssues = insights.backlogIssues;
-    const backlogMetric = (item: IssueAttentionItem) => item.ageDays ?? 0;
-    const backlogAuthors = aggregateUsers(
-      backlogIssues,
-      (item) => (item.author ? [item.author] : []),
-      backlogMetric,
-    );
-    const backlogAssignees = aggregateUsers(
-      backlogIssues,
-      (item) => item.assignees,
-      backlogMetric,
-    );
-
-    const stalledIssues = insights.stalledInProgressIssues;
-    const stalledMetric = (item: IssueAttentionItem) =>
-      item.inProgressAgeDays ?? item.ageDays ?? 0;
-    const stalledAuthors = aggregateUsers(
-      stalledIssues,
-      (item) => (item.author ? [item.author] : []),
-      stalledMetric,
-    );
-    const stalledAssignees = aggregateUsers(
-      stalledIssues,
-      (item) => item.assignees,
-      stalledMetric,
-    );
-
-    const mentions = insights.unansweredMentions;
-    const mentionMetric = (item: MentionAttentionItem) => item.waitingDays;
-    const mentionTargets = aggregateUsers(
-      mentions,
-      (item) => (item.target ? [item.target] : []),
-      mentionMetric,
-    );
-    const mentionAuthors = aggregateUsers(
-      mentions,
-      (item) => (item.author ? [item.author] : []),
-      mentionMetric,
-    );
-
-    return [
-      {
-        id: "stale-open-prs",
-        title: "오래된 PR",
-        description: "20일 이상 머지되지 않은 PR",
-        count: stalePrs.length,
-        totalMetric: sumMetric(stalePrs, staleMetric),
-        highlights: [
-          highlightLine("최다 생성자", findTopByTotal(staleAuthors, 3)),
-          highlightLine("최다 리뷰어", findTopByTotal(staleReviewers, 3)),
-        ].filter((line): line is string => Boolean(line)),
-      },
-      {
-        id: "idle-open-prs",
-        title: "업데이트 없는 PR",
-        description: "10일 이상 업데이트가 없는 열린 PR",
-        count: idlePrs.length,
-        totalMetric: sumMetric(idlePrs, idleMetric),
-        highlights: [
-          highlightLine("최다 생성자", findTopByTotal(idleAuthors, 3)),
-          highlightLine("최다 리뷰어", findTopByTotal(idleReviewers, 3)),
-        ].filter((line): line is string => Boolean(line)),
-      },
-      {
-        id: "stuck-review-requests",
-        title: "응답 없는 리뷰 요청",
-        description: "5일 이상 응답이 없는 리뷰 요청",
-        count: reviewRequests.length,
-        totalMetric: sumMetric(reviewRequests, reviewMetric),
-        highlights: [
-          highlightLine("최다 생성자", findTopByTotal(reviewAuthors, 3)),
-          highlightLine("최다 대기 리뷰어", findTopByTotal(reviewReviewers, 3)),
-        ].filter((line): line is string => Boolean(line)),
-      },
-      {
-        id: "backlog-issues",
-        title: "정체된 Backlog 이슈",
-        description: "40일 이상 In Progress로 이동하지 않은 이슈",
-        count: backlogIssues.length,
-        totalMetric: sumMetric(backlogIssues, backlogMetric),
-        highlights: [
-          highlightLine("최다 생성자", findTopByTotal(backlogAuthors, 3)),
-          highlightLine("최다 담당자", findTopByTotal(backlogAssignees, 3)),
-        ].filter((line): line is string => Boolean(line)),
-      },
-      {
-        id: "stalled-in-progress-issues",
-        title: "정체된 In Progress 이슈",
-        description: "In Progress에서 20일 이상 머문 이슈",
-        count: stalledIssues.length,
-        totalMetric: sumMetric(stalledIssues, stalledMetric),
-        highlights: [
-          highlightLine("최다 생성자", findTopByTotal(stalledAuthors, 3)),
-          highlightLine("최다 담당자", findTopByTotal(stalledAssignees, 3)),
-        ].filter((line): line is string => Boolean(line)),
-      },
-      {
-        id: "unanswered-mentions",
-        title: "응답 없는 멘션",
-        description: "5일 이상 응답 없는 멘션",
-        count: mentions.length,
-        totalMetric: sumMetric(mentions, mentionMetric),
-        highlights: [
-          highlightLine("최다 멘션 대상", findTopByTotal(mentionTargets, 3)),
-          highlightLine("최다 요청자", findTopByTotal(mentionAuthors, 3)),
-        ].filter((line): line is string => Boolean(line)),
-      },
-    ];
+    return buildFollowUpSummaries(insights);
   }, [insights]);
 
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
