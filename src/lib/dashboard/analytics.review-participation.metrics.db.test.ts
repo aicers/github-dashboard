@@ -16,7 +16,6 @@ import {
 } from "@/components/dashboard/metric-utils";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import type { PeriodKey } from "@/lib/dashboard/types";
-import { query } from "@/lib/db/client";
 import {
   type DbActor,
   type DbPullRequest,
@@ -27,6 +26,13 @@ import {
   upsertReview,
   upsertUser,
 } from "@/lib/db/operations";
+import {
+  buildPeriodRanges as buildIsoPeriodRanges,
+  CURRENT_RANGE_END,
+  CURRENT_RANGE_START,
+  PERIOD_KEYS,
+  resetDashboardTables,
+} from "../../../tests/helpers/dashboard-metrics";
 
 vi.mock("recharts", () => {
   const { createElement: createReactElement } =
@@ -46,15 +52,7 @@ vi.mock("recharts", () => {
   };
 });
 
-const CURRENT_RANGE_START = "2024-01-01T00:00:00.000Z";
-const CURRENT_RANGE_END = "2024-01-07T23:59:59.999Z";
-const PERIODS = [
-  "previous4",
-  "previous3",
-  "previous2",
-  "previous",
-  "current",
-] as const satisfies PeriodKey[];
+const PERIODS = PERIOD_KEYS;
 
 type ReviewerSpec = {
   reviewerId: string;
@@ -154,7 +152,7 @@ type ParticipationExpectations = Record<
   }
 >;
 
-function subtractRange(
+function _subtractRange(
   previousOfStart: Date,
   previousOfEnd: Date,
 ): PeriodRange {
@@ -164,22 +162,19 @@ function subtractRange(
   return { start, end };
 }
 
-function buildPeriodRanges(): PeriodRanges {
-  const current: PeriodRange = {
-    start: new Date(CURRENT_RANGE_START),
-    end: new Date(CURRENT_RANGE_END),
-  };
-  const previous = subtractRange(current.start, current.end);
-  const previous2 = subtractRange(previous.start, previous.end);
-  const previous3 = subtractRange(previous2.start, previous2.end);
-  const previous4 = subtractRange(previous3.start, previous3.end);
-  return {
-    current,
-    previous,
-    previous2,
-    previous3,
-    previous4,
-  } satisfies PeriodRanges;
+function buildDatePeriodRanges(): PeriodRanges {
+  const isoRanges = buildIsoPeriodRanges(
+    CURRENT_RANGE_START,
+    CURRENT_RANGE_END,
+  );
+  return PERIODS.reduce((ranges, key) => {
+    const range = isoRanges[key];
+    ranges[key] = {
+      start: new Date(range.start),
+      end: new Date(range.end),
+    } satisfies PeriodRange;
+    return ranges;
+  }, {} as PeriodRanges);
 }
 
 function computeExpectedParticipation({
@@ -268,9 +263,7 @@ function computeExpectedParticipation({
 
 describe("analytics review participation metrics", () => {
   beforeEach(async () => {
-    await query(
-      "TRUNCATE TABLE issues, pull_requests, reviews, comments, reactions, review_requests, repositories, users RESTART IDENTITY CASCADE",
-    );
+    await resetDashboardTables();
   });
 
   it("computes organization review participation with history", async () => {
@@ -503,7 +496,7 @@ describe("analytics review participation metrics", () => {
       end: CURRENT_RANGE_END,
     });
 
-    const ranges = buildPeriodRanges();
+    const ranges = buildDatePeriodRanges();
     const expectations = computeExpectedParticipation({
       periodSpecs,
       ranges,

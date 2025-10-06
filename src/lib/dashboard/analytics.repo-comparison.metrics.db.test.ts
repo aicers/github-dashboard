@@ -4,7 +4,6 @@ import "@testing-library/jest-dom";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
-import { query } from "@/lib/db/client";
 import {
   type DbActor,
   type DbComment,
@@ -16,34 +15,22 @@ import {
   upsertComment,
   upsertIssue,
   upsertPullRequest,
-  upsertRepository,
   upsertReview,
-  upsertUser,
 } from "@/lib/db/operations";
 import { ensureSchema } from "@/lib/db/schema";
+import {
+  resetDashboardAndSyncTables,
+  seedActors,
+  seedRepositories,
+} from "../../../tests/helpers/dashboard-metrics";
 
 const RANGE_START = "2024-05-01T00:00:00.000Z";
 const RANGE_END = "2024-05-31T23:59:59.999Z";
 
-async function seedRepositories(repositories: readonly DbRepository[]) {
-  for (const repository of repositories) {
-    await upsertRepository(repository);
-  }
-}
-
-async function seedUsers(users: readonly DbActor[]) {
-  for (const user of users) {
-    await upsertUser(user);
-  }
-}
-
 describe("analytics repository comparison", () => {
   beforeEach(async () => {
     await ensureSchema();
-    await query(
-      "TRUNCATE TABLE comments, reviews, review_requests, pull_requests, issues, reactions, repositories, users RESTART IDENTITY CASCADE",
-    );
-    await query("TRUNCATE TABLE sync_log, sync_state RESTART IDENTITY CASCADE");
+    await resetDashboardAndSyncTables();
     await updateSyncConfig({
       timezone: "UTC",
       excludedRepositories: [],
@@ -104,7 +91,7 @@ describe("analytics repository comparison", () => {
       name: "Commenter",
     };
 
-    await seedUsers([
+    await seedActors([
       authorAlpha,
       authorBeta,
       authorGamma,

@@ -19,7 +19,7 @@ import {
   resetDashboardTables,
   seedPersonAndRepo,
   shiftHours,
-} from "../../../tests/helpers/people-metrics";
+} from "../../../tests/helpers/dashboard-metrics";
 
 describe("people PR creation, merge, and merge-by metrics", () => {
   beforeEach(async () => {

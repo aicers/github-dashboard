@@ -19,6 +19,7 @@ import {
   upsertUser,
 } from "@/lib/db/operations";
 import { ensureSchema } from "@/lib/db/schema";
+import { resetDashboardAndSyncTables } from "../../../tests/helpers/dashboard-metrics";
 
 type TrendRow = {
   date: string;
@@ -144,10 +145,7 @@ function buildNetSeries(
 describe("analytics net trends", () => {
   beforeEach(async () => {
     await ensureSchema();
-    await query(
-      "TRUNCATE TABLE issues, pull_requests, reviews, comments, reactions, review_requests, repositories, users RESTART IDENTITY CASCADE",
-    );
-    await query("TRUNCATE TABLE sync_log, sync_state RESTART IDENTITY CASCADE");
+    await resetDashboardAndSyncTables();
     await updateSyncConfig({
       timezone: "UTC",
       excludedRepositories: [],

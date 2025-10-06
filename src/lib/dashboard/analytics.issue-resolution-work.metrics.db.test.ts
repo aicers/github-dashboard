@@ -15,7 +15,6 @@ import {
   formatMetricValue,
 } from "@/components/dashboard/metric-utils";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
-import { query } from "@/lib/db/client";
 import {
   type DbActor,
   type DbIssue,
@@ -24,6 +23,14 @@ import {
   upsertRepository,
   upsertUser,
 } from "@/lib/db/operations";
+import type { PeriodKey } from "../../../tests/helpers/dashboard-metrics";
+import {
+  CURRENT_RANGE_END,
+  CURRENT_RANGE_START,
+  PERIOD_KEYS,
+  resetDashboardTables,
+  shiftHours,
+} from "../../../tests/helpers/dashboard-metrics";
 
 vi.mock("recharts", () => {
   const { createElement: createReactElement } =
@@ -43,17 +50,8 @@ vi.mock("recharts", () => {
   };
 });
 
-const CURRENT_RANGE_START = "2024-01-01T00:00:00.000Z";
-const CURRENT_RANGE_END = "2024-01-07T23:59:59.999Z";
 const TARGET_PROJECT = "To-Do List";
-const PERIODS = [
-  "previous4",
-  "previous3",
-  "previous2",
-  "previous",
-  "current",
-] as const;
-type PeriodKey = (typeof PERIODS)[number];
+const PERIODS = PERIOD_KEYS;
 type RoleKey = "parent" | "child";
 
 type DurationSpec = {
@@ -63,12 +61,6 @@ type DurationSpec = {
 };
 
 type PeriodDurations = Record<RoleKey, DurationSpec>;
-
-function shiftHours(iso: string, hours: number): string {
-  const time = new Date(iso).getTime();
-  const adjusted = time + hours * 3_600_000;
-  return new Date(adjusted).toISOString();
-}
 
 function createDurationIssue(
   repository: DbRepository,
@@ -120,9 +112,7 @@ function calculateAverage(values: number[]): number {
 
 describe("analytics issue resolution and work metrics", () => {
   beforeEach(async () => {
-    await query(
-      "TRUNCATE TABLE issues, pull_requests, reviews, comments, reactions, review_requests, repositories, users RESTART IDENTITY CASCADE",
-    );
+    await resetDashboardTables();
   });
 
   it("builds resolution and work metrics with historical breakdown", async () => {

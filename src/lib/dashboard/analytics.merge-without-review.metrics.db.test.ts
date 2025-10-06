@@ -11,7 +11,6 @@ import { MetricCard } from "@/components/dashboard/metric-card";
 import { toCardHistory } from "@/components/dashboard/metric-history";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import type { PeriodKey } from "@/lib/dashboard/types";
-import { query } from "@/lib/db/client";
 import {
   type DbActor,
   type DbPullRequest,
@@ -22,6 +21,12 @@ import {
   upsertReview,
   upsertUser,
 } from "@/lib/db/operations";
+import {
+  CURRENT_RANGE_END,
+  CURRENT_RANGE_START,
+  PERIOD_KEYS,
+  resetDashboardTables,
+} from "../../../tests/helpers/dashboard-metrics";
 
 vi.mock("recharts", () => {
   const { createElement: createReactElement } =
@@ -41,8 +46,7 @@ vi.mock("recharts", () => {
   };
 });
 
-const CURRENT_RANGE_START = "2024-01-01T00:00:00.000Z";
-const CURRENT_RANGE_END = "2024-01-07T23:59:59.999Z";
+const PERIODS = PERIOD_KEYS;
 
 function hoursBefore(iso: string, hours: number) {
   const base = new Date(iso).getTime();
@@ -51,9 +55,7 @@ function hoursBefore(iso: string, hours: number) {
 
 describe("analytics merge without review metrics", () => {
   beforeEach(async () => {
-    await query(
-      "TRUNCATE TABLE issues, pull_requests, reviews, comments, reactions, review_requests, repositories, users RESTART IDENTITY CASCADE",
-    );
+    await resetDashboardTables();
   });
 
   it("builds merge without review ratio metrics with five-period history", async () => {
@@ -91,14 +93,7 @@ describe("analytics merge without review metrics", () => {
     };
     await upsertRepository(repository);
 
-    const PERIODS = [
-      "previous4",
-      "previous3",
-      "previous2",
-      "previous",
-      "current",
-    ] as const satisfies PeriodKey[];
-    type Period = (typeof PERIODS)[number];
+    type Period = PeriodKey;
     type ReviewKind = "approved" | "none" | "null";
 
     const mergeSpecs: Record<

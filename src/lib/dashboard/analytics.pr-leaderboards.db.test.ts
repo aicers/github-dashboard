@@ -5,7 +5,6 @@ import "../../../tests/helpers/postgres-container";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
-import { query } from "@/lib/db/client";
 import {
   type DbActor,
   type DbPullRequest,
@@ -14,15 +13,10 @@ import {
   upsertRepository,
   upsertUser,
 } from "@/lib/db/operations";
+import { resetDashboardTables } from "../../../tests/helpers/dashboard-metrics";
 
 const RANGE_START = "2024-07-01T00:00:00.000Z";
 const RANGE_END = "2024-07-31T23:59:59.999Z";
-
-async function resetDatabase() {
-  await query(
-    "TRUNCATE TABLE issues, pull_requests, reviews, comments, reactions, review_requests, repositories, users RESTART IDENTITY CASCADE",
-  );
-}
 
 function buildActor(id: string, login: string, name?: string): DbActor {
   return {
@@ -99,7 +93,7 @@ function buildRepository(
 
 describe("analytics PR leaderboards", () => {
   beforeEach(async () => {
-    await resetDatabase();
+    await resetDashboardTables();
   });
 
   it("builds PR creation leaderboard counts and filters by repository selection", async () => {
