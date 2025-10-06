@@ -115,26 +115,31 @@ async function insertReviews({
   reviewers: ReviewerSpec[];
   defaultSubmittedAt: string;
 }) {
-  let reviewIndex = 1;
-  for (const entry of reviewers) {
-    const review: DbReview = {
-      id: `${pullRequestId}-review-${reviewIndex++}`,
-      pullRequestId,
-      authorId: entry.reviewerId,
-      state: entry.submittedAt === null ? "COMMENTED" : "APPROVED",
-      submittedAt:
-        entry.submittedAt === undefined
-          ? defaultSubmittedAt
-          : entry.submittedAt,
-      raw: {},
-    };
-
-    if (entry.submittedAt === null) {
-      review.submittedAt = null;
-    }
-
-    await upsertReview(review);
+  if (!reviewers.length) {
+    return;
   }
+
+  await Promise.all(
+    reviewers.map((entry, index) => {
+      const review: DbReview = {
+        id: `${pullRequestId}-review-${index + 1}`,
+        pullRequestId,
+        authorId: entry.reviewerId,
+        state: entry.submittedAt === null ? "COMMENTED" : "APPROVED",
+        submittedAt:
+          entry.submittedAt === undefined
+            ? defaultSubmittedAt
+            : entry.submittedAt,
+        raw: {},
+      } satisfies DbReview;
+
+      if (entry.submittedAt === null) {
+        review.submittedAt = null;
+      }
+
+      return upsertReview(review);
+    }),
+  );
 }
 
 type PeriodRange = {
@@ -456,40 +461,54 @@ describe("analytics review participation metrics", () => {
     };
 
     let pullNumber = 1;
+    const seedingTasks: Promise<void>[] = [];
+
     for (const period of PERIODS) {
       for (const spec of periodSpecs[period]) {
-        const pullRequest = buildPullRequest({
-          repository,
-          authorId: spec.authorId ?? author.id,
-          mergedAt: spec.mergedAt,
-          key: spec.key,
-          number: pullNumber++,
-        });
-        await upsertPullRequest(pullRequest);
-        await insertReviews({
-          pullRequestId: pullRequest.id,
-          reviewers: spec.reviewers,
-          defaultSubmittedAt: spec.mergedAt,
-        });
+        const number = pullNumber++;
+        seedingTasks.push(
+          (async () => {
+            const pullRequest = buildPullRequest({
+              repository,
+              authorId: spec.authorId ?? author.id,
+              mergedAt: spec.mergedAt,
+              key: spec.key,
+              number,
+            });
+            await upsertPullRequest(pullRequest);
+            await insertReviews({
+              pullRequestId: pullRequest.id,
+              reviewers: spec.reviewers,
+              defaultSubmittedAt: spec.mergedAt,
+            });
+          })(),
+        );
       }
     }
 
-    const outOfRangePull = buildPullRequest({
-      repository,
-      authorId: author.id,
-      mergedAt: "2023-11-20T10:00:00.000Z",
-      key: "out-of-range",
-      number: pullNumber++,
-    });
-    await upsertPullRequest(outOfRangePull);
-    await insertReviews({
-      pullRequestId: outOfRangePull.id,
-      reviewers: [
-        { reviewerId: reviewer.id },
-        { reviewerId: backupReviewer.id },
-      ],
-      defaultSubmittedAt: "2023-11-20T10:00:00.000Z",
-    });
+    const outOfRangeNumber = pullNumber++;
+    seedingTasks.push(
+      (async () => {
+        const outOfRangePull = buildPullRequest({
+          repository,
+          authorId: author.id,
+          mergedAt: "2023-11-20T10:00:00.000Z",
+          key: "out-of-range",
+          number: outOfRangeNumber,
+        });
+        await upsertPullRequest(outOfRangePull);
+        await insertReviews({
+          pullRequestId: outOfRangePull.id,
+          reviewers: [
+            { reviewerId: reviewer.id },
+            { reviewerId: backupReviewer.id },
+          ],
+          defaultSubmittedAt: "2023-11-20T10:00:00.000Z",
+        });
+      })(),
+    );
+
+    await Promise.all(seedingTasks);
 
     const analytics = await getDashboardAnalytics({
       start: CURRENT_RANGE_START,

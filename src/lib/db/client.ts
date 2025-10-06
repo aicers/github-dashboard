@@ -25,7 +25,18 @@ function createPool() {
     idleTimeoutMillis: 30_000,
   };
 
-  return new Pool(config);
+  const client = new Pool(config);
+
+  client.on("error", (error) => {
+    // Ignore termination errors triggered when shutting the container down.
+    if ((error as { code?: string }).code === "57P01") {
+      return;
+    }
+
+    console.error("Unexpected database client error", error);
+  });
+
+  return client;
 }
 
 export function getPool() {
