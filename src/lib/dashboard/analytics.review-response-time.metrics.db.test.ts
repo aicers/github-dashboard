@@ -10,10 +10,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { toCardHistory } from "@/components/dashboard/metric-history";
-import {
-  formatChange,
-  formatMetricValue,
-} from "@/components/dashboard/metric-utils";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import { calculateBusinessHoursBetween } from "@/lib/dashboard/business-days";
 import type { PeriodKey } from "@/lib/dashboard/types";
@@ -41,6 +37,10 @@ import {
   PERIOD_KEYS,
   resetDashboardTables,
 } from "../../../tests/helpers/dashboard-metrics";
+import {
+  formatChangeForTest,
+  formatMetricValueForTest,
+} from "../../../tests/helpers/metric-formatting";
 
 vi.mock("recharts", () => {
   const { createElement: createReactElement } =
@@ -790,11 +790,15 @@ describe("analytics review response time metrics", () => {
       }
     });
 
-    const organizationValueLabel = formatMetricValue(
+    const organizationValueLabel = formatMetricValueForTest(
       { current: organizationMetric.current ?? Number.NaN, unit: "hours" },
       "hours",
     );
-    const organizationChange = formatChange(organizationMetric, "hours");
+    const organizationChange = formatChangeForTest(
+      organizationMetric,
+      "hours",
+      organizationMetric.unit ?? "hours",
+    );
 
     render(
       createElement(

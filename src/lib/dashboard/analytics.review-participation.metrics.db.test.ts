@@ -10,10 +10,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { toCardHistory } from "@/components/dashboard/metric-history";
-import {
-  formatChange,
-  formatMetricValue,
-} from "@/components/dashboard/metric-utils";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import type { PeriodKey } from "@/lib/dashboard/types";
 import {
@@ -570,11 +566,13 @@ describe("analytics review participation metrics", () => {
       }
     });
 
-    const organizationValueLabel = formatMetricValue(
-      { current: organizationMetric.current },
-      "percentage",
-    );
-    const organizationChange = formatChange(organizationMetric, "percentage");
+    const organizationValueLabel = `${(organizationMetric.current * 100).toFixed(1)}%`;
+    const changePoints = organizationMetric.absoluteChange * 100;
+    const organizationChangeLabel = `${changePoints >= 0 ? "+" : ""}${changePoints.toFixed(1)}pt`;
+    const organizationPercentLabel =
+      organizationMetric.percentChange == null
+        ? "–"
+        : `${organizationMetric.percentChange >= 0 ? "+" : ""}${organizationMetric.percentChange.toFixed(1)}%`;
 
     render(
       createElement(
@@ -604,7 +602,7 @@ describe("analytics review participation metrics", () => {
     ).toBeInTheDocument();
     expect(
       within(organizationCard).getByText(
-        `${organizationChange.changeLabel} (${organizationChange.percentLabel})`,
+        `${organizationChangeLabel} (${organizationPercentLabel})`,
       ),
     ).toBeInTheDocument();
 

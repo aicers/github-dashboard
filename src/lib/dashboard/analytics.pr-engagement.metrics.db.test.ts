@@ -10,10 +10,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { toCardHistory } from "@/components/dashboard/metric-history";
-import {
-  formatChange,
-  formatMetricValue,
-} from "@/components/dashboard/metric-utils";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import type { PeriodKey } from "@/lib/dashboard/types";
 import {
@@ -32,6 +28,10 @@ import {
   PERIOD_KEYS,
   resetDashboardTables,
 } from "../../../tests/helpers/dashboard-metrics";
+import {
+  formatChangeForTest,
+  formatMetricValueForTest,
+} from "../../../tests/helpers/metric-formatting";
 
 vi.mock("recharts", () => {
   const { createElement: createReactElement } =
@@ -404,17 +404,17 @@ describe("analytics PR engagement metrics", () => {
       );
     });
 
-    const commentsValueLabel = formatMetricValue(
+    const commentsValueLabel = formatMetricValueForTest(
       { current: avgCommentsMetric.current },
       "ratio",
     );
-    const reviewsValueLabel = formatMetricValue(
+    const reviewsValueLabel = formatMetricValueForTest(
       { current: avgReviewsMetric.current },
       "ratio",
     );
 
-    const commentsChange = formatChange(avgCommentsMetric, "ratio");
-    const reviewsChange = formatChange(avgReviewsMetric, "ratio");
+    const commentsChange = formatChangeForTest(avgCommentsMetric, "ratio");
+    const reviewsChange = formatChangeForTest(avgReviewsMetric, "ratio");
 
     render(
       createElement(
@@ -582,17 +582,17 @@ describe("analytics PR engagement metrics", () => {
       }
     });
 
-    const commentsValueLabel = formatMetricValue(
+    const commentsValueLabel = formatMetricValueForTest(
       { current: avgCommentsMetric.current },
       "ratio",
     );
-    const reviewsValueLabel = formatMetricValue(
+    const reviewsValueLabel = formatMetricValueForTest(
       { current: avgReviewsMetric.current },
       "ratio",
     );
 
-    const commentsChange = formatChange(avgCommentsMetric, "ratio");
-    const reviewsChange = formatChange(avgReviewsMetric, "ratio");
+    const commentsChange = formatChangeForTest(avgCommentsMetric, "ratio");
+    const reviewsChange = formatChangeForTest(avgReviewsMetric, "ratio");
 
     render(
       createElement(

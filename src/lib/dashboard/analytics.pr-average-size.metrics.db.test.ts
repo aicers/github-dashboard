@@ -10,7 +10,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { toCardHistory } from "@/components/dashboard/metric-history";
-import { formatChange } from "@/components/dashboard/metric-utils";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import type { ComparisonValue, PeriodKey } from "@/lib/dashboard/types";
 import {
@@ -27,6 +26,7 @@ import {
   PERIOD_KEYS,
   resetDashboardTables,
 } from "../../../tests/helpers/dashboard-metrics";
+import { formatChangeForTest } from "../../../tests/helpers/metric-formatting";
 
 vi.mock("recharts", () => {
   const { createElement: createReactElement } =
@@ -463,14 +463,14 @@ describe("analytics PR average size metrics", () => {
     expect(
       within(additionsCardElement).getByText(valueLabel),
     ).toBeInTheDocument();
-    const additionsChange = formatChange(additionsMetric, "count");
+    const additionsChange = formatChangeForTest(additionsMetric, "count");
     expect(
       within(additionsCardElement).getByText(
         `${additionsChange.changeLabel} (${additionsChange.percentLabel})`,
       ),
     ).toBeInTheDocument();
 
-    const netChange = formatChange(netMetric, "count");
+    const netChange = formatChangeForTest(netMetric, "count");
     expect(
       within(netCardElement).getByText(
         `${netChange.changeLabel} (${netChange.percentLabel})`,
@@ -628,14 +628,14 @@ describe("analytics PR average size metrics", () => {
     expect(
       within(additionsCardElement).getByText(valueLabel),
     ).toBeInTheDocument();
-    const additionsChange = formatChange(additionsMetric, "count");
+    const additionsChange = formatChangeForTest(additionsMetric, "count");
     expect(
       within(additionsCardElement).getByText(
         `${additionsChange.changeLabel} (${additionsChange.percentLabel})`,
       ),
     ).toBeInTheDocument();
 
-    const netChange = formatChange(netMetric, "count");
+    const netChange = formatChangeForTest(netMetric, "count");
     expect(
       within(netCardElement).getByText(
         `${netChange.changeLabel} (${netChange.percentLabel})`,

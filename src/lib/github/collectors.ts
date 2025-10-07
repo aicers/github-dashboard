@@ -36,6 +36,7 @@ export type SyncOptions = {
   until?: string | null;
   sinceByResource?: Partial<Record<ResourceKey, string | null>>;
   logger?: SyncLogger;
+  client?: GraphQLClient;
 };
 
 type Maybe<T> = T | null | undefined;
@@ -1710,7 +1711,7 @@ export async function runCollection(options: SyncOptions) {
     throw new Error("GitHub organization is not configured.");
   }
 
-  const client = createGithubClient();
+  const client = options.client ?? createGithubClient();
   const repoLogId = ensureLogId(await recordSyncLog("repositories", "running"));
   let repositories: RepositoryNode[] = [];
   let repositoriesLatest: string | null = null;
