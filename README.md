@@ -91,9 +91,12 @@ curl -X POST http://localhost:3000/api/sync/reset -d '{"preserveLogs":true}' \
 - `npm run test:watch` — watch mode
 - `npm run test:e2e` — Playwright browser tests (requires the Playwright browser
   install step above); uses dedicated test harness routes under
-  `/test-harness/*`, for example SettingsView at
-  `http://localhost:3000/test-harness/settings` and SyncControls at
-  `http://localhost:3000/test-harness/sync`
+  `/test-harness/*` such as:
+  - SettingsView — `http://localhost:3000/test-harness/settings`
+  - SyncControls — `http://localhost:3000/test-harness/sync`
+  - Analytics filters — `http://localhost:3000/test-harness/analytics`
+  - People insights — `http://localhost:3000/test-harness/people`
+  - Dashboard tabs — `http://localhost:3000/test-harness/dashboard-tabs`
 - `npm run ci` — sequentially runs `biome ci --error-on-warnings .`,
   `npm run typecheck`, `npm run test`, and `npm run test:db`
 

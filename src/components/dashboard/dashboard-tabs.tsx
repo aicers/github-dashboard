@@ -14,8 +14,13 @@ const tabs = [
   { href: "/dashboard/settings", label: "Settings" },
 ];
 
-export function DashboardTabs() {
-  const pathname = usePathname();
+type DashboardTabsProps = {
+  currentPathname?: string;
+};
+
+export function DashboardTabs({ currentPathname }: DashboardTabsProps = {}) {
+  const pathnameFromRouter = usePathname();
+  const pathname = currentPathname ?? pathnameFromRouter;
 
   return (
     <nav className="flex flex-wrap items-center gap-2 border-b border-border/60 pb-2 text-sm font-medium">
