@@ -1,5 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { RepoActivityTable } from "@/components/dashboard/repo-activity-table";
@@ -68,9 +67,7 @@ describe("RepoActivityTable sorting", () => {
     },
   ];
 
-  it("sorts rows for each metric column", async () => {
-    const user = userEvent.setup();
-
+  it("sorts rows for each metric column", () => {
     render(<RepoActivityTable items={items} />);
 
     expect(getRepositoryOrder()).toEqual([
@@ -133,9 +130,9 @@ describe("RepoActivityTable sorting", () => {
 
     for (const { label, firstOrder, secondOrder } of sortExpectations) {
       const button = screen.getByRole("button", { name: label });
-      await user.click(button);
+      fireEvent.click(button);
       expect(getRepositoryOrder()).toEqual(firstOrder);
-      await user.click(button);
+      fireEvent.click(button);
       expect(getRepositoryOrder()).toEqual(secondOrder);
     }
   });
