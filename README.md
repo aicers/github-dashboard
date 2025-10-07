@@ -19,7 +19,13 @@ configuration, sync controls, and analytics through a Next.js dashboard.
    npm install
    ```
 
-2. Provide environment variables (`npm run dev` reads from `.env.local` or the
+1. Install Playwright browsers (one-time per machine):
+
+   ```bash
+   npx playwright install --with-deps
+   ```
+
+1. Provide environment variables (`npm run dev` reads from `.env.local` or the
    current shell):
 
    ```bash
@@ -29,13 +35,13 @@ configuration, sync controls, and analytics through a Next.js dashboard.
    export SYNC_INTERVAL_MINUTES=60
    ```
 
-3. Start the dev server:
+1. Start the dev server:
 
    ```bash
    npm run dev
    ```
 
-4. Visit the app:
+1. Visit the app:
 
    - `http://localhost:3000` — landing page with quick links
    - `http://localhost:3000/dashboard` — data collection controls & analytics
@@ -83,6 +89,10 @@ curl -X POST http://localhost:3000/api/sync/reset -d '{"preserveLogs":true}' \
   running first, and keep each spec responsible for cleaning its tables (for
   example with `TRUNCATE`) to stay isolated.
 - `npm run test:watch` — watch mode
+- `npm run test:e2e` — Playwright browser tests (requires the Playwright browser
+  install step above); uses dedicated test harness routes under
+  `/test-harness/*`, for example the SettingsView flow at
+  `http://localhost:3000/test-harness/settings`
 - `npm run ci` — sequentially runs `biome ci --error-on-warnings .`,
   `npm run typecheck`, `npm run test`, and `npm run test:db`
 

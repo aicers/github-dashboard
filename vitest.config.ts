@@ -19,6 +19,7 @@ export default defineConfig({
       ...configDefaults.exclude,
       "**/*.db.test.ts",
       "**/analytics.issue-creation-closure.metrics.test.ts",
+      "tests/e2e/**",
     ],
     coverage: {
       reporter: ["text", "lcov"],
