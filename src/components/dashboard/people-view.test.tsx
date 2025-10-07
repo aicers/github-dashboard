@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PRESETS } from "@/components/dashboard/dashboard-filters";
@@ -19,6 +19,7 @@ import type {
   OrganizationAnalytics,
   RepoComparisonRow,
 } from "@/lib/dashboard/types";
+import type { UserProfile } from "@/lib/db/operations";
 
 vi.mock("@/components/dashboard/use-dashboard-analytics", async () => {
   const actual = await vi.importActual<
@@ -261,6 +262,7 @@ function createMockAnalytics(): DashboardAnalytics {
     },
     repositories: [repository],
     contributors: [contributor],
+    activeContributors: [contributor],
     organization: createOrganizationAnalytics(),
     individual: {
       person: contributor,
@@ -278,6 +280,15 @@ function createMockAnalytics(): DashboardAnalytics {
     timeZone: "UTC",
     weekStart: "monday",
   } satisfies DashboardAnalytics;
+}
+
+function createUser(id: string, login: string, name?: string): UserProfile {
+  return {
+    id,
+    login,
+    name: name ?? login,
+    avatarUrl: null,
+  } satisfies UserProfile;
 }
 
 function createMockState(): DashboardAnalyticsState {
@@ -309,6 +320,44 @@ function createMockState(): DashboardAnalyticsState {
     timeZone: analytics.timeZone,
     weekStart: analytics.weekStart,
   } satisfies DashboardAnalyticsState;
+}
+
+function buildStateWithContributors({
+  contributors,
+  activeContributors = [],
+  initialPersonId = null,
+}: {
+  contributors: UserProfile[];
+  activeContributors?: UserProfile[];
+  initialPersonId?: string | null;
+}): DashboardAnalyticsState {
+  const base = createMockState();
+  const applyFilters = vi.fn().mockResolvedValue(undefined);
+
+  const analytics = {
+    ...base.analytics,
+    contributors,
+    activeContributors,
+    individual:
+      base.analytics.individual && contributors.length
+        ? {
+            ...base.analytics.individual,
+            person: contributors[0],
+          }
+        : base.analytics.individual,
+  } satisfies DashboardAnalytics;
+
+  const filters: FilterState = {
+    ...base.filters,
+    personId: initialPersonId,
+  };
+
+  return {
+    ...base,
+    analytics,
+    filters,
+    applyFilters,
+  };
 }
 
 describe("PeopleView", () => {
@@ -389,4 +438,69 @@ describe("PeopleView", () => {
     ).toBeInTheDocument();
     expect(within(repoTable).getByText("acme/repo-one")).toBeInTheDocument();
   });
+});
+
+it("orders contributor buttons as octoaide, codecov, dependabot, then others alphabetically", () => {
+  const contributors = [
+    createUser("user-5", "zeta"),
+    createUser("user-2", "dependabot[bot]"),
+    createUser("user-3", "octoaide"),
+    createUser("user-4", "codecov"),
+    createUser("user-6", "alice"),
+  ];
+  const state = buildStateWithContributors({
+    contributors,
+    activeContributors: contributors.slice(0, 2),
+    initialPersonId: null,
+  });
+  mockUseDashboardAnalytics.mockReturnValue(state);
+
+  render(
+    <PeopleView
+      initialAnalytics={state.analytics}
+      defaultRange={DEFAULT_RANGE}
+    />,
+  );
+
+  const selectionSection = screen.getByText("구성원 선택").parentElement;
+  expect(selectionSection).not.toBeNull();
+  const selectionButtons = within(selectionSection as HTMLElement).getAllByRole(
+    "button",
+    { name: /.*/ },
+  );
+  const labels = selectionButtons.map((button) => button.textContent?.trim());
+  expect(labels).toEqual([
+    "octoaide",
+    "codecov",
+    "dependabot[bot]",
+    "alice",
+    "zeta",
+  ]);
+});
+
+it("auto-selects octoaide even when contributors list does not include it", async () => {
+  const contributors = [
+    createUser("user-1", "alice"),
+    createUser("user-2", "bravo"),
+  ];
+  const state = buildStateWithContributors({
+    contributors,
+    activeContributors: [],
+    initialPersonId: null,
+  });
+  mockUseDashboardAnalytics.mockReturnValue(state);
+
+  render(
+    <PeopleView
+      initialAnalytics={state.analytics}
+      defaultRange={DEFAULT_RANGE}
+    />,
+  );
+
+  await waitFor(() => {
+    expect(state.applyFilters).toHaveBeenCalled();
+  });
+  expect(state.applyFilters).toHaveBeenCalledWith(
+    expect.objectContaining({ personId: "octoaide" }),
+  );
 });

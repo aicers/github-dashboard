@@ -286,6 +286,9 @@ export const DASHBOARD_FIXTURE_RANGE = {
 export function buildDashboardAnalyticsFixture(): DashboardAnalytics {
   const repositories = BASE_REPOSITORIES.map((repo) => ({ ...repo }));
   const contributors = BASE_CONTRIBUTORS.map((person) => ({ ...person }));
+  const activeContributors = [contributors[0], contributors[2]].filter(
+    (person): person is (typeof contributors)[number] => Boolean(person),
+  );
   const organization = {
     metrics: {
       issuesCreated: createComparisonValue(90, 80),
@@ -389,6 +392,7 @@ export function buildDashboardAnalyticsFixture(): DashboardAnalytics {
     },
     repositories,
     contributors,
+    activeContributors,
     organization,
     individual,
     leaderboard: BASE_LEADERBOARD,
@@ -411,8 +415,15 @@ export function buildDashboardAnalyticsForPerson(
   const multiplier =
     person.login === "octoaide" ? 1.5 : person.login === "codecov" ? 1.1 : 0.9;
 
+  const activeContributors = base.activeContributors.some(
+    (active) => active.id === person.id,
+  )
+    ? base.activeContributors
+    : [...base.activeContributors, person];
+
   return {
     ...base,
+    activeContributors,
     individual: buildIndividualAnalytics(person, multiplier),
   };
 }

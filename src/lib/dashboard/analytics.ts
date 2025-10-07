@@ -30,6 +30,7 @@ import {
   getSyncConfig,
   getUserProfiles,
   listAllRepositories,
+  listAllUsers,
   type RepositoryProfile,
   type UserProfile,
 } from "@/lib/db/operations";
@@ -4712,14 +4713,22 @@ export async function getDashboardAnalytics(
     mainBranchContribution: mainBranchContributionEntries,
   };
 
-  const contributorProfiles = contributorIds.length
-    ? await getUserProfiles(contributorIds)
+  const activeContributors = contributorIds.length
+    ? (await getUserProfiles(contributorIds)).filter(
+        (user) => !excludedUserIds.has(user.id),
+      )
     : [];
+
+  const allContributors = await listAllUsers();
+  const contributors = allContributors.filter(
+    (user) => !excludedUserIds.has(user.id),
+  );
 
   return {
     range,
     repositories: filteredRepositories,
-    contributors: contributorProfiles,
+    contributors,
+    activeContributors,
     organization,
     individual,
     leaderboard,

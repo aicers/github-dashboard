@@ -361,6 +361,7 @@ function buildDashboardAnalytics(): DashboardAnalytics {
     range,
     repositories,
     contributors,
+    activeContributors: contributors,
     organization,
     individual: null,
     leaderboard,

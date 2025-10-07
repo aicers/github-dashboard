@@ -123,14 +123,23 @@ export function PeopleView({
       person.login ?? person.name ?? person.id;
 
     const priorityOf = (person: (typeof unsortedContributors)[number]) => {
-      const identifier = displayName(person).toLowerCase();
+      const identifier = (person.login ?? person.name ?? person.id)
+        .toLowerCase()
+        .replace(/^@/, "");
       if (identifier === "octoaide") {
         return 0;
       }
       if (identifier === "codecov") {
         return 1;
       }
-      return 2;
+      if (
+        identifier === "dependabot" ||
+        identifier === "app/dependabot" ||
+        identifier.startsWith("dependabot")
+      ) {
+        return 2;
+      }
+      return 3;
     };
 
     return [...unsortedContributors].sort((first, second) => {
@@ -172,12 +181,33 @@ export function PeopleView({
     );
   }, [individual]);
 
+  const initialContributorId = useMemo(() => {
+    if (filters.personId) {
+      return null;
+    }
+
+    const normalize = (value: string | null | undefined) =>
+      (value ?? "").toLowerCase().replace(/^@/, "");
+
+    const octoaideFromContributors = contributors.find(
+      (person) =>
+        normalize(person.login ?? person.name ?? person.id) === "octoaide",
+    );
+
+    const octoaideFromActive = (analytics.activeContributors ?? []).find(
+      (person) =>
+        normalize(person.login ?? person.name ?? person.id) === "octoaide",
+    );
+
+    return octoaideFromContributors?.id ?? octoaideFromActive?.id ?? "octoaide";
+  }, [analytics.activeContributors, contributors, filters.personId]);
+
   useEffect(() => {
-    if (!filters.personId && contributors.length > 0) {
-      const nextFilters = { ...filters, personId: contributors[0].id };
+    if (!filters.personId && initialContributorId) {
+      const nextFilters = { ...filters, personId: initialContributorId };
       void applyFilters(nextFilters);
     }
-  }, [contributors, filters, filters.personId, applyFilters]);
+  }, [filters, filters.personId, initialContributorId, applyFilters]);
 
   return (
     <section className="flex flex-col gap-8">
