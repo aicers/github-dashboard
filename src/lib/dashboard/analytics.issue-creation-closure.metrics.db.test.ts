@@ -9,7 +9,6 @@ import { createElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { toCardHistory } from "@/components/dashboard/metric-history";
-import { formatNumber } from "@/components/dashboard/metric-utils";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import {
   type DbActor,
@@ -24,6 +23,7 @@ import {
   CURRENT_RANGE_START,
   resetDashboardTables,
 } from "../../../tests/helpers/dashboard-metrics";
+import { formatCountValue } from "../../../tests/helpers/metric-formatting";
 
 vi.mock("recharts", () => {
   const { createElement: createReactElement } =
@@ -205,7 +205,7 @@ describe("analytics issue metrics", () => {
     const cardElement = card as HTMLElement;
 
     expect(
-      within(cardElement).getByText(formatNumber(expectedHistory.current)),
+      within(cardElement).getByText(formatCountValue(expectedHistory.current)),
     ).toBeInTheDocument();
 
     const percent = issuesCreated.percentChange;
@@ -215,7 +215,7 @@ describe("analytics issue metrics", () => {
         : `${percent >= 0 ? "+" : ""}${percent.toFixed(1)}%`;
     const changeLabel = `${
       expectedAbsoluteChange >= 0 ? "+" : ""
-    }${formatNumber(expectedAbsoluteChange)} (${percentLabel})`;
+    }${formatCountValue(expectedAbsoluteChange)} (${percentLabel})`;
     expect(within(cardElement).getByText(changeLabel)).toBeInTheDocument();
   });
 
@@ -436,7 +436,7 @@ describe("analytics issue metrics", () => {
     const cardElement = card as HTMLElement;
 
     expect(
-      within(cardElement).getByText(formatNumber(expectedHistory.current)),
+      within(cardElement).getByText(formatCountValue(expectedHistory.current)),
     ).toBeInTheDocument();
 
     const percent = issuesClosed.percentChange;
@@ -446,7 +446,7 @@ describe("analytics issue metrics", () => {
         : `${percent >= 0 ? "+" : ""}${percent.toFixed(1)}%`;
     const changeLabel = `${
       expectedAbsoluteChange >= 0 ? "+" : ""
-    }${formatNumber(expectedAbsoluteChange)} (${percentLabel})`;
+    }${formatCountValue(expectedAbsoluteChange)} (${percentLabel})`;
     expect(within(cardElement).getByText(changeLabel)).toBeInTheDocument();
   });
 
@@ -646,11 +646,11 @@ describe("analytics issue metrics", () => {
       creationPercent == null
         ? "–"
         : `${creationPercent >= 0 ? "+" : ""}${creationPercent.toFixed(1)}%`;
-    const creationChangeLabel = `${issuesCreated.absoluteChange >= 0 ? "+" : ""}${formatNumber(
+    const creationChangeLabel = `${issuesCreated.absoluteChange >= 0 ? "+" : ""}${formatCountValue(
       issuesCreated.absoluteChange,
     )} (${creationPercentLabel})`;
     expect(
-      within(creationCard).getByText(formatNumber(expectedCreatedCurrent)),
+      within(creationCard).getByText(formatCountValue(expectedCreatedCurrent)),
     ).toBeInTheDocument();
     expect(
       within(creationCard).getByText(creationChangeLabel),
@@ -661,11 +661,11 @@ describe("analytics issue metrics", () => {
       closedPercent == null
         ? "–"
         : `${closedPercent >= 0 ? "+" : ""}${closedPercent.toFixed(1)}%`;
-    const closedChangeLabel = `${issuesClosed.absoluteChange >= 0 ? "+" : ""}${formatNumber(
+    const closedChangeLabel = `${issuesClosed.absoluteChange >= 0 ? "+" : ""}${formatCountValue(
       issuesClosed.absoluteChange,
     )} (${closedPercentLabel})`;
     expect(
-      within(closureCard).getByText(formatNumber(expectedClosedCurrent)),
+      within(closureCard).getByText(formatCountValue(expectedClosedCurrent)),
     ).toBeInTheDocument();
     expect(
       within(closureCard).getByText(closedChangeLabel),
@@ -809,14 +809,14 @@ describe("analytics issue metrics", () => {
       throw new Error("zero baseline metric cards not found");
     }
 
-    const creationChangeLabel = `${issuesCreated.absoluteChange >= 0 ? "+" : ""}${formatNumber(
+    const creationChangeLabel = `${issuesCreated.absoluteChange >= 0 ? "+" : ""}${formatCountValue(
       issuesCreated.absoluteChange,
     )} (–)`;
     expect(
       within(creationCard).getByText(creationChangeLabel),
     ).toBeInTheDocument();
 
-    const closureChangeLabel = `${issuesClosed.absoluteChange >= 0 ? "+" : ""}${formatNumber(
+    const closureChangeLabel = `${issuesClosed.absoluteChange >= 0 ? "+" : ""}${formatCountValue(
       issuesClosed.absoluteChange,
     )} (–)`;
     expect(
@@ -1073,7 +1073,7 @@ describe("analytics issue metrics", () => {
       creationPercent == null
         ? "–"
         : `${creationPercent >= 0 ? "+" : ""}${creationPercent.toFixed(1)}%`;
-    const creationChangeLabel = `${issuesCreated.absoluteChange >= 0 ? "+" : ""}${formatNumber(
+    const creationChangeLabel = `${issuesCreated.absoluteChange >= 0 ? "+" : ""}${formatCountValue(
       issuesCreated.absoluteChange,
     )} (${creationPercentLabel})`;
 
@@ -1082,7 +1082,7 @@ describe("analytics issue metrics", () => {
       closurePercent == null
         ? "–"
         : `${closurePercent >= 0 ? "+" : ""}${closurePercent.toFixed(1)}%`;
-    const closureChangeLabel = `${issuesClosed.absoluteChange >= 0 ? "+" : ""}${formatNumber(
+    const closureChangeLabel = `${issuesClosed.absoluteChange >= 0 ? "+" : ""}${formatCountValue(
       issuesClosed.absoluteChange,
     )} (${closurePercentLabel})`;
 

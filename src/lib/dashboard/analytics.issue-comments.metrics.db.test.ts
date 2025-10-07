@@ -10,10 +10,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { toCardHistory } from "@/components/dashboard/metric-history";
-import {
-  formatChange,
-  formatMetricValue,
-} from "@/components/dashboard/metric-utils";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import {
   type DbActor,
@@ -23,14 +19,18 @@ import {
   upsertRepository,
   upsertUser,
 } from "@/lib/db/operations";
-import type { PeriodKey } from "../../../tests/helpers/dashboard-metrics";
 import {
   CURRENT_RANGE_END,
   CURRENT_RANGE_START,
   PERIOD_KEYS,
+  type PeriodKey,
   resetDashboardTables,
   shiftHours,
 } from "../../../tests/helpers/dashboard-metrics";
+import {
+  formatChangeForTest,
+  formatMetricValueForTest,
+} from "../../../tests/helpers/metric-formatting";
 
 vi.mock("recharts", () => {
   const { createElement: createReactElement } =
@@ -232,11 +232,11 @@ describe("analytics issue comments metrics", () => {
       );
     });
 
-    const valueLabel = formatMetricValue(
+    const valueLabel = formatMetricValueForTest(
       { current: avgCommentsMetric.current },
       "ratio",
     );
-    const change = formatChange(avgCommentsMetric, "ratio");
+    const change = formatChangeForTest(avgCommentsMetric, "ratio");
 
     render(
       createElement(MetricCard, {
@@ -336,11 +336,11 @@ describe("analytics issue comments metrics", () => {
       }
     });
 
-    const valueLabel = formatMetricValue(
+    const valueLabel = formatMetricValueForTest(
       { current: avgCommentsMetric.current },
       "ratio",
     );
-    const change = formatChange(avgCommentsMetric, "ratio");
+    const change = formatChangeForTest(avgCommentsMetric, "ratio");
 
     render(
       createElement(MetricCard, {

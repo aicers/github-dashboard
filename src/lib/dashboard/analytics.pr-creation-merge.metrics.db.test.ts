@@ -10,7 +10,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { toCardHistory } from "@/components/dashboard/metric-history";
-import { formatNumber } from "@/components/dashboard/metric-utils";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import {
   type DbActor,
@@ -25,6 +24,7 @@ import {
   CURRENT_RANGE_START,
   resetDashboardTables,
 } from "../../../tests/helpers/dashboard-metrics";
+import { formatCountValue } from "../../../tests/helpers/metric-formatting";
 
 vi.mock("recharts", () => {
   const { createElement: createReactElement } =
@@ -240,7 +240,7 @@ describe("analytics pull request metrics", () => {
 
     expect(
       within(card as HTMLElement).getByText(
-        formatNumber(expectedHistory.current),
+        formatCountValue(expectedHistory.current),
       ),
     ).toBeInTheDocument();
 
@@ -251,7 +251,7 @@ describe("analytics pull request metrics", () => {
         : `${percent >= 0 ? "+" : ""}${percent.toFixed(1)}%`;
     const changeLabel = `${
       expectedAbsoluteChange >= 0 ? "+" : ""
-    }${formatNumber(expectedAbsoluteChange)} (${percentLabel})`;
+    }${formatCountValue(expectedAbsoluteChange)} (${percentLabel})`;
     expect(
       within(card as HTMLElement).getByText(changeLabel),
     ).toBeInTheDocument();
@@ -446,7 +446,7 @@ describe("analytics pull request metrics", () => {
 
     expect(
       within(card as HTMLElement).getByText(
-        formatNumber(expectedHistory.current),
+        formatCountValue(expectedHistory.current),
       ),
     ).toBeInTheDocument();
 
@@ -457,7 +457,7 @@ describe("analytics pull request metrics", () => {
         : `${percent >= 0 ? "+" : ""}${percent.toFixed(1)}%`;
     const changeLabel = `${
       expectedAbsoluteChange >= 0 ? "+" : ""
-    }${formatNumber(expectedAbsoluteChange)} (${percentLabel})`;
+    }${formatCountValue(expectedAbsoluteChange)} (${percentLabel})`;
     expect(
       within(card as HTMLElement).getByText(changeLabel),
     ).toBeInTheDocument();
@@ -628,7 +628,7 @@ describe("analytics pull request metrics", () => {
         : `${creationPercent >= 0 ? "+" : ""}${creationPercent.toFixed(1)}%`;
     const creationChangeLabel = `${
       prsCreated.absoluteChange >= 0 ? "+" : ""
-    }${formatNumber(prsCreated.absoluteChange)} (${creationPercentLabel})`;
+    }${formatCountValue(prsCreated.absoluteChange)} (${creationPercentLabel})`;
     expect(
       within(creationCard).getByText(creationChangeLabel),
     ).toBeInTheDocument();
@@ -640,7 +640,7 @@ describe("analytics pull request metrics", () => {
         : `${mergePercent >= 0 ? "+" : ""}${mergePercent.toFixed(1)}%`;
     const mergeChangeLabel = `${
       prsMerged.absoluteChange >= 0 ? "+" : ""
-    }${formatNumber(prsMerged.absoluteChange)} (${mergePercentLabel})`;
+    }${formatCountValue(prsMerged.absoluteChange)} (${mergePercentLabel})`;
     expect(within(mergeCard).getByText(mergeChangeLabel)).toBeInTheDocument();
   });
 
@@ -776,14 +776,14 @@ describe("analytics pull request metrics", () => {
 
     const creationChangeLabel = `${
       prsCreated.absoluteChange >= 0 ? "+" : ""
-    }${formatNumber(prsCreated.absoluteChange)} (–)`;
+    }${formatCountValue(prsCreated.absoluteChange)} (–)`;
     expect(
       within(creationCard).getByText(creationChangeLabel),
     ).toBeInTheDocument();
 
     const mergeChangeLabel = `${
       prsMerged.absoluteChange >= 0 ? "+" : ""
-    }${formatNumber(prsMerged.absoluteChange)} (–)`;
+    }${formatCountValue(prsMerged.absoluteChange)} (–)`;
     expect(within(mergeCard).getByText(mergeChangeLabel)).toBeInTheDocument();
   });
 
@@ -1016,7 +1016,7 @@ describe("analytics pull request metrics", () => {
         : `${creationPercent >= 0 ? "+" : ""}${creationPercent.toFixed(1)}%`;
     const creationChangeLabel = `${
       prsCreated.absoluteChange >= 0 ? "+" : ""
-    }${formatNumber(prsCreated.absoluteChange)} (${creationPercentLabel})`;
+    }${formatCountValue(prsCreated.absoluteChange)} (${creationPercentLabel})`;
     expect(
       within(creationCard as HTMLElement).getByText(creationChangeLabel),
     ).toBeInTheDocument();
@@ -1028,7 +1028,7 @@ describe("analytics pull request metrics", () => {
         : `${mergePercent >= 0 ? "+" : ""}${mergePercent.toFixed(1)}%`;
     const mergeChangeLabel = `${
       prsMerged.absoluteChange >= 0 ? "+" : ""
-    }${formatNumber(prsMerged.absoluteChange)} (${mergePercentLabel})`;
+    }${formatCountValue(prsMerged.absoluteChange)} (${mergePercentLabel})`;
     expect(
       within(mergeCard as HTMLElement).getByText(mergeChangeLabel),
     ).toBeInTheDocument();

@@ -10,10 +10,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { toCardHistory } from "@/components/dashboard/metric-history";
-import {
-  formatChange,
-  formatMetricValue,
-} from "@/components/dashboard/metric-utils";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import {
   type DbActor,
@@ -23,14 +19,18 @@ import {
   upsertRepository,
   upsertUser,
 } from "@/lib/db/operations";
-import type { PeriodKey } from "../../../tests/helpers/dashboard-metrics";
 import {
   CURRENT_RANGE_END,
   CURRENT_RANGE_START,
   PERIOD_KEYS,
+  type PeriodKey,
   resetDashboardTables,
   shiftHours,
 } from "../../../tests/helpers/dashboard-metrics";
+import {
+  formatChangeForTest,
+  formatMetricValueForTest,
+} from "../../../tests/helpers/metric-formatting";
 
 vi.mock("recharts", () => {
   const { createElement: createReactElement } =
@@ -355,11 +355,15 @@ describe("analytics issue resolution and work metrics", () => {
     }
 
     const resolutionMetric = metrics.issueResolutionTime;
-    const resolutionValueLabel = formatMetricValue(
+    const resolutionValueLabel = formatMetricValueForTest(
       { current: resolutionMetric.current, unit: resolutionMetric.unit },
       "hours",
     );
-    const resolutionChange = formatChange(resolutionMetric, "hours");
+    const resolutionChange = formatChangeForTest(
+      resolutionMetric,
+      "hours",
+      resolutionMetric.unit ?? "hours",
+    );
 
     expect(
       within(resolutionCardElement).getByText(resolutionValueLabel),
@@ -371,11 +375,15 @@ describe("analytics issue resolution and work metrics", () => {
     ).toBeInTheDocument();
 
     const workMetric = metrics.issueWorkTime;
-    const workValueLabel = formatMetricValue(
+    const workValueLabel = formatMetricValueForTest(
       { current: workMetric.current, unit: workMetric.unit },
       "hours",
     );
-    const workChange = formatChange(workMetric, "hours");
+    const workChange = formatChangeForTest(
+      workMetric,
+      "hours",
+      workMetric.unit ?? "hours",
+    );
 
     expect(
       within(workCardElement).getByText(workValueLabel),
@@ -500,11 +508,15 @@ describe("analytics issue resolution and work metrics", () => {
       throw new Error("zero baseline cards not found");
     }
 
-    const resolutionLabel = formatMetricValue(
+    const resolutionLabel = formatMetricValueForTest(
       { current: resolutionMetric.current, unit: resolutionMetric.unit },
       "hours",
     );
-    const resolutionChange = formatChange(resolutionMetric, "hours");
+    const resolutionChange = formatChangeForTest(
+      resolutionMetric,
+      "hours",
+      resolutionMetric.unit ?? "hours",
+    );
     expect(
       within(resolutionCard).getByText(resolutionLabel),
     ).toBeInTheDocument();
@@ -514,11 +526,15 @@ describe("analytics issue resolution and work metrics", () => {
       ),
     ).toBeInTheDocument();
 
-    const workLabel = formatMetricValue(
+    const workLabel = formatMetricValueForTest(
       { current: workMetric.current, unit: workMetric.unit },
       "hours",
     );
-    const workChange = formatChange(workMetric, "hours");
+    const workChange = formatChangeForTest(
+      workMetric,
+      "hours",
+      workMetric.unit ?? "hours",
+    );
     expect(within(workCard).getByText(workLabel)).toBeInTheDocument();
     expect(
       within(workCard).getByText(
@@ -684,11 +700,15 @@ describe("analytics issue resolution and work metrics", () => {
       throw new Error("filtered cards not found");
     }
 
-    const resolutionValue = formatMetricValue(
+    const resolutionValue = formatMetricValueForTest(
       { current: resolutionMetric.current, unit: resolutionMetric.unit },
       "hours",
     );
-    const resolutionChange = formatChange(resolutionMetric, "hours");
+    const resolutionChange = formatChangeForTest(
+      resolutionMetric,
+      "hours",
+      resolutionMetric.unit ?? "hours",
+    );
     expect(
       within(resolutionCard).getByText(resolutionValue),
     ).toBeInTheDocument();
@@ -698,11 +718,15 @@ describe("analytics issue resolution and work metrics", () => {
       ),
     ).toBeInTheDocument();
 
-    const workValue = formatMetricValue(
+    const workValue = formatMetricValueForTest(
       { current: workMetric.current, unit: workMetric.unit },
       "hours",
     );
-    const workChange = formatChange(workMetric, "hours");
+    const workChange = formatChangeForTest(
+      workMetric,
+      "hours",
+      workMetric.unit ?? "hours",
+    );
     expect(within(workCard).getByText(workValue)).toBeInTheDocument();
     expect(
       within(workCard).getByText(

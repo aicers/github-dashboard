@@ -10,10 +10,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { toCardHistory } from "@/components/dashboard/metric-history";
-import {
-  formatChange,
-  formatMetricValue,
-} from "@/components/dashboard/metric-utils";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import {
   type DbActor,
@@ -23,14 +19,18 @@ import {
   upsertRepository,
   upsertUser,
 } from "@/lib/db/operations";
-import type { PeriodKey } from "../../../tests/helpers/dashboard-metrics";
 import {
   CURRENT_RANGE_END,
   CURRENT_RANGE_START,
   PERIOD_KEYS,
+  type PeriodKey,
   resetDashboardTables,
   shiftHours,
 } from "../../../tests/helpers/dashboard-metrics";
+import {
+  formatChangeForTest,
+  formatMetricValueForTest,
+} from "../../../tests/helpers/metric-formatting";
 
 vi.mock("recharts", () => {
   const { createElement: createReactElement } =
@@ -539,16 +539,17 @@ describe("analytics parent/child issue metrics", () => {
       throw new Error("parent/child metric cards not rendered");
     }
 
-    const parentResolutionValue = formatMetricValue(
+    const parentResolutionValue = formatMetricValueForTest(
       {
         current: metrics.parentIssueResolutionTime.current,
         unit: metrics.parentIssueResolutionTime.unit,
       },
       "hours",
     );
-    const parentResolutionChange = formatChange(
+    const parentResolutionChange = formatChangeForTest(
       metrics.parentIssueResolutionTime,
       "hours",
+      metrics.parentIssueResolutionTime.unit ?? "hours",
     );
     expect(
       within(parentResolutionCard).getByText(parentResolutionValue),
@@ -559,14 +560,18 @@ describe("analytics parent/child issue metrics", () => {
       ),
     ).toBeInTheDocument();
 
-    const parentWorkValue = formatMetricValue(
+    const parentWorkValue = formatMetricValueForTest(
       {
         current: metrics.parentIssueWorkTime.current,
         unit: metrics.parentIssueWorkTime.unit,
       },
       "hours",
     );
-    const parentWorkChange = formatChange(metrics.parentIssueWorkTime, "hours");
+    const parentWorkChange = formatChangeForTest(
+      metrics.parentIssueWorkTime,
+      "hours",
+      metrics.parentIssueWorkTime.unit ?? "hours",
+    );
     expect(
       within(parentWorkCard).getByText(parentWorkValue),
     ).toBeInTheDocument();
@@ -576,16 +581,17 @@ describe("analytics parent/child issue metrics", () => {
       ),
     ).toBeInTheDocument();
 
-    const childResolutionValue = formatMetricValue(
+    const childResolutionValue = formatMetricValueForTest(
       {
         current: metrics.childIssueResolutionTime.current,
         unit: metrics.childIssueResolutionTime.unit,
       },
       "hours",
     );
-    const childResolutionChange = formatChange(
+    const childResolutionChange = formatChangeForTest(
       metrics.childIssueResolutionTime,
       "hours",
+      metrics.childIssueResolutionTime.unit ?? "hours",
     );
     expect(
       within(childResolutionCard).getByText(childResolutionValue),
@@ -596,14 +602,18 @@ describe("analytics parent/child issue metrics", () => {
       ),
     ).toBeInTheDocument();
 
-    const childWorkValue = formatMetricValue(
+    const childWorkValue = formatMetricValueForTest(
       {
         current: metrics.childIssueWorkTime.current,
         unit: metrics.childIssueWorkTime.unit,
       },
       "hours",
     );
-    const childWorkChange = formatChange(metrics.childIssueWorkTime, "hours");
+    const childWorkChange = formatChangeForTest(
+      metrics.childIssueWorkTime,
+      "hours",
+      metrics.childIssueWorkTime.unit ?? "hours",
+    );
     expect(within(childWorkCard).getByText(childWorkValue)).toBeInTheDocument();
     expect(
       within(childWorkCard).getByText(
@@ -797,11 +807,16 @@ describe("analytics parent/child issue metrics", () => {
       throw new Error("parent fallback cards not rendered");
     }
 
-    const parentResolutionChange = formatChange(
+    const parentResolutionChange = formatChangeForTest(
       parentResolutionMetric,
       "hours",
+      parentResolutionMetric.unit ?? "hours",
     );
-    const parentWorkChange = formatChange(parentWorkMetric, "hours");
+    const parentWorkChange = formatChangeForTest(
+      parentWorkMetric,
+      "hours",
+      parentWorkMetric.unit ?? "hours",
+    );
     expect(
       within(parentResolutionCard).getByText(
         `${parentResolutionChange.changeLabel} (${parentResolutionChange.percentLabel})`,
@@ -814,7 +829,7 @@ describe("analytics parent/child issue metrics", () => {
     ).toBeInTheDocument();
     expect(
       within(parentResolutionCard).getByText(
-        formatMetricValue(
+        formatMetricValueForTest(
           {
             current: parentResolutionMetric.current,
             unit: parentResolutionMetric.unit,
@@ -825,7 +840,7 @@ describe("analytics parent/child issue metrics", () => {
     ).toBeInTheDocument();
     expect(
       within(parentWorkCard).getByText(
-        formatMetricValue(
+        formatMetricValueForTest(
           { current: parentWorkMetric.current, unit: parentWorkMetric.unit },
           "hours",
         ),
