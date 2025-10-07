@@ -66,4 +66,28 @@ describe("business-days utilities", () => {
     ).toBe(4);
     expect(differenceInBusinessDaysOrNull(null, now, holidays)).toBeNull();
   });
+
+  it("handles DST boundary weekends without leaking extra hours", () => {
+    const holidays = buildHolidaySet([]);
+    const dstStartHours = calculateBusinessHoursBetween(
+      "2024-03-08T15:00:00.000Z", // Friday
+      "2024-03-11T18:00:00.000Z", // Monday after the spring forward weekend
+      holidays,
+    );
+    expect(dstStartHours).toBe(27);
+
+    const dstEndHours = calculateBusinessHoursBetween(
+      "2024-11-01T15:00:00.000Z", // Friday before the fall back weekend
+      "2024-11-04T18:00:00.000Z", // Monday after the weekend
+      holidays,
+    );
+    expect(dstEndHours).toBe(27);
+  });
+
+  it("normalizes common holiday variants including slash formatted dates", () => {
+    expect(normalizeHolidayDate("2024/05/01 UTC")).toBe("2024-05-01");
+    expect(normalizeHolidayDate("05/02/2024 UTC")).toBe("2024-05-02");
+    expect(normalizeHolidayDate("May 03 2024 UTC")).toBe("2024-05-03");
+    expect(normalizeHolidayDate("")).toBeNull();
+  });
 });

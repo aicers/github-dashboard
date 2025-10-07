@@ -91,4 +91,42 @@ describe("POST /api/sync/auto", () => {
     expect(enableAutomaticSync).not.toHaveBeenCalled();
     expect(disableAutomaticSync).not.toHaveBeenCalled();
   });
+
+  it("returns 400 when enabling sync fails with a known error", async () => {
+    vi.mocked(enableAutomaticSync).mockRejectedValueOnce(
+      new Error("interval missing"),
+    );
+
+    const response = await POST(
+      new Request("http://localhost/api/sync/auto", {
+        method: "POST",
+        body: JSON.stringify({ enabled: true, intervalMinutes: 30 }),
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      success: false,
+      message: "interval missing",
+    });
+  });
+
+  it("returns 500 when enabling sync throws a non-error value", async () => {
+    vi.mocked(enableAutomaticSync).mockRejectedValueOnce("boom");
+
+    const response = await POST(
+      new Request("http://localhost/api/sync/auto", {
+        method: "POST",
+        body: JSON.stringify({ enabled: true, intervalMinutes: 30 }),
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      success: false,
+      message: "Unexpected error while updating sync automation.",
+    });
+  });
 });

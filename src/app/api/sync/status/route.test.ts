@@ -36,4 +36,16 @@ describe("GET /api/sync/status", () => {
       message: "Status failure",
     });
   });
+
+  it("returns 500 when an unknown value is thrown", async () => {
+    vi.mocked(fetchSyncStatus).mockRejectedValueOnce("bad");
+
+    const response = await GET();
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      success: false,
+      message: "Unexpected error while fetching sync status.",
+    });
+  });
 });

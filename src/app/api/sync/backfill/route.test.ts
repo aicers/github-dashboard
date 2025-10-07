@@ -66,4 +66,23 @@ describe("POST /api/sync/backfill", () => {
       message: "Backfill failure",
     });
   });
+
+  it("returns 500 if runBackfill throws a non-error value", async () => {
+    vi.mocked(runBackfill).mockRejectedValueOnce("boom");
+
+    const response = await POST(
+      new Request("http://localhost/api/sync/backfill", {
+        method: "POST",
+        body: JSON.stringify({ startDate: "2024-04-01" }),
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(body).toEqual({
+      success: false,
+      message: "Unexpected error during backfill run.",
+    });
+  });
 });
