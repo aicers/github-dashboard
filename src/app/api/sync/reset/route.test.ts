@@ -54,4 +54,40 @@ describe("POST /api/sync/reset", () => {
     expect(body.success).toBe(false);
     expect(resetData).not.toHaveBeenCalled();
   });
+
+  it("returns 400 when resetData throws a known error", async () => {
+    vi.mocked(resetData).mockRejectedValueOnce(new Error("cannot truncate"));
+
+    const response = await POST(
+      new Request("http://localhost/api/sync/reset", {
+        method: "POST",
+        body: JSON.stringify({}),
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      success: false,
+      message: "cannot truncate",
+    });
+  });
+
+  it("returns 500 when resetData throws a non-error", async () => {
+    vi.mocked(resetData).mockRejectedValueOnce("boom");
+
+    const response = await POST(
+      new Request("http://localhost/api/sync/reset", {
+        method: "POST",
+        body: JSON.stringify({}),
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      success: false,
+      message: "Unexpected error while resetting data.",
+    });
+  });
 });

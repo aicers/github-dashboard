@@ -62,4 +62,22 @@ describe("GET /api/dashboard/analytics", () => {
       message: "Failed to build analytics",
     });
   });
+
+  it("returns the default error response when a non-error value is thrown", async () => {
+    vi.mocked(getDashboardAnalytics).mockRejectedValueOnce("boom");
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/dashboard/analytics?start=2024-01-01&end=2024-01-07&repos=repo-1&person=user-1",
+      ),
+    );
+
+    expect(getDashboardAnalytics).toHaveBeenCalledTimes(1);
+    const body = await response.json();
+    expect(response.status).toBe(500);
+    expect(body).toEqual({
+      success: false,
+      message: "Unexpected error while building dashboard analytics.",
+    });
+  });
 });
