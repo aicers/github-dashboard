@@ -255,6 +255,7 @@ export type DashboardAnalytics = {
   range: RangeSummary;
   repositories: RepositoryProfile[];
   contributors: UserProfile[];
+  activeContributors: UserProfile[];
   organization: OrganizationAnalytics;
   individual: IndividualAnalytics | null;
   leaderboard: LeaderboardSummary;
