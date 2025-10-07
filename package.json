@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:db": "vitest run --config vitest.db.config.ts",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit",
     "ci": "biome ci --error-on-warnings . && npm run typecheck && npm run test && npm run test:db"
@@ -36,6 +37,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.5",
+    "@playwright/test": "^1.51.1",
     "@tailwindcss/postcss": "^4",
     "@testcontainers/postgresql": "^11.7.1",
     "@testing-library/jest-dom": "^6.8.0",
