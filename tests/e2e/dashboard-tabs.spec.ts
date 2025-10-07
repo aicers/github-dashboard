@@ -1,0 +1,27 @@
+import { expect, test } from "@playwright/test";
+
+const DASHBOARD_ROOT = "/dashboard";
+const DASHBOARD_TABS_PATH = "/test-harness/dashboard-tabs";
+
+test.describe("Dashboard navigation (Playwright)", () => {
+  test("redirects /dashboard to /dashboard/analytics", async ({ page }) => {
+    await page.goto(DASHBOARD_ROOT);
+    await expect(page).toHaveURL(/\/dashboard\/analytics$/);
+  });
+
+  test("highlights active tab and updates on navigation", async ({ page }) => {
+    await page.goto(DASHBOARD_TABS_PATH);
+
+    const currentPath = page.getByTestId("current-path");
+    await expect(currentPath).toContainText("/dashboard/analytics");
+
+    const analyticsTab = page.getByRole("link", { name: "Analytics" });
+    await expect(analyticsTab).toHaveClass(/text-primary/);
+    const peopleTab = page.getByRole("link", { name: "People" });
+    await expect(peopleTab).toHaveAttribute("href", "/dashboard/people");
+
+    await page.getByTestId("set-path-people").click();
+    await expect(currentPath).toContainText("/dashboard/people");
+    await expect(peopleTab).toHaveClass(/text-primary/);
+  });
+});
