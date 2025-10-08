@@ -59,4 +59,16 @@ describe("GET /api/data/stats", () => {
       message: "Stats unavailable",
     });
   });
+
+  it("returns 401 when no active session exists", async () => {
+    vi.mocked(readActiveSession).mockResolvedValueOnce(null);
+
+    const response = await GET();
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      success: false,
+      message: "Authentication required.",
+    });
+    expect(fetchDashboardStats).not.toHaveBeenCalled();
+  });
 });

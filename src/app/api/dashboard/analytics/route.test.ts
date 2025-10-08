@@ -94,4 +94,21 @@ describe("GET /api/dashboard/analytics", () => {
       message: "Unexpected error while building dashboard analytics.",
     });
   });
+
+  it("returns 401 when no session is active", async () => {
+    vi.mocked(readActiveSession).mockResolvedValueOnce(null);
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/dashboard/analytics?start=2024-01-01&end=2024-01-07",
+      ),
+    );
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      success: false,
+      message: "Authentication required.",
+    });
+    expect(getDashboardAnalytics).not.toHaveBeenCalled();
+  });
 });
