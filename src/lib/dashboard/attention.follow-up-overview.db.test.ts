@@ -4,8 +4,8 @@ import "../../../tests/helpers/postgres-container";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildFollowUpSummaries } from "@/components/dashboard/attention-view";
 import { getAttentionInsights } from "@/lib/dashboard/attention";
+import { buildFollowUpSummaries } from "@/lib/dashboard/attention-summaries";
 import { ensureSchema } from "@/lib/db";
 import {
   type DbComment,
