@@ -45,3 +45,27 @@ export function formatChangeForTest(
   void _unit;
   return formatChange(metric, format as MetricFormat);
 }
+
+export function formatMetricSnapshotForTest(
+  metric: {
+    current: number;
+    absoluteChange: number;
+    percentChange: number | null;
+  } & {
+    unit?: "hours" | "days";
+  },
+  format: MetricFormat,
+): { valueLabel: string; changeLabel: string; percentLabel: string } {
+  const valueLabel = formatMetricValue(
+    { current: metric.current, unit: metric.unit },
+    format,
+  );
+  const { changeLabel, percentLabel } = formatChange(
+    {
+      absoluteChange: metric.absoluteChange,
+      percentChange: metric.percentChange,
+    },
+    format,
+  );
+  return { valueLabel, changeLabel, percentLabel };
+}

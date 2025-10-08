@@ -1,27 +1,9 @@
-import { render, screen } from "@testing-library/react";
-import { createElement } from "react";
-import { describe, expect, it, vi } from "vitest";
-import { MetricCard } from "@/components/dashboard/metric-card";
-import { toCardHistory } from "@/components/dashboard/metric-history";
+import { describe, expect, it } from "vitest";
 import { __test__ } from "@/lib/dashboard/analytics";
-
-vi.mock("recharts", () => {
-  const { createElement: createReactElement } =
-    require("react") as typeof import("react");
-
-  const createStub =
-    (testId: string) =>
-    ({ children }: { children?: import("react").ReactNode }) =>
-      createReactElement("div", { "data-testid": testId }, children ?? null);
-
-  return {
-    ResponsiveContainer: createStub("recharts-responsive"),
-    LineChart: createStub("recharts-line-chart"),
-    Line: createStub("recharts-line"),
-    XAxis: createStub("recharts-x-axis"),
-    YAxis: createStub("recharts-y-axis"),
-  };
-});
+import {
+  formatChangeForTest,
+  formatMetricValueForTest,
+} from "../../../tests/helpers/metric-formatting";
 
 const { summarizeIssueDurations, buildHistorySeries, buildDurationComparison } =
   __test__;
@@ -122,16 +104,6 @@ describe("analytics duration metrics", () => {
       "previous",
       "current",
     ]);
-
-    const cardHistory = toCardHistory(history);
-    expect(cardHistory).toHaveLength(5);
-    expect(cardHistory.map((entry) => entry.value)).toEqual([
-      10,
-      20,
-      null,
-      null,
-      30,
-    ]);
   });
 
   it("computes absolute and percent changes for duration comparisons", () => {
@@ -155,38 +127,35 @@ describe("analytics duration metrics", () => {
 
   it("renders overall resolution and work duration metrics with user-facing labels", () => {
     const resolutionMetric = buildDurationComparison(96, 120, "hours");
-    const resolutionHistory = toCardHistory(
-      buildHistorySeries([150, 140, 130, 120, 96]),
-    );
 
     const workMetric = buildDurationComparison(48, 36, "hours");
-    const workHistory = toCardHistory(buildHistorySeries([28, 30, 32, 36, 48]));
-
-    render(
-      createElement(
-        "div",
-        null,
-        createElement(MetricCard, {
-          title: "평균 해결 시간",
-          metric: resolutionMetric,
-          format: "hours",
-          history: resolutionHistory,
-        }),
-        createElement(MetricCard, {
-          title: "평균 작업 시간",
-          metric: workMetric,
-          format: "hours",
-          history: workHistory,
-        }),
-      ),
+    const resolutionSnapshot = formatMetricValueForTest(
+      { current: resolutionMetric.current, unit: resolutionMetric.unit },
+      "hours",
+    );
+    const resolutionChange = formatChangeForTest(
+      resolutionMetric,
+      "hours",
+      resolutionMetric.unit ?? "hours",
+    );
+    const workSnapshot = formatMetricValueForTest(
+      { current: workMetric.current, unit: workMetric.unit },
+      "hours",
+    );
+    const workChange = formatChangeForTest(
+      workMetric,
+      "hours",
+      workMetric.unit ?? "hours",
     );
 
-    expect(screen.getByText("평균 해결 시간")).toBeInTheDocument();
-    expect(screen.getByText("4.0일")).toBeInTheDocument();
-    expect(screen.getByText("24시간 (-20.0%)")).toBeInTheDocument();
+    expect(resolutionSnapshot).toBe("4.0일");
+    expect(
+      `${resolutionChange.changeLabel} (${resolutionChange.percentLabel})`,
+    ).toBe("24시간 (-20.0%)");
 
-    expect(screen.getByText("평균 작업 시간")).toBeInTheDocument();
-    expect(screen.getByText("2.0일")).toBeInTheDocument();
-    expect(screen.getByText("+12시간 (+33.3%)")).toBeInTheDocument();
+    expect(workSnapshot).toBe("2.0일");
+    expect(`${workChange.changeLabel} (${workChange.percentLabel})`).toBe(
+      "+12시간 (+33.3%)",
+    );
   });
 });

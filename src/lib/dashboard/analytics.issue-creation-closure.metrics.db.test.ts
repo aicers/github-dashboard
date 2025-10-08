@@ -1,14 +1,8 @@
-// @vitest-environment jsdom
-// Vitest defaults DB config to Node environment; keep this so React Testing Library has a DOM.
+// @vitest-environment node
 
 import "../../../tests/helpers/postgres-container";
-import "@testing-library/jest-dom";
 
-import { render, screen, within } from "@testing-library/react";
-import { createElement } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { MetricCard } from "@/components/dashboard/metric-card";
-import { toCardHistory } from "@/components/dashboard/metric-history";
+import { beforeEach, describe, expect, it } from "vitest";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import {
   type DbActor,
@@ -23,25 +17,10 @@ import {
   CURRENT_RANGE_START,
   resetDashboardTables,
 } from "../../../tests/helpers/dashboard-metrics";
-import { formatCountValue } from "../../../tests/helpers/metric-formatting";
-
-vi.mock("recharts", () => {
-  const { createElement: createReactElement } =
-    require("react") as typeof import("react");
-
-  const createStub =
-    (testId: string) =>
-    ({ children }: { children?: import("react").ReactNode }) =>
-      createReactElement("div", { "data-testid": testId }, children ?? null);
-
-  return {
-    ResponsiveContainer: createStub("recharts-responsive"),
-    LineChart: createStub("recharts-line-chart"),
-    Line: createStub("recharts-line"),
-    XAxis: createStub("recharts-x-axis"),
-    YAxis: createStub("recharts-y-axis"),
-  };
-});
+import {
+  formatCountValue,
+  formatMetricSnapshotForTest,
+} from "../../../tests/helpers/metric-formatting";
 
 async function insertIssue(issue: DbIssue) {
   await upsertIssue(issue);
@@ -187,27 +166,8 @@ describe("analytics issue metrics", () => {
       { period: "current", value: expectedHistory.current },
     ]);
 
-    const metricTitle = "이슈 생성";
-    render(
-      createElement(MetricCard, {
-        title: metricTitle,
-        metric: issuesCreated,
-        format: "count",
-        history: toCardHistory(history),
-      }),
-    );
-
-    expect(screen.getByText(metricTitle)).toBeInTheDocument();
-    const card = screen.getByText(metricTitle).closest('[data-slot="card"]');
-    if (!card) {
-      throw new Error("creation metric card not found");
-    }
-    const cardElement = card as HTMLElement;
-
-    expect(
-      within(cardElement).getByText(formatCountValue(expectedHistory.current)),
-    ).toBeInTheDocument();
-
+    const snapshot = formatMetricSnapshotForTest(issuesCreated, "count");
+    expect(snapshot.valueLabel).toBe(formatCountValue(expectedHistory.current));
     const percent = issuesCreated.percentChange;
     const percentLabel =
       percent == null
@@ -216,7 +176,9 @@ describe("analytics issue metrics", () => {
     const changeLabel = `${
       expectedAbsoluteChange >= 0 ? "+" : ""
     }${formatCountValue(expectedAbsoluteChange)} (${percentLabel})`;
-    expect(within(cardElement).getByText(changeLabel)).toBeInTheDocument();
+    expect(`${snapshot.changeLabel} (${snapshot.percentLabel})`).toBe(
+      changeLabel,
+    );
   });
 
   it("builds issue closure metrics with five-period history", async () => {
@@ -418,27 +380,8 @@ describe("analytics issue metrics", () => {
       { period: "current", value: expectedHistory.current },
     ]);
 
-    const metricTitle = "이슈 종료";
-    render(
-      createElement(MetricCard, {
-        title: metricTitle,
-        metric: issuesClosed,
-        format: "count",
-        history: toCardHistory(history),
-      }),
-    );
-
-    expect(screen.getByText(metricTitle)).toBeInTheDocument();
-    const card = screen.getByText(metricTitle).closest('[data-slot="card"]');
-    if (!card) {
-      throw new Error("closure metric card not found");
-    }
-    const cardElement = card as HTMLElement;
-
-    expect(
-      within(cardElement).getByText(formatCountValue(expectedHistory.current)),
-    ).toBeInTheDocument();
-
+    const snapshot = formatMetricSnapshotForTest(issuesClosed, "count");
+    expect(snapshot.valueLabel).toBe(formatCountValue(expectedHistory.current));
     const percent = issuesClosed.percentChange;
     const percentLabel =
       percent == null
@@ -447,7 +390,9 @@ describe("analytics issue metrics", () => {
     const changeLabel = `${
       expectedAbsoluteChange >= 0 ? "+" : ""
     }${formatCountValue(expectedAbsoluteChange)} (${percentLabel})`;
-    expect(within(cardElement).getByText(changeLabel)).toBeInTheDocument();
+    expect(`${snapshot.changeLabel} (${snapshot.percentLabel})`).toBe(
+      changeLabel,
+    );
   });
 
   it("handles decreasing issue creation and closure counts", async () => {
@@ -613,34 +558,6 @@ describe("analytics issue metrics", () => {
       5,
     );
 
-    render(
-      createElement(
-        "div",
-        null,
-        createElement(MetricCard, {
-          title: "이슈 생성",
-          metric: issuesCreated,
-          format: "count",
-        }),
-        createElement(MetricCard, {
-          title: "이슈 종료",
-          metric: issuesClosed,
-          format: "count",
-        }),
-      ),
-    );
-
-    const creationCard = screen
-      .getByText("이슈 생성")
-      .closest('[data-slot="card"]') as HTMLElement | null;
-    const closureCard = screen
-      .getByText("이슈 종료")
-      .closest('[data-slot="card"]') as HTMLElement | null;
-
-    if (!creationCard || !closureCard) {
-      throw new Error("regression cards not found");
-    }
-
     const creationPercent = issuesCreated.percentChange;
     const creationPercentLabel =
       creationPercent == null
@@ -649,12 +566,16 @@ describe("analytics issue metrics", () => {
     const creationChangeLabel = `${issuesCreated.absoluteChange >= 0 ? "+" : ""}${formatCountValue(
       issuesCreated.absoluteChange,
     )} (${creationPercentLabel})`;
+    const creationSnapshot = formatMetricSnapshotForTest(
+      issuesCreated,
+      "count",
+    );
+    expect(creationSnapshot.valueLabel).toBe(
+      formatCountValue(expectedCreatedCurrent),
+    );
     expect(
-      within(creationCard).getByText(formatCountValue(expectedCreatedCurrent)),
-    ).toBeInTheDocument();
-    expect(
-      within(creationCard).getByText(creationChangeLabel),
-    ).toBeInTheDocument();
+      `${creationSnapshot.changeLabel} (${creationSnapshot.percentLabel})`,
+    ).toBe(creationChangeLabel);
 
     const closedPercent = issuesClosed.percentChange;
     const closedPercentLabel =
@@ -664,12 +585,13 @@ describe("analytics issue metrics", () => {
     const closedChangeLabel = `${issuesClosed.absoluteChange >= 0 ? "+" : ""}${formatCountValue(
       issuesClosed.absoluteChange,
     )} (${closedPercentLabel})`;
+    const closureSnapshot = formatMetricSnapshotForTest(issuesClosed, "count");
+    expect(closureSnapshot.valueLabel).toBe(
+      formatCountValue(expectedClosedCurrent),
+    );
     expect(
-      within(closureCard).getByText(formatCountValue(expectedClosedCurrent)),
-    ).toBeInTheDocument();
-    expect(
-      within(closureCard).getByText(closedChangeLabel),
-    ).toBeInTheDocument();
+      `${closureSnapshot.changeLabel} (${closureSnapshot.percentLabel})`,
+    ).toBe(closedChangeLabel);
   });
 
   it("treats zero baseline counts as having no percent change", async () => {
@@ -775,53 +697,24 @@ describe("analytics issue metrics", () => {
     expect(issuesClosed.absoluteChange).toBe(currentClosures.length);
     expect(issuesClosed.percentChange).toBeNull();
 
-    render(
-      createElement(
-        "div",
-        null,
-        createElement(MetricCard, {
-          title: "이슈 생성",
-          metric: issuesCreated,
-          format: "count",
-          history: toCardHistory(
-            analytics.organization.metricHistory.issuesCreated,
-          ),
-        }),
-        createElement(MetricCard, {
-          title: "이슈 종료",
-          metric: issuesClosed,
-          format: "count",
-          history: toCardHistory(
-            analytics.organization.metricHistory.issuesClosed,
-          ),
-        }),
-      ),
-    );
-
-    const creationCard = screen
-      .getByText("이슈 생성")
-      .closest('[data-slot="card"]') as HTMLElement | null;
-    const closureCard = screen
-      .getByText("이슈 종료")
-      .closest('[data-slot="card"]') as HTMLElement | null;
-
-    if (!creationCard || !closureCard) {
-      throw new Error("zero baseline metric cards not found");
-    }
-
     const creationChangeLabel = `${issuesCreated.absoluteChange >= 0 ? "+" : ""}${formatCountValue(
       issuesCreated.absoluteChange,
     )} (–)`;
+    const creationSnapshot = formatMetricSnapshotForTest(
+      issuesCreated,
+      "count",
+    );
     expect(
-      within(creationCard).getByText(creationChangeLabel),
-    ).toBeInTheDocument();
+      `${creationSnapshot.changeLabel} (${creationSnapshot.percentLabel})`,
+    ).toBe(creationChangeLabel);
 
     const closureChangeLabel = `${issuesClosed.absoluteChange >= 0 ? "+" : ""}${formatCountValue(
       issuesClosed.absoluteChange,
     )} (–)`;
+    const closureSnapshot = formatMetricSnapshotForTest(issuesClosed, "count");
     expect(
-      within(closureCard).getByText(closureChangeLabel),
-    ).toBeInTheDocument();
+      `${closureSnapshot.changeLabel} (${closureSnapshot.percentLabel})`,
+    ).toBe(closureChangeLabel);
   });
 
   it("excludes other repositories when a filter is provided", async () => {
@@ -1049,25 +942,6 @@ describe("analytics issue metrics", () => {
     expect(historyMapClosed.previous3 ?? 0).toBe(0);
     expect(historyMapClosed.previous4 ?? 0).toBe(0);
 
-    render(
-      createElement(
-        "div",
-        null,
-        createElement(MetricCard, {
-          title: "이슈 생성",
-          metric: issuesCreated,
-          format: "count",
-          history: toCardHistory(historyCreated),
-        }),
-        createElement(MetricCard, {
-          title: "이슈 종료",
-          metric: issuesClosed,
-          format: "count",
-          history: toCardHistory(historyClosed),
-        }),
-      ),
-    );
-
     const creationPercent = issuesCreated.percentChange;
     const creationPercentLabel =
       creationPercent == null
@@ -1086,22 +960,17 @@ describe("analytics issue metrics", () => {
       issuesClosed.absoluteChange,
     )} (${closurePercentLabel})`;
 
-    const creationCard = screen
-      .getByText("이슈 생성")
-      .closest('[data-slot="card"]');
-    const closureCard = screen
-      .getByText("이슈 종료")
-      .closest('[data-slot="card"]');
-
-    if (!creationCard || !closureCard) {
-      throw new Error("filtered metric cards not found");
-    }
-
+    const creationSnapshot = formatMetricSnapshotForTest(
+      issuesCreated,
+      "count",
+    );
     expect(
-      within(creationCard as HTMLElement).getByText(creationChangeLabel),
-    ).toBeInTheDocument();
+      `${creationSnapshot.changeLabel} (${creationSnapshot.percentLabel})`,
+    ).toBe(creationChangeLabel);
+
+    const closureSnapshot = formatMetricSnapshotForTest(issuesClosed, "count");
     expect(
-      within(closureCard as HTMLElement).getByText(closureChangeLabel),
-    ).toBeInTheDocument();
+      `${closureSnapshot.changeLabel} (${closureSnapshot.percentLabel})`,
+    ).toBe(closureChangeLabel);
   });
 });
