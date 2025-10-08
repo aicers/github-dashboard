@@ -1,15 +1,7 @@
-// @vitest-environment jsdom
-// Vitest defaults DB config to Node environment; keep this so React Testing Library has a DOM.
-
 import "../../../tests/helpers/postgres-container";
-import "@testing-library/jest-dom";
 
-import { render, screen, within } from "@testing-library/react";
-import { createElement } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
-import { MetricCard } from "@/components/dashboard/metric-card";
-import { toCardHistory } from "@/components/dashboard/metric-history";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import type { PeriodKey } from "@/lib/dashboard/types";
 import {
@@ -28,28 +20,7 @@ import {
   PERIOD_KEYS,
   resetDashboardTables,
 } from "../../../tests/helpers/dashboard-metrics";
-import {
-  formatChangeForTest,
-  formatMetricValueForTest,
-} from "../../../tests/helpers/metric-formatting";
-
-vi.mock("recharts", () => {
-  const { createElement: createReactElement } =
-    require("react") as typeof import("react");
-
-  const createStub =
-    (testId: string) =>
-    ({ children }: { children?: import("react").ReactNode }) =>
-      createReactElement("div", { "data-testid": testId }, children ?? null);
-
-  return {
-    ResponsiveContainer: createStub("recharts-responsive"),
-    LineChart: createStub("recharts-line-chart"),
-    Line: createStub("recharts-line"),
-    XAxis: createStub("recharts-x-axis"),
-    YAxis: createStub("recharts-y-axis"),
-  };
-});
+import { formatMetricSnapshotForTest } from "../../../tests/helpers/metric-formatting";
 
 const PERIODS = PERIOD_KEYS;
 
@@ -357,10 +328,14 @@ describe("analytics PR engagement metrics", () => {
         : ((expectedCommentsCurrent - expectedCommentsPrevious) /
             expectedCommentsPrevious) *
           100;
-    expect(avgCommentsMetric.percentChange).toBeCloseTo(
-      expectedCommentsPercent ?? 0,
-      5,
-    );
+    if (expectedCommentsPercent == null) {
+      expect(avgCommentsMetric.percentChange).toBeNull();
+    } else {
+      expect(avgCommentsMetric.percentChange).toBeCloseTo(
+        expectedCommentsPercent,
+        5,
+      );
+    }
 
     expect(avgReviewsMetric.current).toBeCloseTo(expectedReviewsCurrent, 5);
     expect(avgReviewsMetric.previous).toBeCloseTo(expectedReviewsPrevious, 5);
@@ -374,10 +349,14 @@ describe("analytics PR engagement metrics", () => {
         : ((expectedReviewsCurrent - expectedReviewsPrevious) /
             expectedReviewsPrevious) *
           100;
-    expect(avgReviewsMetric.percentChange).toBeCloseTo(
-      expectedReviewsPercent ?? 0,
-      5,
-    );
+    if (expectedReviewsPercent == null) {
+      expect(avgReviewsMetric.percentChange).toBeNull();
+    } else {
+      expect(avgReviewsMetric.percentChange).toBeCloseTo(
+        expectedReviewsPercent,
+        5,
+      );
+    }
 
     const commentsHistory =
       analytics.organization.metricHistory.avgCommentsPerPr;
@@ -404,71 +383,45 @@ describe("analytics PR engagement metrics", () => {
       );
     });
 
-    const commentsValueLabel = formatMetricValueForTest(
-      { current: avgCommentsMetric.current },
+    const commentsSnapshot = formatMetricSnapshotForTest(
+      avgCommentsMetric,
       "ratio",
     );
-    const reviewsValueLabel = formatMetricValueForTest(
-      { current: avgReviewsMetric.current },
+    const expectedCommentsSnapshot = formatMetricSnapshotForTest(
+      {
+        current: expectedCommentsCurrent,
+        absoluteChange: expectedCommentsCurrent - expectedCommentsPrevious,
+        percentChange: expectedCommentsPercent,
+      },
       "ratio",
     );
-
-    const commentsChange = formatChangeForTest(avgCommentsMetric, "ratio");
-    const reviewsChange = formatChangeForTest(avgReviewsMetric, "ratio");
-
-    render(
-      createElement(
-        "div",
-        null,
-        createElement(MetricCard, {
-          title: "PR 평균 댓글",
-          metric: avgCommentsMetric,
-          format: "ratio",
-          history: toCardHistory(commentsHistory),
-        }),
-        createElement(MetricCard, {
-          title: "PR 평균 리뷰",
-          metric: avgReviewsMetric,
-          format: "ratio",
-          history: toCardHistory(reviewsHistory),
-        }),
-      ),
+    expect(commentsSnapshot.valueLabel).toBe(
+      expectedCommentsSnapshot.valueLabel,
+    );
+    expect(
+      `${commentsSnapshot.changeLabel} (${commentsSnapshot.percentLabel})`,
+    ).toBe(
+      `${expectedCommentsSnapshot.changeLabel} (${expectedCommentsSnapshot.percentLabel})`,
     );
 
-    const commentsCardElement = screen
-      .getByText("PR 평균 댓글")
-      .closest('[data-slot="card"]');
-    const reviewsCardElement = screen
-      .getByText("PR 평균 리뷰")
-      .closest('[data-slot="card"]');
-
-    if (!(commentsCardElement instanceof HTMLElement)) {
-      throw new Error("engagement metric cards not rendered");
-    }
-    if (!(reviewsCardElement instanceof HTMLElement)) {
-      throw new Error("engagement metric cards not rendered");
-    }
-
-    const commentsCard = commentsCardElement;
-    const reviewsCard = reviewsCardElement;
-
+    const reviewsSnapshot = formatMetricSnapshotForTest(
+      avgReviewsMetric,
+      "ratio",
+    );
+    const expectedReviewsSnapshot = formatMetricSnapshotForTest(
+      {
+        current: expectedReviewsCurrent,
+        absoluteChange: expectedReviewsCurrent - expectedReviewsPrevious,
+        percentChange: expectedReviewsPercent,
+      },
+      "ratio",
+    );
+    expect(reviewsSnapshot.valueLabel).toBe(expectedReviewsSnapshot.valueLabel);
     expect(
-      within(commentsCard).getByText(commentsValueLabel),
-    ).toBeInTheDocument();
-    expect(
-      within(commentsCard).getByText(
-        `${commentsChange.changeLabel} (${commentsChange.percentLabel})`,
-      ),
-    ).toBeInTheDocument();
-
-    expect(
-      within(reviewsCard).getByText(reviewsValueLabel),
-    ).toBeInTheDocument();
-    expect(
-      within(reviewsCard).getByText(
-        `${reviewsChange.changeLabel} (${reviewsChange.percentLabel})`,
-      ),
-    ).toBeInTheDocument();
+      `${reviewsSnapshot.changeLabel} (${reviewsSnapshot.percentLabel})`,
+    ).toBe(
+      `${expectedReviewsSnapshot.changeLabel} (${expectedReviewsSnapshot.percentLabel})`,
+    );
   });
 
   it("handles zero previous engagement averages", async () => {
@@ -582,74 +535,44 @@ describe("analytics PR engagement metrics", () => {
       }
     });
 
-    const commentsValueLabel = formatMetricValueForTest(
-      { current: avgCommentsMetric.current },
+    const commentsSnapshot = formatMetricSnapshotForTest(
+      avgCommentsMetric,
       "ratio",
     );
-    const reviewsValueLabel = formatMetricValueForTest(
-      { current: avgReviewsMetric.current },
+    const expectedCommentsSnapshot = formatMetricSnapshotForTest(
+      {
+        current: 5,
+        absoluteChange: 5,
+        percentChange: null,
+      },
       "ratio",
     );
-
-    const commentsChange = formatChangeForTest(avgCommentsMetric, "ratio");
-    const reviewsChange = formatChangeForTest(avgReviewsMetric, "ratio");
-
-    render(
-      createElement(
-        "div",
-        null,
-        createElement(MetricCard, {
-          title: "PR 평균 댓글",
-          metric: avgCommentsMetric,
-          format: "ratio",
-          history: toCardHistory(
-            analytics.organization.metricHistory.avgCommentsPerPr,
-          ),
-        }),
-        createElement(MetricCard, {
-          title: "PR 평균 리뷰",
-          metric: avgReviewsMetric,
-          format: "ratio",
-          history: toCardHistory(
-            analytics.organization.metricHistory.avgReviewsPerPr,
-          ),
-        }),
-      ),
+    expect(commentsSnapshot.valueLabel).toBe(
+      expectedCommentsSnapshot.valueLabel,
+    );
+    expect(
+      `${commentsSnapshot.changeLabel} (${commentsSnapshot.percentLabel})`,
+    ).toBe(
+      `${expectedCommentsSnapshot.changeLabel} (${expectedCommentsSnapshot.percentLabel})`,
     );
 
-    const commentsCardElement = screen
-      .getByText("PR 평균 댓글")
-      .closest('[data-slot="card"]');
-    const reviewsCardElement = screen
-      .getByText("PR 평균 리뷰")
-      .closest('[data-slot="card"]');
-
-    if (!(commentsCardElement instanceof HTMLElement)) {
-      throw new Error("zero baseline engagement cards not rendered");
-    }
-    if (!(reviewsCardElement instanceof HTMLElement)) {
-      throw new Error("zero baseline engagement cards not rendered");
-    }
-
-    const commentsCard = commentsCardElement;
-    const reviewsCard = reviewsCardElement;
-
+    const reviewsSnapshot = formatMetricSnapshotForTest(
+      avgReviewsMetric,
+      "ratio",
+    );
+    const expectedReviewsSnapshot = formatMetricSnapshotForTest(
+      {
+        current: 2.5,
+        absoluteChange: 2.5,
+        percentChange: null,
+      },
+      "ratio",
+    );
+    expect(reviewsSnapshot.valueLabel).toBe(expectedReviewsSnapshot.valueLabel);
     expect(
-      within(commentsCard).getByText(commentsValueLabel),
-    ).toBeInTheDocument();
-    expect(
-      within(commentsCard).getByText(
-        `${commentsChange.changeLabel} (${commentsChange.percentLabel})`,
-      ),
-    ).toBeInTheDocument();
-
-    expect(
-      within(reviewsCard).getByText(reviewsValueLabel),
-    ).toBeInTheDocument();
-    expect(
-      within(reviewsCard).getByText(
-        `${reviewsChange.changeLabel} (${reviewsChange.percentLabel})`,
-      ),
-    ).toBeInTheDocument();
+      `${reviewsSnapshot.changeLabel} (${reviewsSnapshot.percentLabel})`,
+    ).toBe(
+      `${expectedReviewsSnapshot.changeLabel} (${expectedReviewsSnapshot.percentLabel})`,
+    );
   });
 });

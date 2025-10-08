@@ -1,15 +1,7 @@
-// @vitest-environment jsdom
-// Vitest defaults DB config to Node environment; keep this so React Testing Library has a DOM.
-
 import "../../../tests/helpers/postgres-container";
-import "@testing-library/jest-dom";
 
-import { render, screen, within } from "@testing-library/react";
-import { createElement } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
-import { MetricCard } from "@/components/dashboard/metric-card";
-import { toCardHistory } from "@/components/dashboard/metric-history";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import {
   type DbActor,
@@ -27,28 +19,7 @@ import {
   resetDashboardTables,
   shiftHours,
 } from "../../../tests/helpers/dashboard-metrics";
-import {
-  formatChangeForTest,
-  formatMetricValueForTest,
-} from "../../../tests/helpers/metric-formatting";
-
-vi.mock("recharts", () => {
-  const { createElement: createReactElement } =
-    require("react") as typeof import("react");
-
-  const createStub =
-    (testId: string) =>
-    ({ children }: { children?: import("react").ReactNode }) =>
-      createReactElement("div", { "data-testid": testId }, children ?? null);
-
-  return {
-    ResponsiveContainer: createStub("recharts-responsive"),
-    LineChart: createStub("recharts-line-chart"),
-    Line: createStub("recharts-line"),
-    XAxis: createStub("recharts-x-axis"),
-    YAxis: createStub("recharts-y-axis"),
-  };
-});
+import { formatMetricSnapshotForTest } from "../../../tests/helpers/metric-formatting";
 
 const TARGET_PROJECT = "To-Do List";
 const PERIODS = PERIOD_KEYS;
@@ -142,6 +113,35 @@ function seriesFromSpecs(
 ): number[] {
   return PERIODS.map((period) =>
     calculateAverage(specs[period]?.[role]?.map((entry) => entry[key]) ?? []),
+  );
+}
+
+function expectHoursSnapshot(
+  metric: {
+    current: number;
+    absoluteChange: number;
+    percentChange: number | null;
+    unit?: "hours" | "days";
+  },
+  expected: {
+    current: number;
+    absoluteChange: number;
+    percentChange: number | null;
+  },
+) {
+  const actualSnapshot = formatMetricSnapshotForTest(metric, "hours");
+  const expectedSnapshot = formatMetricSnapshotForTest(
+    {
+      current: expected.current,
+      absoluteChange: expected.absoluteChange,
+      percentChange: expected.percentChange,
+      unit: metric.unit ?? "hours",
+    },
+    "hours",
+  );
+  expect(actualSnapshot.valueLabel).toBe(expectedSnapshot.valueLabel);
+  expect(`${actualSnapshot.changeLabel} (${actualSnapshot.percentLabel})`).toBe(
+    `${expectedSnapshot.changeLabel} (${expectedSnapshot.percentLabel})`,
   );
 }
 
@@ -371,14 +371,22 @@ describe("analytics parent/child issue metrics", () => {
       expectedParentResolutionCurrent - expectedParentResolutionPrevious,
       5,
     );
-    expect(
-      metrics.parentIssueResolutionTime.percentChange ?? Number.NaN,
-    ).toBeCloseTo(
-      ((expectedParentResolutionCurrent - expectedParentResolutionPrevious) /
-        expectedParentResolutionPrevious) *
-        100,
-      5,
-    );
+    {
+      const expectedPercent =
+        expectedParentResolutionPrevious === 0
+          ? null
+          : ((expectedParentResolutionCurrent -
+              expectedParentResolutionPrevious) /
+              expectedParentResolutionPrevious) *
+            100;
+      if (expectedPercent == null) {
+        expect(metrics.parentIssueResolutionTime.percentChange).toBeNull();
+      } else {
+        expect(
+          metrics.parentIssueResolutionTime.percentChange ?? Number.NaN,
+        ).toBeCloseTo(expectedPercent, 5);
+      }
+    }
     expect(metrics.parentIssueResolutionTime.unit).toBe("hours");
 
     expect(metrics.parentIssueWorkTime.current).toBeCloseTo(
@@ -393,12 +401,21 @@ describe("analytics parent/child issue metrics", () => {
       expectedParentWorkCurrent - expectedParentWorkPrevious,
       5,
     );
-    expect(metrics.parentIssueWorkTime.percentChange ?? Number.NaN).toBeCloseTo(
-      ((expectedParentWorkCurrent - expectedParentWorkPrevious) /
-        expectedParentWorkPrevious) *
-        100,
-      5,
-    );
+    {
+      const expectedPercent =
+        expectedParentWorkPrevious === 0
+          ? null
+          : ((expectedParentWorkCurrent - expectedParentWorkPrevious) /
+              expectedParentWorkPrevious) *
+            100;
+      if (expectedPercent == null) {
+        expect(metrics.parentIssueWorkTime.percentChange).toBeNull();
+      } else {
+        expect(
+          metrics.parentIssueWorkTime.percentChange ?? Number.NaN,
+        ).toBeCloseTo(expectedPercent, 5);
+      }
+    }
     expect(metrics.parentIssueWorkTime.unit).toBe("hours");
 
     expect(metrics.childIssueResolutionTime.current).toBeCloseTo(
@@ -413,14 +430,22 @@ describe("analytics parent/child issue metrics", () => {
       expectedChildResolutionCurrent - expectedChildResolutionPrevious,
       5,
     );
-    expect(
-      metrics.childIssueResolutionTime.percentChange ?? Number.NaN,
-    ).toBeCloseTo(
-      ((expectedChildResolutionCurrent - expectedChildResolutionPrevious) /
-        expectedChildResolutionPrevious) *
-        100,
-      5,
-    );
+    {
+      const expectedPercent =
+        expectedChildResolutionPrevious === 0
+          ? null
+          : ((expectedChildResolutionCurrent -
+              expectedChildResolutionPrevious) /
+              expectedChildResolutionPrevious) *
+            100;
+      if (expectedPercent == null) {
+        expect(metrics.childIssueResolutionTime.percentChange).toBeNull();
+      } else {
+        expect(
+          metrics.childIssueResolutionTime.percentChange ?? Number.NaN,
+        ).toBeCloseTo(expectedPercent, 5);
+      }
+    }
     expect(metrics.childIssueResolutionTime.unit).toBe("hours");
 
     expect(metrics.childIssueWorkTime.current).toBeCloseTo(
@@ -435,12 +460,21 @@ describe("analytics parent/child issue metrics", () => {
       expectedChildWorkCurrent - expectedChildWorkPrevious,
       5,
     );
-    expect(metrics.childIssueWorkTime.percentChange ?? Number.NaN).toBeCloseTo(
-      ((expectedChildWorkCurrent - expectedChildWorkPrevious) /
-        expectedChildWorkPrevious) *
-        100,
-      5,
-    );
+    {
+      const expectedPercent =
+        expectedChildWorkPrevious === 0
+          ? null
+          : ((expectedChildWorkCurrent - expectedChildWorkPrevious) /
+              expectedChildWorkPrevious) *
+            100;
+      if (expectedPercent == null) {
+        expect(metrics.childIssueWorkTime.percentChange).toBeNull();
+      } else {
+        expect(
+          metrics.childIssueWorkTime.percentChange ?? Number.NaN,
+        ).toBeCloseTo(expectedPercent, 5);
+      }
+    }
     expect(metrics.childIssueWorkTime.unit).toBe("hours");
 
     const historyChecks: Array<{
@@ -478,148 +512,50 @@ describe("analytics parent/child issue metrics", () => {
       });
     }
 
-    render(
-      createElement(
-        "div",
-        null,
-        createElement(MetricCard, {
-          title: "Parent 이슈 해결 시간",
-          metric: metrics.parentIssueResolutionTime,
-          format: "hours",
-          impact: "negative",
-          history: toCardHistory(history.parentIssueResolutionTime),
-        }),
-        createElement(MetricCard, {
-          title: "Parent 이슈 작업 시간",
-          metric: metrics.parentIssueWorkTime,
-          format: "hours",
-          impact: "negative",
-          history: toCardHistory(history.parentIssueWorkTime),
-        }),
-        createElement(MetricCard, {
-          title: "Child 이슈 해결 시간",
-          metric: metrics.childIssueResolutionTime,
-          format: "hours",
-          impact: "negative",
-          history: toCardHistory(history.childIssueResolutionTime),
-        }),
-        createElement(MetricCard, {
-          title: "Child 이슈 작업 시간",
-          metric: metrics.childIssueWorkTime,
-          format: "hours",
-          impact: "negative",
-          history: toCardHistory(history.childIssueWorkTime),
-        }),
-      ),
-    );
-
-    const parentResolutionCard = screen
-      .getByText("Parent 이슈 해결 시간")
-      .closest('[data-slot="card"]') as HTMLElement | null;
-    const parentWorkCard = screen
-      .getByText("Parent 이슈 작업 시간")
-      .closest('[data-slot="card"]') as HTMLElement | null;
-    const childResolutionCard = screen
-      .getByText("Child 이슈 해결 시간")
-      .closest('[data-slot="card"]') as HTMLElement | null;
-    const childWorkCard = screen
-      .getByText("Child 이슈 작업 시간")
-      .closest('[data-slot="card"]') as HTMLElement | null;
-
-    expect(parentResolutionCard).not.toBeNull();
-    expect(parentWorkCard).not.toBeNull();
-    expect(childResolutionCard).not.toBeNull();
-    expect(childWorkCard).not.toBeNull();
-    if (
-      !parentResolutionCard ||
-      !parentWorkCard ||
-      !childResolutionCard ||
-      !childWorkCard
-    ) {
-      throw new Error("parent/child metric cards not rendered");
-    }
-
-    const parentResolutionValue = formatMetricValueForTest(
-      {
-        current: metrics.parentIssueResolutionTime.current,
-        unit: metrics.parentIssueResolutionTime.unit,
-      },
-      "hours",
-    );
-    const parentResolutionChange = formatChangeForTest(
-      metrics.parentIssueResolutionTime,
-      "hours",
-      metrics.parentIssueResolutionTime.unit ?? "hours",
-    );
-    expect(
-      within(parentResolutionCard).getByText(parentResolutionValue),
-    ).toBeInTheDocument();
-    expect(
-      within(parentResolutionCard).getByText(
-        `${parentResolutionChange.changeLabel} (${parentResolutionChange.percentLabel})`,
-      ),
-    ).toBeInTheDocument();
-
-    const parentWorkValue = formatMetricValueForTest(
-      {
-        current: metrics.parentIssueWorkTime.current,
-        unit: metrics.parentIssueWorkTime.unit,
-      },
-      "hours",
-    );
-    const parentWorkChange = formatChangeForTest(
-      metrics.parentIssueWorkTime,
-      "hours",
-      metrics.parentIssueWorkTime.unit ?? "hours",
-    );
-    expect(
-      within(parentWorkCard).getByText(parentWorkValue),
-    ).toBeInTheDocument();
-    expect(
-      within(parentWorkCard).getByText(
-        `${parentWorkChange.changeLabel} (${parentWorkChange.percentLabel})`,
-      ),
-    ).toBeInTheDocument();
-
-    const childResolutionValue = formatMetricValueForTest(
-      {
-        current: metrics.childIssueResolutionTime.current,
-        unit: metrics.childIssueResolutionTime.unit,
-      },
-      "hours",
-    );
-    const childResolutionChange = formatChangeForTest(
-      metrics.childIssueResolutionTime,
-      "hours",
-      metrics.childIssueResolutionTime.unit ?? "hours",
-    );
-    expect(
-      within(childResolutionCard).getByText(childResolutionValue),
-    ).toBeInTheDocument();
-    expect(
-      within(childResolutionCard).getByText(
-        `${childResolutionChange.changeLabel} (${childResolutionChange.percentLabel})`,
-      ),
-    ).toBeInTheDocument();
-
-    const childWorkValue = formatMetricValueForTest(
-      {
-        current: metrics.childIssueWorkTime.current,
-        unit: metrics.childIssueWorkTime.unit,
-      },
-      "hours",
-    );
-    const childWorkChange = formatChangeForTest(
-      metrics.childIssueWorkTime,
-      "hours",
-      metrics.childIssueWorkTime.unit ?? "hours",
-    );
-    expect(within(childWorkCard).getByText(childWorkValue)).toBeInTheDocument();
-    expect(
-      within(childWorkCard).getByText(
-        `${childWorkChange.changeLabel} (${childWorkChange.percentLabel})`,
-      ),
-    ).toBeInTheDocument();
+    expectHoursSnapshot(metrics.parentIssueResolutionTime, {
+      current: expectedParentResolutionCurrent,
+      absoluteChange:
+        expectedParentResolutionCurrent - expectedParentResolutionPrevious,
+      percentChange:
+        expectedParentResolutionPrevious === 0
+          ? null
+          : ((expectedParentResolutionCurrent -
+              expectedParentResolutionPrevious) /
+              expectedParentResolutionPrevious) *
+            100,
+    });
+    expectHoursSnapshot(metrics.parentIssueWorkTime, {
+      current: expectedParentWorkCurrent,
+      absoluteChange: expectedParentWorkCurrent - expectedParentWorkPrevious,
+      percentChange:
+        expectedParentWorkPrevious === 0
+          ? null
+          : ((expectedParentWorkCurrent - expectedParentWorkPrevious) /
+              expectedParentWorkPrevious) *
+            100,
+    });
+    expectHoursSnapshot(metrics.childIssueResolutionTime, {
+      current: expectedChildResolutionCurrent,
+      absoluteChange:
+        expectedChildResolutionCurrent - expectedChildResolutionPrevious,
+      percentChange:
+        expectedChildResolutionPrevious === 0
+          ? null
+          : ((expectedChildResolutionCurrent -
+              expectedChildResolutionPrevious) /
+              expectedChildResolutionPrevious) *
+            100,
+    });
+    expectHoursSnapshot(metrics.childIssueWorkTime, {
+      current: expectedChildWorkCurrent,
+      absoluteChange: expectedChildWorkCurrent - expectedChildWorkPrevious,
+      percentChange:
+        expectedChildWorkPrevious === 0
+          ? null
+          : ((expectedChildWorkCurrent - expectedChildWorkPrevious) /
+              expectedChildWorkPrevious) *
+            100,
+    });
   });
 
   it("treats missing parent links as child-only metrics and reports empty parents", async () => {
@@ -759,93 +695,26 @@ describe("analytics parent/child issue metrics", () => {
       5,
     );
 
-    render(
-      createElement(
-        "div",
-        null,
-        createElement(MetricCard, {
-          title: "Parent 이슈 해결 시간",
-          metric: parentResolutionMetric,
-          format: "hours",
-          impact: "negative",
-          history: toCardHistory(history.parentIssueResolutionTime),
-        }),
-        createElement(MetricCard, {
-          title: "Child 이슈 해결 시간",
-          metric: childResolutionMetric,
-          format: "hours",
-          impact: "negative",
-          history: toCardHistory(history.childIssueResolutionTime),
-        }),
-        createElement(MetricCard, {
-          title: "Parent 이슈 작업 시간",
-          metric: parentWorkMetric,
-          format: "hours",
-          impact: "negative",
-          history: toCardHistory(history.parentIssueWorkTime),
-        }),
-        createElement(MetricCard, {
-          title: "Child 이슈 작업 시간",
-          metric: childWorkMetric,
-          format: "hours",
-          impact: "negative",
-          history: toCardHistory(history.childIssueWorkTime),
-        }),
-      ),
-    );
-
-    const parentResolutionCard = screen
-      .getByText("Parent 이슈 해결 시간")
-      .closest('[data-slot="card"]') as HTMLElement | null;
-    const parentWorkCard = screen
-      .getByText("Parent 이슈 작업 시간")
-      .closest('[data-slot="card"]') as HTMLElement | null;
-
-    expect(parentResolutionCard).not.toBeNull();
-    expect(parentWorkCard).not.toBeNull();
-    if (!parentResolutionCard || !parentWorkCard) {
-      throw new Error("parent fallback cards not rendered");
-    }
-
-    const parentResolutionChange = formatChangeForTest(
-      parentResolutionMetric,
-      "hours",
-      parentResolutionMetric.unit ?? "hours",
-    );
-    const parentWorkChange = formatChangeForTest(
-      parentWorkMetric,
-      "hours",
-      parentWorkMetric.unit ?? "hours",
-    );
-    expect(
-      within(parentResolutionCard).getByText(
-        `${parentResolutionChange.changeLabel} (${parentResolutionChange.percentLabel})`,
-      ),
-    ).toBeInTheDocument();
-    expect(
-      within(parentWorkCard).getByText(
-        `${parentWorkChange.changeLabel} (${parentWorkChange.percentLabel})`,
-      ),
-    ).toBeInTheDocument();
-    expect(
-      within(parentResolutionCard).getByText(
-        formatMetricValueForTest(
-          {
-            current: parentResolutionMetric.current,
-            unit: parentResolutionMetric.unit,
-          },
-          "hours",
-        ),
-      ),
-    ).toBeInTheDocument();
-    expect(
-      within(parentWorkCard).getByText(
-        formatMetricValueForTest(
-          { current: parentWorkMetric.current, unit: parentWorkMetric.unit },
-          "hours",
-        ),
-      ),
-    ).toBeInTheDocument();
+    expectHoursSnapshot(parentResolutionMetric, {
+      current: Number.NaN,
+      absoluteChange: Number.NaN,
+      percentChange: null,
+    });
+    expectHoursSnapshot(parentWorkMetric, {
+      current: Number.NaN,
+      absoluteChange: Number.NaN,
+      percentChange: null,
+    });
+    expectHoursSnapshot(childResolutionMetric, {
+      current: expectedChildResolutionCurrent,
+      absoluteChange: 0,
+      percentChange: 0,
+    });
+    expectHoursSnapshot(childWorkMetric, {
+      current: expectedChildWorkCurrent,
+      absoluteChange: expectedChildWorkCurrent - expectedChildWorkPrevious,
+      percentChange: 50,
+    });
   });
 
   it("honors repository filters when aggregating parent and child metrics", async () => {

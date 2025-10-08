@@ -1,15 +1,7 @@
-// @vitest-environment jsdom
-// Vitest defaults DB config to Node environment; keep this so React Testing Library has a DOM.
-
 import "../../../tests/helpers/postgres-container";
-import "@testing-library/jest-dom";
 
-import { render, screen, within } from "@testing-library/react";
-import { createElement } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
-import { MetricCard } from "@/components/dashboard/metric-card";
-import { toCardHistory } from "@/components/dashboard/metric-history";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import { calculateBusinessHoursBetween } from "@/lib/dashboard/business-days";
 import type { PeriodKey } from "@/lib/dashboard/types";
@@ -37,28 +29,7 @@ import {
   PERIOD_KEYS,
   resetDashboardTables,
 } from "../../../tests/helpers/dashboard-metrics";
-import {
-  formatChangeForTest,
-  formatMetricValueForTest,
-} from "../../../tests/helpers/metric-formatting";
-
-vi.mock("recharts", () => {
-  const { createElement: createReactElement } =
-    require("react") as typeof import("react");
-
-  const createStub =
-    (testId: string) =>
-    ({ children }: { children?: import("react").ReactNode }) =>
-      createReactElement("div", { "data-testid": testId }, children ?? null);
-
-  return {
-    ResponsiveContainer: createStub("recharts-responsive"),
-    LineChart: createStub("recharts-line-chart"),
-    Line: createStub("recharts-line"),
-    XAxis: createStub("recharts-x-axis"),
-    YAxis: createStub("recharts-y-axis"),
-  };
-});
+import { formatMetricSnapshotForTest } from "../../../tests/helpers/metric-formatting";
 
 const PERIODS = PERIOD_KEYS;
 
@@ -790,48 +761,31 @@ describe("analytics review response time metrics", () => {
       }
     });
 
-    const organizationValueLabel = formatMetricValueForTest(
-      { current: organizationMetric.current ?? Number.NaN, unit: "hours" },
+    const organizationSnapshot = formatMetricSnapshotForTest(
+      {
+        current: organizationMetric.current ?? Number.NaN,
+        absoluteChange: organizationMetric.absoluteChange ?? Number.NaN,
+        percentChange: organizationMetric.percentChange,
+        unit: organizationMetric.unit,
+      },
       "hours",
     );
-    const organizationChange = formatChangeForTest(
-      organizationMetric,
+    const expectedOrganizationSnapshot = formatMetricSnapshotForTest(
+      {
+        current: expectedOrgCurrent,
+        absoluteChange: expectedOrgCurrent - expectedOrgPrevious,
+        percentChange: expectedOrgPercent,
+        unit: organizationMetric.unit,
+      },
       "hours",
-      organizationMetric.unit ?? "hours",
     );
-
-    render(
-      createElement(
-        "div",
-        null,
-        createElement(MetricCard, {
-          title: "조직 리뷰 응답 시간",
-          metric: organizationMetric,
-          format: "hours",
-          impact: "negative",
-          history: toCardHistory(organizationHistory),
-        }),
-      ),
+    expect(organizationSnapshot.valueLabel).toBe(
+      expectedOrganizationSnapshot.valueLabel,
     );
-
-    const organizationCardElement = screen
-      .getByText("조직 리뷰 응답 시간")
-      .closest('[data-slot="card"]');
-
-    if (!(organizationCardElement instanceof HTMLElement)) {
-      throw new Error("organization review response card not rendered");
-    }
     expect(
-      within(organizationCardElement).getByText(organizationValueLabel),
-    ).toBeInTheDocument();
-    expect(
-      within(organizationCardElement).getByText(
-        `${organizationChange.changeLabel} (${organizationChange.percentLabel})`,
-      ),
-    ).toBeInTheDocument();
-
-    expect(
-      within(organizationCardElement).getByTestId("recharts-line-chart"),
-    ).toBeInTheDocument();
+      `${organizationSnapshot.changeLabel} (${organizationSnapshot.percentLabel})`,
+    ).toBe(
+      `${expectedOrganizationSnapshot.changeLabel} (${expectedOrganizationSnapshot.percentLabel})`,
+    );
   });
 });

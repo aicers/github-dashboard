@@ -1,15 +1,7 @@
-// @vitest-environment jsdom
-// Vitest defaults DB config to Node environment; keep this so React Testing Library has a DOM.
-
 import "../../../tests/helpers/postgres-container";
-import "@testing-library/jest-dom";
 
-import { render, screen, within } from "@testing-library/react";
-import { createElement } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
-import { MetricCard } from "@/components/dashboard/metric-card";
-import { toCardHistory } from "@/components/dashboard/metric-history";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import type { PeriodKey } from "@/lib/dashboard/types";
 import {
@@ -29,24 +21,7 @@ import {
   PERIOD_KEYS,
   resetDashboardTables,
 } from "../../../tests/helpers/dashboard-metrics";
-
-vi.mock("recharts", () => {
-  const { createElement: createReactElement } =
-    require("react") as typeof import("react");
-
-  const createStub =
-    (testId: string) =>
-    ({ children }: { children?: import("react").ReactNode }) =>
-      createReactElement("div", { "data-testid": testId }, children ?? null);
-
-  return {
-    ResponsiveContainer: createStub("recharts-responsive"),
-    LineChart: createStub("recharts-line-chart"),
-    Line: createStub("recharts-line"),
-    XAxis: createStub("recharts-x-axis"),
-    YAxis: createStub("recharts-y-axis"),
-  };
-});
+import { formatMetricSnapshotForTest } from "../../../tests/helpers/metric-formatting";
 
 const PERIODS = PERIOD_KEYS;
 
@@ -524,23 +499,26 @@ describe("analytics review participation metrics", () => {
     const organizationHistory =
       analytics.organization.metricHistory.reviewParticipation;
 
+    const expectedOrganizationCurrent = expectations.current.organization ?? 0;
+    const expectedOrganizationPrevious =
+      expectations.previous.organization ?? 0;
+
     expect(organizationMetric.current).toBeCloseTo(
-      expectations.current.organization ?? 0,
+      expectedOrganizationCurrent,
       5,
     );
     expect(organizationMetric.previous).toBeCloseTo(
-      expectations.previous.organization ?? 0,
+      expectedOrganizationPrevious,
       5,
     );
     expect(organizationMetric.absoluteChange).toBeCloseTo(
-      (expectations.current.organization ?? 0) -
-        (expectations.previous.organization ?? 0),
+      expectedOrganizationCurrent - expectedOrganizationPrevious,
       5,
     );
 
     const expectedOrganizationPercent = (() => {
-      const previous = expectations.previous.organization ?? 0;
-      const current = expectations.current.organization ?? 0;
+      const previous = expectedOrganizationPrevious;
+      const current = expectedOrganizationCurrent;
       if (previous === 0) {
         return current === 0 ? 0 : null;
       }
@@ -566,48 +544,30 @@ describe("analytics review participation metrics", () => {
       }
     });
 
-    const organizationValueLabel = `${(organizationMetric.current * 100).toFixed(1)}%`;
-    const changePoints = organizationMetric.absoluteChange * 100;
-    const organizationChangeLabel = `${changePoints >= 0 ? "+" : ""}${changePoints.toFixed(1)}pt`;
-    const organizationPercentLabel =
-      organizationMetric.percentChange == null
-        ? "–"
-        : `${organizationMetric.percentChange >= 0 ? "+" : ""}${organizationMetric.percentChange.toFixed(1)}%`;
-
-    render(
-      createElement(
-        "div",
-        null,
-        createElement(MetricCard, {
-          title: "조직 리뷰 참여 비율",
-          metric: organizationMetric,
-          format: "percentage",
-          history: toCardHistory(organizationHistory),
-        }),
-      ),
+    const organizationSnapshot = formatMetricSnapshotForTest(
+      {
+        current: organizationMetric.current ?? 0,
+        absoluteChange: organizationMetric.absoluteChange ?? 0,
+        percentChange: organizationMetric.percentChange,
+      },
+      "percentage",
     );
-
-    const organizationCardElement = screen
-      .getByText("조직 리뷰 참여 비율")
-      .closest('[data-slot="card"]');
-
-    if (!(organizationCardElement instanceof HTMLElement)) {
-      throw new Error("organization review participation card not rendered");
-    }
-
-    const organizationCard = organizationCardElement;
-
+    const expectedOrganizationSnapshot = formatMetricSnapshotForTest(
+      {
+        current: expectedOrganizationCurrent,
+        absoluteChange:
+          expectedOrganizationCurrent - expectedOrganizationPrevious,
+        percentChange: expectedOrganizationPercent,
+      },
+      "percentage",
+    );
+    expect(organizationSnapshot.valueLabel).toBe(
+      expectedOrganizationSnapshot.valueLabel,
+    );
     expect(
-      within(organizationCard).getByText(organizationValueLabel),
-    ).toBeInTheDocument();
-    expect(
-      within(organizationCard).getByText(
-        `${organizationChangeLabel} (${organizationPercentLabel})`,
-      ),
-    ).toBeInTheDocument();
-
-    expect(
-      within(organizationCard).getByTestId("recharts-line-chart"),
-    ).toBeInTheDocument();
+      `${organizationSnapshot.changeLabel} (${organizationSnapshot.percentLabel})`,
+    ).toBe(
+      `${expectedOrganizationSnapshot.changeLabel} (${expectedOrganizationSnapshot.percentLabel})`,
+    );
   });
 });

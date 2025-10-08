@@ -1,15 +1,5 @@
-// @vitest-environment jsdom
-// Vitest defaults DB config to Node environment; keep this so React Testing Library has a DOM.
-
 import "../../../tests/helpers/postgres-container";
-import "@testing-library/jest-dom";
-
-import { render, screen, within } from "@testing-library/react";
-import { createElement } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-import { MetricCard } from "@/components/dashboard/metric-card";
-import { toCardHistory } from "@/components/dashboard/metric-history";
+import { beforeEach, describe, expect, it } from "vitest";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import {
   type DbActor,
@@ -24,25 +14,7 @@ import {
   CURRENT_RANGE_START,
   resetDashboardTables,
 } from "../../../tests/helpers/dashboard-metrics";
-import { formatCountValue } from "../../../tests/helpers/metric-formatting";
-
-vi.mock("recharts", () => {
-  const { createElement: createReactElement } =
-    require("react") as typeof import("react");
-
-  const createStub =
-    (testId: string) =>
-    ({ children }: { children?: import("react").ReactNode }) =>
-      createReactElement("div", { "data-testid": testId }, children ?? null);
-
-  return {
-    ResponsiveContainer: createStub("recharts-responsive"),
-    LineChart: createStub("recharts-line-chart"),
-    Line: createStub("recharts-line"),
-    XAxis: createStub("recharts-x-axis"),
-    YAxis: createStub("recharts-y-axis"),
-  };
-});
+import { formatMetricSnapshotForTest } from "../../../tests/helpers/metric-formatting";
 
 function hoursBefore(iso: string, hours: number) {
   const base = new Date(iso).getTime();
@@ -222,39 +194,23 @@ describe("analytics pull request metrics", () => {
       { period: "current", value: expectedHistory.current },
     ]);
 
-    const metricTitle = "PR 생성";
-    render(
-      createElement(MetricCard, {
-        title: metricTitle,
-        metric: prsCreated,
-        format: "count",
-        history: toCardHistory(history),
-      }),
+    const creationSnapshot = formatMetricSnapshotForTest(prsCreated, "count");
+    const expectedCreationSnapshot = formatMetricSnapshotForTest(
+      {
+        current: expectedHistory.current,
+        absoluteChange: expectedAbsoluteChange,
+        percentChange: expectedPercentChange,
+      },
+      "count",
     );
-
-    expect(screen.getByText(metricTitle)).toBeInTheDocument();
-    const card = screen.getByText(metricTitle).closest('[data-slot="card"]');
-    if (!card) {
-      throw new Error("pull request creation metric card not found");
-    }
-
+    expect(creationSnapshot.valueLabel).toBe(
+      expectedCreationSnapshot.valueLabel,
+    );
     expect(
-      within(card as HTMLElement).getByText(
-        formatCountValue(expectedHistory.current),
-      ),
-    ).toBeInTheDocument();
-
-    const percent = prsCreated.percentChange;
-    const percentLabel =
-      percent == null
-        ? "–"
-        : `${percent >= 0 ? "+" : ""}${percent.toFixed(1)}%`;
-    const changeLabel = `${
-      expectedAbsoluteChange >= 0 ? "+" : ""
-    }${formatCountValue(expectedAbsoluteChange)} (${percentLabel})`;
-    expect(
-      within(card as HTMLElement).getByText(changeLabel),
-    ).toBeInTheDocument();
+      `${creationSnapshot.changeLabel} (${creationSnapshot.percentLabel})`,
+    ).toBe(
+      `${expectedCreationSnapshot.changeLabel} (${expectedCreationSnapshot.percentLabel})`,
+    );
   });
 
   it("builds pull request merge metrics with five-period history", async () => {
@@ -428,39 +384,21 @@ describe("analytics pull request metrics", () => {
       { period: "current", value: expectedHistory.current },
     ]);
 
-    const metricTitle = "PR 머지";
-    render(
-      createElement(MetricCard, {
-        title: metricTitle,
-        metric: prsMerged,
-        format: "count",
-        history: toCardHistory(history),
-      }),
+    const mergedSnapshot = formatMetricSnapshotForTest(prsMerged, "count");
+    const expectedMergedSnapshot = formatMetricSnapshotForTest(
+      {
+        current: expectedHistory.current,
+        absoluteChange: expectedAbsoluteChange,
+        percentChange: expectedPercentChange,
+      },
+      "count",
     );
-
-    expect(screen.getByText(metricTitle)).toBeInTheDocument();
-    const card = screen.getByText(metricTitle).closest('[data-slot="card"]');
-    if (!card) {
-      throw new Error("pull request merge metric card not found");
-    }
-
+    expect(mergedSnapshot.valueLabel).toBe(expectedMergedSnapshot.valueLabel);
     expect(
-      within(card as HTMLElement).getByText(
-        formatCountValue(expectedHistory.current),
-      ),
-    ).toBeInTheDocument();
-
-    const percent = prsMerged.percentChange;
-    const percentLabel =
-      percent == null
-        ? "–"
-        : `${percent >= 0 ? "+" : ""}${percent.toFixed(1)}%`;
-    const changeLabel = `${
-      expectedAbsoluteChange >= 0 ? "+" : ""
-    }${formatCountValue(expectedAbsoluteChange)} (${percentLabel})`;
-    expect(
-      within(card as HTMLElement).getByText(changeLabel),
-    ).toBeInTheDocument();
+      `${mergedSnapshot.changeLabel} (${mergedSnapshot.percentLabel})`,
+    ).toBe(
+      `${expectedMergedSnapshot.changeLabel} (${expectedMergedSnapshot.percentLabel})`,
+    );
   });
 
   it("handles decreasing pull request creation and merge counts", async () => {
@@ -587,61 +525,50 @@ describe("analytics pull request metrics", () => {
     );
     expect(prsMerged.percentChange).not.toBeNull();
 
-    render(
-      createElement(
-        "div",
-        null,
-        createElement(MetricCard, {
-          title: "PR 생성",
-          metric: prsCreated,
-          format: "count",
-          history: toCardHistory(
-            analytics.organization.metricHistory.prsCreated,
-          ),
-        }),
-        createElement(MetricCard, {
-          title: "PR 머지",
-          metric: prsMerged,
-          format: "count",
-          history: toCardHistory(
-            analytics.organization.metricHistory.prsMerged,
-          ),
-        }),
-      ),
+    const expectedCreationPercent =
+      previousCreationTimes.length === 0
+        ? null
+        : ((currentCreationTimes.length - previousCreationTimes.length) /
+            previousCreationTimes.length) *
+          100;
+    const creationSnapshot = formatMetricSnapshotForTest(prsCreated, "count");
+    const expectedCreationSnapshot = formatMetricSnapshotForTest(
+      {
+        current: currentCreationTimes.length,
+        absoluteChange:
+          currentCreationTimes.length - previousCreationTimes.length,
+        percentChange: expectedCreationPercent,
+      },
+      "count",
+    );
+    expect(creationSnapshot.valueLabel).toBe(
+      expectedCreationSnapshot.valueLabel,
+    );
+    expect(
+      `${creationSnapshot.changeLabel} (${creationSnapshot.percentLabel})`,
+    ).toBe(
+      `${expectedCreationSnapshot.changeLabel} (${expectedCreationSnapshot.percentLabel})`,
     );
 
-    const creationCard = screen
-      .getByText("PR 생성")
-      .closest('[data-slot="card"]') as HTMLElement | null;
-    const mergeCard = screen
-      .getByText("PR 머지")
-      .closest('[data-slot="card"]') as HTMLElement | null;
-
-    if (!creationCard || !mergeCard) {
-      throw new Error("decreasing metric cards not found");
-    }
-
-    const creationPercent = prsCreated.percentChange;
-    const creationPercentLabel =
-      creationPercent == null
-        ? "–"
-        : `${creationPercent >= 0 ? "+" : ""}${creationPercent.toFixed(1)}%`;
-    const creationChangeLabel = `${
-      prsCreated.absoluteChange >= 0 ? "+" : ""
-    }${formatCountValue(prsCreated.absoluteChange)} (${creationPercentLabel})`;
-    expect(
-      within(creationCard).getByText(creationChangeLabel),
-    ).toBeInTheDocument();
-
-    const mergePercent = prsMerged.percentChange;
-    const mergePercentLabel =
-      mergePercent == null
-        ? "–"
-        : `${mergePercent >= 0 ? "+" : ""}${mergePercent.toFixed(1)}%`;
-    const mergeChangeLabel = `${
-      prsMerged.absoluteChange >= 0 ? "+" : ""
-    }${formatCountValue(prsMerged.absoluteChange)} (${mergePercentLabel})`;
-    expect(within(mergeCard).getByText(mergeChangeLabel)).toBeInTheDocument();
+    const expectedMergePercent =
+      previousMergeTimes.length === 0
+        ? null
+        : ((currentMergeTimes.length - previousMergeTimes.length) /
+            previousMergeTimes.length) *
+          100;
+    const mergeSnapshot = formatMetricSnapshotForTest(prsMerged, "count");
+    const expectedMergeSnapshot = formatMetricSnapshotForTest(
+      {
+        current: currentMergeTimes.length,
+        absoluteChange: currentMergeTimes.length - previousMergeTimes.length,
+        percentChange: expectedMergePercent,
+      },
+      "count",
+    );
+    expect(mergeSnapshot.valueLabel).toBe(expectedMergeSnapshot.valueLabel);
+    expect(`${mergeSnapshot.changeLabel} (${mergeSnapshot.percentLabel})`).toBe(
+      `${expectedMergeSnapshot.changeLabel} (${expectedMergeSnapshot.percentLabel})`,
+    );
   });
 
   it("treats zero baseline counts as having no percent change", async () => {
@@ -740,51 +667,37 @@ describe("analytics pull request metrics", () => {
     expect(prsMerged.absoluteChange).toBe(currentMergeTimes.length);
     expect(prsMerged.percentChange).toBeNull();
 
-    render(
-      createElement(
-        "div",
-        null,
-        createElement(MetricCard, {
-          title: "PR 생성",
-          metric: prsCreated,
-          format: "count",
-          history: toCardHistory(
-            analytics.organization.metricHistory.prsCreated,
-          ),
-        }),
-        createElement(MetricCard, {
-          title: "PR 머지",
-          metric: prsMerged,
-          format: "count",
-          history: toCardHistory(
-            analytics.organization.metricHistory.prsMerged,
-          ),
-        }),
-      ),
+    const creationSnapshot = formatMetricSnapshotForTest(prsCreated, "count");
+    const expectedCreationSnapshot = formatMetricSnapshotForTest(
+      {
+        current: currentCreationTimes.length,
+        absoluteChange: currentCreationTimes.length,
+        percentChange: null,
+      },
+      "count",
+    );
+    expect(creationSnapshot.valueLabel).toBe(
+      expectedCreationSnapshot.valueLabel,
+    );
+    expect(
+      `${creationSnapshot.changeLabel} (${creationSnapshot.percentLabel})`,
+    ).toBe(
+      `${expectedCreationSnapshot.changeLabel} (${expectedCreationSnapshot.percentLabel})`,
     );
 
-    const creationCard = screen
-      .getByText("PR 생성")
-      .closest('[data-slot="card"]') as HTMLElement | null;
-    const mergeCard = screen
-      .getByText("PR 머지")
-      .closest('[data-slot="card"]') as HTMLElement | null;
-
-    if (!creationCard || !mergeCard) {
-      throw new Error("zero baseline metric cards not found");
-    }
-
-    const creationChangeLabel = `${
-      prsCreated.absoluteChange >= 0 ? "+" : ""
-    }${formatCountValue(prsCreated.absoluteChange)} (–)`;
-    expect(
-      within(creationCard).getByText(creationChangeLabel),
-    ).toBeInTheDocument();
-
-    const mergeChangeLabel = `${
-      prsMerged.absoluteChange >= 0 ? "+" : ""
-    }${formatCountValue(prsMerged.absoluteChange)} (–)`;
-    expect(within(mergeCard).getByText(mergeChangeLabel)).toBeInTheDocument();
+    const mergeSnapshot = formatMetricSnapshotForTest(prsMerged, "count");
+    const expectedMergeSnapshot = formatMetricSnapshotForTest(
+      {
+        current: currentMergeTimes.length,
+        absoluteChange: currentMergeTimes.length,
+        percentChange: null,
+      },
+      "count",
+    );
+    expect(mergeSnapshot.valueLabel).toBe(expectedMergeSnapshot.valueLabel);
+    expect(`${mergeSnapshot.changeLabel} (${mergeSnapshot.percentLabel})`).toBe(
+      `${expectedMergeSnapshot.changeLabel} (${expectedMergeSnapshot.percentLabel})`,
+    );
   });
 
   it("excludes other repositories when a filter is provided", async () => {
@@ -855,20 +768,20 @@ describe("analytics pull request metrics", () => {
     const primaryCreation = {
       previous: ["2023-12-28T10:00:00.000Z"],
       current: ["2024-01-03T09:00:00.000Z", "2024-01-06T15:30:00.000Z"],
-    } as const;
+    };
     const secondaryCreation = {
       previous: ["2023-12-27T12:00:00.000Z", "2023-12-29T18:45:00.000Z"],
       current: ["2024-01-05T11:15:00.000Z"],
-    } as const;
+    };
 
     const primaryMerges = {
       previous: ["2023-12-28T20:00:00.000Z"],
       current: ["2024-01-04T17:00:00.000Z"],
-    } as const;
+    };
     const secondaryMerges = {
       previous: ["2023-12-30T13:30:00.000Z"],
       current: ["2024-01-06T21:45:00.000Z"],
-    } as const;
+    };
 
     for (const createdAt of primaryCreation.previous) {
       await insertPullRequest(
@@ -981,56 +894,48 @@ describe("analytics pull request metrics", () => {
     expect(historyMergedMap.previous3 ?? 0).toBe(0);
     expect(historyMergedMap.previous4 ?? 0).toBe(0);
 
-    render(
-      createElement(
-        "div",
-        null,
-        createElement(MetricCard, {
-          title: "PR 생성",
-          metric: prsCreated,
-          format: "count",
-          history: toCardHistory(historyCreated),
-        }),
-        createElement(MetricCard, {
-          title: "PR 머지",
-          metric: prsMerged,
-          format: "count",
-          history: toCardHistory(historyMerged),
-        }),
-      ),
+    const creationAbsolute =
+      primaryCreation.current.length - primaryCreation.previous.length;
+    const creationPercent =
+      primaryCreation.previous.length === 0
+        ? null
+        : (creationAbsolute / primaryCreation.previous.length) * 100;
+    const creationSnapshot = formatMetricSnapshotForTest(prsCreated, "count");
+    const expectedCreationSnapshot = formatMetricSnapshotForTest(
+      {
+        current: primaryCreation.current.length,
+        absoluteChange: creationAbsolute,
+        percentChange: creationPercent,
+      },
+      "count",
+    );
+    expect(creationSnapshot.valueLabel).toBe(
+      expectedCreationSnapshot.valueLabel,
+    );
+    expect(
+      `${creationSnapshot.changeLabel} (${creationSnapshot.percentLabel})`,
+    ).toBe(
+      `${expectedCreationSnapshot.changeLabel} (${expectedCreationSnapshot.percentLabel})`,
     );
 
-    const creationCard = screen
-      .getByText("PR 생성")
-      .closest('[data-slot="card"]');
-    const mergeCard = screen.getByText("PR 머지").closest('[data-slot="card"]');
-
-    if (!creationCard || !mergeCard) {
-      throw new Error("filtered metric cards not found");
-    }
-
-    const creationPercent = prsCreated.percentChange;
-    const creationPercentLabel =
-      creationPercent == null
-        ? "–"
-        : `${creationPercent >= 0 ? "+" : ""}${creationPercent.toFixed(1)}%`;
-    const creationChangeLabel = `${
-      prsCreated.absoluteChange >= 0 ? "+" : ""
-    }${formatCountValue(prsCreated.absoluteChange)} (${creationPercentLabel})`;
-    expect(
-      within(creationCard as HTMLElement).getByText(creationChangeLabel),
-    ).toBeInTheDocument();
-
-    const mergePercent = prsMerged.percentChange;
-    const mergePercentLabel =
-      mergePercent == null
-        ? "–"
-        : `${mergePercent >= 0 ? "+" : ""}${mergePercent.toFixed(1)}%`;
-    const mergeChangeLabel = `${
-      prsMerged.absoluteChange >= 0 ? "+" : ""
-    }${formatCountValue(prsMerged.absoluteChange)} (${mergePercentLabel})`;
-    expect(
-      within(mergeCard as HTMLElement).getByText(mergeChangeLabel),
-    ).toBeInTheDocument();
+    const mergeAbsolute =
+      primaryMerges.current.length - primaryMerges.previous.length;
+    const mergePercent =
+      primaryMerges.previous.length === 0
+        ? null
+        : (mergeAbsolute / primaryMerges.previous.length) * 100;
+    const mergeSnapshot = formatMetricSnapshotForTest(prsMerged, "count");
+    const expectedMergeSnapshot = formatMetricSnapshotForTest(
+      {
+        current: primaryMerges.current.length,
+        absoluteChange: mergeAbsolute,
+        percentChange: mergePercent,
+      },
+      "count",
+    );
+    expect(mergeSnapshot.valueLabel).toBe(expectedMergeSnapshot.valueLabel);
+    expect(`${mergeSnapshot.changeLabel} (${mergeSnapshot.percentLabel})`).toBe(
+      `${expectedMergeSnapshot.changeLabel} (${expectedMergeSnapshot.percentLabel})`,
+    );
   });
 });
