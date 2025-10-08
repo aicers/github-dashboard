@@ -62,4 +62,17 @@ describe("GET /api/sync/status", () => {
       message: "Unexpected error while fetching sync status.",
     });
   });
+
+  it("returns 401 when session is missing", async () => {
+    vi.mocked(readActiveSession).mockResolvedValueOnce(null);
+
+    const response = await GET();
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      success: false,
+      message: "Authentication required.",
+    });
+    expect(fetchSyncStatus).not.toHaveBeenCalled();
+  });
 });
