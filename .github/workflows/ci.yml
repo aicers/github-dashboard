@@ -43,6 +43,26 @@ jobs:
     runs-on: ubuntu-latest
     needs: check
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      DATABASE_URL: postgres://postgres@localhost:5432/postgres
+      APP_BASE_URL: http://127.0.0.1:3100
+      GITHUB_OAUTH_CLIENT_ID: ${{ secrets.OAUTH_CLIENT_ID }}
+      GITHUB_OAUTH_CLIENT_SECRET: ${{ secrets.OAUTH_CLIENT_SECRET }}
+      GITHUB_ALLOWED_ORG: ${{ secrets.OAUTH_ALLOWED_ORG }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -56,11 +76,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Generate session secret
+        run: |
+          SESSION_SECRET=$(openssl rand -hex 32)
+          echo "::add-mask::$SESSION_SECRET"
+          echo "SESSION_SECRET=$SESSION_SECRET" >> $GITHUB_ENV
+
       - name: Run unit tests
         run: npm run test
-
-      - name: Pull PostgreSQL image
-        run: docker pull postgres:16
 
       - name: Run database integration tests
         run: npm run test:db
