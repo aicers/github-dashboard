@@ -11,6 +11,9 @@ import type {
   PeriodKey,
 } from "@/lib/dashboard/types";
 
+export const DEPENDABOT_FILTER =
+  "NOT (COALESCE(LOWER(u.login), '') LIKE 'dependabot%' OR COALESCE(LOWER(u.login), '') = 'app/dependabot')";
+
 export function toIso(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
