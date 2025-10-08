@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { ActivityHeatmap } from "@/components/dashboard/activity-heatmap";
 import { DashboardFilterPanel } from "@/components/dashboard/dashboard-filter-panel";
 import { MetricCard } from "@/components/dashboard/metric-card";
@@ -105,6 +105,7 @@ export function PeopleView({
   initialAnalytics,
   defaultRange,
 }: PeopleViewProps) {
+  const autoSelectedPersonIdsRef = useRef(new Set<string>());
   const {
     analytics,
     filters,
@@ -204,6 +205,10 @@ export function PeopleView({
 
   useEffect(() => {
     if (!filters.personId && initialContributorId) {
+      if (autoSelectedPersonIdsRef.current.has(initialContributorId)) {
+        return;
+      }
+      autoSelectedPersonIdsRef.current.add(initialContributorId);
       const nextFilters = { ...filters, personId: initialContributorId };
       void applyFilters(nextFilters);
     }
