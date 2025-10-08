@@ -8,8 +8,9 @@ configuration, sync controls, and analytics through a Next.js dashboard.
 - Node.js 22+
 - npm 10+
 - PostgreSQL 14+ running locally or reachable via connection string
-- A GitHub personal access token with `read:user` and repository metadata
-  scopes (`GITHUB_TOKEN`)
+- A GitHub OAuth App configured for your environments (see [docs/github-oauth-app.md](docs/github-oauth-app.md))
+- (Optional) A GitHub personal access token with `read:user` and repository
+  metadata scopes (`GITHUB_TOKEN`) for legacy data collection utilities
 
 ## Local Development
 
@@ -26,12 +27,18 @@ configuration, sync controls, and analytics through a Next.js dashboard.
    ```
 
 1. Provide environment variables (`npm run dev` reads from `.env.local` or the
-   current shell):
+   current shell). Copy `.env.example` to `.env.local` and replace the
+   placeholders:
 
    ```bash
-   export GITHUB_TOKEN=ghp_your_token
-   export GITHUB_ORG=my-github-org
-   export DATABASE_URL=postgres://postgres:postgres@localhost:5432/github_dashboard
+   export GITHUB_TOKEN=<ghp_token>
+   export GITHUB_ORG=<github_org>
+   export GITHUB_OAUTH_CLIENT_ID=<oauth_client_id>
+   export GITHUB_OAUTH_CLIENT_SECRET=<oauth_client_secret>
+   export GITHUB_ALLOWED_ORG=<allowed_org_slug>
+   export APP_BASE_URL=http://localhost:3000   # production: https://your-domain
+   export SESSION_SECRET=$(openssl rand -hex 32)
+   export DATABASE_URL=postgres://<user>:<password>@localhost:5432/<database>
    export SYNC_INTERVAL_MINUTES=60
    ```
 
@@ -41,11 +48,17 @@ configuration, sync controls, and analytics through a Next.js dashboard.
    npm run dev
    ```
 
-1. Visit the app:
+1. Visit the app (all dashboard routes require GitHub sign-in and organization
+   membership):
 
    - `http://localhost:3000` — landing page with quick links
    - `http://localhost:3000/dashboard` — data collection controls & analytics
    - `http://localhost:3000/github-test` — GraphQL connectivity test page
+
+GitHub authentication is mandatory. Authorized members are issued a signed
+session cookie; non-members are redirected to `/auth/denied` with instructions
+on granting access under **Settings → Applications → Authorized OAuth Apps**.
+Full OAuth setup instructions live in [docs/github-oauth-app.md](docs/github-oauth-app.md).
 
 ### PostgreSQL schema bootstrap
 
@@ -94,11 +107,25 @@ curl -X POST http://localhost:3000/api/sync/reset -d '{"preserveLogs":true}' \
   `/test-harness/*` such as:
   - SettingsView — `http://localhost:3000/test-harness/settings`
   - SyncControls — `http://localhost:3000/test-harness/sync`
+  - Session bootstrap — `http://localhost:3000/test-harness/auth/session`
   - Analytics filters — `http://localhost:3000/test-harness/analytics`
   - People insights — `http://localhost:3000/test-harness/people`
   - Dashboard tabs — `http://localhost:3000/test-harness/dashboard-tabs`
 - `npm run ci` — sequentially runs `biome ci --error-on-warnings .`,
   `npm run typecheck`, `npm run test`, and `npm run test:db`
+
+## Continuous Integration
+
+The GitHub Actions workflow (`.github/workflows/ci.yml`) starts a Postgres 16
+service, generates an ephemeral `SESSION_SECRET`, and expects the following
+repository secrets to be configured:
+
+- `OAUTH_CLIENT_ID`
+- `OAUTH_CLIENT_SECRET`
+- `OAUTH_ALLOWED_ORG`
+
+These values are used during end-to-end tests to exercise the GitHub OAuth
+flow. Update them per environment as needed.
 
 ## Docker
 
@@ -106,7 +133,7 @@ Builds use the standalone Next.js output for small production images.
 
 ```bash
 cp .env.example .env          # if you need a starting point
-vim .env                      # set GITHUB_TOKEN, GITHUB_ORG, DATABASE_URL, etc.
+vim .env                      # set GitHub OAuth creds, DATABASE_URL, etc.
 ./infra/nginx/certs/generate.sh
 docker compose up --build
 ```
@@ -182,30 +209,16 @@ HTTP attempts to the secure endpoint.
 - nginx proxy: exposes port 443 (HTTPS) and forwards traffic to the app
   container. Certificates live in `infra/nginx/certs/`.
 
-## Continuous Integration
-
-`.github/workflows/ci.yml` runs on pushes and pull requests against `main` and
-executes:
-
-1. `npm ci`
-2. Biome linting (`biomejs/setup-biome@v2`)
-3. Type checking via `tsc --noEmit`
-4. Markdown linting (`articulate/actions-markdownlint@v1`)
-5. Vitest unit and component tests (`npm run test`)
-6. PostgreSQL integration tests (`npm run test:db`) after pulling the
-   `postgres:16` image for Testcontainers
-7. Production image build via Docker Buildx (sanity check only; image is tagged
-   `github-dashboard:test`)
-
 ## Project Structure
 
 ```text
-src/app/             → Next.js App Router routes and layouts
+src/app/             → Next.js App Router routes, layouts, and API handlers
 src/components/      → Shared UI components (shadcn/ui + custom)
-src/lib/             → Utilities, env parsing, GitHub API client
-src/lib/db/          → PostgreSQL client, schema bootstrap, query helpers
-src/lib/sync/        → Sync orchestration utilities and scheduler
-src/app/api/         → Route handlers (GitHub repository summary + data sync APIs)
+src/lib/             → Utilities (db, auth, GitHub client, sync scheduler)
+src/lib/auth/        → GitHub OAuth, session, and membership helpers
+docs/                → Setup guides (e.g., GitHub OAuth registration)
+tests/               → Vitest specs, Playwright E2E suites, and helpers
+public/              → Static assets served by Next.js
 infra/               → Docker/nginx assets for HTTPS proxying
 ```
 
@@ -217,6 +230,11 @@ Environment variables are parsed through `src/lib/env.ts`:
 | --- | --- | --- |
 | `GITHUB_TOKEN` | ✅ | GitHub token with `read:user` + repository metadata scope |
 | `GITHUB_ORG` | ✅ | Organization login to target for data collection |
+| `GITHUB_OAUTH_CLIENT_ID` | ✅ | GitHub OAuth App client identifier |
+| `GITHUB_OAUTH_CLIENT_SECRET` | ✅ | GitHub OAuth App client secret |
+| `GITHUB_ALLOWED_ORG` | ✅ | GitHub organization slug allowed to sign in |
+| `APP_BASE_URL` | ✅ | Absolute origin used to build OAuth callback URLs |
+| `SESSION_SECRET` | ✅ | Secret key for signing session cookies |
 | `DATABASE_URL` | ✅ | PostgreSQL connection string |
 | `SYNC_INTERVAL_MINUTES` | ⛔ (default 60) | Interval for automatic incremental sync |
 <!-- markdownlint-enable MD013 -->

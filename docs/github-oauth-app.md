@@ -15,8 +15,8 @@ Next.js runtime.
 | Field                       | Local development value                  | Notes |
 | --------------------------- | ---------------------------------------- | ----- |
 | **Application name**        | GitHub Dashboard (local)                 | Any label that helps you identify the environment. |
-| **Homepage URL**            | `http://localhost:3000`                  | Use your deployed origin (for example `https://dashboard.example.com`) outside of local dev. |
-| **Authorization callback URL** | `http://localhost:3000/auth/github/callback` | Must match exactly. Duplicate the app for each environment with its own callback URL. |
+| **Homepage URL**            | `http://localhost:3000`                  | Use your deployed origin (for example `https://dashboard.example.com`). In NAT/tunnel or IP-only setups, supply the externally reachable address (e.g. `https://203.0.113.10`) that GitHub can open. |
+| **Authorization callback URL** | `http://localhost:3000/auth/github/callback` | Must match exactly. Duplicate the app per environment with its own callback (e.g. `https://dashboard.example.com/auth/github/callback`). For NAT/tunnel/IP-only setups, point this to the public address that forwards back to your local server. |
 <!-- markdownlint-enable MD013 -->
 
 When the form is submitted GitHub shows a page with the new **Client ID** and a
@@ -30,11 +30,11 @@ environments). Never commit them to the repository. The application expects the
 following keys (see `.env.example` for placeholders):
 
 ```bash
-GITHUB_OAUTH_CLIENT_ID=xxxxxxxxxxxxxxxx
-GITHUB_OAUTH_CLIENT_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-GITHUB_ALLOWED_ORG=your-organization-slug
-APP_BASE_URL=http://localhost:3000
-SESSION_SECRET=run-`openssl rand -hex 32`-to-generate
+GITHUB_OAUTH_CLIENT_ID=<oauth_client_id>
+GITHUB_OAUTH_CLIENT_SECRET=<oauth_client_secret>
+GITHUB_ALLOWED_ORG=<allowed_org_slug>
+APP_BASE_URL=http://localhost:3000   # production: https://your-domain
+SESSION_SECRET=$(openssl rand -hex 32)
 ```
 
 - `GITHUB_ALLOWED_ORG` is the GitHub organization slug used to gate access.
