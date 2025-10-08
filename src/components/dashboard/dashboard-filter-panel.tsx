@@ -1,16 +1,16 @@
 "use client";
 
 import { useCallback, useId } from "react";
+import type { FilterState } from "@/components/dashboard/use-dashboard-analytics";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   buildRangeFromPreset,
   fromDateInputValue,
   PRESETS,
   type TimePresetKey,
   toDateInputValue,
-} from "@/components/dashboard/dashboard-filters";
-import type { FilterState } from "@/components/dashboard/use-dashboard-analytics";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+} from "@/lib/dashboard/date-range";
 import type { DashboardAnalytics, WeekStart } from "@/lib/dashboard/types";
 import type { RepositoryProfile, UserProfile } from "@/lib/db/operations";
 

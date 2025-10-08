@@ -1,15 +1,14 @@
 import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, test, vi } from "vitest";
 
-import {
-  __analyticsInternals,
-  AnalyticsView,
-} from "@/components/dashboard/analytics-view";
-import { PRESETS } from "@/components/dashboard/dashboard-filters";
+import { AnalyticsView } from "@/components/dashboard/analytics-view";
 import {
   type DashboardAnalyticsState,
   useDashboardAnalytics,
 } from "@/components/dashboard/use-dashboard-analytics";
+import { buildRangeFromPreset, PRESETS } from "@/lib/dashboard/date-range";
+import { formatDuration } from "@/lib/dashboard/metric-formatters";
+import { buildNetTrend, mergeTrends } from "@/lib/dashboard/trend-utils";
 import type {
   ComparisonValue,
   DashboardAnalytics,
@@ -407,14 +406,14 @@ function renderAnalyticsView(overrides?: DashboardAnalyticsState) {
 
 describe("analytics-view helpers", () => {
   test("formatDuration renders hours and days appropriately", () => {
-    expect(__analyticsInternals.formatDuration(12, "hours")).toBe("12시간");
-    expect(__analyticsInternals.formatDuration(72, "hours")).toBe("3.0일");
-    expect(__analyticsInternals.formatDuration(48, "days")).toBe("2.0일");
+    expect(formatDuration(12, "hours")).toBe("12시간");
+    expect(formatDuration(72, "hours")).toBe("3.0일");
+    expect(formatDuration(48, "days")).toBe("2.0일");
   });
 
   test("buildRangeFromPreset computes expected ranges", () => {
     const reference = new Date("2024-05-15T12:00:00Z");
-    const last14 = __analyticsInternals.buildRangeFromPreset(
+    const last14 = buildRangeFromPreset(
       "last_14_days",
       "UTC",
       "monday",
@@ -431,7 +430,7 @@ describe("analytics-view helpers", () => {
       expect(diffDays).toBeLessThanOrEqual(14.1);
     }
 
-    const last30 = __analyticsInternals.buildRangeFromPreset(
+    const last30 = buildRangeFromPreset(
       "last_30_days",
       "UTC",
       "monday",
@@ -448,7 +447,7 @@ describe("analytics-view helpers", () => {
       expect(diffDays).toBeLessThanOrEqual(30.1);
     }
 
-    const last60 = __analyticsInternals.buildRangeFromPreset(
+    const last60 = buildRangeFromPreset(
       "last_60_days",
       "UTC",
       "monday",
@@ -465,7 +464,7 @@ describe("analytics-view helpers", () => {
       expect(diffDays).toBeLessThanOrEqual(60.1);
     }
 
-    const last90 = __analyticsInternals.buildRangeFromPreset(
+    const last90 = buildRangeFromPreset(
       "last_90_days",
       "UTC",
       "monday",
@@ -482,7 +481,7 @@ describe("analytics-view helpers", () => {
       expect(diffDays).toBeLessThanOrEqual(90.1);
     }
 
-    const thisMonth = __analyticsInternals.buildRangeFromPreset(
+    const thisMonth = buildRangeFromPreset(
       "this_month",
       "UTC",
       "monday",
@@ -499,13 +498,13 @@ describe("analytics-view helpers", () => {
       expect(diffDays).toBeLessThanOrEqual(31);
     }
 
-    const mondayWeek = __analyticsInternals.buildRangeFromPreset(
+    const mondayWeek = buildRangeFromPreset(
       "this_week",
       "UTC",
       "monday",
       reference,
     );
-    const sundayWeek = __analyticsInternals.buildRangeFromPreset(
+    const sundayWeek = buildRangeFromPreset(
       "this_week",
       "UTC",
       "sunday",
@@ -519,7 +518,7 @@ describe("analytics-view helpers", () => {
   });
 
   test("mergeTrends combines series by date", () => {
-    const merged = __analyticsInternals.mergeTrends(
+    const merged = mergeTrends(
       [
         { date: "2024-01-01", value: 3 },
         { date: "2024-01-02", value: 5 },
@@ -540,7 +539,6 @@ describe("analytics-view helpers", () => {
   });
 
   test("buildNetTrend computes issue net deltas across the selected range", () => {
-    const { mergeTrends, buildNetTrend } = __analyticsInternals;
     const dateKeys = ["2024-01-01", "2024-01-02", "2024-01-03"];
 
     const issuesCreated = [
@@ -568,7 +566,6 @@ describe("analytics-view helpers", () => {
   });
 
   test("buildNetTrend normalizes PR deltas when data is missing or non-finite", () => {
-    const { mergeTrends, buildNetTrend } = __analyticsInternals;
     const dateKeys = ["2024-02-10", "2024-02-11", "2024-02-12"];
 
     const prsCreated = [

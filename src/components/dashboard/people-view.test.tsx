@@ -1,13 +1,13 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { PRESETS } from "@/components/dashboard/dashboard-filters";
 import { PeopleView } from "@/components/dashboard/people-view";
 import {
   type DashboardAnalyticsState,
   type FilterState,
   useDashboardAnalytics,
 } from "@/components/dashboard/use-dashboard-analytics";
+import { PRESETS } from "@/lib/dashboard/date-range";
 import type {
   ComparisonValue,
   DashboardAnalytics,

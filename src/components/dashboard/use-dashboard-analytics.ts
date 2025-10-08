@@ -1,10 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import {
-  PRESETS,
-  type TimePresetKey,
-} from "@/components/dashboard/dashboard-filters";
+import { PRESETS, type TimePresetKey } from "@/lib/dashboard/date-range";
 import type { DashboardAnalytics, WeekStart } from "@/lib/dashboard/types";
 
 export type FilterState = {
