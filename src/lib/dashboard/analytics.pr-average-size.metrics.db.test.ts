@@ -1,15 +1,7 @@
-// @vitest-environment jsdom
-// Vitest defaults DB config to Node environment; keep this so React Testing Library has a DOM.
-
 import "../../../tests/helpers/postgres-container";
-import "@testing-library/jest-dom";
 
-import { render, screen, within } from "@testing-library/react";
-import { createElement } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
-import { MetricCard } from "@/components/dashboard/metric-card";
-import { toCardHistory } from "@/components/dashboard/metric-history";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import type { ComparisonValue, PeriodKey } from "@/lib/dashboard/types";
 import {
@@ -26,25 +18,7 @@ import {
   PERIOD_KEYS,
   resetDashboardTables,
 } from "../../../tests/helpers/dashboard-metrics";
-import { formatChangeForTest } from "../../../tests/helpers/metric-formatting";
-
-vi.mock("recharts", () => {
-  const { createElement: createReactElement } =
-    require("react") as typeof import("react");
-
-  const createStub =
-    (testId: string) =>
-    ({ children }: { children?: import("react").ReactNode }) =>
-      createReactElement("div", { "data-testid": testId }, children ?? null);
-
-  return {
-    ResponsiveContainer: createStub("recharts-responsive"),
-    LineChart: createStub("recharts-line-chart"),
-    Line: createStub("recharts-line"),
-    XAxis: createStub("recharts-x-axis"),
-    YAxis: createStub("recharts-y-axis"),
-  };
-});
+import { formatMetricSnapshotForTest } from "../../../tests/helpers/metric-formatting";
 
 const PERIODS = PERIOD_KEYS;
 
@@ -425,57 +399,66 @@ describe("analytics PR average size metrics", () => {
     const { additionsMetric, netMetric, valueLabel } =
       buildAvgPrSizeModes(avgPrSize);
 
-    render(
-      createElement(
-        "div",
-        null,
-        createElement(MetricCard, {
-          title: "PR 평균 크기 (추가)",
-          metric: additionsMetric,
-          format: "count",
-          history: toCardHistory(additionsHistory),
-          valueOverride: valueLabel,
-        }),
-        createElement(MetricCard, {
-          title: "PR 평균 크기 (순증)",
-          metric: netMetric,
-          format: "count",
-          history: toCardHistory(netHistory),
-          valueOverride: valueLabel,
-        }),
-      ),
+    const roundedAdditionsCurrent = roundToOneDecimal(currentStats.additions);
+    const roundedAdditionsPrevious = roundToOneDecimal(previousStats.additions);
+    const roundedDeletionsCurrent = roundToOneDecimal(currentStats.deletions);
+    const roundedDeletionsPrevious = roundToOneDecimal(previousStats.deletions);
+    const roundedNetCurrent = roundToOneDecimal(
+      roundedAdditionsCurrent - roundedDeletionsCurrent,
+    );
+    const roundedNetPrevious = roundToOneDecimal(
+      roundedAdditionsPrevious - roundedDeletionsPrevious,
     );
 
-    const additionsCardElement = screen
-      .getByText("PR 평균 크기 (추가)")
-      .closest('[data-slot="card"]');
-    const netCardElement = screen
-      .getByText("PR 평균 크기 (순증)")
-      .closest('[data-slot="card"]');
+    expect(valueLabel).toBe(
+      `+${LINE_DECIMAL_FORMATTER.format(roundedAdditionsCurrent)} / -${LINE_DECIMAL_FORMATTER.format(roundedDeletionsCurrent)} 라인`,
+    );
 
-    if (
-      !(additionsCardElement instanceof HTMLElement) ||
-      !(netCardElement instanceof HTMLElement)
-    ) {
-      throw new Error("metric cards not rendered");
-    }
+    const additionsSnapshot = formatMetricSnapshotForTest(
+      additionsMetric,
+      "count",
+    );
+    const expectedAdditionsSnapshot = formatMetricSnapshotForTest(
+      {
+        current: roundedAdditionsCurrent,
+        absoluteChange: roundToOneDecimal(
+          roundedAdditionsCurrent - roundedAdditionsPrevious,
+        ),
+        percentChange:
+          roundedAdditionsPrevious === 0
+            ? null
+            : (roundedAdditionsCurrent - roundedAdditionsPrevious) /
+              roundedAdditionsPrevious,
+      },
+      "count",
+    );
+    expect(additionsSnapshot.valueLabel).toBe(
+      expectedAdditionsSnapshot.valueLabel,
+    );
+    expect(
+      `${additionsSnapshot.changeLabel} (${additionsSnapshot.percentLabel})`,
+    ).toBe(
+      `${expectedAdditionsSnapshot.changeLabel} (${expectedAdditionsSnapshot.percentLabel})`,
+    );
 
-    expect(
-      within(additionsCardElement).getByText(valueLabel),
-    ).toBeInTheDocument();
-    const additionsChange = formatChangeForTest(additionsMetric, "count");
-    expect(
-      within(additionsCardElement).getByText(
-        `${additionsChange.changeLabel} (${additionsChange.percentLabel})`,
-      ),
-    ).toBeInTheDocument();
-
-    const netChange = formatChangeForTest(netMetric, "count");
-    expect(
-      within(netCardElement).getByText(
-        `${netChange.changeLabel} (${netChange.percentLabel})`,
-      ),
-    ).toBeInTheDocument();
+    const netSnapshot = formatMetricSnapshotForTest(netMetric, "count");
+    const expectedNetSnapshot = formatMetricSnapshotForTest(
+      {
+        current: roundedNetCurrent,
+        absoluteChange: roundToOneDecimal(
+          roundedNetCurrent - roundedNetPrevious,
+        ),
+        percentChange:
+          roundedNetPrevious === 0
+            ? null
+            : (roundedNetCurrent - roundedNetPrevious) / roundedNetPrevious,
+      },
+      "count",
+    );
+    expect(netSnapshot.valueLabel).toBe(expectedNetSnapshot.valueLabel);
+    expect(`${netSnapshot.changeLabel} (${netSnapshot.percentLabel})`).toBe(
+      `${expectedNetSnapshot.changeLabel} (${expectedNetSnapshot.percentLabel})`,
+    );
   });
 
   it("handles zero previous averages for additions and net", async () => {
@@ -590,56 +573,54 @@ describe("analytics PR average size metrics", () => {
     const { additionsMetric, netMetric, valueLabel } =
       buildAvgPrSizeModes(avgPrSize);
 
-    render(
-      createElement(
-        "div",
-        null,
-        createElement(MetricCard, {
-          title: "PR 평균 크기 (추가)",
-          metric: additionsMetric,
-          format: "count",
-          history: toCardHistory(additionsHistory),
-          valueOverride: valueLabel,
-        }),
-        createElement(MetricCard, {
-          title: "PR 평균 크기 (순증)",
-          metric: netMetric,
-          format: "count",
-          history: toCardHistory(netHistory),
-          valueOverride: valueLabel,
-        }),
-      ),
+    const zeroPeriodStats = computePeriodStats(currentSpecs, dependabot.id);
+    const roundedAdditionsCurrent = roundToOneDecimal(
+      zeroPeriodStats.additions,
+    );
+    const roundedDeletionsCurrent = roundToOneDecimal(
+      zeroPeriodStats.deletions,
+    );
+    const roundedNetCurrent = roundToOneDecimal(
+      roundedAdditionsCurrent - roundedDeletionsCurrent,
     );
 
-    const additionsCardElement = screen
-      .getByText("PR 평균 크기 (추가)")
-      .closest('[data-slot="card"]');
-    const netCardElement = screen
-      .getByText("PR 평균 크기 (순증)")
-      .closest('[data-slot="card"]');
+    expect(valueLabel).toBe(
+      `+${LINE_DECIMAL_FORMATTER.format(roundedAdditionsCurrent)} / -${LINE_DECIMAL_FORMATTER.format(roundedDeletionsCurrent)} 라인`,
+    );
 
-    if (
-      !(additionsCardElement instanceof HTMLElement) ||
-      !(netCardElement instanceof HTMLElement)
-    ) {
-      throw new Error("zero baseline cards not rendered");
-    }
+    const additionsSnapshot = formatMetricSnapshotForTest(
+      additionsMetric,
+      "count",
+    );
+    const expectedAdditionsSnapshot = formatMetricSnapshotForTest(
+      {
+        current: roundedAdditionsCurrent,
+        absoluteChange: roundToOneDecimal(roundedAdditionsCurrent),
+        percentChange: null,
+      },
+      "count",
+    );
+    expect(additionsSnapshot.valueLabel).toBe(
+      expectedAdditionsSnapshot.valueLabel,
+    );
+    expect(
+      `${additionsSnapshot.changeLabel} (${additionsSnapshot.percentLabel})`,
+    ).toBe(
+      `${expectedAdditionsSnapshot.changeLabel} (${expectedAdditionsSnapshot.percentLabel})`,
+    );
 
-    expect(
-      within(additionsCardElement).getByText(valueLabel),
-    ).toBeInTheDocument();
-    const additionsChange = formatChangeForTest(additionsMetric, "count");
-    expect(
-      within(additionsCardElement).getByText(
-        `${additionsChange.changeLabel} (${additionsChange.percentLabel})`,
-      ),
-    ).toBeInTheDocument();
-
-    const netChange = formatChangeForTest(netMetric, "count");
-    expect(
-      within(netCardElement).getByText(
-        `${netChange.changeLabel} (${netChange.percentLabel})`,
-      ),
-    ).toBeInTheDocument();
+    const netSnapshot = formatMetricSnapshotForTest(netMetric, "count");
+    const expectedNetSnapshot = formatMetricSnapshotForTest(
+      {
+        current: roundedNetCurrent,
+        absoluteChange: roundToOneDecimal(roundedNetCurrent),
+        percentChange: null,
+      },
+      "count",
+    );
+    expect(netSnapshot.valueLabel).toBe(expectedNetSnapshot.valueLabel);
+    expect(`${netSnapshot.changeLabel} (${netSnapshot.percentLabel})`).toBe(
+      `${expectedNetSnapshot.changeLabel} (${expectedNetSnapshot.percentLabel})`,
+    );
   });
 });
