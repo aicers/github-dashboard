@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { readActiveSession } from "@/lib/auth/session";
 import { fetchSyncStatus, updateSyncSettings } from "@/lib/sync/service";
 
 const patchSchema = z.object({
@@ -19,6 +20,14 @@ const patchSchema = z.object({
 });
 
 export async function GET() {
+  const session = await readActiveSession();
+  if (!session) {
+    return NextResponse.json(
+      { success: false, message: "Authentication required." },
+      { status: 401 },
+    );
+  }
+
   try {
     const status = await fetchSyncStatus();
     return NextResponse.json({ success: true, status });
@@ -41,6 +50,14 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
+  const session = await readActiveSession();
+  if (!session) {
+    return NextResponse.json(
+      { success: false, message: "Authentication required." },
+      { status: 401 },
+    );
+  }
+
   try {
     const payload = patchSchema.parse(await request.json());
     await updateSyncSettings(payload);

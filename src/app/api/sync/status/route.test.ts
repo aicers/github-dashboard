@@ -1,14 +1,28 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { GET } from "@/app/api/sync/status/route";
+import { readActiveSession } from "@/lib/auth/session";
 import { fetchSyncStatus } from "@/lib/sync/service";
 
 vi.mock("@/lib/sync/service", () => ({
   fetchSyncStatus: vi.fn(),
 }));
 
+vi.mock("@/lib/auth/session", () => ({
+  readActiveSession: vi.fn(),
+}));
+
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(readActiveSession).mockResolvedValue({
+    id: "session",
+    userId: "user",
+    orgSlug: "org",
+    orgVerified: true,
+    createdAt: new Date(),
+    lastSeenAt: new Date(),
+    expiresAt: new Date(),
+  });
 });
 
 describe("GET /api/sync/status", () => {
