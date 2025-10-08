@@ -5,6 +5,7 @@ const DASHBOARD_TABS_PATH = "/test-harness/dashboard-tabs";
 
 test.describe("Dashboard navigation (Playwright)", () => {
   test("redirects /dashboard to /dashboard/analytics", async ({ page }) => {
+    await page.goto("/test-harness/auth/session?userId=e2e-user");
     await page.goto(DASHBOARD_ROOT);
     await expect(page).toHaveURL(/\/dashboard\/analytics$/);
   });

@@ -9,6 +9,25 @@ const envSchema = z.object({
     .string()
     .min(1, "Set GITHUB_ORG to target an organization for data collection.")
     .optional(),
+  GITHUB_OAUTH_CLIENT_ID: z
+    .string()
+    .min(1, "Set GITHUB_OAUTH_CLIENT_ID to enable GitHub OAuth.")
+    .optional(),
+  GITHUB_OAUTH_CLIENT_SECRET: z
+    .string()
+    .min(1, "Set GITHUB_OAUTH_CLIENT_SECRET to enable GitHub OAuth.")
+    .optional(),
+  GITHUB_ALLOWED_ORG: z.string().optional(),
+  APP_BASE_URL: z
+    .string()
+    .url(
+      "APP_BASE_URL must be an absolute URL (for example https://example.com).",
+    )
+    .optional(),
+  SESSION_SECRET: z
+    .string()
+    .min(32, "SESSION_SECRET must be at least 32 characters.")
+    .optional(),
   DATABASE_URL: z
     .string()
     .min(1, "Set DATABASE_URL to connect to PostgreSQL.")
@@ -31,6 +50,11 @@ const envSchema = z.object({
 const parsed = envSchema.parse({
   GITHUB_TOKEN: process.env.GITHUB_TOKEN,
   GITHUB_ORG: process.env.GITHUB_ORG,
+  GITHUB_OAUTH_CLIENT_ID: process.env.GITHUB_OAUTH_CLIENT_ID,
+  GITHUB_OAUTH_CLIENT_SECRET: process.env.GITHUB_OAUTH_CLIENT_SECRET,
+  GITHUB_ALLOWED_ORG: process.env.GITHUB_ALLOWED_ORG,
+  APP_BASE_URL: process.env.APP_BASE_URL,
+  SESSION_SECRET: process.env.SESSION_SECRET,
   DATABASE_URL: process.env.DATABASE_URL,
   SYNC_INTERVAL_MINUTES: process.env.SYNC_INTERVAL_MINUTES,
   TODO_PROJECT_NAME: process.env.TODO_PROJECT_NAME,

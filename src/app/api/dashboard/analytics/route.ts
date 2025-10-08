@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { readActiveSession } from "@/lib/auth/session";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 
 const querySchema = z.object({
@@ -21,6 +22,14 @@ const querySchema = z.object({
 });
 
 export async function GET(request: Request) {
+  const session = await readActiveSession();
+  if (!session) {
+    return NextResponse.json(
+      { success: false, message: "Authentication required." },
+      { status: 401 },
+    );
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const parsed = querySchema.parse({

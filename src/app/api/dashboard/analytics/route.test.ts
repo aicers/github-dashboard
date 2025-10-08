@@ -1,14 +1,28 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { GET } from "@/app/api/dashboard/analytics/route";
+import { readActiveSession } from "@/lib/auth/session";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 
 vi.mock("@/lib/dashboard/analytics", () => ({
   getDashboardAnalytics: vi.fn(),
 }));
 
+vi.mock("@/lib/auth/session", () => ({
+  readActiveSession: vi.fn(),
+}));
+
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(readActiveSession).mockResolvedValue({
+    id: "session",
+    userId: "user",
+    orgSlug: "org",
+    orgVerified: true,
+    createdAt: new Date(),
+    lastSeenAt: new Date(),
+    expiresAt: new Date(),
+  });
 });
 
 describe("GET /api/dashboard/analytics", () => {

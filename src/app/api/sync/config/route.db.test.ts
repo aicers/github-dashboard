@@ -4,6 +4,7 @@ import "../../../../../tests/helpers/postgres-container";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { readActiveSession } from "@/lib/auth/session";
 import { ensureSchema } from "@/lib/db";
 import { query } from "@/lib/db/client";
 import type { DbActor, DbRepository } from "@/lib/db/operations";
@@ -15,6 +16,10 @@ import {
   upsertRepository,
   upsertUser,
 } from "@/lib/db/operations";
+
+vi.mock("@/lib/auth/session", () => ({
+  readActiveSession: vi.fn(),
+}));
 
 type RouteHandlers = typeof import("./route");
 
@@ -74,6 +79,15 @@ describe("sync config API routes", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     await resetDatabaseState();
+    vi.mocked(readActiveSession).mockResolvedValue({
+      id: "session",
+      userId: "user",
+      orgSlug: "org",
+      orgVerified: true,
+      createdAt: new Date(),
+      lastSeenAt: new Date(),
+      expiresAt: new Date(),
+    });
     handlers = await import("./route");
   });
 
