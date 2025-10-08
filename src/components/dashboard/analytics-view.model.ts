@@ -1,0 +1,353 @@
+import { useMemo, useState } from "react";
+
+import { toCardHistory } from "@/components/dashboard/metric-history";
+import { roundToOneDecimal } from "@/lib/dashboard/analytics/shared";
+import { buildDateKeys } from "@/lib/dashboard/trend-utils";
+import type {
+  ComparisonValue,
+  LeaderboardEntry,
+  OrganizationAnalytics,
+  RepoComparisonRow,
+} from "@/lib/dashboard/types";
+
+const LINE_DECIMAL_FORMATTER = new Intl.NumberFormat(undefined, {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
+
+export type AvgPrSizeMode = "additions" | "net";
+
+export function useAvgPrSizeMetrics(organization: OrganizationAnalytics) {
+  const [mode, setMode] = useState<AvgPrSizeMode>("additions");
+
+  const { additionsDisplay, deletionsDisplay, additionsMetric, netMetric } =
+    useMemo(() => {
+      const baseMetric = organization.metrics.avgPrSize;
+      const breakdown = baseMetric.breakdown ?? [];
+      const additionsEntry = breakdown.find(
+        (entry) => entry.label === "+ 합계",
+      );
+      const deletionsEntry = breakdown.find(
+        (entry) => entry.label === "- 합계",
+      );
+
+      const fallbackCurrent = roundToOneDecimal(baseMetric.current ?? 0);
+      const fallbackPrevious = roundToOneDecimal(baseMetric.previous ?? 0);
+
+      const additionsCurrent = roundToOneDecimal(
+        Number(additionsEntry?.current ?? fallbackCurrent),
+      );
+      const additionsPrevious = roundToOneDecimal(
+        Number(additionsEntry?.previous ?? fallbackPrevious),
+      );
+      const deletionsCurrent = roundToOneDecimal(
+        Number(deletionsEntry?.current ?? 0),
+      );
+      const deletionsPrevious = roundToOneDecimal(
+        Number(deletionsEntry?.previous ?? 0),
+      );
+
+      const netCurrent = roundToOneDecimal(additionsCurrent - deletionsCurrent);
+      const netPrevious = roundToOneDecimal(
+        additionsPrevious - deletionsPrevious,
+      );
+
+      const toComparisonValue = (
+        current: number,
+        previous: number,
+      ): ComparisonValue => {
+        const absoluteChange = roundToOneDecimal(current - previous);
+        const percentChange =
+          previous === 0 ? null : (current - previous) / previous;
+        const value: ComparisonValue = {
+          current,
+          previous,
+          absoluteChange,
+          percentChange,
+        };
+        if (breakdown.length) {
+          value.breakdown = breakdown;
+        }
+        return value;
+      };
+
+      return {
+        additionsDisplay: LINE_DECIMAL_FORMATTER.format(additionsCurrent),
+        deletionsDisplay: LINE_DECIMAL_FORMATTER.format(deletionsCurrent),
+        additionsMetric: toComparisonValue(additionsCurrent, additionsPrevious),
+        netMetric: toComparisonValue(netCurrent, netPrevious),
+      };
+    }, [organization.metrics.avgPrSize]);
+
+  const valueLabel = `+${additionsDisplay} / -${deletionsDisplay} 라인`;
+  const metric = mode === "additions" ? additionsMetric : netMetric;
+  const history = useMemo(
+    () =>
+      toCardHistory(
+        mode === "additions"
+          ? organization.metricHistory.avgPrAdditions
+          : organization.metricHistory.avgPrNet,
+      ),
+    [
+      mode,
+      organization.metricHistory.avgPrAdditions,
+      organization.metricHistory.avgPrNet,
+    ],
+  );
+
+  return {
+    mode,
+    setMode,
+    valueLabel,
+    metric,
+    history,
+  };
+}
+
+export type RepoSortKey =
+  | "issuesCreated"
+  | "issuesResolved"
+  | "pullRequestsCreated"
+  | "pullRequestsMerged"
+  | "reviews"
+  | "activeReviews"
+  | "comments"
+  | "avgFirstReviewHours";
+
+export type RepoSortDirection = "asc" | "desc";
+
+const REPO_SORT_DEFAULT_DIRECTION: Record<RepoSortKey, RepoSortDirection> = {
+  issuesCreated: "desc",
+  issuesResolved: "desc",
+  pullRequestsCreated: "desc",
+  pullRequestsMerged: "desc",
+  reviews: "desc",
+  activeReviews: "desc",
+  comments: "desc",
+  avgFirstReviewHours: "asc",
+};
+
+export function useRepoComparisonSort(rows: RepoComparisonRow[]) {
+  const [repoSort, setRepoSort] = useState<{
+    key: RepoSortKey;
+    direction: RepoSortDirection;
+  }>(() => ({
+    key: "issuesResolved",
+    direction: REPO_SORT_DEFAULT_DIRECTION.issuesResolved,
+  }));
+
+  const sorted = useMemo(() => {
+    const list = [...rows];
+    const { key, direction } = repoSort;
+
+    const getValue = (row: (typeof list)[number]): number | null => {
+      switch (key) {
+        case "issuesCreated":
+          return row.issuesCreated;
+        case "issuesResolved":
+          return row.issuesResolved;
+        case "pullRequestsCreated":
+          return row.pullRequestsCreated;
+        case "pullRequestsMerged":
+          return row.pullRequestsMerged;
+        case "reviews":
+          return row.reviews;
+        case "activeReviews":
+          return row.activeReviews;
+        case "comments":
+          return row.comments;
+        case "avgFirstReviewHours":
+          return row.avgFirstReviewHours;
+        default:
+          return null;
+      }
+    };
+
+    return list.sort((a, b) => {
+      const valueA = getValue(a);
+      const valueB = getValue(b);
+
+      if (valueA == null && valueB == null) {
+        const nameA = a.repository?.nameWithOwner ?? a.repositoryId;
+        const nameB = b.repository?.nameWithOwner ?? b.repositoryId;
+        return nameA.localeCompare(nameB);
+      }
+
+      if (valueA == null) {
+        return 1;
+      }
+
+      if (valueB == null) {
+        return -1;
+      }
+
+      if (valueA === valueB) {
+        const nameA = a.repository?.nameWithOwner ?? a.repositoryId;
+        const nameB = b.repository?.nameWithOwner ?? b.repositoryId;
+        return nameA.localeCompare(nameB);
+      }
+
+      return direction === "asc" ? valueA - valueB : valueB - valueA;
+    });
+  }, [repoSort, rows]);
+
+  const toggle = (key: RepoSortKey) => {
+    setRepoSort((previous) => {
+      if (previous.key === key) {
+        return {
+          key,
+          direction: previous.direction === "asc" ? "desc" : "asc",
+        };
+      }
+
+      return {
+        key,
+        direction: REPO_SORT_DEFAULT_DIRECTION[key] ?? "desc",
+      };
+    });
+  };
+
+  return { repoSort, setRepoSort, toggle, sorted };
+}
+
+export type MainBranchSortKey = "count" | "additions" | "net";
+
+function getLeaderboardDetailValue(entry: LeaderboardEntry, label: string) {
+  if (!entry.details) {
+    return 0;
+  }
+  const detail = entry.details.find((item) => item.label === label);
+  return Number(detail?.value ?? 0);
+}
+
+export function useMainBranchContributionSort(
+  rawMainBranchContributionEntries: LeaderboardEntry[],
+  rawActiveMainBranchContributionEntries: LeaderboardEntry[],
+) {
+  const [mainBranchSortKey, setMainBranchSortKey] =
+    useState<MainBranchSortKey>("count");
+  const [activeMainBranchSortKey, setActiveMainBranchSortKey] =
+    useState<MainBranchSortKey>("count");
+
+  const mainBranchContributionEntries = useMemo(() => {
+    const getSortValue = (entry: LeaderboardEntry) => {
+      if (mainBranchSortKey === "additions") {
+        return getLeaderboardDetailValue(entry, "+");
+      }
+
+      if (mainBranchSortKey === "net") {
+        return (
+          getLeaderboardDetailValue(entry, "+") -
+          getLeaderboardDetailValue(entry, "-")
+        );
+      }
+
+      return entry.value;
+    };
+
+    const getName = (entry: LeaderboardEntry) =>
+      entry.user.login ?? entry.user.name ?? entry.user.id;
+
+    return [...rawMainBranchContributionEntries].sort((a, b) => {
+      const valueA = getSortValue(a);
+      const valueB = getSortValue(b);
+
+      if (valueA === valueB) {
+        return getName(a).localeCompare(getName(b));
+      }
+
+      return valueB - valueA;
+    });
+  }, [mainBranchSortKey, rawMainBranchContributionEntries]);
+
+  const activeMainBranchContributionEntries = useMemo(() => {
+    const getSortValue = (entry: LeaderboardEntry) => {
+      if (activeMainBranchSortKey === "additions") {
+        return getLeaderboardDetailValue(entry, "+");
+      }
+
+      if (activeMainBranchSortKey === "net") {
+        return (
+          getLeaderboardDetailValue(entry, "+") -
+          getLeaderboardDetailValue(entry, "-")
+        );
+      }
+
+      return entry.value;
+    };
+
+    const getName = (entry: LeaderboardEntry) =>
+      entry.user.login ?? entry.user.name ?? entry.user.id;
+
+    return [...rawActiveMainBranchContributionEntries].sort((a, b) => {
+      const valueA = getSortValue(a);
+      const valueB = getSortValue(b);
+
+      if (valueA === valueB) {
+        return getName(a).localeCompare(getName(b));
+      }
+
+      return valueB - valueA;
+    });
+  }, [activeMainBranchSortKey, rawActiveMainBranchContributionEntries]);
+
+  return {
+    mainBranchSortKey,
+    setMainBranchSortKey,
+    activeMainBranchSortKey,
+    setActiveMainBranchSortKey,
+    mainBranchContributionEntries,
+    activeMainBranchContributionEntries,
+  };
+}
+
+export type MainBranchSortOption = {
+  key: MainBranchSortKey;
+  label: string;
+};
+
+export function useDateKeys(start: string, end: string) {
+  return useMemo(() => buildDateKeys(start, end), [start, end]);
+}
+
+export function usePrMergedSort(rawPrMergedEntries: LeaderboardEntry[]) {
+  const [prMergedSortKey, setPrMergedSortKey] =
+    useState<MainBranchSortKey>("count");
+
+  const prMergedEntries = useMemo(() => {
+    const getSortValue = (entry: LeaderboardEntry) => {
+      if (prMergedSortKey === "additions") {
+        return getLeaderboardDetailValue(entry, "+");
+      }
+
+      if (prMergedSortKey === "net") {
+        return (
+          getLeaderboardDetailValue(entry, "+") -
+          getLeaderboardDetailValue(entry, "-")
+        );
+      }
+
+      return entry.value;
+    };
+
+    const getName = (entry: LeaderboardEntry) =>
+      entry.user.login ?? entry.user.name ?? entry.user.id;
+
+    return [...rawPrMergedEntries].sort((a, b) => {
+      const valueA = getSortValue(a);
+      const valueB = getSortValue(b);
+
+      if (valueA === valueB) {
+        return getName(a).localeCompare(getName(b));
+      }
+
+      return valueB - valueA;
+    });
+  }, [prMergedSortKey, rawPrMergedEntries]);
+
+  return {
+    prMergedSortKey,
+    setPrMergedSortKey,
+    prMergedEntries,
+  };
+}

@@ -1,13 +1,11 @@
 "use client";
 
-import { ArrowDown, ArrowUp, ArrowUpDown, Info } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import {
   type Dispatch,
   type ReactNode,
   type SetStateAction,
-  useId,
   useMemo,
-  useState,
 } from "react";
 import {
   CartesianGrid,
@@ -21,7 +19,17 @@ import {
   YAxis,
 } from "recharts";
 import { ActivityHeatmap } from "@/components/dashboard/activity-heatmap";
+import {
+  type MainBranchSortKey,
+  type RepoSortKey,
+  useAvgPrSizeMetrics,
+  useDateKeys,
+  useMainBranchContributionSort,
+  usePrMergedSort,
+  useRepoComparisonSort,
+} from "@/components/dashboard/analytics-view.model";
 import { DashboardFilterPanel } from "@/components/dashboard/dashboard-filter-panel";
+import { LeaderboardTable } from "@/components/dashboard/leaderboard-table";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { toCardHistory } from "@/components/dashboard/metric-history";
 import {
@@ -33,7 +41,6 @@ import { useDashboardAnalytics } from "@/components/dashboard/use-dashboard-anal
 import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -43,13 +50,8 @@ import {
   formatDuration,
   formatNumber,
 } from "@/lib/dashboard/metric-formatters";
-import {
-  buildDateKeys,
-  buildNetTrend,
-  mergeTrends,
-} from "@/lib/dashboard/trend-utils";
+import { buildNetTrend, mergeTrends } from "@/lib/dashboard/trend-utils";
 import type {
-  ComparisonValue,
   DashboardAnalytics,
   LeaderboardEntry,
   OrganizationAnalytics,
@@ -61,30 +63,6 @@ type AnalyticsViewProps = {
   initialAnalytics: DashboardAnalytics;
   defaultRange: { start: string; end: string };
   orgName?: string | null;
-};
-
-type RepoSortKey =
-  | "issuesCreated"
-  | "issuesResolved"
-  | "pullRequestsCreated"
-  | "pullRequestsMerged"
-  | "reviews"
-  | "activeReviews"
-  | "comments"
-  | "avgFirstReviewHours";
-type RepoSortDirection = "asc" | "desc";
-type MainBranchSortKey = "count" | "additions" | "net";
-type AvgPrSizeMode = "additions" | "net";
-
-const REPO_SORT_DEFAULT_DIRECTION: Record<RepoSortKey, RepoSortDirection> = {
-  issuesCreated: "desc",
-  issuesResolved: "desc",
-  pullRequestsCreated: "desc",
-  pullRequestsMerged: "desc",
-  reviews: "desc",
-  activeReviews: "desc",
-  comments: "desc",
-  avgFirstReviewHours: "asc",
 };
 
 const MAIN_BRANCH_SORT_OPTIONS: Array<{
@@ -105,12 +83,7 @@ const MAIN_BRANCH_SORT_OPTIONS: Array<{
   },
 ];
 
-const LINE_DECIMAL_FORMATTER = new Intl.NumberFormat(undefined, {
-  minimumFractionDigits: 1,
-  maximumFractionDigits: 1,
-});
-
-function roundToOneDecimal(value: number) {
+function _roundToOneDecimal(value: number) {
   if (!Number.isFinite(value)) {
     return 0;
   }
@@ -159,159 +132,7 @@ function formatReviewsPerPr(value: number) {
   return `${safeValue.toFixed(digits)}건/PR`;
 }
 
-function LeaderboardTable({
-  title,
-  entries,
-  unit,
-  secondaryUnit,
-  valueFormatter,
-  secondaryLabel,
-  tooltip,
-  headerActions,
-  valueTooltip,
-}: {
-  title: string;
-  entries: LeaderboardEntry[];
-  unit?: string;
-  secondaryUnit?: string;
-  valueFormatter?: (value: number) => string;
-  secondaryLabel?: string;
-  tooltip?: string;
-  headerActions?: ReactNode;
-  valueTooltip?: (entry: LeaderboardEntry) => string | null;
-}) {
-  const tooltipId = useId();
-  const valueTooltipPrefix = useId();
-  return (
-    <Card className="border-border/60">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-1 text-base font-medium">
-          <span>{title}</span>
-          {tooltip && (
-            <button
-              type="button"
-              aria-describedby={tooltipId}
-              aria-label={tooltip}
-              className="group relative inline-flex cursor-help items-center bg-transparent p-0 text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:text-foreground"
-            >
-              <Info className="h-3.5 w-3.5" aria-hidden="true" />
-              <span
-                id={tooltipId}
-                role="tooltip"
-                className="pointer-events-none absolute left-1/2 top-full z-20 w-52 -translate-x-1/2 translate-y-2 rounded-md border border-border/60 bg-background px-2 py-1 text-xs text-muted-foreground opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
-              >
-                {tooltip}
-              </span>
-            </button>
-          )}
-        </CardTitle>
-        {headerActions ? <CardAction>{headerActions}</CardAction> : null}
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {entries.length === 0 && (
-          <p className="text-sm text-muted-foreground">데이터가 없습니다.</p>
-        )}
-        {entries.map((entry, index) => (
-          <div key={entry.user.id} className="flex items-center gap-3 text-sm">
-            <span className="w-6 text-muted-foreground">{index + 1}</span>
-            <div className="flex flex-col flex-1">
-              <span className="font-medium">
-                {entry.user.login ?? entry.user.name ?? entry.user.id}
-              </span>
-              {entry.user.name && entry.user.login && (
-                <span className="text-xs text-muted-foreground whitespace-pre-line">
-                  {entry.user.name}
-                </span>
-              )}
-            </div>
-            <div className="flex flex-col items-end text-right">
-              <div className="flex items-center justify-end gap-1">
-                <span className="font-semibold">
-                  {valueFormatter
-                    ? valueFormatter(entry.value)
-                    : `${formatNumber(entry.value)}${unit ?? ""}`}
-                </span>
-                {(() => {
-                  const valueTooltipText = valueTooltip?.(entry) ?? null;
-                  if (!valueTooltipText) {
-                    return null;
-                  }
-                  const entryTooltipId = `${valueTooltipPrefix}-${index}`;
-                  return (
-                    <button
-                      type="button"
-                      aria-describedby={entryTooltipId}
-                      aria-label={valueTooltipText}
-                      className="group relative inline-flex cursor-help items-center bg-transparent p-0 text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:text-foreground"
-                    >
-                      <Info className="h-3 w-3" aria-hidden="true" />
-                      <span
-                        id={entryTooltipId}
-                        role="tooltip"
-                        className="pointer-events-none absolute right-1/2 top-full z-20 w-48 translate-x-1/2 translate-y-2 rounded-md border border-border/60 bg-background px-2 py-1 text-xs text-muted-foreground opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
-                      >
-                        {valueTooltipText}
-                      </span>
-                    </button>
-                  );
-                })()}
-              </div>
-              {(secondaryLabel && entry.secondaryValue != null) ||
-              entry.details?.length ? (
-                <div className="flex flex-col items-end text-right text-xs text-muted-foreground">
-                  {(() => {
-                    const lines: string[] = [];
-                    const countParts: string[] = [];
-                    const lineParts: string[] = [];
-                    const secondaryUnitText = secondaryUnit ?? unit ?? "";
-
-                    if (secondaryLabel && entry.secondaryValue != null) {
-                      countParts.push(
-                        `${secondaryLabel} ${formatNumber(entry.secondaryValue)}${secondaryUnitText}`,
-                      );
-                    }
-
-                    entry.details?.forEach((detail) => {
-                      const suffix = detail.suffix ?? "";
-                      const prefix =
-                        detail.sign === "positive"
-                          ? "+"
-                          : detail.sign === "negative"
-                            ? "-"
-                            : "";
-                      const isLineDetail =
-                        detail.label === "+" || detail.label === "-";
-                      const numberText = `${prefix}${formatNumber(detail.value)}${suffix}`;
-                      const display = isLineDetail
-                        ? `${detail.label}${formatNumber(detail.value)}${suffix}`
-                        : `${detail.label} ${numberText}`;
-                      if (isLineDetail) {
-                        lineParts.push(display);
-                      } else {
-                        countParts.push(display);
-                      }
-                    });
-
-                    if (countParts.length > 0) {
-                      lines.push(countParts.join(" · "));
-                    }
-                    if (lineParts.length > 0) {
-                      lines.push(lineParts.join(" · "));
-                    }
-
-                    return lines.map((text) => <span key={text}>{text}</span>);
-                  })()}
-                </div>
-              ) : null}
-            </div>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
-function getLeaderboardDetailValue(entry: LeaderboardEntry, label: string) {
+function _getLeaderboardDetailValue(entry: LeaderboardEntry, label: string) {
   if (!entry.details) {
     return 0;
   }
@@ -340,87 +161,13 @@ export function AnalyticsView({
 
   const organization = analytics.organization as OrganizationAnalytics;
 
-  const [avgPrSizeMode, setAvgPrSizeMode] =
-    useState<AvgPrSizeMode>("additions");
-
   const {
-    additionsDisplay: avgPrSizeAdditionsDisplay,
-    deletionsDisplay: avgPrSizeDeletionsDisplay,
-    additionsMetric: avgPrSizeAdditionsMetric,
-    netMetric: avgPrSizeNetMetric,
-  } = useMemo(() => {
-    const baseMetric = organization.metrics.avgPrSize;
-    const breakdown = baseMetric.breakdown ?? [];
-    const additionsEntry = breakdown.find((entry) => entry.label === "+ 합계");
-    const deletionsEntry = breakdown.find((entry) => entry.label === "- 합계");
-
-    const fallbackCurrent = roundToOneDecimal(baseMetric.current ?? 0);
-    const fallbackPrevious = roundToOneDecimal(baseMetric.previous ?? 0);
-
-    const additionsCurrent = roundToOneDecimal(
-      Number(additionsEntry?.current ?? fallbackCurrent),
-    );
-    const additionsPrevious = roundToOneDecimal(
-      Number(additionsEntry?.previous ?? fallbackPrevious),
-    );
-    const deletionsCurrent = roundToOneDecimal(
-      Number(deletionsEntry?.current ?? 0),
-    );
-    const deletionsPrevious = roundToOneDecimal(
-      Number(deletionsEntry?.previous ?? 0),
-    );
-
-    const netCurrent = roundToOneDecimal(additionsCurrent - deletionsCurrent);
-    const netPrevious = roundToOneDecimal(
-      additionsPrevious - deletionsPrevious,
-    );
-
-    const toComparisonValue = (
-      current: number,
-      previous: number,
-    ): ComparisonValue => {
-      const absoluteChange = roundToOneDecimal(current - previous);
-      const percentChange =
-        previous === 0 ? null : (current - previous) / previous;
-      const value: ComparisonValue = {
-        current,
-        previous,
-        absoluteChange,
-        percentChange,
-      };
-      if (breakdown.length) {
-        value.breakdown = breakdown;
-      }
-      return value;
-    };
-
-    return {
-      additionsDisplay: LINE_DECIMAL_FORMATTER.format(additionsCurrent),
-      deletionsDisplay: LINE_DECIMAL_FORMATTER.format(deletionsCurrent),
-      additionsMetric: toComparisonValue(additionsCurrent, additionsPrevious),
-      netMetric: toComparisonValue(netCurrent, netPrevious),
-    };
-  }, [organization.metrics.avgPrSize]);
-
-  const avgPrSizeValueLabel = `+${avgPrSizeAdditionsDisplay} / -${avgPrSizeDeletionsDisplay} 라인`;
-  const avgPrSizeMetric =
-    avgPrSizeMode === "additions"
-      ? avgPrSizeAdditionsMetric
-      : avgPrSizeNetMetric;
-
-  const avgPrSizeHistory = useMemo(
-    () =>
-      toCardHistory(
-        avgPrSizeMode === "additions"
-          ? organization.metricHistory.avgPrAdditions
-          : organization.metricHistory.avgPrNet,
-      ),
-    [
-      avgPrSizeMode,
-      organization.metricHistory.avgPrAdditions,
-      organization.metricHistory.avgPrNet,
-    ],
-  );
+    mode: avgPrSizeMode,
+    setMode: setAvgPrSizeMode,
+    valueLabel: avgPrSizeValueLabel,
+    metric: avgPrSizeMetric,
+    history: avgPrSizeHistory,
+  } = useAvgPrSizeMetrics(organization);
 
   const avgPrSizeModeActions = (
     <div className="flex gap-1">
@@ -445,94 +192,12 @@ export function AnalyticsView({
     </div>
   );
 
-  const [repoSort, setRepoSort] = useState<{
-    key: RepoSortKey;
-    direction: RepoSortDirection;
-  }>(() => ({
-    key: "issuesResolved",
-    direction: REPO_SORT_DEFAULT_DIRECTION.issuesResolved,
-  }));
-
-  const [mainBranchSortKey, setMainBranchSortKey] =
-    useState<MainBranchSortKey>("count");
-  const [activeMainBranchSortKey, setActiveMainBranchSortKey] =
-    useState<MainBranchSortKey>("count");
-
-  const dateKeys = useMemo(
-    () => buildDateKeys(analytics.range.start, analytics.range.end),
-    [analytics.range.start, analytics.range.end],
-  );
-
-  const sortedRepoComparison = useMemo(() => {
-    const rows = [...organization.repoComparison];
-    const { key, direction } = repoSort;
-
-    const getValue = (row: (typeof rows)[number]): number | null => {
-      switch (key) {
-        case "issuesCreated":
-          return row.issuesCreated;
-        case "issuesResolved":
-          return row.issuesResolved;
-        case "pullRequestsCreated":
-          return row.pullRequestsCreated;
-        case "pullRequestsMerged":
-          return row.pullRequestsMerged;
-        case "reviews":
-          return row.reviews;
-        case "activeReviews":
-          return row.activeReviews;
-        case "comments":
-          return row.comments;
-        case "avgFirstReviewHours":
-          return row.avgFirstReviewHours;
-        default:
-          return null;
-      }
-    };
-
-    return rows.sort((a, b) => {
-      const valueA = getValue(a);
-      const valueB = getValue(b);
-
-      if (valueA == null && valueB == null) {
-        const nameA = a.repository?.nameWithOwner ?? a.repositoryId;
-        const nameB = b.repository?.nameWithOwner ?? b.repositoryId;
-        return nameA.localeCompare(nameB);
-      }
-
-      if (valueA == null) {
-        return 1;
-      }
-
-      if (valueB == null) {
-        return -1;
-      }
-
-      if (valueA === valueB) {
-        const nameA = a.repository?.nameWithOwner ?? a.repositoryId;
-        const nameB = b.repository?.nameWithOwner ?? b.repositoryId;
-        return nameA.localeCompare(nameB);
-      }
-
-      return direction === "asc" ? valueA - valueB : valueB - valueA;
-    });
-  }, [organization.repoComparison, repoSort]);
-
-  const toggleRepoSort = (key: RepoSortKey) => {
-    setRepoSort((previous) => {
-      if (previous.key === key) {
-        return {
-          key,
-          direction: previous.direction === "asc" ? "desc" : "asc",
-        };
-      }
-
-      return {
-        key,
-        direction: REPO_SORT_DEFAULT_DIRECTION[key],
-      };
-    });
-  };
+  const {
+    repoSort,
+    toggle: toggleRepoSort,
+    sorted: sortedRepoComparison,
+  } = useRepoComparisonSort(organization.repoComparison);
+  const dateKeys = useDateKeys(analytics.range.start, analytics.range.end);
 
   const getRepoSortAria = (
     key: RepoSortKey,
@@ -646,101 +311,19 @@ export function AnalyticsView({
   const rawActiveMainBranchContributionEntries =
     analytics.leaderboard.activeMainBranchContribution;
 
-  const [prMergedSortKey, setPrMergedSortKey] =
-    useState<MainBranchSortKey>("count");
-
-  const prMergedEntries = useMemo(() => {
-    const getSortValue = (entry: LeaderboardEntry) => {
-      if (prMergedSortKey === "additions") {
-        return getLeaderboardDetailValue(entry, "+");
-      }
-
-      if (prMergedSortKey === "net") {
-        return (
-          getLeaderboardDetailValue(entry, "+") -
-          getLeaderboardDetailValue(entry, "-")
-        );
-      }
-
-      return entry.value;
-    };
-
-    const getName = (entry: LeaderboardEntry) =>
-      entry.user.login ?? entry.user.name ?? entry.user.id;
-
-    return [...rawPrMergedEntries].sort((a, b) => {
-      const valueA = getSortValue(a);
-      const valueB = getSortValue(b);
-
-      if (valueA === valueB) {
-        return getName(a).localeCompare(getName(b));
-      }
-
-      return valueB - valueA;
-    });
-  }, [rawPrMergedEntries, prMergedSortKey]);
-
-  const mainBranchContributionEntries = useMemo(() => {
-    const getSortValue = (entry: LeaderboardEntry) => {
-      if (mainBranchSortKey === "additions") {
-        return getLeaderboardDetailValue(entry, "+");
-      }
-
-      if (mainBranchSortKey === "net") {
-        return (
-          getLeaderboardDetailValue(entry, "+") -
-          getLeaderboardDetailValue(entry, "-")
-        );
-      }
-
-      return entry.value;
-    };
-
-    const getName = (entry: LeaderboardEntry) =>
-      entry.user.login ?? entry.user.name ?? entry.user.id;
-
-    return [...rawMainBranchContributionEntries].sort((a, b) => {
-      const valueA = getSortValue(a);
-      const valueB = getSortValue(b);
-
-      if (valueA === valueB) {
-        return getName(a).localeCompare(getName(b));
-      }
-
-      return valueB - valueA;
-    });
-  }, [rawMainBranchContributionEntries, mainBranchSortKey]);
-
-  const activeMainBranchContributionEntries = useMemo(() => {
-    const getSortValue = (entry: LeaderboardEntry) => {
-      if (activeMainBranchSortKey === "additions") {
-        return getLeaderboardDetailValue(entry, "+");
-      }
-
-      if (activeMainBranchSortKey === "net") {
-        return (
-          getLeaderboardDetailValue(entry, "+") -
-          getLeaderboardDetailValue(entry, "-")
-        );
-      }
-
-      return entry.value;
-    };
-
-    const getName = (entry: LeaderboardEntry) =>
-      entry.user.login ?? entry.user.name ?? entry.user.id;
-
-    return [...rawActiveMainBranchContributionEntries].sort((a, b) => {
-      const valueA = getSortValue(a);
-      const valueB = getSortValue(b);
-
-      if (valueA === valueB) {
-        return getName(a).localeCompare(getName(b));
-      }
-
-      return valueB - valueA;
-    });
-  }, [rawActiveMainBranchContributionEntries, activeMainBranchSortKey]);
+  const { prMergedEntries, prMergedSortKey, setPrMergedSortKey } =
+    usePrMergedSort(rawPrMergedEntries);
+  const {
+    mainBranchSortKey,
+    setMainBranchSortKey,
+    activeMainBranchSortKey,
+    setActiveMainBranchSortKey,
+    mainBranchContributionEntries,
+    activeMainBranchContributionEntries,
+  } = useMainBranchContributionSort(
+    rawMainBranchContributionEntries,
+    rawActiveMainBranchContributionEntries,
+  );
 
   const renderMainBranchSortControls = (
     sortKey: MainBranchSortKey,
