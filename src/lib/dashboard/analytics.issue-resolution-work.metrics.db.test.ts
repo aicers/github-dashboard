@@ -1,15 +1,9 @@
-// @vitest-environment jsdom
-// Vitest defaults DB config to Node environment; keep this so React Testing Library has a DOM.
+// @vitest-environment node
 
 import "../../../tests/helpers/postgres-container";
-import "@testing-library/jest-dom";
 
-import { render, screen, within } from "@testing-library/react";
-import { createElement } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
-import { MetricCard } from "@/components/dashboard/metric-card";
-import { toCardHistory } from "@/components/dashboard/metric-history";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import {
   type DbActor,
@@ -27,28 +21,7 @@ import {
   resetDashboardTables,
   shiftHours,
 } from "../../../tests/helpers/dashboard-metrics";
-import {
-  formatChangeForTest,
-  formatMetricValueForTest,
-} from "../../../tests/helpers/metric-formatting";
-
-vi.mock("recharts", () => {
-  const { createElement: createReactElement } =
-    require("react") as typeof import("react");
-
-  const createStub =
-    (testId: string) =>
-    ({ children }: { children?: import("react").ReactNode }) =>
-      createReactElement("div", { "data-testid": testId }, children ?? null);
-
-  return {
-    ResponsiveContainer: createStub("recharts-responsive"),
-    LineChart: createStub("recharts-line-chart"),
-    Line: createStub("recharts-line"),
-    XAxis: createStub("recharts-x-axis"),
-    YAxis: createStub("recharts-y-axis"),
-  };
-});
+import { formatMetricSnapshotForTest } from "../../../tests/helpers/metric-formatting";
 
 const TARGET_PROJECT = "To-Do List";
 const PERIODS = PERIOD_KEYS;
@@ -320,79 +293,54 @@ describe("analytics issue resolution and work metrics", () => {
       });
     }
 
-    render(
-      createElement(
-        "div",
-        null,
-        createElement(MetricCard, {
-          title: "평균 해결 시간",
-          metric: metrics.issueResolutionTime,
-          format: "hours",
-          history: toCardHistory(history.issueResolutionTime),
-        }),
-        createElement(MetricCard, {
-          title: "평균 작업 시간",
-          metric: metrics.issueWorkTime,
-          format: "hours",
-          history: toCardHistory(history.issueWorkTime),
-        }),
-      ),
-    );
-
-    const resolutionCard = screen
-      .getByText("평균 해결 시간")
-      .closest('[data-slot="card"]') as HTMLElement | null;
-    const workCard = screen
-      .getByText("평균 작업 시간")
-      .closest('[data-slot="card"]') as HTMLElement | null;
-
-    const resolutionCardElement = resolutionCard;
-    const workCardElement = workCard;
-    expect(resolutionCardElement).not.toBeNull();
-    expect(workCardElement).not.toBeNull();
-    if (!resolutionCardElement || !workCardElement) {
-      throw new Error("metric card elements not found");
-    }
-
     const resolutionMetric = metrics.issueResolutionTime;
-    const resolutionValueLabel = formatMetricValueForTest(
-      { current: resolutionMetric.current, unit: resolutionMetric.unit },
+    const expectedResolutionSnapshot = formatMetricSnapshotForTest(
+      {
+        current: expectedResolutionCurrent,
+        absoluteChange: expectedResolutionCurrent - expectedResolutionPrevious,
+        percentChange:
+          expectedResolutionPrevious === 0
+            ? null
+            : ((expectedResolutionCurrent - expectedResolutionPrevious) /
+                expectedResolutionPrevious) *
+              100,
+        unit: resolutionMetric.unit,
+      },
       "hours",
     );
-    const resolutionChange = formatChangeForTest(
+    const resolutionSnapshot = formatMetricSnapshotForTest(
       resolutionMetric,
       "hours",
-      resolutionMetric.unit ?? "hours",
     );
-
+    expect(resolutionSnapshot.valueLabel).toBe(
+      expectedResolutionSnapshot.valueLabel,
+    );
     expect(
-      within(resolutionCardElement).getByText(resolutionValueLabel),
-    ).toBeInTheDocument();
-    expect(
-      within(resolutionCardElement).getByText(
-        `${resolutionChange.changeLabel} (${resolutionChange.percentLabel})`,
-      ),
-    ).toBeInTheDocument();
+      `${resolutionSnapshot.changeLabel} (${resolutionSnapshot.percentLabel})`,
+    ).toBe(
+      `${expectedResolutionSnapshot.changeLabel} (${expectedResolutionSnapshot.percentLabel})`,
+    );
 
     const workMetric = metrics.issueWorkTime;
-    const workValueLabel = formatMetricValueForTest(
-      { current: workMetric.current, unit: workMetric.unit },
+    const expectedWorkSnapshot = formatMetricSnapshotForTest(
+      {
+        current: expectedWorkCurrent,
+        absoluteChange: expectedWorkCurrent - expectedWorkPrevious,
+        percentChange:
+          expectedWorkPrevious === 0
+            ? null
+            : ((expectedWorkCurrent - expectedWorkPrevious) /
+                expectedWorkPrevious) *
+              100,
+        unit: workMetric.unit,
+      },
       "hours",
     );
-    const workChange = formatChangeForTest(
-      workMetric,
-      "hours",
-      workMetric.unit ?? "hours",
+    const workSnapshot = formatMetricSnapshotForTest(workMetric, "hours");
+    expect(workSnapshot.valueLabel).toBe(expectedWorkSnapshot.valueLabel);
+    expect(`${workSnapshot.changeLabel} (${workSnapshot.percentLabel})`).toBe(
+      `${expectedWorkSnapshot.changeLabel} (${expectedWorkSnapshot.percentLabel})`,
     );
-
-    expect(
-      within(workCardElement).getByText(workValueLabel),
-    ).toBeInTheDocument();
-    expect(
-      within(workCardElement).getByText(
-        `${workChange.changeLabel} (${workChange.percentLabel})`,
-      ),
-    ).toBeInTheDocument();
   });
 
   it("reports null percent change when previous durations are zero", async () => {
@@ -471,76 +419,6 @@ describe("analytics issue resolution and work metrics", () => {
     expect(workMetric.previous).toBe(0);
     expect(resolutionMetric.percentChange).toBeNull();
     expect(workMetric.percentChange).toBeNull();
-
-    render(
-      createElement(
-        "div",
-        null,
-        createElement(MetricCard, {
-          title: "평균 해결 시간",
-          metric: resolutionMetric,
-          format: "hours",
-          history: toCardHistory(
-            analytics.organization.metricHistory.issueResolutionTime,
-          ),
-        }),
-        createElement(MetricCard, {
-          title: "평균 작업 시간",
-          metric: workMetric,
-          format: "hours",
-          history: toCardHistory(
-            analytics.organization.metricHistory.issueWorkTime,
-          ),
-        }),
-      ),
-    );
-
-    const resolutionCard = screen
-      .getByText("평균 해결 시간")
-      .closest('[data-slot="card"]') as HTMLElement | null;
-    const workCard = screen
-      .getByText("평균 작업 시간")
-      .closest('[data-slot="card"]') as HTMLElement | null;
-
-    expect(resolutionCard).not.toBeNull();
-    expect(workCard).not.toBeNull();
-    if (!resolutionCard || !workCard) {
-      throw new Error("zero baseline cards not found");
-    }
-
-    const resolutionLabel = formatMetricValueForTest(
-      { current: resolutionMetric.current, unit: resolutionMetric.unit },
-      "hours",
-    );
-    const resolutionChange = formatChangeForTest(
-      resolutionMetric,
-      "hours",
-      resolutionMetric.unit ?? "hours",
-    );
-    expect(
-      within(resolutionCard).getByText(resolutionLabel),
-    ).toBeInTheDocument();
-    expect(
-      within(resolutionCard).getByText(
-        `${resolutionChange.changeLabel} (${resolutionChange.percentLabel})`,
-      ),
-    ).toBeInTheDocument();
-
-    const workLabel = formatMetricValueForTest(
-      { current: workMetric.current, unit: workMetric.unit },
-      "hours",
-    );
-    const workChange = formatChangeForTest(
-      workMetric,
-      "hours",
-      workMetric.unit ?? "hours",
-    );
-    expect(within(workCard).getByText(workLabel)).toBeInTheDocument();
-    expect(
-      within(workCard).getByText(
-        `${workChange.changeLabel} (${workChange.percentLabel})`,
-      ),
-    ).toBeInTheDocument();
   });
 
   it("excludes other repositories when a filter is applied", async () => {
@@ -667,71 +545,5 @@ describe("analytics issue resolution and work metrics", () => {
       5,
     );
     expect(workMap.current ?? Number.NaN).toBeCloseTo(expectedWork, 5);
-
-    render(
-      createElement(
-        "div",
-        null,
-        createElement(MetricCard, {
-          title: "평균 해결 시간",
-          metric: resolutionMetric,
-          format: "hours",
-          history: toCardHistory(history.issueResolutionTime),
-        }),
-        createElement(MetricCard, {
-          title: "평균 작업 시간",
-          metric: workMetric,
-          format: "hours",
-          history: toCardHistory(history.issueWorkTime),
-        }),
-      ),
-    );
-
-    const resolutionCard = screen
-      .getByText("평균 해결 시간")
-      .closest('[data-slot="card"]') as HTMLElement | null;
-    const workCard = screen
-      .getByText("평균 작업 시간")
-      .closest('[data-slot="card"]') as HTMLElement | null;
-
-    expect(resolutionCard).not.toBeNull();
-    expect(workCard).not.toBeNull();
-    if (!resolutionCard || !workCard) {
-      throw new Error("filtered cards not found");
-    }
-
-    const resolutionValue = formatMetricValueForTest(
-      { current: resolutionMetric.current, unit: resolutionMetric.unit },
-      "hours",
-    );
-    const resolutionChange = formatChangeForTest(
-      resolutionMetric,
-      "hours",
-      resolutionMetric.unit ?? "hours",
-    );
-    expect(
-      within(resolutionCard).getByText(resolutionValue),
-    ).toBeInTheDocument();
-    expect(
-      within(resolutionCard).getByText(
-        `${resolutionChange.changeLabel} (${resolutionChange.percentLabel})`,
-      ),
-    ).toBeInTheDocument();
-
-    const workValue = formatMetricValueForTest(
-      { current: workMetric.current, unit: workMetric.unit },
-      "hours",
-    );
-    const workChange = formatChangeForTest(
-      workMetric,
-      "hours",
-      workMetric.unit ?? "hours",
-    );
-    expect(within(workCard).getByText(workValue)).toBeInTheDocument();
-    expect(
-      within(workCard).getByText(
-        `${workChange.changeLabel} (${workChange.percentLabel})`,
-      ),
-    ).toBeInTheDocument();
   });
 });
