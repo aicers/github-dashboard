@@ -1,6 +1,7 @@
 import type { RepositoryProfile, UserProfile } from "@/lib/db/operations";
 
 export type ComparisonBreakdownEntry = {
+  key?: string;
   label: string;
   current: number;
   previous: number;

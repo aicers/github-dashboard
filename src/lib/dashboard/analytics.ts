@@ -851,11 +851,13 @@ export async function getDashboardAnalytics(
       const comparison = buildComparison(currentTotal, previousTotal);
       comparison.breakdown = [
         {
+          key: "additions",
           label: "+ 합계",
           current: currentAdditions,
           previous: previousAdditions,
         },
         {
+          key: "deletions",
           label: "- 합계",
           current: currentDeletions,
           previous: previousDeletions,

@@ -308,8 +308,8 @@ export function buildDashboardAnalyticsFixture(): DashboardAnalytics {
       reviewResponseTime: createDurationValue(9),
       reviewParticipation: createComparisonValue(0.72, 0.68),
       avgPrSize: createComparisonValue(240, 220, [
-        { label: "+ 합계", current: 280, previous: 260 },
-        { label: "- 합계", current: 40, previous: 38 },
+        { key: "additions", label: "+ 합계", current: 280, previous: 260 },
+        { key: "deletions", label: "- 합계", current: 40, previous: 38 },
       ]),
       avgCommentsPerIssue: createComparisonValue(3.4, 3.1),
       avgCommentsPerPr: createComparisonValue(4.1, 3.8),

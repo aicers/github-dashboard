@@ -191,8 +191,18 @@ function buildDashboardAnalytics(): DashboardAnalytics {
       avgPrSize: {
         ...createComparisonValue(210),
         breakdown: [
-          { label: "+ 합계", current: 260, previous: 240 },
-          { label: "- 합계", current: 50, previous: 45 },
+          {
+            key: "additions",
+            label: "+ 합계",
+            current: 260,
+            previous: 240,
+          },
+          {
+            key: "deletions",
+            label: "- 합계",
+            current: 50,
+            previous: 45,
+          },
         ],
       },
       avgCommentsPerIssue: createComparisonValue(1.8),
