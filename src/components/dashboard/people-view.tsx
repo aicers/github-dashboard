@@ -4,6 +4,10 @@ import { useEffect, useMemo, useRef } from "react";
 import { ActivityHeatmap } from "@/components/dashboard/activity-heatmap";
 import { DashboardFilterPanel } from "@/components/dashboard/dashboard-filter-panel";
 import { MetricCard } from "@/components/dashboard/metric-card";
+import {
+  INDIVIDUAL_METRIC_CARD_CONFIGS,
+  PARENT_CHILD_METRIC_CARD_CONFIGS,
+} from "@/components/dashboard/metric-card.config";
 import { toCardHistory } from "@/components/dashboard/metric-history";
 import { individualMetricTooltips } from "@/components/dashboard/metric-tooltips";
 import { RepoActivityTable } from "@/components/dashboard/repo-activity-table";
@@ -303,108 +307,17 @@ export function PeopleView({
           </Card>
 
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <MetricCard
-              title="이슈 생성"
-              metric={individual.metrics.issuesCreated}
-              format="count"
-              tooltip={individualMetricTooltips.issuesCreated}
-              history={toCardHistory(individualHistory?.issuesCreated)}
-            />
-            <MetricCard
-              title="이슈 종료"
-              metric={individual.metrics.issuesClosed}
-              format="count"
-              tooltip={individualMetricTooltips.issuesClosed}
-              history={toCardHistory(individualHistory?.issuesClosed)}
-            />
-            <MetricCard
-              title="평균 해결 시간"
-              metric={individual.metrics.issueResolutionTime}
-              format="hours"
-              impact="negative"
-              tooltip={individualMetricTooltips.issueResolutionTime}
-              history={toCardHistory(individualHistory?.issueResolutionTime)}
-            />
-            <MetricCard
-              title="평균 작업 시간"
-              metric={individual.metrics.issueWorkTime}
-              format="hours"
-              impact="negative"
-              tooltip={individualMetricTooltips.issueWorkTime}
-              history={toCardHistory(individualHistory?.issueWorkTime)}
-            />
-            <MetricCard
-              title="PR 생성"
-              metric={individual.metrics.prsCreated}
-              format="count"
-              tooltip={individualMetricTooltips.prsCreated}
-              history={toCardHistory(individualHistory?.prsCreated)}
-            />
-            <MetricCard
-              title="PR 머지"
-              metric={individual.metrics.prsMerged}
-              format="count"
-              tooltip={individualMetricTooltips.prsMerged}
-              history={toCardHistory(individualHistory?.prsMerged)}
-            />
-            <MetricCard
-              title="PR 머지 수행"
-              metric={individual.metrics.prsMergedBy}
-              format="count"
-              tooltip={individualMetricTooltips.prsMergedBy}
-              history={toCardHistory(individualHistory?.prsMergedBy)}
-            />
-            <MetricCard
-              title="PR 완성도"
-              metric={individual.metrics.prCompleteness}
-              format="ratio"
-              impact="negative"
-              tooltip={individualMetricTooltips.prCompleteness}
-              history={toCardHistory(individualHistory?.prCompleteness)}
-            />
-            <MetricCard
-              title="리뷰 수행"
-              metric={individual.metrics.reviewsCompleted}
-              format="count"
-              tooltip={individualMetricTooltips.reviewsCompleted}
-              history={toCardHistory(individualHistory?.reviewsCompleted)}
-            />
-            <MetricCard
-              title="적극 리뷰 수행"
-              metric={individual.metrics.activeReviewsCompleted}
-              format="count"
-              tooltip={individualMetricTooltips.activeReviewsCompleted}
-              history={toCardHistory(individualHistory?.activeReviewsCompleted)}
-            />
-            <MetricCard
-              title="리뷰 응답 시간"
-              metric={individual.metrics.reviewResponseTime}
-              format="hours"
-              impact="negative"
-              tooltip={individualMetricTooltips.reviewResponseTime}
-              history={toCardHistory(individualHistory?.reviewResponseTime)}
-            />
-            <MetricCard
-              title="PR 리뷰 커버리지"
-              metric={individual.metrics.reviewCoverage}
-              format="percentage"
-              tooltip={individualMetricTooltips.reviewCoverage}
-              history={toCardHistory(individualHistory?.reviewCoverage)}
-            />
-            <MetricCard
-              title="리뷰 참여 비율"
-              metric={individual.metrics.reviewParticipation}
-              format="percentage"
-              tooltip={individualMetricTooltips.reviewParticipation}
-              history={toCardHistory(individualHistory?.reviewParticipation)}
-            />
-            <MetricCard
-              title="코멘트 참여"
-              metric={individual.metrics.discussionComments}
-              format="count"
-              tooltip={individualMetricTooltips.discussionComments}
-              history={toCardHistory(individualHistory?.discussionComments)}
-            />
+            {INDIVIDUAL_METRIC_CARD_CONFIGS.map((config) => (
+              <MetricCard
+                key={config.key}
+                title={config.title}
+                metric={individual.metrics[config.key]}
+                format={config.format}
+                impact={config.impact}
+                tooltip={individualMetricTooltips[config.tooltipKey]}
+                history={toCardHistory(individualHistory?.[config.historyKey])}
+              />
+            ))}
           </section>
 
           <section className="flex flex-col gap-4">
@@ -455,42 +368,19 @@ export function PeopleView({
           <section className="flex flex-col gap-3">
             <h3 className="text-lg font-semibold">Parent / Child 이슈 지표</h3>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <MetricCard
-                title="Parent 이슈 해결 시간"
-                metric={individual.metrics.parentIssueResolutionTime}
-                format="hours"
-                impact="negative"
-                tooltip={individualMetricTooltips.parentIssueResolutionTime}
-                history={toCardHistory(
-                  individualHistory?.parentIssueResolutionTime,
-                )}
-              />
-              <MetricCard
-                title="Parent 이슈 작업 시간"
-                metric={individual.metrics.parentIssueWorkTime}
-                format="hours"
-                impact="negative"
-                tooltip={individualMetricTooltips.parentIssueWorkTime}
-                history={toCardHistory(individualHistory?.parentIssueWorkTime)}
-              />
-              <MetricCard
-                title="Child 이슈 해결 시간"
-                metric={individual.metrics.childIssueResolutionTime}
-                format="hours"
-                impact="negative"
-                tooltip={individualMetricTooltips.childIssueResolutionTime}
-                history={toCardHistory(
-                  individualHistory?.childIssueResolutionTime,
-                )}
-              />
-              <MetricCard
-                title="Child 이슈 작업 시간"
-                metric={individual.metrics.childIssueWorkTime}
-                format="hours"
-                impact="negative"
-                tooltip={individualMetricTooltips.childIssueWorkTime}
-                history={toCardHistory(individualHistory?.childIssueWorkTime)}
-              />
+              {PARENT_CHILD_METRIC_CARD_CONFIGS.map((config) => (
+                <MetricCard
+                  key={config.key}
+                  title={config.title}
+                  metric={individual.metrics[config.key]}
+                  format={config.format}
+                  impact={config.impact}
+                  tooltip={individualMetricTooltips[config.tooltipKey]}
+                  history={toCardHistory(
+                    individualHistory?.[config.historyKey],
+                  )}
+                />
+              ))}
             </div>
           </section>
 
