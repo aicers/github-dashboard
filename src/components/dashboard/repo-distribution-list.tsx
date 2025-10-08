@@ -1,4 +1,4 @@
-import { formatNumber } from "@/components/dashboard/metric-utils";
+import { formatNumber } from "@/lib/dashboard/metric-formatters";
 import type { RepoDistributionItem } from "@/lib/dashboard/types";
 
 type RepoDistributionListProps = {

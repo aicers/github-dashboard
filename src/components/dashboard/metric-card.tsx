@@ -11,13 +11,6 @@ import {
 } from "recharts";
 
 import {
-  changeColor,
-  formatChange,
-  formatMetricValue,
-  type MetricFormat,
-  type MetricImpact,
-} from "@/components/dashboard/metric-utils";
-import {
   Card,
   CardAction,
   CardContent,
@@ -25,6 +18,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  changeColor,
+  formatChange,
+  formatMetricValue,
+  type MetricFormat,
+  type MetricImpact,
+} from "@/lib/dashboard/metric-formatters";
 import type {
   ComparisonValue,
   DurationComparisonValue,

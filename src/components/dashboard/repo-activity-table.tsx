@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import {
   formatDuration,
   formatNumber,
-} from "@/components/dashboard/metric-utils";
+} from "@/lib/dashboard/metric-formatters";
 import type { RepoComparisonRow } from "@/lib/dashboard/types";
 import { cn } from "@/lib/utils";
 

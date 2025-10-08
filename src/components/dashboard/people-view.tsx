@@ -6,10 +6,6 @@ import { DashboardFilterPanel } from "@/components/dashboard/dashboard-filter-pa
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { toCardHistory } from "@/components/dashboard/metric-history";
 import { individualMetricTooltips } from "@/components/dashboard/metric-tooltips";
-import {
-  formatMetricValue,
-  type MetricFormat,
-} from "@/components/dashboard/metric-utils";
 import { RepoActivityTable } from "@/components/dashboard/repo-activity-table";
 import { useDashboardAnalytics } from "@/components/dashboard/use-dashboard-analytics";
 import { Button } from "@/components/ui/button";
@@ -20,6 +16,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  formatMetricValue,
+  type MetricFormat,
+} from "@/lib/dashboard/metric-formatters";
 import type {
   DashboardAnalytics,
   IndividualMetricSet,

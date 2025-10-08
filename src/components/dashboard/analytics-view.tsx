@@ -22,17 +22,12 @@ import {
 } from "recharts";
 import { ActivityHeatmap } from "@/components/dashboard/activity-heatmap";
 import { DashboardFilterPanel } from "@/components/dashboard/dashboard-filter-panel";
-import { buildRangeFromPreset } from "@/components/dashboard/dashboard-filters";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { toCardHistory } from "@/components/dashboard/metric-history";
 import {
   individualMetricTooltips,
   organizationMetricTooltips,
 } from "@/components/dashboard/metric-tooltips";
-import {
-  formatDuration,
-  formatNumber,
-} from "@/components/dashboard/metric-utils";
 import { RepoDistributionList } from "@/components/dashboard/repo-distribution-list";
 import { useDashboardAnalytics } from "@/components/dashboard/use-dashboard-analytics";
 import { Button } from "@/components/ui/button";
@@ -44,6 +39,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  formatDuration,
+  formatNumber,
+} from "@/lib/dashboard/metric-formatters";
+import {
+  buildDateKeys,
+  buildNetTrend,
+  mergeTrends,
+} from "@/lib/dashboard/trend-utils";
 import type {
   ComparisonValue,
   DashboardAnalytics,
@@ -59,7 +63,6 @@ type AnalyticsViewProps = {
   orgName?: string | null;
 };
 
-type TrendEntry = Record<string, number> & { date: string };
 type RepoSortKey =
   | "issuesCreated"
   | "issuesResolved"
@@ -102,8 +105,6 @@ const MAIN_BRANCH_SORT_OPTIONS: Array<{
   },
 ];
 
-const DAY_IN_MS = 24 * 60 * 60 * 1000;
-
 const LINE_DECIMAL_FORMATTER = new Intl.NumberFormat(undefined, {
   minimumFractionDigits: 1,
   maximumFractionDigits: 1,
@@ -114,112 +115,6 @@ function roundToOneDecimal(value: number) {
     return 0;
   }
   return Math.round(value * 10) / 10;
-}
-
-function formatDateKey(date: Date) {
-  return `${date.getUTCFullYear()}-${`${date.getUTCMonth() + 1}`.padStart(2, "0")}-${`${date.getUTCDate()}`.padStart(2, "0")}`;
-}
-
-function normalizeTrendDateKey(value: string) {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return value;
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-
-  return formatDateKey(parsed);
-}
-
-function buildDateKeys(start: string, end: string) {
-  const startDate = new Date(start);
-  const endDate = new Date(end);
-  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
-    return [];
-  }
-
-  const startUtc = Date.UTC(
-    startDate.getUTCFullYear(),
-    startDate.getUTCMonth(),
-    startDate.getUTCDate(),
-  );
-  const endUtc = Date.UTC(
-    endDate.getUTCFullYear(),
-    endDate.getUTCMonth(),
-    endDate.getUTCDate(),
-  );
-
-  const keys: string[] = [];
-  for (let time = startUtc; time <= endUtc; time += DAY_IN_MS) {
-    keys.push(formatDateKey(new Date(time)));
-  }
-  return keys;
-}
-
-function mergeTrends(
-  left: { date: string; value: number }[],
-  right: { date: string; value: number }[],
-  leftKey: string,
-  rightKey: string,
-) {
-  const map = new Map<string, TrendEntry>();
-
-  const ensureEntry = (rawDate: string): TrendEntry => {
-    const normalizedDate = normalizeTrendDateKey(rawDate);
-    let entry = map.get(normalizedDate);
-    if (!entry) {
-      entry = {
-        date: normalizedDate,
-        [leftKey]: 0,
-        [rightKey]: 0,
-      } as TrendEntry;
-      map.set(normalizedDate, entry);
-    }
-    return entry;
-  };
-
-  left.forEach((point) => {
-    const entry = ensureEntry(point.date);
-    entry[leftKey] = point.value;
-  });
-
-  right.forEach((point) => {
-    const entry = ensureEntry(point.date);
-    entry[rightKey] = point.value;
-  });
-
-  return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
-}
-
-function buildNetTrend(
-  dateKeys: readonly string[],
-  entries: TrendEntry[],
-  positiveKey: string,
-  negativeKey: string,
-) {
-  const normalizeNumeric = (value: unknown) => {
-    if (typeof value === "number") {
-      return Number.isFinite(value) ? value : 0;
-    }
-    const numeric = Number(value);
-    return Number.isFinite(numeric) ? numeric : 0;
-  };
-
-  const map = new Map(
-    entries.map((entry) => [normalizeTrendDateKey(entry.date), entry]),
-  );
-
-  return dateKeys.map((date) => {
-    const entry = map.get(date);
-    const positive = normalizeNumeric(entry?.[positiveKey]);
-    const negative = normalizeNumeric(entry?.[negativeKey]);
-    return {
-      date,
-      delta: positive - negative,
-    };
-  });
 }
 
 function formatHoursAsDaysHours(value: number) {
@@ -1499,10 +1394,3 @@ export function AnalyticsView({
     </section>
   );
 }
-
-export const __analyticsInternals = {
-  formatDuration,
-  buildRangeFromPreset,
-  mergeTrends,
-  buildNetTrend,
-};

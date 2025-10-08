@@ -1,6 +1,6 @@
 import { AnalyticsView } from "@/components/dashboard/analytics-view";
-import { buildRangeFromPreset } from "@/components/dashboard/dashboard-filters";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
+import { buildRangeFromPreset } from "@/lib/dashboard/date-range";
 import { fetchSyncStatus } from "@/lib/sync/service";
 
 export const dynamic = "force-dynamic";
