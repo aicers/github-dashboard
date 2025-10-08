@@ -33,12 +33,14 @@ export function useAvgPrSizeMetrics(organization: OrganizationAnalytics) {
     useMemo(() => {
       const baseMetric = organization.metrics.avgPrSize;
       const breakdown = baseMetric.breakdown ?? [];
-      const additionsEntry = breakdown.find(
-        (entry) => entry.label === "+ 합계",
-      );
-      const deletionsEntry = breakdown.find(
-        (entry) => entry.label === "- 합계",
-      );
+      const findEntry = (
+        key: string,
+        fallbackLabel: string,
+      ): (typeof breakdown)[number] | undefined =>
+        breakdown.find((entry) => entry.key === key) ??
+        breakdown.find((entry) => entry.label === fallbackLabel);
+      const additionsEntry = findEntry("additions", "+ 합계");
+      const deletionsEntry = findEntry("deletions", "- 합계");
 
       const fallbackCurrent = roundToOneDecimal(baseMetric.current ?? 0);
       const fallbackPrevious = roundToOneDecimal(baseMetric.previous ?? 0);

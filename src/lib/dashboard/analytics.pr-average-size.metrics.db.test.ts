@@ -56,6 +56,20 @@ function roundToOneDecimal(value: number | null | undefined) {
   return Math.round(value * 10) / 10;
 }
 
+function findBreakdownEntry(
+  breakdown: ComparisonValue["breakdown"],
+  key: string,
+  fallbackLabel: string,
+) {
+  if (!breakdown) {
+    return undefined;
+  }
+  return (
+    breakdown.find((entry) => entry.key === key) ??
+    breakdown.find((entry) => entry.label === fallbackLabel)
+  );
+}
+
 function buildPullRequest({
   repository,
   authorId,
@@ -125,8 +139,8 @@ function computePeriodStats(
 
 function buildAvgPrSizeModes(metric: ComparisonValue) {
   const breakdown = metric.breakdown ?? [];
-  const additionsEntry = breakdown.find((entry) => entry.label === "+ 합계");
-  const deletionsEntry = breakdown.find((entry) => entry.label === "- 합계");
+  const additionsEntry = findBreakdownEntry(breakdown, "additions", "+ 합계");
+  const deletionsEntry = findBreakdownEntry(breakdown, "deletions", "- 합계");
 
   const fallbackCurrent = roundToOneDecimal(metric.current ?? 0);
   const fallbackPrevious = roundToOneDecimal(metric.previous ?? 0);
@@ -347,12 +361,19 @@ describe("analytics PR average size metrics", () => {
 
     const breakdown = avgPrSize.breakdown ?? [];
     expect(breakdown).toHaveLength(2);
-    const additionsBreakdown = breakdown.find(
-      (entry) => entry.label === "+ 합계",
+    const additionsBreakdown = findBreakdownEntry(
+      breakdown,
+      "additions",
+      "+ 합계",
     );
-    const deletionsBreakdown = breakdown.find(
-      (entry) => entry.label === "- 합계",
+    const deletionsBreakdown = findBreakdownEntry(
+      breakdown,
+      "deletions",
+      "- 합계",
     );
+    expect(additionsBreakdown?.key).toBe("additions");
+    expect(deletionsBreakdown?.key).toBe("deletions");
+    expect(additionsBreakdown?.key).toBe("additions");
     expect(additionsBreakdown?.current).toBeCloseTo(
       roundToOneDecimal(currentStats.additions),
       5,
@@ -369,6 +390,7 @@ describe("analytics PR average size metrics", () => {
       roundToOneDecimal(previousStats.deletions),
       5,
     );
+    expect(deletionsBreakdown?.key).toBe("deletions");
 
     const additionsHistory = organization.metricHistory.avgPrAdditions;
     const expectedAdditionsHistory = PERIODS.map((period) =>
@@ -532,11 +554,15 @@ describe("analytics PR average size metrics", () => {
     expect(avgPrSize.percentChange).toBeNull();
 
     const breakdown = avgPrSize.breakdown ?? [];
-    const additionsBreakdown = breakdown.find(
-      (entry) => entry.label === "+ 합계",
+    const additionsBreakdown = findBreakdownEntry(
+      breakdown,
+      "additions",
+      "+ 합계",
     );
-    const deletionsBreakdown = breakdown.find(
-      (entry) => entry.label === "- 합계",
+    const deletionsBreakdown = findBreakdownEntry(
+      breakdown,
+      "deletions",
+      "- 합계",
     );
     expect(additionsBreakdown?.previous).toBe(0);
     expect(deletionsBreakdown?.previous).toBe(0);
