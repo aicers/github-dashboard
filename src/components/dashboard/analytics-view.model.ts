@@ -1,10 +1,19 @@
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 
 import { toCardHistory } from "@/components/dashboard/metric-history";
 import { roundToOneDecimal } from "@/lib/dashboard/analytics/shared";
-import { buildDateKeys } from "@/lib/dashboard/trend-utils";
+import {
+  formatDuration,
+  formatNumber,
+} from "@/lib/dashboard/metric-formatters";
+import {
+  buildDateKeys,
+  buildNetTrend,
+  mergeTrends,
+} from "@/lib/dashboard/trend-utils";
 import type {
   ComparisonValue,
+  DashboardAnalytics,
   LeaderboardEntry,
   OrganizationAnalytics,
   RepoComparisonRow,
@@ -306,6 +315,16 @@ export type MainBranchSortOption = {
   label: string;
 };
 
+export type RepoComparisonColumn = {
+  key: RepoSortKey;
+  label: string;
+  className?: string;
+  render: (row: RepoComparisonRow) => ReactNode;
+};
+
+export const REPO_METRIC_COLUMN_CLASS = "w-[7.25rem]";
+export type AvgPrSizeMetrics = ReturnType<typeof useAvgPrSizeMetrics>;
+
 export function useDateKeys(start: string, end: string) {
   return useMemo(() => buildDateKeys(start, end), [start, end]);
 }
@@ -349,5 +368,170 @@ export function usePrMergedSort(rawPrMergedEntries: LeaderboardEntry[]) {
     prMergedSortKey,
     setPrMergedSortKey,
     prMergedEntries,
+  };
+}
+
+export function useAnalyticsViewModel(analytics: DashboardAnalytics) {
+  const organization = analytics.organization as OrganizationAnalytics;
+
+  const avgPrSize = useAvgPrSizeMetrics(organization);
+  const {
+    repoSort,
+    toggle: toggleRepoSort,
+    sorted: sortedRepoComparison,
+  } = useRepoComparisonSort(organization.repoComparison);
+  const {
+    mainBranchSortKey,
+    setMainBranchSortKey,
+    activeMainBranchSortKey,
+    setActiveMainBranchSortKey,
+    mainBranchContributionEntries,
+    activeMainBranchContributionEntries,
+  } = useMainBranchContributionSort(
+    analytics.leaderboard.mainBranchContribution,
+    analytics.leaderboard.activeMainBranchContribution,
+  );
+  const { prMergedEntries, prMergedSortKey, setPrMergedSortKey } =
+    usePrMergedSort(analytics.leaderboard.prsMerged);
+
+  const repoComparisonColumns = useMemo<RepoComparisonColumn[]>(() => {
+    const columnClass = REPO_METRIC_COLUMN_CLASS;
+    return [
+      {
+        key: "issuesCreated",
+        label: "이슈 생성",
+        render: (row) => formatNumber(row.issuesCreated),
+        className: columnClass,
+      },
+      {
+        key: "issuesResolved",
+        label: "이슈 종료",
+        render: (row) => formatNumber(row.issuesResolved),
+        className: columnClass,
+      },
+      {
+        key: "pullRequestsCreated",
+        label: "PR 생성",
+        render: (row) => formatNumber(row.pullRequestsCreated),
+        className: columnClass,
+      },
+      {
+        key: "pullRequestsMerged",
+        label: "PR 머지",
+        render: (row) => formatNumber(row.pullRequestsMerged),
+        className: columnClass,
+      },
+      {
+        key: "reviews",
+        label: "리뷰",
+        render: (row) => formatNumber(row.reviews),
+        className: columnClass,
+      },
+      {
+        key: "activeReviews",
+        label: "적극 리뷰",
+        render: (row) => formatNumber(row.activeReviews),
+        className: columnClass,
+      },
+      {
+        key: "comments",
+        label: "댓글",
+        render: (row) => formatNumber(row.comments),
+        className: columnClass,
+      },
+      {
+        key: "avgFirstReviewHours",
+        label: "평균 첫 리뷰(시간)",
+        render: (row) =>
+          row.avgFirstReviewHours == null
+            ? "–"
+            : formatDuration(row.avgFirstReviewHours, "hours"),
+        className: "w-[8.5rem]",
+      },
+    ];
+  }, []);
+
+  const issuesNetTrend = useMemo(() => {
+    const issuesLineData = mergeTrends(
+      organization.trends.issuesCreated,
+      organization.trends.issuesClosed,
+      "created",
+      "closed",
+    );
+    const dateKeys = buildDateKeys(analytics.range.start, analytics.range.end);
+    return buildNetTrend(dateKeys, issuesLineData, "created", "closed");
+  }, [
+    analytics.range.end,
+    analytics.range.start,
+    organization.trends.issuesClosed,
+    organization.trends.issuesCreated,
+  ]);
+
+  const prNetTrend = useMemo(() => {
+    const prLineData = mergeTrends(
+      organization.trends.prsCreated,
+      organization.trends.prsMerged,
+      "created",
+      "merged",
+    );
+    const dateKeys = buildDateKeys(analytics.range.start, analytics.range.end);
+    return buildNetTrend(dateKeys, prLineData, "created", "merged");
+  }, [
+    analytics.range.end,
+    analytics.range.start,
+    organization.trends.prsCreated,
+    organization.trends.prsMerged,
+  ]);
+
+  const reviewerLeaderboardEntries = useMemo(() => {
+    return organization.reviewers
+      .filter((reviewer) => reviewer.reviewCount > 0)
+      .map((reviewer) => ({
+        user: reviewer.profile ?? {
+          id: reviewer.reviewerId,
+          login: null,
+          name: null,
+          avatarUrl: null,
+        },
+        value: reviewer.reviewCount,
+        secondaryValue: reviewer.pullRequestsReviewed,
+      }));
+  }, [organization.reviewers]);
+
+  const activeReviewerLeaderboardEntries = useMemo(() => {
+    const entries = [...analytics.leaderboard.activeReviewerActivity];
+    return entries.sort((a, b) => {
+      if (b.value === a.value) {
+        const nameA = a.user.login ?? a.user.name ?? a.user.id;
+        const nameB = b.user.login ?? b.user.name ?? b.user.id;
+        return nameA.localeCompare(nameB);
+      }
+      return b.value - a.value;
+    });
+  }, [analytics.leaderboard.activeReviewerActivity]);
+
+  return {
+    organization,
+    avgPrSize,
+    repoComparisonColumns,
+    repoMetricColumnClass: REPO_METRIC_COLUMN_CLASS,
+    repoSort,
+    toggleRepoSort,
+    sortedRepoComparison,
+    issuesNetTrend,
+    prNetTrend,
+    reviewHeatmap: organization.trends.reviewHeatmap,
+    reviewerLeaderboardEntries,
+    activeReviewerLeaderboardEntries,
+    prMergedEntries,
+    prMergedSortKey,
+    setPrMergedSortKey,
+    mainBranchSortKey,
+    setMainBranchSortKey,
+    activeMainBranchSortKey,
+    setActiveMainBranchSortKey,
+    mainBranchContributionEntries,
+    activeMainBranchContributionEntries,
+    individual: analytics.individual,
   };
 }
