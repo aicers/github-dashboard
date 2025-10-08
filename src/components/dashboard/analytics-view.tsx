@@ -25,6 +25,10 @@ import {
 import { DashboardFilterPanel } from "@/components/dashboard/dashboard-filter-panel";
 import { LeaderboardTable } from "@/components/dashboard/leaderboard-table";
 import { MetricCard } from "@/components/dashboard/metric-card";
+import {
+  ORGANIZATION_METRIC_CARD_CONFIGS,
+  PARENT_CHILD_METRIC_CARD_CONFIGS,
+} from "@/components/dashboard/metric-card.config";
 import { toCardHistory } from "@/components/dashboard/metric-history";
 import {
   individualMetricTooltips,
@@ -331,56 +335,19 @@ function OrganizationMetricsSection({
   return (
     <div className="flex flex-col gap-6">
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <MetricCard
-          title="이슈 생성"
-          metric={organization.metrics.issuesCreated}
-          format="count"
-          impact="positive"
-          tooltip={organizationMetricTooltips.issuesCreated}
-          history={toCardHistory(organization.metricHistory.issuesCreated)}
-        />
-        <MetricCard
-          title="이슈 종료"
-          metric={organization.metrics.issuesClosed}
-          format="count"
-          impact="positive"
-          tooltip={organizationMetricTooltips.issuesClosed}
-          history={toCardHistory(organization.metricHistory.issuesClosed)}
-        />
-        <MetricCard
-          title="평균 해결 시간"
-          metric={organization.metrics.issueResolutionTime}
-          format="hours"
-          impact="negative"
-          tooltip={organizationMetricTooltips.issueResolutionTime}
-          history={toCardHistory(
-            organization.metricHistory.issueResolutionTime,
-          )}
-        />
-        <MetricCard
-          title="평균 작업 시간"
-          metric={organization.metrics.issueWorkTime}
-          format="hours"
-          impact="negative"
-          tooltip={organizationMetricTooltips.issueWorkTime}
-          history={toCardHistory(organization.metricHistory.issueWorkTime)}
-        />
-        <MetricCard
-          title="PR 생성"
-          metric={organization.metrics.prsCreated}
-          format="count"
-          impact="positive"
-          tooltip={organizationMetricTooltips.prsCreated}
-          history={toCardHistory(organization.metricHistory.prsCreated)}
-        />
-        <MetricCard
-          title="PR 머지"
-          metric={organization.metrics.prsMerged}
-          format="count"
-          impact="positive"
-          tooltip={organizationMetricTooltips.prsMerged}
-          history={toCardHistory(organization.metricHistory.prsMerged)}
-        />
+        {ORGANIZATION_METRIC_CARD_CONFIGS.slice(0, 6).map((config) => (
+          <MetricCard
+            key={config.key}
+            title={config.title}
+            metric={organization.metrics[config.key]}
+            format={config.format}
+            impact={config.impact}
+            tooltip={organizationMetricTooltips[config.tooltipKey]}
+            history={toCardHistory(
+              organization.metricHistory[config.historyKey],
+            )}
+          />
+        ))}
         <MetricCard
           title="PR 평균 크기"
           metric={metric}
@@ -391,100 +358,37 @@ function OrganizationMetricsSection({
           actions={<AvgPrSizeToggle mode={mode} setMode={setMode} />}
           valueOverride={valueLabel}
         />
-        <MetricCard
-          title="PR 평균 댓글"
-          metric={organization.metrics.avgCommentsPerPr}
-          format="ratio"
-          tooltip={organizationMetricTooltips.avgCommentsPerPr}
-          history={toCardHistory(organization.metricHistory.avgCommentsPerPr)}
-        />
-        <MetricCard
-          title="PR 평균 리뷰"
-          metric={organization.metrics.avgReviewsPerPr}
-          format="ratio"
-          tooltip={organizationMetricTooltips.avgReviewsPerPr}
-          history={toCardHistory(organization.metricHistory.avgReviewsPerPr)}
-        />
-        <MetricCard
-          title="리뷰 참여 비율"
-          metric={organization.metrics.reviewParticipation}
-          format="percentage"
-          tooltip={organizationMetricTooltips.reviewParticipation}
-          history={toCardHistory(
-            organization.metricHistory.reviewParticipation,
-          )}
-        />
-        <MetricCard
-          title="리뷰 응답 시간"
-          metric={organization.metrics.reviewResponseTime}
-          format="hours"
-          impact="negative"
-          tooltip={organizationMetricTooltips.reviewResponseTime}
-          history={toCardHistory(organization.metricHistory.reviewResponseTime)}
-        />
-        <MetricCard
-          title="리뷰 없는 머지 비율"
-          metric={organization.metrics.mergeWithoutReviewRatio}
-          format="percentage"
-          tooltip={organizationMetricTooltips.mergeWithoutReviewRatio}
-          history={toCardHistory(
-            organization.metricHistory.mergeWithoutReviewRatio,
-          )}
-        />
-        <MetricCard
-          title="해결된 이슈 평균 댓글"
-          metric={organization.metrics.avgCommentsPerIssue}
-          format="ratio"
-          tooltip={organizationMetricTooltips.avgCommentsPerIssue}
-          history={toCardHistory(
-            organization.metricHistory.avgCommentsPerIssue,
-          )}
-        />
+        {ORGANIZATION_METRIC_CARD_CONFIGS.slice(6).map((config) => (
+          <MetricCard
+            key={config.key}
+            title={config.title}
+            metric={organization.metrics[config.key]}
+            format={config.format}
+            impact={config.impact}
+            tooltip={organizationMetricTooltips[config.tooltipKey]}
+            history={toCardHistory(
+              organization.metricHistory[config.historyKey],
+            )}
+          />
+        ))}
       </section>
 
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Parent / Child 이슈 지표</h2>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <MetricCard
-            title="Parent 이슈 해결 시간"
-            metric={organization.metrics.parentIssueResolutionTime}
-            format="hours"
-            impact="negative"
-            tooltip={organizationMetricTooltips.parentIssueResolutionTime}
-            history={toCardHistory(
-              organization.metricHistory.parentIssueResolutionTime,
-            )}
-          />
-          <MetricCard
-            title="Parent 이슈 작업 시간"
-            metric={organization.metrics.parentIssueWorkTime}
-            format="hours"
-            impact="negative"
-            tooltip={organizationMetricTooltips.parentIssueWorkTime}
-            history={toCardHistory(
-              organization.metricHistory.parentIssueWorkTime,
-            )}
-          />
-          <MetricCard
-            title="Child 이슈 해결 시간"
-            metric={organization.metrics.childIssueResolutionTime}
-            format="hours"
-            impact="negative"
-            tooltip={organizationMetricTooltips.childIssueResolutionTime}
-            history={toCardHistory(
-              organization.metricHistory.childIssueResolutionTime,
-            )}
-          />
-          <MetricCard
-            title="Child 이슈 작업 시간"
-            metric={organization.metrics.childIssueWorkTime}
-            format="hours"
-            impact="negative"
-            tooltip={organizationMetricTooltips.childIssueWorkTime}
-            history={toCardHistory(
-              organization.metricHistory.childIssueWorkTime,
-            )}
-          />
+          {PARENT_CHILD_METRIC_CARD_CONFIGS.map((config) => (
+            <MetricCard
+              key={config.key}
+              title={config.title}
+              metric={organization.metrics[config.key]}
+              format={config.format}
+              impact={config.impact}
+              tooltip={organizationMetricTooltips[config.tooltipKey]}
+              history={toCardHistory(
+                organization.metricHistory[config.historyKey],
+              )}
+            />
+          ))}
         </div>
       </section>
     </div>
