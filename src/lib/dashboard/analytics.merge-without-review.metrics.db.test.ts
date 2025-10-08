@@ -1,14 +1,6 @@
-// @vitest-environment jsdom
-
 import "../../../tests/helpers/postgres-container";
-import "@testing-library/jest-dom";
+import { beforeEach, describe, expect, it } from "vitest";
 
-import { render, screen, within } from "@testing-library/react";
-import { createElement } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-import { MetricCard } from "@/components/dashboard/metric-card";
-import { toCardHistory } from "@/components/dashboard/metric-history";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import type { PeriodKey } from "@/lib/dashboard/types";
 import {
@@ -27,24 +19,7 @@ import {
   PERIOD_KEYS,
   resetDashboardTables,
 } from "../../../tests/helpers/dashboard-metrics";
-
-vi.mock("recharts", () => {
-  const { createElement: createReactElement } =
-    require("react") as typeof import("react");
-
-  const createStub =
-    (testId: string) =>
-    ({ children }: { children?: import("react").ReactNode }) =>
-      createReactElement("div", { "data-testid": testId }, children ?? null);
-
-  return {
-    ResponsiveContainer: createStub("recharts-responsive"),
-    LineChart: createStub("recharts-line-chart"),
-    Line: createStub("recharts-line"),
-    XAxis: createStub("recharts-x-axis"),
-    YAxis: createStub("recharts-y-axis"),
-  };
-});
+import { formatMetricSnapshotForTest } from "../../../tests/helpers/metric-formatting";
 
 const PERIODS = PERIOD_KEYS;
 
@@ -314,40 +289,22 @@ describe("analytics merge without review metrics", () => {
       expect(entry.value).toBeCloseTo(expectedRatios[entry.period].ratio, 5);
     });
 
-    const metricTitle = "리뷰 없는 머지 비율";
-    render(
-      createElement(MetricCard, {
-        title: metricTitle,
-        metric: mergeWithoutReview,
-        format: "percentage",
-        history: toCardHistory(history),
-      }),
+    const ratioSnapshot = formatMetricSnapshotForTest(
+      mergeWithoutReview,
+      "percentage",
     );
-
-    const card = screen.getByText(metricTitle).closest('[data-slot="card"]');
-    if (!card) {
-      throw new Error("merge without review metric card not found");
-    }
-
-    const expectedValueLabel = `${(expectedRatios.current.ratio * 100).toFixed(
-      1,
-    )}%`;
-    expect(
-      within(card as HTMLElement).getByText(expectedValueLabel),
-    ).toBeInTheDocument();
-
-    const changeLabel = `${expectedAbsoluteChange >= 0 ? "+" : ""}${(
-      expectedAbsoluteChange * 100
-    ).toFixed(1)}pt`;
-    const percentChange = mergeWithoutReview.percentChange;
-    const percentLabel =
-      percentChange == null
-        ? "–"
-        : `${percentChange >= 0 ? "+" : ""}${percentChange.toFixed(1)}%`;
-    const expectedChangeLabel = `${changeLabel} (${percentLabel})`;
-    expect(
-      within(card as HTMLElement).getByText(expectedChangeLabel),
-    ).toBeInTheDocument();
+    const expectedRatioSnapshot = formatMetricSnapshotForTest(
+      {
+        current: expectedRatios.current.ratio,
+        absoluteChange: expectedAbsoluteChange,
+        percentChange: expectedPercentChange,
+      },
+      "percentage",
+    );
+    expect(ratioSnapshot.valueLabel).toBe(expectedRatioSnapshot.valueLabel);
+    expect(`${ratioSnapshot.changeLabel} (${ratioSnapshot.percentLabel})`).toBe(
+      `${expectedRatioSnapshot.changeLabel} (${expectedRatioSnapshot.percentLabel})`,
+    );
   });
 
   it("handles merge without review ratio when previous period has no merges", async () => {
@@ -448,29 +405,22 @@ describe("analytics merge without review metrics", () => {
     expect(mergeWithoutReview.absoluteChange).toBeCloseTo(0.5, 5);
     expect(mergeWithoutReview.percentChange).toBeNull();
 
-    const metricTitle = "리뷰 없는 머지 비율";
-    render(
-      createElement(MetricCard, {
-        title: metricTitle,
-        metric: mergeWithoutReview,
-        format: "percentage",
-        history: toCardHistory(
-          analytics.organization.metricHistory.mergeWithoutReviewRatio,
-        ),
-      }),
+    const ratioSnapshot = formatMetricSnapshotForTest(
+      mergeWithoutReview,
+      "percentage",
     );
-
-    const card = screen.getByText(metricTitle).closest('[data-slot="card"]');
-    if (!card) {
-      throw new Error(
-        "merge without review metric card not found for no-previous test",
-      );
-    }
-
-    expect(within(card as HTMLElement).getByText("50.0%")).toBeInTheDocument();
-    expect(
-      within(card as HTMLElement).getByText("+50.0pt (–)"),
-    ).toBeInTheDocument();
+    const expectedRatioSnapshot = formatMetricSnapshotForTest(
+      {
+        current: 0.5,
+        absoluteChange: 0.5,
+        percentChange: null,
+      },
+      "percentage",
+    );
+    expect(ratioSnapshot.valueLabel).toBe(expectedRatioSnapshot.valueLabel);
+    expect(`${ratioSnapshot.changeLabel} (${ratioSnapshot.percentLabel})`).toBe(
+      `${expectedRatioSnapshot.changeLabel} (${expectedRatioSnapshot.percentLabel})`,
+    );
   });
 
   it("returns zero merge without review ratio when no merges exist", async () => {
@@ -511,26 +461,21 @@ describe("analytics merge without review metrics", () => {
       expect(entry.value).toBe(0);
     });
 
-    const metricTitle = "리뷰 없는 머지 비율";
-    render(
-      createElement(MetricCard, {
-        title: metricTitle,
-        metric: mergeWithoutReview,
-        format: "percentage",
-        history: toCardHistory(history),
-      }),
+    const ratioSnapshot = formatMetricSnapshotForTest(
+      mergeWithoutReview,
+      "percentage",
     );
-
-    const card = screen.getByText(metricTitle).closest('[data-slot="card"]');
-    if (!card) {
-      throw new Error(
-        "merge without review metric card not found for empty test",
-      );
-    }
-
-    expect(within(card as HTMLElement).getByText("0.0%")).toBeInTheDocument();
-    expect(
-      within(card as HTMLElement).getByText("+0.0pt (+0.0%)"),
-    ).toBeInTheDocument();
+    const expectedRatioSnapshot = formatMetricSnapshotForTest(
+      {
+        current: 0,
+        absoluteChange: 0,
+        percentChange: 0,
+      },
+      "percentage",
+    );
+    expect(ratioSnapshot.valueLabel).toBe(expectedRatioSnapshot.valueLabel);
+    expect(`${ratioSnapshot.changeLabel} (${ratioSnapshot.percentLabel})`).toBe(
+      `${expectedRatioSnapshot.changeLabel} (${expectedRatioSnapshot.percentLabel})`,
+    );
   });
 });

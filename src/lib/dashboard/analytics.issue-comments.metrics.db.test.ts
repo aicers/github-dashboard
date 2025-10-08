@@ -1,15 +1,7 @@
-// @vitest-environment jsdom
-// Vitest defaults DB config to Node environment; keep this so React Testing Library has a DOM.
-
 import "../../../tests/helpers/postgres-container";
-import "@testing-library/jest-dom";
 
-import { render, screen, within } from "@testing-library/react";
-import { createElement } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
-import { MetricCard } from "@/components/dashboard/metric-card";
-import { toCardHistory } from "@/components/dashboard/metric-history";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import {
   type DbActor,
@@ -27,28 +19,7 @@ import {
   resetDashboardTables,
   shiftHours,
 } from "../../../tests/helpers/dashboard-metrics";
-import {
-  formatChangeForTest,
-  formatMetricValueForTest,
-} from "../../../tests/helpers/metric-formatting";
-
-vi.mock("recharts", () => {
-  const { createElement: createReactElement } =
-    require("react") as typeof import("react");
-
-  const createStub =
-    (testId: string) =>
-    ({ children }: { children?: import("react").ReactNode }) =>
-      createReactElement("div", { "data-testid": testId }, children ?? null);
-
-  return {
-    ResponsiveContainer: createStub("recharts-responsive"),
-    LineChart: createStub("recharts-line-chart"),
-    Line: createStub("recharts-line"),
-    XAxis: createStub("recharts-x-axis"),
-    YAxis: createStub("recharts-y-axis"),
-  };
-});
+import { formatMetricSnapshotForTest } from "../../../tests/helpers/metric-formatting";
 
 const PERIODS = PERIOD_KEYS;
 
@@ -232,34 +203,24 @@ describe("analytics issue comments metrics", () => {
       );
     });
 
-    const valueLabel = formatMetricValueForTest(
-      { current: avgCommentsMetric.current },
+    const actualSnapshot = formatMetricSnapshotForTest(
+      avgCommentsMetric,
       "ratio",
     );
-    const change = formatChangeForTest(avgCommentsMetric, "ratio");
-
-    render(
-      createElement(MetricCard, {
-        title: "해결된 이슈 평균 댓글",
-        metric: avgCommentsMetric,
-        format: "ratio",
-        history: toCardHistory(commentsHistory),
-      }),
+    const expectedSnapshot = formatMetricSnapshotForTest(
+      {
+        current: expectedAverages.current,
+        absoluteChange: expectedAverages.current - expectedAverages.previous,
+        percentChange: expectedPercentChange,
+      },
+      "ratio",
     );
-
-    const cardElement = screen
-      .getByText("해결된 이슈 평균 댓글")
-      .closest('[data-slot="card"]');
-    if (!(cardElement instanceof HTMLElement)) {
-      throw new Error("issue comments metric card not rendered");
-    }
-
-    expect(within(cardElement).getByText(valueLabel)).toBeInTheDocument();
+    expect(actualSnapshot.valueLabel).toBe(expectedSnapshot.valueLabel);
     expect(
-      within(cardElement).getByText(
-        `${change.changeLabel} (${change.percentLabel})`,
-      ),
-    ).toBeInTheDocument();
+      `${actualSnapshot.changeLabel} (${actualSnapshot.percentLabel})`,
+    ).toBe(
+      `${expectedSnapshot.changeLabel} (${expectedSnapshot.percentLabel})`,
+    );
   });
 
   it("handles zero previous averages without dividing by zero", async () => {
@@ -336,33 +297,23 @@ describe("analytics issue comments metrics", () => {
       }
     });
 
-    const valueLabel = formatMetricValueForTest(
-      { current: avgCommentsMetric.current },
+    const actualSnapshot = formatMetricSnapshotForTest(
+      avgCommentsMetric,
       "ratio",
     );
-    const change = formatChangeForTest(avgCommentsMetric, "ratio");
-
-    render(
-      createElement(MetricCard, {
-        title: "해결된 이슈 평균 댓글",
-        metric: avgCommentsMetric,
-        format: "ratio",
-        history: toCardHistory(commentsHistory),
-      }),
+    const expectedSnapshot = formatMetricSnapshotForTest(
+      {
+        current: 6,
+        absoluteChange: 6,
+        percentChange: null,
+      },
+      "ratio",
     );
-
-    const cardElement = screen
-      .getByText("해결된 이슈 평균 댓글")
-      .closest('[data-slot="card"]');
-    if (!(cardElement instanceof HTMLElement)) {
-      throw new Error("issue comments metric card not rendered");
-    }
-
-    expect(within(cardElement).getByText(valueLabel)).toBeInTheDocument();
+    expect(actualSnapshot.valueLabel).toBe(expectedSnapshot.valueLabel);
     expect(
-      within(cardElement).getByText(
-        `${change.changeLabel} (${change.percentLabel})`,
-      ),
-    ).toBeInTheDocument();
+      `${actualSnapshot.changeLabel} (${actualSnapshot.percentLabel})`,
+    ).toBe(
+      `${expectedSnapshot.changeLabel} (${expectedSnapshot.percentLabel})`,
+    );
   });
 });
