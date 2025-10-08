@@ -131,3 +131,35 @@ export function fromDateInputValue(
   const zoned = boundary === "start" ? base.startOf("day") : base.endOf("day");
   return zoned.toUTC().toISO();
 }
+
+type WeekStartConfig = WeekStart | "sunday" | "monday" | null | undefined;
+
+function normalizeWeekStart(value: WeekStartConfig): WeekStart {
+  return value === "sunday" ? "sunday" : "monday";
+}
+
+export function resolveDashboardRange(
+  config:
+    | { timezone?: string | null; week_start?: WeekStartConfig }
+    | null
+    | undefined,
+  options?: { preset?: TimePresetKey; reference?: Date },
+) {
+  const { preset = "last_14_days", reference } = options ?? {};
+  const timeZone = config?.timezone ?? "UTC";
+  const weekStart = normalizeWeekStart(config?.week_start);
+  const fallbackIso = (reference ?? new Date()).toISOString();
+  const presetRange = buildRangeFromPreset(
+    preset,
+    timeZone,
+    weekStart,
+    reference,
+  );
+
+  return {
+    start: presetRange?.start ?? fallbackIso,
+    end: presetRange?.end ?? fallbackIso,
+    timeZone,
+    weekStart,
+  };
+}
