@@ -99,3 +99,8 @@ export async function deleteSessionRecord(sessionId: string): Promise<void> {
   await ensureSchema();
   await query("DELETE FROM auth_sessions WHERE id = $1", [sessionId]);
 }
+
+export async function pruneExpiredSessions(): Promise<void> {
+  await ensureSchema();
+  await query("DELETE FROM auth_sessions WHERE expires_at < NOW()");
+}
