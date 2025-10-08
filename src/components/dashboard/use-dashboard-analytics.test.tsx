@@ -84,9 +84,8 @@ describe("useDashboardAnalytics", () => {
       await result.current.applyFilters(nextFilters);
     });
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining("/api/dashboard/analytics"),
-    );
+    expect(fetchMock).toHaveBeenCalled();
+    expect(fetchMock.mock.calls[0]?.[0]).toContain("/api/dashboard/analytics");
     expect(result.current.analytics).toEqual(nextAnalytics);
     expect(result.current.timeZone).toBe("Asia/Seoul");
     expect(result.current.weekStart).toBe("sunday");
@@ -223,7 +222,7 @@ describe("useDashboardAnalytics", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(result.current.analytics).toEqual(betaOnly);
-    expect(result.current.filters.repositoryIds).toEqual([]);
+    expect(result.current.filters.repositoryIds).toEqual([repoBeta.id]);
     expect(result.current.filters.personId).toBeNull();
     expect(result.current.timeZone).toBe("Asia/Tokyo");
     expect(result.current.weekStart).toBe("monday");

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PRESETS, type TimePresetKey } from "@/lib/dashboard/date-range";
 import type { DashboardAnalytics, WeekStart } from "@/lib/dashboard/types";
 
@@ -60,10 +60,29 @@ export function useDashboardAnalytics({
   );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestCounterRef = useRef(0);
+  const latestStartedRequestRef = useRef(0);
+  const activeControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      activeControllerRef.current?.abort();
+      activeControllerRef.current = null;
+    };
+  }, []);
 
   const load = useCallback(async (targetFilters: FilterState) => {
     setIsLoading(true);
     setError(null);
+    requestCounterRef.current += 1;
+    const requestId = requestCounterRef.current;
+    latestStartedRequestRef.current = requestId;
+    activeControllerRef.current?.abort();
+    const controller = new AbortController();
+    activeControllerRef.current = controller;
+    const isLatestRequest = (id: number) =>
+      latestStartedRequestRef.current === id;
+
     try {
       const params = new URLSearchParams({
         start: targetFilters.start,
@@ -78,6 +97,7 @@ export function useDashboardAnalytics({
 
       const response = await fetch(
         `/api/dashboard/analytics?${params.toString()}`,
+        { signal: controller.signal },
       );
       const data = await response.json();
       if (!data.success) {
@@ -87,6 +107,10 @@ export function useDashboardAnalytics({
       }
 
       const nextAnalytics = data.analytics as DashboardAnalytics;
+      if (!isLatestRequest(requestId)) {
+        return;
+      }
+
       setAnalytics(nextAnalytics);
       if (nextAnalytics.timeZone) {
         setTimeZone(nextAnalytics.timeZone);
@@ -114,6 +138,9 @@ export function useDashboardAnalytics({
           : null;
 
       setFilters((current) => {
+        if (!isLatestRequest(requestId)) {
+          return current;
+        }
         // Keep any newer in-flight edits if the user changed filters while this request was running.
         if (current !== targetFilters) {
           const filteredRepoIds = current.repositoryIds.filter((id) =>
@@ -148,13 +175,27 @@ export function useDashboardAnalytics({
         };
       });
     } catch (fetchError) {
+      if (!isLatestRequest(requestId)) {
+        return;
+      }
+      if (
+        fetchError instanceof DOMException &&
+        fetchError.name === "AbortError"
+      ) {
+        return;
+      }
       setError(
         fetchError instanceof Error
           ? fetchError.message
           : "대시보드 데이터를 불러오지 못했습니다.",
       );
     } finally {
-      setIsLoading(false);
+      if (isLatestRequest(requestId)) {
+        setIsLoading(false);
+      }
+      if (activeControllerRef.current === controller) {
+        activeControllerRef.current = null;
+      }
     }
   }, []);
 
