@@ -182,7 +182,7 @@ describe("AttentionView backlog issues", () => {
     }
 
     expect(
-      within(firstItem).getByText("acme/repo-one #101"),
+      within(firstItem).getByText("acme/repo-one#101"),
     ).toBeInTheDocument();
     expect(within(firstItem).getByText("Alice (@alice)")).toBeInTheDocument();
     expect(
@@ -191,7 +191,7 @@ describe("AttentionView backlog issues", () => {
     expect(within(firstItem).getByText("60일 경과")).toBeInTheDocument();
 
     expect(
-      within(secondItem).getByText("acme/repo-two #202"),
+      within(secondItem).getByText("acme/repo-two#202"),
     ).toBeInTheDocument();
     expect(within(secondItem).getByText("Carol (@carol)")).toBeInTheDocument();
     expect(within(secondItem).getByText("Bob (@bob)")).toBeInTheDocument();

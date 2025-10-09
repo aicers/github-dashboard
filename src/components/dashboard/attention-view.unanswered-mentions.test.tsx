@@ -217,13 +217,13 @@ describe("AttentionView unanswered mentions", () => {
     const authorFilter = screen.getByLabelText("요청자 필터");
 
     const primaryItem = screen
-      .getByText("acme/github-dashboard #58 코멘트")
+      .getByText("acme/github-dashboard#58 코멘트")
       .closest("li");
     const issueItem = screen
-      .getByText("acme/github-dashboard #99 코멘트")
+      .getByText("acme/github-dashboard#99 코멘트")
       .closest("li");
     const secondaryItem = screen
-      .getByText("acme/github-dashboard #70 코멘트")
+      .getByText("acme/github-dashboard#70 코멘트")
       .closest("li");
 
     expect(primaryItem).not.toBeNull();
@@ -242,13 +242,13 @@ describe("AttentionView unanswered mentions", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText("acme/github-dashboard #99 코멘트"),
+        screen.getByText("acme/github-dashboard#99 코멘트"),
       ).toBeInTheDocument();
       expect(
-        screen.queryByText("acme/github-dashboard #58 코멘트"),
+        screen.queryByText("acme/github-dashboard#58 코멘트"),
       ).not.toBeInTheDocument();
       expect(
-        screen.queryByText("acme/github-dashboard #70 코멘트"),
+        screen.queryByText("acme/github-dashboard#70 코멘트"),
       ).not.toBeInTheDocument();
     });
 
@@ -264,10 +264,10 @@ describe("AttentionView unanswered mentions", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText("acme/github-dashboard #70 코멘트"),
+        screen.getByText("acme/github-dashboard#70 코멘트"),
       ).toBeInTheDocument();
       expect(
-        screen.queryByText("acme/github-dashboard #99 코멘트"),
+        screen.queryByText("acme/github-dashboard#99 코멘트"),
       ).not.toBeInTheDocument();
     });
 
@@ -275,13 +275,13 @@ describe("AttentionView unanswered mentions", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText("acme/github-dashboard #58 코멘트"),
+        screen.getByText("acme/github-dashboard#58 코멘트"),
       ).toBeInTheDocument();
       expect(
-        screen.getByText("acme/github-dashboard #99 코멘트"),
+        screen.getByText("acme/github-dashboard#99 코멘트"),
       ).toBeInTheDocument();
       expect(
-        screen.getByText("acme/github-dashboard #70 코멘트"),
+        screen.getByText("acme/github-dashboard#70 코멘트"),
       ).toBeInTheDocument();
     });
   });

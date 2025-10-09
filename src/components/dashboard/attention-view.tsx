@@ -418,7 +418,7 @@ function PullRequestList({
                   <div className="flex flex-wrap items-center gap-2">
                     {renderLink(
                       item.url,
-                      `${formatRepository(item.repository)} #${item.number.toString()}`,
+                      `${formatRepository(item.repository)}#${item.number.toString()}`,
                     )}
                   </div>
                   {item.title ? (
@@ -630,7 +630,7 @@ function ReviewRequestList({
                   <div className="flex flex-wrap items-center gap-2">
                     {renderLink(
                       item.pullRequest.url,
-                      `${formatRepository(item.pullRequest.repository)} #${item.pullRequest.number.toString()}`,
+                      `${formatRepository(item.pullRequest.repository)}#${item.pullRequest.number.toString()}`,
                     )}
                   </div>
                   {item.pullRequest.title ? (
@@ -854,7 +854,7 @@ function IssueList({
                   <div className="flex flex-wrap items-center gap-2">
                     {renderLink(
                       item.url,
-                      `${formatRepository(item.repository)} #${item.number.toString()}`,
+                      `${formatRepository(item.repository)}#${item.number.toString()}`,
                     )}
                   </div>
                   {item.title ? (
@@ -1064,7 +1064,7 @@ function MentionList({
                     <div className="flex flex-wrap items-center gap-2">
                       {renderLink(
                         item.url,
-                        `${formatRepository(item.container.repository)} #${item.container.number ?? "?"} 코멘트`,
+                        `${formatRepository(item.container.repository)}#${item.container.number ?? "?"} 코멘트`,
                       )}
                     </div>
                     {item.commentExcerpt ? (
