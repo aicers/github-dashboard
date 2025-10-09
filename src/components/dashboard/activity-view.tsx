@@ -1,11 +1,19 @@
 "use client";
 
+import type { IconProps } from "@primer/octicons-react";
+import {
+  CommentDiscussionIcon,
+  GitMergeIcon,
+  GitPullRequestClosedIcon,
+  GitPullRequestIcon,
+  IssueClosedIcon,
+  IssueOpenedIcon,
+} from "@primer/octicons-react";
 import { DateTime } from "luxon";
 import { useRouter } from "next/navigation";
 import {
-  type FC,
+  type ComponentType,
   type KeyboardEvent,
-  type SVGProps,
   useCallback,
   useEffect,
   useMemo,
@@ -135,147 +143,8 @@ const PEOPLE_ROLE_KEYS: PeopleRoleKey[] = [
   "reactorIds",
 ];
 
-type LocalIconProps = SVGProps<SVGSVGElement>;
-
-const IssueOpenIcon: FC<LocalIconProps> = ({ className, ...props }) => (
-  <svg
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.5"
-    className={className}
-    aria-hidden="true"
-    {...props}
-  >
-    <circle cx="8" cy="8" r="4.25" />
-    <circle cx="8" cy="8" r="1.75" fill="currentColor" stroke="none" />
-  </svg>
-);
-
-const IssueClosedIcon: FC<LocalIconProps> = ({ className, ...props }) => (
-  <svg
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.5"
-    className={className}
-    aria-hidden="true"
-    {...props}
-  >
-    <circle cx="8" cy="8" r="4.25" />
-    <path
-      d="M5.75 8.25l1.7 1.7 2.8-2.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
-
-const PullRequestOpenIcon: FC<LocalIconProps> = ({ className, ...props }) => (
-  <svg
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.5"
-    className={className}
-    aria-hidden="true"
-    {...props}
-  >
-    <circle cx="4.5" cy="3.5" r="1.75" />
-    <circle cx="4.5" cy="12.5" r="1.75" />
-    <circle cx="11.5" cy="3.5" r="1.75" />
-    <path d="M4.5 5.25v5.5" strokeLinecap="round" />
-    <path
-      d="M7.5 5.25h1.25a3.25 3.25 0 013.25 3.25v3.5"
-      strokeLinecap="round"
-    />
-    <path d="M10 10.75l2 2 2-2" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-);
-
-const PullRequestClosedIcon: FC<LocalIconProps> = ({ className, ...props }) => (
-  <svg
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.5"
-    className={className}
-    aria-hidden="true"
-    {...props}
-  >
-    <circle cx="4.5" cy="3.5" r="1.75" />
-    <circle cx="4.5" cy="12.5" r="1.75" />
-    <circle cx="11.5" cy="3.5" r="1.75" />
-    <path d="M4.5 5.25v5.5" strokeLinecap="round" />
-    <path
-      d="M7.5 5.25h1.25a3.25 3.25 0 013.25 3.25v4.5"
-      strokeLinecap="round"
-    />
-    <path d="M10 10.5l3 3" strokeLinecap="round" strokeLinejoin="round" />
-    <path d="M13 10.5l-3 3" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-);
-
-const PullRequestMergedIcon: FC<LocalIconProps> = ({ className, ...props }) => (
-  <svg
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.5"
-    className={className}
-    aria-hidden="true"
-    {...props}
-  >
-    <circle cx="4.5" cy="3.5" r="1.75" />
-    <circle cx="4.5" cy="12.5" r="1.75" />
-    <circle cx="11.5" cy="8" r="1.75" />
-    <path d="M4.5 5.25v5.5" strokeLinecap="round" strokeLinejoin="round" />
-    <path
-      d="M6.75 5.25a4 4 0 004 4H9.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
-
-const DiscussionOpenIcon: FC<LocalIconProps> = ({ className, ...props }) => (
-  <svg
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.5"
-    className={className}
-    aria-hidden="true"
-    {...props}
-  >
-    <path
-      d="M2 3.75a1.75 1.75 0 011.75-1.75h8.5A1.75 1.75 0 0114 3.75v4a1.75 1.75 0 01-1.75 1.75H8L5 12.75v-3.25H3.75A1.75 1.75 0 012 7.75v-4z"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
-
-const DiscussionClosedIcon: FC<LocalIconProps> = ({ className, ...props }) => (
-  <svg
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.5"
-    className={className}
-    aria-hidden="true"
-    {...props}
-  >
-    <path
-      d="M2 3.75a1.75 1.75 0 011.75-1.75h8.5A1.75 1.75 0 0114 3.75v4a1.75 1.75 0 01-1.75 1.75H8L5 12.75v-3.25H3.75A1.75 1.75 0 012 7.75v-4z"
-      strokeLinejoin="round"
-    />
-    <path d="M5.5 5.5l5 5" strokeLinecap="round" />
-    <path d="M10.5 5.5l-5 5" strokeLinecap="round" />
-  </svg>
-);
-
 type ActivityIconInfo = {
-  Icon: FC<LocalIconProps>;
+  Icon: ComponentType<IconProps>;
   className: string;
   label: string;
 };
@@ -299,58 +168,44 @@ function resolveActivityIcon(item: ActivityItem): ActivityIconInfo {
   if (item.type === "pull_request") {
     if (item.status === "merged") {
       return {
-        Icon: PullRequestMergedIcon,
+        Icon: GitMergeIcon,
         className: "text-purple-500",
         label: `${typeLabel} ${statusLabel}`,
       };
     }
     if (item.status === "closed") {
       return {
-        Icon: PullRequestClosedIcon,
+        Icon: GitPullRequestClosedIcon,
         className: "text-rose-500",
         label: `${typeLabel} ${statusLabel}`,
       };
     }
     return {
-      Icon: PullRequestOpenIcon,
+      Icon: GitPullRequestIcon,
       className: "text-emerald-500",
       label: `${typeLabel} ${statusLabel}`,
     };
   }
 
   if (item.type === "issue") {
-    if (item.status === "closed") {
+    if (item.status === "closed" || item.status === "merged") {
       return {
         Icon: IssueClosedIcon,
-        className: "text-rose-500",
-        label: `${typeLabel} ${statusLabel}`,
-      };
-    }
-    if (item.status === "merged") {
-      return {
-        Icon: IssueClosedIcon,
-        className: "text-purple-500",
+        className:
+          item.status === "merged" ? "text-purple-500" : "text-rose-500",
         label: `${typeLabel} ${statusLabel}`,
       };
     }
     return {
-      Icon: IssueOpenIcon,
+      Icon: IssueOpenedIcon,
       className: "text-emerald-500",
       label: `${typeLabel} ${statusLabel}`,
     };
   }
 
-  if (item.status === "closed") {
-    return {
-      Icon: DiscussionClosedIcon,
-      className: "text-rose-500",
-      label: `${typeLabel} ${statusLabel}`,
-    };
-  }
-
   return {
-    Icon: DiscussionOpenIcon,
-    className: "text-sky-500",
+    Icon: CommentDiscussionIcon,
+    className: item.status === "closed" ? "text-rose-500" : "text-sky-500",
     label: `${typeLabel} ${statusLabel}`,
   };
 }
@@ -2013,51 +1868,52 @@ export function ActivityView({
                           {item.title ?? "Untitled"}
                         </span>
                       </div>
-                      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                        {item.businessDaysOpen !== null &&
-                          item.businessDaysOpen !== undefined && (
+                      <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground">
+                        <div className="flex flex-wrap items-center gap-3">
+                          {item.businessDaysOpen !== null &&
+                            item.businessDaysOpen !== undefined && (
+                              <span>
+                                Age{" "}
+                                {differenceLabel(item.businessDaysOpen, "일")}
+                              </span>
+                            )}
+                          {item.businessDaysIdle !== null &&
+                            item.businessDaysIdle !== undefined && (
+                              <span>
+                                Idle{" "}
+                                {differenceLabel(item.businessDaysIdle, "일")}
+                              </span>
+                            )}
+                          {item.updatedAt && (
+                            <span>{formatRelative(item.updatedAt) ?? "-"}</span>
+                          )}
+                          {item.author && (
                             <span>
-                              Age {differenceLabel(item.businessDaysOpen, "일")}
+                              Author {avatarFallback(item.author) ?? "-"}
                             </span>
                           )}
-                        {item.businessDaysIdle !== null &&
-                          item.businessDaysIdle !== undefined && (
-                            <span>
-                              Idle{" "}
-                              {differenceLabel(item.businessDaysIdle, "일")}
+                          {badges.map((badge) => (
+                            <span
+                              key={badge}
+                              className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-700"
+                            >
+                              {badge}
                             </span>
-                          )}
+                          ))}
+                          {item.labels.slice(0, 2).map((label) => (
+                            <span
+                              key={label.key}
+                              className="rounded-md bg-muted px-2 py-0.5"
+                            >
+                              {label.key}
+                            </span>
+                          ))}
+                        </div>
                         {item.updatedAt && (
-                          <span>
-                            Updated {formatRelative(item.updatedAt) ?? "-"}
-                            <span className="ml-1 text-muted-foreground">
-                              •{" "}
-                              {formatDateTime(item.updatedAt, data.timezone) ??
-                                "-"}
-                            </span>
-                          </span>
+                          <div className="flex flex-col items-end text-muted-foreground/80">
+                            <span>{formatDateTime(item.updatedAt) ?? "-"}</span>
+                          </div>
                         )}
-                        {item.author && (
-                          <span>
-                            Author {avatarFallback(item.author) ?? "-"}
-                          </span>
-                        )}
-                        {badges.map((badge) => (
-                          <span
-                            key={badge}
-                            className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-700"
-                          >
-                            {badge}
-                          </span>
-                        ))}
-                        {item.labels.slice(0, 2).map((label) => (
-                          <span
-                            key={label.key}
-                            className="rounded-md bg-muted px-2 py-0.5"
-                          >
-                            {label.key}
-                          </span>
-                        ))}
                       </div>
                     </div>
                   </button>
