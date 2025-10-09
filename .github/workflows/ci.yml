@@ -82,6 +82,19 @@ jobs:
           echo "::add-mask::$SESSION_SECRET"
           echo "SESSION_SECRET=$SESSION_SECRET" >> $GITHUB_ENV
 
+      - name: Ensure Docker is ready
+        run: |
+          for attempt in {1..5}; do
+            if docker info >/dev/null 2>&1; then
+              echo "Docker daemon is ready."
+              exit 0
+            fi
+            echo "Docker is not ready yet (attempt ${attempt}/5). Retrying in 5s..."
+            sleep 5
+          done
+          echo "Docker daemon did not become ready in time." >&2
+          exit 1
+
       - name: Run unit tests
         run: npm run test
 
