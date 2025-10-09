@@ -92,6 +92,9 @@ export const repositoryIssuesQuery = gql`
           title
           state
           url
+          body
+          bodyText
+          bodyHTML
           createdAt
           updatedAt
           closedAt
@@ -212,6 +215,9 @@ export const repositoryPullRequestsQuery = gql`
           title
           state
           url
+          body
+          bodyText
+          bodyHTML
           createdAt
           updatedAt
           closedAt
