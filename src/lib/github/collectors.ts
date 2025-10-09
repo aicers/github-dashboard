@@ -1,6 +1,7 @@
 import type { GraphQLClient, RequestDocument } from "graphql-request";
 import { ClientError } from "graphql-request";
 
+import { clearActivityStatuses } from "@/lib/activity/status-store";
 import {
   fetchIssueRawMap,
   markReviewRequestRemoved,
@@ -17,6 +18,7 @@ import {
   upsertReviewRequest,
   upsertUser,
 } from "@/lib/db/operations";
+import { env } from "@/lib/env";
 import { createGithubClient } from "@/lib/github/client";
 import {
   issueCommentsQuery,
@@ -218,6 +220,26 @@ type ProjectStatusHistoryEntry = {
 };
 
 const PROJECT_REMOVED_STATUS = "__PROJECT_REMOVED__";
+
+function normalizeProjectName(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  const trimmed = value.trim().toLowerCase();
+  return trimmed.length ? trimmed : null;
+}
+
+const TARGET_TODO_PROJECT = normalizeProjectName(env.TODO_PROJECT_NAME);
+
+function isTargetProject(projectTitle: unknown) {
+  if (!TARGET_TODO_PROJECT) {
+    return false;
+  }
+  if (typeof projectTitle !== "string") {
+    return false;
+  }
+  return normalizeProjectName(projectTitle) === TARGET_TODO_PROJECT;
+}
 
 type ReactionNode = {
   id: string;
@@ -1445,6 +1467,12 @@ async function collectIssuesForRepository(
         ...snapshots,
         ...removals,
       ]);
+      if (
+        TARGET_TODO_PROJECT &&
+        mergedHistory.some((entry) => isTargetProject(entry.projectTitle))
+      ) {
+        await clearActivityStatuses(issue.id);
+      }
       const rawIssue =
         mergedHistory.length > 0
           ? { ...issue, projectStatusHistory: mergedHistory }

@@ -128,6 +128,12 @@ export type ActivityItem = {
   state: string | null;
   status: "open" | "closed" | "merged";
   issueProjectStatus: IssueProjectStatus | null;
+  issueProjectStatusSource: "todo_project" | "activity" | "none";
+  issueProjectStatusLocked: boolean;
+  issueTodoProjectStatus: IssueProjectStatus | null;
+  issueTodoProjectStatusAt: string | null;
+  issueActivityStatus: IssueProjectStatus | null;
+  issueActivityStatusAt: string | null;
   repository: ActivityRepository | null;
   author: ActivityUser | null;
   assignees: ActivityUser[];

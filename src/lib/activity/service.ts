@@ -1,3 +1,7 @@
+import {
+  type ActivityStatusEvent,
+  getActivityStatusHistory,
+} from "@/lib/activity/status-store";
 import type {
   ActivityAttentionFilter,
   ActivityAttentionFlags,
@@ -47,6 +51,12 @@ const ISSUE_PROJECT_STATUS_VALUES: IssueProjectStatus[] = [
 ];
 
 const ISSUE_PROJECT_STATUS_SET = new Set(ISSUE_PROJECT_STATUS_VALUES);
+
+const ISSUE_PROJECT_STATUS_LOCKED = new Set<IssueProjectStatus>([
+  "in_progress",
+  "done",
+  "pending",
+]);
 
 const PR_STATUS_VALUES: ActivityPullRequestStatusFilter[] = [
   "pr_open",
@@ -112,6 +122,8 @@ type ActivityRow = {
   raw_data: unknown;
   project_history: unknown;
   issue_project_status: string | null;
+  activity_status: string | null;
+  activity_status_at: string | null;
   body_text: string | null;
   total_count: string | number;
 };
@@ -330,25 +342,18 @@ function mapIssueProjectStatus(
   return "no_status";
 }
 
-function isInProgressStatus(status: string) {
-  const normalized = status.toLowerCase();
-  return (
-    normalized.includes("progress") ||
-    normalized === "doing" ||
-    normalized === "in-progress"
-  );
-}
-
-function isDoneStatus(status: string) {
-  const normalized = status.toLowerCase();
-  return (
-    normalized === "done" ||
-    normalized === "completed" ||
-    normalized === "complete" ||
-    normalized === "finished" ||
-    normalized === "closed"
-  );
-}
+type IssueStatusInfo = {
+  todoStatus: IssueProjectStatus | null;
+  todoStatusAt: string | null;
+  activityStatus: IssueProjectStatus | null;
+  activityStatusAt: string | null;
+  displayStatus: IssueProjectStatus;
+  source: "todo_project" | "activity" | "none";
+  locked: boolean;
+  timelineSource: "todo_project" | "activity" | "none";
+  projectEntries: ProjectStatusEntry[];
+  activityEvents: ActivityStatusEvent[];
+};
 
 function parseIssueRaw(data: unknown): IssueRaw | null {
   if (!data) {
@@ -371,6 +376,128 @@ function parseIssueRaw(data: unknown): IssueRaw | null {
   }
 
   return null;
+}
+
+function resolveIssueStatusInfo(
+  raw: IssueRaw | null,
+  targetProject: string | null,
+  activityEvents: ActivityStatusEvent[],
+): IssueStatusInfo {
+  const projectEntries = extractProjectStatusEntries(raw, targetProject);
+  const latestProjectEntry =
+    projectEntries.length > 0
+      ? projectEntries[projectEntries.length - 1]
+      : null;
+  const todoStatus = latestProjectEntry
+    ? mapIssueProjectStatus(latestProjectEntry.status)
+    : null;
+  const todoStatusAt = latestProjectEntry
+    ? latestProjectEntry.occurredAt
+    : null;
+
+  const latestActivityEntry =
+    activityEvents.length > 0
+      ? activityEvents[activityEvents.length - 1]
+      : null;
+  const activityStatus = latestActivityEntry?.status ?? null;
+  const activityStatusAt = latestActivityEntry?.occurredAt ?? null;
+
+  const locked =
+    todoStatus != null && ISSUE_PROJECT_STATUS_LOCKED.has(todoStatus);
+
+  let displayStatus: IssueProjectStatus = "no_status";
+  let source: IssueStatusInfo["source"] = "none";
+
+  if (todoStatus && (locked || !activityStatus)) {
+    displayStatus = todoStatus;
+    source = "todo_project";
+  } else if (activityStatus && !locked) {
+    displayStatus = activityStatus;
+    source = "activity";
+  } else if (todoStatus) {
+    displayStatus = todoStatus;
+    source = "todo_project";
+  }
+
+  let timelineSource: IssueStatusInfo["timelineSource"] = "none";
+  if (locked) {
+    timelineSource = "todo_project";
+  } else if (activityEvents.length > 0) {
+    timelineSource = "activity";
+  } else if (projectEntries.length > 0) {
+    timelineSource = "todo_project";
+  }
+
+  return {
+    todoStatus,
+    todoStatusAt,
+    activityStatus,
+    activityStatusAt,
+    displayStatus,
+    source,
+    locked,
+    timelineSource,
+    projectEntries,
+    activityEvents,
+  };
+}
+
+function resolveWorkTimestamps(info: IssueStatusInfo | null) {
+  if (!info) {
+    return { startedAt: null, completedAt: null };
+  }
+
+  if (info.timelineSource === "activity") {
+    let startedAt: string | null = null;
+    let completedAt: string | null = null;
+    info.activityEvents.forEach((event) => {
+      switch (event.status) {
+        case "in_progress":
+          startedAt = event.occurredAt;
+          completedAt = null;
+          break;
+        case "done":
+          if (startedAt && !completedAt) {
+            completedAt = event.occurredAt;
+          }
+          break;
+        case "todo":
+        case "no_status":
+          startedAt = null;
+          completedAt = null;
+          break;
+        default:
+          break;
+      }
+    });
+    return { startedAt, completedAt };
+  }
+
+  if (info.timelineSource === "todo_project") {
+    let startedAt: string | null = null;
+    let completedAt: string | null = null;
+    info.projectEntries.forEach((entry) => {
+      const mapped = mapIssueProjectStatus(entry.status);
+      if (mapped === "in_progress") {
+        startedAt = entry.occurredAt;
+        completedAt = null;
+        return;
+      }
+      if (mapped === "done") {
+        if (startedAt && !completedAt) {
+          completedAt = entry.occurredAt;
+        }
+        return;
+      }
+      if (mapped === "todo" || mapped === "no_status") {
+        startedAt = null;
+        completedAt = null;
+      }
+    });
+    return { startedAt, completedAt };
+  }
+
+  return { startedAt: null, completedAt: null };
 }
 
 function extractProjectStatusEntries(
@@ -418,27 +545,6 @@ function extractProjectStatusEntries(
   return Array.from(entries.entries())
     .sort((first, second) => first[0] - second[0])
     .map(([, value]) => value);
-}
-
-function extractWorkTimestamps(
-  raw: IssueRaw | null,
-  targetProject: string | null,
-) {
-  const entries = extractProjectStatusEntries(raw, targetProject);
-  let startedAt: string | null = null;
-  let completedAt: string | null = null;
-
-  entries.forEach((entry) => {
-    if (!startedAt && isInProgressStatus(entry.status)) {
-      startedAt = entry.occurredAt;
-    }
-
-    if (!completedAt && isDoneStatus(entry.status)) {
-      completedAt = entry.occurredAt;
-    }
-  });
-
-  return { startedAt, completedAt };
 }
 
 async function resolveAttentionSets(
@@ -594,6 +700,33 @@ function buildQueryFilters(
   const values: unknown[] = [];
   const issueProjectStatuses: IssueProjectStatus[] = [];
 
+  const buildNormalizedStatusExpr = (alias: string) => {
+    const valueExpr = `LOWER(TRIM(${alias}.issue_project_status))`;
+    return `(CASE
+      WHEN ${alias}.item_type <> 'issue' THEN NULL
+      WHEN ${alias}.issue_project_status IS NULL THEN 'no_status'
+      WHEN ${valueExpr} = '' THEN 'no_status'
+      WHEN ${valueExpr} IN ('todo', 'to do', 'to_do') THEN 'todo'
+      WHEN ${valueExpr} LIKE '%progress%' OR ${valueExpr} = 'doing' OR ${valueExpr} = 'in-progress' THEN 'in_progress'
+      WHEN ${valueExpr} IN ('done', 'completed', 'complete', 'finished', 'closed') THEN 'done'
+      WHEN ${valueExpr} LIKE 'pending%' OR ${valueExpr} = 'waiting' THEN 'pending'
+      ELSE 'no_status'
+    END)`;
+  };
+
+  const buildEffectiveStatusExpr = (alias: string) => {
+    const normalizedExpr = buildNormalizedStatusExpr(alias);
+    return `(CASE
+      WHEN ${alias}.item_type = 'issue'
+        AND ${alias}.activity_status IS NOT NULL
+        AND ${normalizedExpr} IN ('no_status', 'todo')
+      THEN ${alias}.activity_status
+      ELSE ${normalizedExpr}
+    END)`;
+  };
+
+  const effectiveIssueStatusExpr = buildEffectiveStatusExpr("items");
+
   if (attentionIds?.length === 0) {
     // No matches for attention filters; force empty result set.
     clauses.push("FALSE");
@@ -743,7 +876,7 @@ function buildQueryFilters(
       const uniqueIssueStatuses = Array.from(new Set(issueProjectStatuses));
       values.push(uniqueIssueStatuses);
       clauses.push(
-        `(items.item_type <> 'issue' OR items.issue_project_status = ANY($${values.length}::text[]))`,
+        `(items.item_type <> 'issue' OR ${effectiveIssueStatusExpr} = ANY($${values.length}::text[]))`,
       );
       issueProjectStatuses.splice(
         0,
@@ -776,7 +909,15 @@ function buildQueryFilters(
 }
 
 const BASE_QUERY = /* sql */ `
-WITH issue_items AS (
+WITH activity_status AS (
+  SELECT DISTINCT ON (issue_id)
+    issue_id,
+    status,
+    occurred_at
+  FROM activity_issue_status_history
+  ORDER BY issue_id, occurred_at DESC
+),
+issue_items AS (
   SELECT
     CASE
       WHEN LOWER(COALESCE(i.data->>'__typename', '')) = 'discussion'
@@ -858,7 +999,9 @@ WITH issue_items AS (
         LIMIT 1
       )
     END AS issue_project_status,
-    COALESCE(i.data->>'body', '') AS body_text
+    COALESCE(i.data->>'body', '') AS body_text,
+    recent_status.status AS activity_status,
+    recent_status.occurred_at AS activity_status_at
   FROM issues i
   JOIN repositories repo ON repo.id = i.repository_id
   LEFT JOIN LATERAL (
@@ -891,6 +1034,7 @@ WITH issue_items AS (
     FROM reactions r
     WHERE r.subject_type IN ('Issue', 'Discussion') AND r.subject_id = i.id
   ) reactors ON TRUE
+  LEFT JOIN activity_status recent_status ON recent_status.issue_id = i.id
 ),
 pr_items AS (
   SELECT
@@ -928,7 +1072,9 @@ pr_items AS (
     pr.data AS raw_data,
     '[]'::jsonb AS project_history,
     NULL::text AS issue_project_status,
-    COALESCE(pr.data->>'body', '') AS body_text
+    COALESCE(pr.data->>'body', '') AS body_text,
+    NULL::text AS activity_status,
+    NULL::timestamptz AS activity_status_at
   FROM pull_requests pr
   JOIN repositories repo ON repo.id = pr.repository_id
   LEFT JOIN LATERAL (
@@ -1003,6 +1149,8 @@ combined AS (
     raw_data,
     project_history,
     issue_project_status,
+    activity_status,
+    activity_status_at,
     body_text,
     CASE
       WHEN item_type = 'pull_request' AND is_merged THEN 'merged'
@@ -1037,6 +1185,8 @@ combined AS (
     raw_data,
     project_history,
     issue_project_status,
+    activity_status,
+    activity_status_at,
     body_text,
     CASE
       WHEN is_merged THEN 'merged'
@@ -1115,12 +1265,17 @@ function buildActivityItem(
   sets: AttentionSets,
   targetProject: string | null,
   now: Date,
+  activityStatusHistory: Map<string, ActivityStatusEvent[]>,
 ): ActivityItem {
   const status = toStatus(row.status);
-  const issueProjectStatus =
-    row.item_type === "issue"
-      ? mapIssueProjectStatus(row.issue_project_status)
-      : null;
+  let issueProjectStatus: IssueProjectStatus | null = null;
+  let issueProjectStatusSource: ActivityItem["issueProjectStatusSource"] =
+    "none";
+  let issueProjectStatusLocked = false;
+  let issueTodoProjectStatus: IssueProjectStatus | null = null;
+  let issueTodoProjectStatusAt: string | null = null;
+  let issueActivityStatus: IssueProjectStatus | null = null;
+  let issueActivityStatusAt: string | null = null;
   const labels = buildLabels(row);
   const hasParentIssue =
     row.item_type === "issue" && (row.tracked_in_issues_count ?? 0) > 0;
@@ -1164,29 +1319,53 @@ function buildActivityItem(
   let businessDaysSinceInProgress: number | null | undefined = null;
   let businessDaysInProgressOpen: number | null | undefined = null;
 
-  if (row.item_type !== "pull_request") {
+  if (row.item_type === "issue") {
     const raw = parseIssueRaw(row.raw_data);
-    const { startedAt } = extractWorkTimestamps(raw, targetProject);
+    const activityEvents = activityStatusHistory.get(row.id) ?? [];
+    const statusInfo = resolveIssueStatusInfo(
+      raw,
+      targetProject,
+      activityEvents,
+    );
+    issueProjectStatus = statusInfo.displayStatus;
+    issueProjectStatusSource = statusInfo.source;
+    issueProjectStatusLocked = statusInfo.locked;
+    issueTodoProjectStatus = statusInfo.todoStatus;
+    issueTodoProjectStatusAt = statusInfo.todoStatusAt;
+    issueActivityStatus = statusInfo.activityStatus;
+    issueActivityStatusAt = statusInfo.activityStatusAt;
+
+    const { startedAt, completedAt } = resolveWorkTimestamps(statusInfo);
     if (startedAt) {
+      const startDate = new Date(startedAt);
       businessDaysSinceInProgress = differenceInBusinessDaysOrNull(
-        startedAt,
+        startDate,
         now,
         HOLIDAY_SET,
       );
       if (status !== "open" && row.closed_at) {
         businessDaysInProgressOpen = differenceInBusinessDaysOrNull(
-          startedAt,
+          startDate,
           new Date(row.closed_at),
+          HOLIDAY_SET,
+        );
+      } else if (statusInfo.timelineSource === "activity" && completedAt) {
+        businessDaysInProgressOpen = differenceInBusinessDaysOrNull(
+          startDate,
+          new Date(completedAt),
           HOLIDAY_SET,
         );
       } else {
         businessDaysInProgressOpen = differenceInBusinessDaysOrNull(
-          startedAt,
+          startDate,
           now,
           HOLIDAY_SET,
         );
       }
     }
+  } else {
+    issueProjectStatusSource = "none";
+    issueProjectStatusLocked = false;
   }
 
   return {
@@ -1198,6 +1377,16 @@ function buildActivityItem(
     state: row.state,
     status,
     issueProjectStatus,
+    issueProjectStatusSource,
+    issueProjectStatusLocked,
+    issueTodoProjectStatus,
+    issueTodoProjectStatusAt: issueTodoProjectStatusAt
+      ? toIso(issueTodoProjectStatusAt)
+      : null,
+    issueActivityStatus,
+    issueActivityStatusAt: issueActivityStatusAt
+      ? toIso(issueActivityStatusAt)
+      : null,
     repository: row.repository_id
       ? {
           id: row.repository_id,
@@ -1538,6 +1727,10 @@ export async function getActivityItems(
   );
 
   const rows = result.rows;
+  const issueIds = rows
+    .filter((row) => row.item_type === "issue")
+    .map((row) => row.id);
+  const activityStatusHistory = await getActivityStatusHistory(issueIds);
   const totalCount = rows.length > 0 ? Number(rows[0]?.total_count ?? 0) : 0;
   const totalPages =
     perPage > 0 ? Math.max(1, Math.ceil(totalCount / perPage)) : 1;
@@ -1571,7 +1764,14 @@ export async function getActivityItems(
   const now = new Date();
 
   const items = rows.map((row) =>
-    buildActivityItem(row, users, attentionSets, targetProject, now),
+    buildActivityItem(
+      row,
+      users,
+      attentionSets,
+      targetProject,
+      now,
+      activityStatusHistory,
+    ),
   );
 
   const config = await getSyncConfig();
@@ -1638,7 +1838,18 @@ export async function getActivityItemDetail(
   const users = toUserMap(profiles);
   const targetProject = normalizeText(env.TODO_PROJECT_NAME);
   const now = new Date();
-  const item = buildActivityItem(row, users, attentionSets, targetProject, now);
+  const activityStatusHistory =
+    row.item_type === "issue"
+      ? await getActivityStatusHistory([row.id])
+      : new Map<string, ActivityStatusEvent[]>();
+  const item = buildActivityItem(
+    row,
+    users,
+    attentionSets,
+    targetProject,
+    now,
+    activityStatusHistory,
+  );
 
   const rawObject = toRawObject(row.raw_data);
   const bodyCandidates: Array<string | null> = [];
