@@ -84,6 +84,7 @@ describe("sync config API routes", () => {
       userId: "user",
       orgSlug: "org",
       orgVerified: true,
+      isAdmin: true,
       createdAt: new Date(),
       lastSeenAt: new Date(),
       expiresAt: new Date(),
@@ -152,6 +153,74 @@ describe("sync config API routes", () => {
 
     const users = await listAllUsers();
     expect(users.map((user) => user.id)).toEqual(["user-1", "user-2"]);
+  });
+
+  it("rejects organization control updates from non-admin users", async () => {
+    vi.mocked(readActiveSession).mockResolvedValueOnce({
+      id: "session",
+      userId: "user",
+      orgSlug: "org",
+      orgVerified: true,
+      isAdmin: false,
+      createdAt: new Date(),
+      lastSeenAt: new Date(),
+      expiresAt: new Date(),
+    });
+
+    const response = await handlers.PATCH(
+      new Request("http://localhost/api/sync/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orgName: "unauthorized-update",
+          excludedRepositories: ["repo-1"],
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    const body = await response.json();
+    expect(body.success).toBe(false);
+    expect(body.message).toBe(
+      "Administrator access is required to update organization controls.",
+    );
+
+    const config = await getSyncConfig();
+    expect(config?.org_name).toBe("seed-org");
+    expect(config?.excluded_repository_ids).toEqual([]);
+  });
+
+  it("allows non-admin users to update personal configuration", async () => {
+    vi.mocked(readActiveSession).mockResolvedValueOnce({
+      id: "session",
+      userId: "user",
+      orgSlug: "org",
+      orgVerified: true,
+      isAdmin: false,
+      createdAt: new Date(),
+      lastSeenAt: new Date(),
+      expiresAt: new Date(),
+    });
+
+    const response = await handlers.PATCH(
+      new Request("http://localhost/api/sync/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          timezone: "Europe/London",
+          weekStart: "sunday",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+
+    const config = await getSyncConfig();
+    expect(config?.timezone).toBe("Europe/London");
+    expect(config?.week_start).toBe("sunday");
+    expect(config?.org_name).toBe("seed-org");
   });
 
   it("rejects invalid sync interval updates and leaves persisted state unchanged", async () => {

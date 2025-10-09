@@ -60,7 +60,45 @@ export async function PATCH(request: Request) {
 
   try {
     const payload = patchSchema.parse(await request.json());
-    await updateSyncSettings(payload);
+    const {
+      orgName,
+      syncIntervalMinutes,
+      excludedRepositories,
+      excludedPeople,
+      timezone,
+      weekStart,
+    } = payload;
+
+    if (!session.isAdmin) {
+      const attemptedAdminUpdate =
+        orgName !== undefined ||
+        syncIntervalMinutes !== undefined ||
+        excludedRepositories !== undefined ||
+        excludedPeople !== undefined;
+
+      if (attemptedAdminUpdate) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Administrator access is required to update organization controls.",
+          },
+          { status: 403 },
+        );
+      }
+
+      await updateSyncSettings({ timezone, weekStart });
+    } else {
+      await updateSyncSettings({
+        orgName,
+        syncIntervalMinutes,
+        timezone,
+        weekStart,
+        excludedRepositories,
+        excludedPeople,
+      });
+    }
+
     const status = await fetchSyncStatus();
 
     return NextResponse.json({ success: true, status });

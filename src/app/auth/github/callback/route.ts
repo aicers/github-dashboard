@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { isAdminUser } from "@/lib/auth/admin";
 import {
   buildReturnCookie,
   buildStateCookie,
@@ -118,10 +119,16 @@ export async function GET(request: NextRequest) {
 
     await persistGithubProfile(profile);
 
+    const isAdmin = isAdminUser({
+      userId: profile.actor.id,
+      login: profile.actor.login ?? null,
+    });
+
     const { cookie: sessionCookie } = await establishSession({
       userId: profile.actor.id,
       orgSlug: membership.orgSlug,
       orgVerified: true,
+      isAdmin,
     });
 
     const targetPath = resolveReturnPath(request);

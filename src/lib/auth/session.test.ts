@@ -34,12 +34,15 @@ function stubCookieValue(value: string | null) {
   });
 }
 
-function buildSessionRecord(overrides?: Partial<{ orgVerified: boolean }>) {
+function buildSessionRecord(
+  overrides?: Partial<{ orgVerified: boolean; isAdmin: boolean }>,
+) {
   return {
     id: "session-id",
     userId: "user-1",
     orgSlug: "org",
     orgVerified: overrides?.orgVerified ?? true,
+    isAdmin: overrides?.isAdmin ?? false,
     createdAt: new Date(),
     lastSeenAt: new Date(),
     expiresAt: new Date(Date.now() + 1000),

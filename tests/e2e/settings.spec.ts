@@ -57,7 +57,7 @@ test.describe("SettingsView (Playwright)", () => {
       .getByLabel("제외할 구성원을 선택하세요")
       .selectOption(["user-1", "user-2"]);
 
-    await page.getByRole("button", { name: "설정 저장" }).click();
+    await page.getByRole("button", { name: "조직 설정 저장" }).click();
 
     await expect(page.getByText("설정이 저장되었습니다.")).toBeVisible();
 
@@ -93,7 +93,7 @@ test.describe("SettingsView (Playwright)", () => {
 
     await page.getByLabel("자동 동기화 주기 (분)").fill("");
     await page.getByLabel("자동 동기화 주기 (분)").fill("0");
-    await page.getByRole("button", { name: "설정 저장" }).click();
+    await page.getByRole("button", { name: "조직 설정 저장" }).click();
 
     await expect(
       page.getByText("동기화 주기는 1 이상의 정수여야 합니다."),

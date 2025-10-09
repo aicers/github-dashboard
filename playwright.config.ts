@@ -26,6 +26,10 @@ export default defineConfig({
     stdout: "pipe",
     stderr: "pipe",
     timeout: 120_000,
+    env: {
+      ...process.env,
+      PLAYWRIGHT_SKIP_DB: "1",
+    },
   },
   projects: [
     {

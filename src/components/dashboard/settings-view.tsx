@@ -26,6 +26,8 @@ const FALLBACK_TIMEZONES = [
   "Australia/Sydney",
 ];
 
+const ADMIN_ONLY_MESSAGE = "관리자 권한이 있는 사용자만 수정할 수 있습니다.";
+
 function getTimezoneOptions() {
   try {
     const supportedValuesOf = (
@@ -52,6 +54,7 @@ type SettingsViewProps = {
   excludedRepositoryIds: string[];
   members: UserProfile[];
   excludedMemberIds: string[];
+  isAdmin: boolean;
 };
 
 type ApiResponse<T> = {
@@ -69,6 +72,7 @@ export function SettingsView({
   excludedRepositoryIds,
   members,
   excludedMemberIds,
+  isAdmin,
 }: SettingsViewProps) {
   const router = useRouter();
   const [name, setName] = useState(orgName);
@@ -77,7 +81,8 @@ export function SettingsView({
   const [weekStartValue, setWeekStartValue] = useState<"sunday" | "monday">(
     weekStart,
   );
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [personalFeedback, setPersonalFeedback] = useState<string | null>(null);
+  const [orgFeedback, setOrgFeedback] = useState<string | null>(null);
   const normalizedExcludedRepositories = useMemo(() => {
     const allowed = new Set(repositories.map((repo) => repo.id));
     return excludedRepositoryIds.filter((id) => allowed.has(id));
@@ -92,11 +97,14 @@ export function SettingsView({
   const [excludedPeople, setExcludedPeople] = useState<string[]>(
     normalizedExcludedMembers,
   );
-  const [isSaving, startSaving] = useTransition();
+  const [isSavingPersonal, startSavingPersonal] = useTransition();
+  const [isSavingOrganization, startSavingOrganization] = useTransition();
   const orgInputId = useId();
   const intervalInputId = useId();
   const excludeSelectId = useId();
   const excludePeopleSelectId = useId();
+
+  const canEditOrganization = isAdmin;
 
   const timezones = useMemo(() => {
     const options = getTimezoneOptions();
@@ -159,8 +167,46 @@ export function SettingsView({
     setExcludedPeople([]);
   };
 
-  const handleSave = () => {
-    startSaving(async () => {
+  const handleSavePersonal = () => {
+    setPersonalFeedback(null);
+    startSavingPersonal(async () => {
+      try {
+        const response = await fetch("/api/sync/config", {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            timezone,
+            weekStart: weekStartValue,
+          }),
+        });
+        const data = (await response.json()) as ApiResponse<unknown>;
+
+        if (!data.success) {
+          throw new Error(data.message ?? "설정을 저장하지 못했습니다.");
+        }
+
+        setPersonalFeedback("설정이 저장되었습니다.");
+        router.refresh();
+      } catch (error) {
+        setPersonalFeedback(
+          error instanceof Error
+            ? error.message
+            : "설정 저장 중 오류가 발생했습니다.",
+        );
+      }
+    });
+  };
+
+  const handleSaveOrganization = () => {
+    if (!canEditOrganization) {
+      setOrgFeedback(ADMIN_ONLY_MESSAGE);
+      return;
+    }
+
+    setOrgFeedback(null);
+    startSavingOrganization(async () => {
       try {
         const parsedInterval = Number.parseInt(interval, 10);
         if (Number.isNaN(parsedInterval) || parsedInterval <= 0) {
@@ -191,10 +237,10 @@ export function SettingsView({
           throw new Error(data.message ?? "설정을 저장하지 못했습니다.");
         }
 
-        setFeedback("설정이 저장되었습니다.");
+        setOrgFeedback("설정이 저장되었습니다.");
         router.refresh();
       } catch (error) {
-        setFeedback(
+        setOrgFeedback(
           error instanceof Error
             ? error.message
             : "설정 저장 중 오류가 발생했습니다.",
@@ -204,195 +250,242 @@ export function SettingsView({
   };
 
   return (
-    <section className="flex flex-col gap-6">
+    <section className="flex flex-col gap-8">
       <header className="flex flex-col gap-2">
         <h1 className="text-3xl font-semibold">Settings</h1>
         <p className="text-sm text-muted-foreground">
           동기화 대상과 시간대를 조정하여 통합 지표의 기준을 맞추세요.
         </p>
-        {feedback && <p className="text-sm text-primary">{feedback}</p>}
       </header>
 
-      <Card className="border-border/70">
-        <CardHeader>
-          <CardTitle>Organization & 동기화</CardTitle>
-          <CardDescription>
-            GitHub Organization 이름과 자동 동기화 주기를 관리합니다.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <label className="flex flex-col gap-2 text-sm" htmlFor={orgInputId}>
-            <span className="text-muted-foreground">Organization 이름</span>
-            <Input
-              id={orgInputId}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="my-organization"
-            />
-          </label>
-          <label
-            className="flex flex-col gap-2 text-sm"
-            htmlFor={intervalInputId}
-          >
-            <span className="text-muted-foreground">자동 동기화 주기 (분)</span>
-            <Input
-              id={intervalInputId}
-              value={interval}
-              onChange={(event) => setInterval(event.target.value)}
-              type="number"
-              min={1}
-            />
-          </label>
-        </CardContent>
-      </Card>
+      <section className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2">
+          <h2 className="text-2xl font-semibold">Personal Configuration</h2>
+          <p className="text-sm text-muted-foreground">
+            개인 대시보드의 기준 시간대를 선택하고 주간 시작 요일을 조정하세요.
+          </p>
+          {personalFeedback && (
+            <p className="text-sm text-primary">{personalFeedback}</p>
+          )}
+        </div>
 
-      <Card className="border-border/70">
-        <CardHeader>
-          <CardTitle>시간대 (Timezone)</CardTitle>
-          <CardDescription>
-            대시보드의 날짜/시간 계산에 사용할 표준 시간대를 선택하세요.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4 text-sm">
-          <label className="flex flex-col gap-2">
-            <span className="text-muted-foreground">표준 시간대</span>
-            <select
-              value={timezone}
-              onChange={(event) => setTimezone(event.target.value)}
-              className="rounded-md border border-border/60 bg-background p-2 text-sm"
-            >
-              {timezones.map((zone) => (
-                <option key={zone} value={zone}>
-                  {zone}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-2">
-            <span className="text-muted-foreground">주의 시작 요일</span>
-            <select
-              value={weekStartValue}
-              onChange={(event) =>
-                setWeekStartValue(event.target.value as "sunday" | "monday")
-              }
-              className="rounded-md border border-border/60 bg-background p-2 text-sm"
-            >
-              <option value="monday">월요일 시작</option>
-              <option value="sunday">일요일 시작</option>
-            </select>
-          </label>
-        </CardContent>
-      </Card>
-
-      <Card className="border-border/70">
-        <CardHeader>
-          <CardTitle>리포지토리 제외</CardTitle>
-          <CardDescription>
-            제외된 리포지토리는 Analytics와 People 메뉴의 필터 목록에 표시되지
-            않습니다.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4 text-sm">
-          {sortedRepositories.length === 0 ? (
-            <p className="text-muted-foreground text-sm">
-              동기화된 리포지토리가 없습니다.
-            </p>
-          ) : (
-            <label className="flex flex-col gap-2" htmlFor={excludeSelectId}>
-              <span className="text-muted-foreground">
-                제외할 리포지토리를 선택하세요
-              </span>
+        <Card className="border-border/70">
+          <CardHeader>
+            <CardTitle>시간대 (Timezone)</CardTitle>
+            <CardDescription>
+              대시보드의 날짜/시간 계산에 사용할 표준 시간대를 선택하세요.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4 text-sm">
+            <label className="flex flex-col gap-2">
+              <span className="text-muted-foreground">표준 시간대</span>
               <select
-                id={excludeSelectId}
-                multiple
-                value={excludedRepos}
-                onChange={handleExcludedChange}
-                className="h-48 rounded-md border border-border/60 bg-background p-2 text-sm"
+                value={timezone}
+                onChange={(event) => setTimezone(event.target.value)}
+                className="rounded-md border border-border/60 bg-background p-2 text-sm"
               >
-                {sortedRepositories.map((repo) => (
-                  <option key={repo.id} value={repo.id}>
-                    {repo.nameWithOwner ?? repo.name ?? repo.id}
+                {timezones.map((zone) => (
+                  <option key={zone} value={zone}>
+                    {zone}
                   </option>
                 ))}
               </select>
-              <span className="text-xs text-muted-foreground">
-                여러 리포지토리를 선택하려면 ⌘/Ctrl 키를 눌러 복수 선택하세요.
-              </span>
             </label>
-          )}
-        </CardContent>
-        <CardFooter className="flex justify-between">
-          <span className="text-xs text-muted-foreground">
-            제외된 리포지토리: {excludedRepos.length}개
-          </span>
-          <Button
-            variant="secondary"
-            onClick={handleClearExcluded}
-            disabled={!excludedRepos.length}
-          >
-            제외 목록 비우기
-          </Button>
-        </CardFooter>
-      </Card>
+            <label className="flex flex-col gap-2">
+              <span className="text-muted-foreground">주의 시작 요일</span>
+              <select
+                value={weekStartValue}
+                onChange={(event) =>
+                  setWeekStartValue(event.target.value as "sunday" | "monday")
+                }
+                className="rounded-md border border-border/60 bg-background p-2 text-sm"
+              >
+                <option value="monday">월요일 시작</option>
+                <option value="sunday">일요일 시작</option>
+              </select>
+            </label>
+          </CardContent>
+          <CardFooter className="flex justify-end">
+            <Button onClick={handleSavePersonal} disabled={isSavingPersonal}>
+              {isSavingPersonal ? "저장 중..." : "개인 설정 저장"}
+            </Button>
+          </CardFooter>
+        </Card>
+      </section>
 
-      <Card className="border-border/70">
-        <CardHeader>
-          <CardTitle>구성원 제외</CardTitle>
-          <CardDescription>
-            제외된 구성원은 Analytics와 People 메뉴에 표시되지 않습니다.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4 text-sm">
-          {sortedMembers.length === 0 ? (
-            <p className="text-muted-foreground text-sm">
-              동기화된 구성원이 없습니다.
+      <section className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2">
+          <h2 className="text-2xl font-semibold">Organization Controls</h2>
+          <p className="text-sm text-muted-foreground">
+            조직 전반의 동기화 동작과 제외 대상을 관리합니다.
+          </p>
+          {!canEditOrganization && (
+            <p className="text-sm text-muted-foreground">
+              {ADMIN_ONLY_MESSAGE}
             </p>
-          ) : (
+          )}
+          {orgFeedback && <p className="text-sm text-primary">{orgFeedback}</p>}
+        </div>
+
+        <Card className="border-border/70">
+          <CardHeader>
+            <CardTitle>Organization & 동기화</CardTitle>
+            <CardDescription>
+              GitHub Organization 이름과 자동 동기화 주기를 관리합니다.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <label className="flex flex-col gap-2 text-sm" htmlFor={orgInputId}>
+              <span className="text-muted-foreground">Organization 이름</span>
+              <Input
+                id={orgInputId}
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="my-organization"
+                disabled={!canEditOrganization}
+                title={!canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined}
+              />
+            </label>
             <label
-              className="flex flex-col gap-2"
-              htmlFor={excludePeopleSelectId}
+              className="flex flex-col gap-2 text-sm"
+              htmlFor={intervalInputId}
             >
               <span className="text-muted-foreground">
-                제외할 구성원을 선택하세요
+                자동 동기화 주기 (분)
               </span>
-              <select
-                id={excludePeopleSelectId}
-                multiple
-                value={excludedPeople}
-                onChange={handleExcludedPeopleChange}
-                className="h-48 rounded-md border border-border/60 bg-background p-2 text-sm"
-              >
-                {sortedMembers.map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.login ?? member.name ?? member.id}
-                  </option>
-                ))}
-              </select>
-              <span className="text-xs text-muted-foreground">
-                여러 구성원을 선택하려면 ⌘/Ctrl 키를 눌러 복수 선택하세요.
-              </span>
+              <Input
+                id={intervalInputId}
+                value={interval}
+                onChange={(event) => setInterval(event.target.value)}
+                type="number"
+                min={1}
+                disabled={!canEditOrganization}
+                title={!canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined}
+              />
             </label>
-          )}
-        </CardContent>
-        <CardFooter className="flex justify-between">
-          <span className="text-xs text-muted-foreground">
-            제외된 구성원: {excludedPeople.length}명
-          </span>
-          <Button
-            variant="secondary"
-            onClick={handleClearExcludedPeople}
-            disabled={!excludedPeople.length}
-          >
-            제외 목록 비우기
-          </Button>
-        </CardFooter>
-      </Card>
+          </CardContent>
+        </Card>
 
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={isSaving}>
-          {isSaving ? "저장 중..." : "설정 저장"}
-        </Button>
-      </div>
+        <Card className="border-border/70">
+          <CardHeader>
+            <CardTitle>리포지토리 제외</CardTitle>
+            <CardDescription>
+              제외된 리포지토리는 Analytics와 People 메뉴의 필터 목록에 표시되지
+              않습니다.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4 text-sm">
+            {sortedRepositories.length === 0 ? (
+              <p className="text-muted-foreground text-sm">
+                동기화된 리포지토리가 없습니다.
+              </p>
+            ) : (
+              <label className="flex flex-col gap-2" htmlFor={excludeSelectId}>
+                <span className="text-muted-foreground">
+                  제외할 리포지토리를 선택하세요
+                </span>
+                <select
+                  id={excludeSelectId}
+                  multiple
+                  value={excludedRepos}
+                  onChange={handleExcludedChange}
+                  className="h-48 rounded-md border border-border/60 bg-background p-2 text-sm"
+                  disabled={!canEditOrganization}
+                  title={!canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined}
+                >
+                  {sortedRepositories.map((repo) => (
+                    <option key={repo.id} value={repo.id}>
+                      {repo.nameWithOwner ?? repo.name ?? repo.id}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-xs text-muted-foreground">
+                  여러 리포지토리를 선택하려면 ⌘/Ctrl 키를 눌러 복수 선택하세요.
+                </span>
+              </label>
+            )}
+          </CardContent>
+          <CardFooter className="flex justify-between">
+            <span className="text-xs text-muted-foreground">
+              제외된 리포지토리: {excludedRepos.length}개
+            </span>
+            <Button
+              variant="secondary"
+              onClick={handleClearExcluded}
+              disabled={!canEditOrganization || !excludedRepos.length}
+              title={!canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined}
+            >
+              제외 목록 비우기
+            </Button>
+          </CardFooter>
+        </Card>
+
+        <Card className="border-border/70">
+          <CardHeader>
+            <CardTitle>구성원 제외</CardTitle>
+            <CardDescription>
+              제외된 구성원은 Analytics와 People 메뉴에 표시되지 않습니다.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4 text-sm">
+            {sortedMembers.length === 0 ? (
+              <p className="text-muted-foreground text-sm">
+                동기화된 구성원이 없습니다.
+              </p>
+            ) : (
+              <label
+                className="flex flex-col gap-2"
+                htmlFor={excludePeopleSelectId}
+              >
+                <span className="text-muted-foreground">
+                  제외할 구성원을 선택하세요
+                </span>
+                <select
+                  id={excludePeopleSelectId}
+                  multiple
+                  value={excludedPeople}
+                  onChange={handleExcludedPeopleChange}
+                  className="h-48 rounded-md border border-border/60 bg-background p-2 text-sm"
+                  disabled={!canEditOrganization}
+                  title={!canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined}
+                >
+                  {sortedMembers.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.login ?? member.name ?? member.id}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-xs text-muted-foreground">
+                  여러 구성원을 선택하려면 ⌘/Ctrl 키를 눌러 복수 선택하세요.
+                </span>
+              </label>
+            )}
+          </CardContent>
+          <CardFooter className="flex justify-between">
+            <span className="text-xs text-muted-foreground">
+              제외된 구성원: {excludedPeople.length}명
+            </span>
+            <Button
+              variant="secondary"
+              onClick={handleClearExcludedPeople}
+              disabled={!canEditOrganization || !excludedPeople.length}
+              title={!canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined}
+            >
+              제외 목록 비우기
+            </Button>
+          </CardFooter>
+        </Card>
+
+        <div className="flex justify-end">
+          <Button
+            onClick={handleSaveOrganization}
+            disabled={!canEditOrganization || isSavingOrganization}
+            title={!canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined}
+          >
+            {isSavingOrganization ? "저장 중..." : "조직 설정 저장"}
+          </Button>
+        </div>
+      </section>
     </section>
   );
 }

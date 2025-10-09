@@ -21,6 +21,7 @@ type EstablishSessionOptions = {
   userId: string;
   orgSlug: string | null;
   orgVerified: boolean;
+  isAdmin: boolean;
 };
 
 const SESSION_PRUNE_INTERVAL_MS = 5 * 60 * 1000;
@@ -51,6 +52,7 @@ export async function establishSession({
   userId,
   orgSlug,
   orgVerified,
+  isAdmin,
 }: EstablishSessionOptions): Promise<{
   record: SessionRecord;
   cookie: ReturnType<typeof buildSessionCookie>;
@@ -61,6 +63,7 @@ export async function establishSession({
     userId,
     orgSlug,
     orgVerified,
+    isAdmin,
   });
 
   return {

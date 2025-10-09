@@ -45,6 +45,7 @@ const envSchema = z.object({
     ),
   TODO_PROJECT_NAME: z.string().optional(),
   HOLIDAYS: z.string().optional(),
+  DASHBOARD_ADMIN_IDS: z.string().optional(),
 });
 
 const parsed = envSchema.parse({
@@ -59,6 +60,7 @@ const parsed = envSchema.parse({
   SYNC_INTERVAL_MINUTES: process.env.SYNC_INTERVAL_MINUTES,
   TODO_PROJECT_NAME: process.env.TODO_PROJECT_NAME,
   HOLIDAYS: process.env.HOLIDAYS,
+  DASHBOARD_ADMIN_IDS: process.env.DASHBOARD_ADMIN_IDS,
 });
 
 export const env = {
@@ -67,6 +69,11 @@ export const env = {
   TODO_PROJECT_NAME: parsed.TODO_PROJECT_NAME ?? "to-do list",
   HOLIDAYS: parsed.HOLIDAYS
     ? parsed.HOLIDAYS.split(",")
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0)
+    : [],
+  DASHBOARD_ADMIN_IDS: parsed.DASHBOARD_ADMIN_IDS
+    ? parsed.DASHBOARD_ADMIN_IDS.split(",")
         .map((value) => value.trim())
         .filter((value) => value.length > 0)
     : [],
