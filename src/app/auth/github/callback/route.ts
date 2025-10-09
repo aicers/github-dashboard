@@ -38,7 +38,7 @@ function clearTransientOAuthCookies(response: NextResponse) {
 function resolveReturnPath(request: NextRequest) {
   const stored = request.cookies.get(GITHUB_RETURN_COOKIE)?.value ?? null;
   if (!stored || !stored.startsWith("/") || stored.startsWith("//")) {
-    return "/dashboard";
+    return "/dashboard/activity";
   }
 
   return stored;

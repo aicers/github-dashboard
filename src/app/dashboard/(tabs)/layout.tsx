@@ -11,7 +11,7 @@ export default async function DashboardTabsLayout({
   const session = await readActiveSession();
 
   if (!session) {
-    redirect("/auth/github?next=/dashboard");
+    redirect("/auth/github?next=/dashboard/activity");
   }
 
   return (

@@ -11,7 +11,7 @@ type DashboardTabsHarnessProps = {
 };
 
 export function DashboardTabsHarness({
-  initialPathname = "/dashboard/analytics",
+  initialPathname = "/dashboard/activity",
 }: DashboardTabsHarnessProps) {
   const [pathname, setPathname] = useState(initialPathname);
 
