@@ -71,6 +71,10 @@ type IssueNode = {
   createdAt: string;
   updatedAt: string;
   closedAt?: string | null;
+  body?: string | null;
+  bodyText?: string | null;
+  bodyHTML?: string | null;
+  bodyMarkdown?: string | null;
   author?: GithubActor | null;
   trackedIssues?: { totalCount?: number | null } | null;
   trackedInIssues?: { totalCount?: number | null } | null;
