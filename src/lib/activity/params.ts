@@ -87,17 +87,25 @@ function parseThresholds(searchParams: URLSearchParams) {
 export function parseActivityListParams(
   searchParams: URLSearchParams,
 ): ActivityListParams {
+  const categoryValues =
+    parseEnumValues<ActivityItemType>(searchParams, "category", [
+      "issue",
+      "pull_request",
+      "discussion",
+    ]) ??
+    parseEnumValues<ActivityItemType>(searchParams, "type", [
+      "issue",
+      "pull_request",
+      "discussion",
+    ]);
+
   return {
     page: parsePositiveInteger(searchParams, "page", { min: 1 }),
     perPage: parsePositiveInteger(searchParams, "perPage", {
       min: 1,
       max: 100,
     }),
-    types: parseEnumValues<ActivityItemType>(searchParams, "type", [
-      "issue",
-      "pull_request",
-      "discussion",
-    ]),
+    types: categoryValues,
     repositoryIds: parseStringList(searchParams, "repositoryId"),
     labelKeys: parseStringList(searchParams, "labelKey"),
     authorIds: parseStringList(searchParams, "authorId"),

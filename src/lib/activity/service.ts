@@ -888,22 +888,23 @@ function toRawObject(value: unknown) {
 export async function getActivityFilterOptions(): Promise<ActivityFilterOptions> {
   await ensureSchema();
 
-  const [repositoriesResult, labelsResult, usersResult] = await Promise.all([
-    query<{
-      id: string;
-      name: string | null;
-      name_with_owner: string | null;
-    }>(
-      `SELECT id, name, name_with_owner
+  const [repositoriesResult, labelsResult, usersResult, syncConfig] =
+    await Promise.all([
+      query<{
+        id: string;
+        name: string | null;
+        name_with_owner: string | null;
+      }>(
+        `SELECT id, name, name_with_owner
        FROM repositories
        ORDER BY name_with_owner`,
-    ),
-    query<{
-      repository_id: string;
-      repository_name_with_owner: string | null;
-      label_name: string;
-    }>(
-      `SELECT DISTINCT
+      ),
+      query<{
+        repository_id: string;
+        repository_name_with_owner: string | null;
+        label_name: string;
+      }>(
+        `SELECT DISTINCT
          repo.id AS repository_id,
          repo.name_with_owner AS repository_name_with_owner,
          label_node->>'name' AS label_name
@@ -921,18 +922,19 @@ export async function getActivityFilterOptions(): Promise<ActivityFilterOptions>
        CROSS JOIN LATERAL jsonb_array_elements(COALESCE(pr.data->'labels'->'nodes', '[]'::jsonb)) AS label_node
        WHERE label_node->>'name' IS NOT NULL
        ORDER BY repository_name_with_owner, label_name`,
-    ),
-    query<{
-      id: string;
-      login: string | null;
-      name: string | null;
-      avatar_url: string | null;
-    }>(
-      `SELECT id, login, name, avatar_url
-       FROM users
-       ORDER BY LOWER(COALESCE(NULLIF(login, ''), NULLIF(name, ''), id))`,
-    ),
-  ]);
+      ),
+      query<{
+        id: string;
+        login: string | null;
+        name: string | null;
+        avatar_url: string | null;
+      }>(
+        `SELECT id, login, name, avatar_url
+         FROM users
+         ORDER BY LOWER(COALESCE(NULLIF(login, ''), NULLIF(name, ''), id))`,
+      ),
+      getSyncConfig(),
+    ]);
 
   const repositories = repositoriesResult.rows.map((row) => ({
     id: row.id,
@@ -947,12 +949,50 @@ export async function getActivityFilterOptions(): Promise<ActivityFilterOptions>
     repositoryNameWithOwner: row.repository_name_with_owner,
   }));
 
-  const users: ActivityUser[] = usersResult.rows.map((row) => ({
-    id: row.id,
-    login: row.login,
-    name: row.name,
-    avatarUrl: row.avatar_url,
-  }));
+  const excludedUserIds = new Set<string>(
+    Array.isArray(syncConfig?.excluded_user_ids)
+      ? (syncConfig.excluded_user_ids as string[]).filter(
+          (value) => typeof value === "string" && value.trim().length > 0,
+        )
+      : [],
+  );
+
+  const priorityLogins = ["octoaide", "codecov", "dependabot"];
+  const priorityLookup = new Map(
+    priorityLogins.map((login, index) => [login, index]),
+  );
+
+  const users: ActivityUser[] = usersResult.rows
+    .filter((row) => !excludedUserIds.has(row.id))
+    .map((row) => ({
+      id: row.id,
+      login: row.login,
+      name: row.name,
+      avatarUrl: row.avatar_url,
+    }))
+    .sort((first, second) => {
+      const normalize = (user: ActivityUser) =>
+        (user.login ?? user.name ?? user.id ?? "").toLowerCase();
+
+      const firstPriority = priorityLookup.get(
+        first.login ? first.login.toLowerCase() : "",
+      );
+      const secondPriority = priorityLookup.get(
+        second.login ? second.login.toLowerCase() : "",
+      );
+
+      if (firstPriority !== undefined || secondPriority !== undefined) {
+        if (firstPriority === undefined) {
+          return 1;
+        }
+        if (secondPriority === undefined) {
+          return -1;
+        }
+        return firstPriority - secondPriority;
+      }
+
+      return normalize(first).localeCompare(normalize(second));
+    });
 
   return { repositories, labels, users };
 }

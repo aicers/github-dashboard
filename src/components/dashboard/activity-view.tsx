@@ -3,7 +3,9 @@
 import { DateTime } from "luxon";
 import { useRouter } from "next/navigation";
 import {
+  type FC,
   type KeyboardEvent,
+  type SVGProps,
   useCallback,
   useEffect,
   useMemo,
@@ -18,8 +20,8 @@ import type {
   ActivityAttentionFilter,
   ActivityFilterOptions,
   ActivityItem,
+  ActivityItemType as ActivityItemCategory,
   ActivityItemDetail,
-  ActivityItemType,
   ActivityListParams,
   ActivityListResult,
   ActivityStatusFilter,
@@ -36,7 +38,7 @@ type ActivityViewProps = {
 type FilterState = {
   page: number;
   perPage: number;
-  types: ActivityItemType[];
+  categories: ActivityItemCategory[];
   repositoryIds: string[];
   labelKeys: string[];
   authorIds: string[];
@@ -51,6 +53,14 @@ type FilterState = {
   thresholds: Required<ActivityThresholds>;
 };
 
+type PeopleRoleKey =
+  | "authorIds"
+  | "assigneeIds"
+  | "reviewerIds"
+  | "mentionedUserIds"
+  | "commenterIds"
+  | "reactorIds";
+
 type MultiSelectOption = {
   value: string;
   label: string;
@@ -61,19 +71,20 @@ const ATTENTION_OPTIONS: Array<{
   value: ActivityAttentionFilter;
   label: string;
 }> = [
-  { value: "unanswered_mentions", label: "Unanswered mentions" },
-  { value: "review_requests_pending", label: "Pending review requests" },
-  { value: "pr_open_too_long", label: "PRs open too long" },
-  { value: "pr_inactive", label: "Inactive PRs" },
-  { value: "issue_backlog", label: "Backlog issues" },
-  { value: "issue_stalled", label: "Stalled in-progress issues" },
+  { value: "unanswered_mentions", label: "응답 없는 멘션" },
+  { value: "review_requests_pending", label: "응답 없는 리뷰 요청" },
+  { value: "pr_open_too_long", label: "오래된 PR" },
+  { value: "pr_inactive", label: "업데이트 없는 PR" },
+  { value: "issue_backlog", label: "정체된 Backlog 이슈" },
+  { value: "issue_stalled", label: "정체된 In Progress 이슈" },
 ];
 
-const TYPE_OPTIONS: Array<{ value: ActivityItemType; label: string }> = [
-  { value: "discussion", label: "Discussion" },
-  { value: "issue", label: "Issue" },
-  { value: "pull_request", label: "Pull Request" },
-];
+const CATEGORY_OPTIONS: Array<{ value: ActivityItemCategory; label: string }> =
+  [
+    { value: "discussion", label: "Discussion" },
+    { value: "issue", label: "Issue" },
+    { value: "pull_request", label: "Pull Request" },
+  ];
 
 const STATUS_OPTIONS: Array<{ value: ActivityStatusFilter; label: string }> = [
   { value: "open", label: "Open" },
@@ -92,6 +103,387 @@ const DEFAULT_THRESHOLD_VALUES: Required<ActivityThresholds> = {
 
 const PER_PAGE_CHOICES = [10, 25, 50];
 
+const ALL_ACTIVITY_CATEGORIES = CATEGORY_OPTIONS.map(
+  (option) => option.value,
+) as ActivityItemCategory[];
+
+const PEOPLE_ROLE_MAP: Record<ActivityItemCategory, PeopleRoleKey[]> = {
+  issue: [
+    "authorIds",
+    "assigneeIds",
+    "mentionedUserIds",
+    "commenterIds",
+    "reactorIds",
+  ],
+  pull_request: [
+    "authorIds",
+    "assigneeIds",
+    "reviewerIds",
+    "mentionedUserIds",
+    "commenterIds",
+    "reactorIds",
+  ],
+  discussion: ["authorIds", "mentionedUserIds", "commenterIds", "reactorIds"],
+};
+
+const PEOPLE_ROLE_KEYS: PeopleRoleKey[] = [
+  "authorIds",
+  "assigneeIds",
+  "reviewerIds",
+  "mentionedUserIds",
+  "commenterIds",
+  "reactorIds",
+];
+
+type LocalIconProps = SVGProps<SVGSVGElement>;
+
+const IssueOpenIcon: FC<LocalIconProps> = ({ className, ...props }) => (
+  <svg
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    className={className}
+    aria-hidden="true"
+    {...props}
+  >
+    <circle cx="8" cy="8" r="4.25" />
+    <circle cx="8" cy="8" r="1.75" fill="currentColor" stroke="none" />
+  </svg>
+);
+
+const IssueClosedIcon: FC<LocalIconProps> = ({ className, ...props }) => (
+  <svg
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    className={className}
+    aria-hidden="true"
+    {...props}
+  >
+    <circle cx="8" cy="8" r="4.25" />
+    <path
+      d="M5.75 8.25l1.7 1.7 2.8-2.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+const PullRequestOpenIcon: FC<LocalIconProps> = ({ className, ...props }) => (
+  <svg
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    className={className}
+    aria-hidden="true"
+    {...props}
+  >
+    <circle cx="4.5" cy="3.5" r="1.75" />
+    <circle cx="4.5" cy="12.5" r="1.75" />
+    <circle cx="11.5" cy="3.5" r="1.75" />
+    <path d="M4.5 5.25v5.5" strokeLinecap="round" />
+    <path
+      d="M7.5 5.25h1.25a3.25 3.25 0 013.25 3.25v3.5"
+      strokeLinecap="round"
+    />
+    <path d="M10 10.75l2 2 2-2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const PullRequestClosedIcon: FC<LocalIconProps> = ({ className, ...props }) => (
+  <svg
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    className={className}
+    aria-hidden="true"
+    {...props}
+  >
+    <circle cx="4.5" cy="3.5" r="1.75" />
+    <circle cx="4.5" cy="12.5" r="1.75" />
+    <circle cx="11.5" cy="3.5" r="1.75" />
+    <path d="M4.5 5.25v5.5" strokeLinecap="round" />
+    <path
+      d="M7.5 5.25h1.25a3.25 3.25 0 013.25 3.25v4.5"
+      strokeLinecap="round"
+    />
+    <path d="M10 10.5l3 3" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M13 10.5l-3 3" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const PullRequestMergedIcon: FC<LocalIconProps> = ({ className, ...props }) => (
+  <svg
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    className={className}
+    aria-hidden="true"
+    {...props}
+  >
+    <circle cx="4.5" cy="3.5" r="1.75" />
+    <circle cx="4.5" cy="12.5" r="1.75" />
+    <circle cx="11.5" cy="8" r="1.75" />
+    <path d="M4.5 5.25v5.5" strokeLinecap="round" strokeLinejoin="round" />
+    <path
+      d="M6.75 5.25a4 4 0 004 4H9.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+const DiscussionOpenIcon: FC<LocalIconProps> = ({ className, ...props }) => (
+  <svg
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    className={className}
+    aria-hidden="true"
+    {...props}
+  >
+    <path
+      d="M2 3.75a1.75 1.75 0 011.75-1.75h8.5A1.75 1.75 0 0114 3.75v4a1.75 1.75 0 01-1.75 1.75H8L5 12.75v-3.25H3.75A1.75 1.75 0 012 7.75v-4z"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+const DiscussionClosedIcon: FC<LocalIconProps> = ({ className, ...props }) => (
+  <svg
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    className={className}
+    aria-hidden="true"
+    {...props}
+  >
+    <path
+      d="M2 3.75a1.75 1.75 0 011.75-1.75h8.5A1.75 1.75 0 0114 3.75v4a1.75 1.75 0 01-1.75 1.75H8L5 12.75v-3.25H3.75A1.75 1.75 0 012 7.75v-4z"
+      strokeLinejoin="round"
+    />
+    <path d="M5.5 5.5l5 5" strokeLinecap="round" />
+    <path d="M10.5 5.5l-5 5" strokeLinecap="round" />
+  </svg>
+);
+
+type ActivityIconInfo = {
+  Icon: FC<LocalIconProps>;
+  className: string;
+  label: string;
+};
+
+const CATEGORY_LABELS: Record<ActivityItemCategory, string> = {
+  issue: "이슈",
+  pull_request: "PR",
+  discussion: "토론",
+};
+
+const STATUS_LABELS: Record<ActivityStatusFilter, string> = {
+  open: "열림",
+  closed: "닫힘",
+  merged: "병합됨",
+};
+
+function resolveActivityIcon(item: ActivityItem): ActivityIconInfo {
+  const typeLabel = CATEGORY_LABELS[item.type] ?? "항목";
+  const statusLabel = STATUS_LABELS[item.status] ?? item.status;
+
+  if (item.type === "pull_request") {
+    if (item.status === "merged") {
+      return {
+        Icon: PullRequestMergedIcon,
+        className: "text-purple-500",
+        label: `${typeLabel} ${statusLabel}`,
+      };
+    }
+    if (item.status === "closed") {
+      return {
+        Icon: PullRequestClosedIcon,
+        className: "text-rose-500",
+        label: `${typeLabel} ${statusLabel}`,
+      };
+    }
+    return {
+      Icon: PullRequestOpenIcon,
+      className: "text-emerald-500",
+      label: `${typeLabel} ${statusLabel}`,
+    };
+  }
+
+  if (item.type === "issue") {
+    if (item.status === "closed") {
+      return {
+        Icon: IssueClosedIcon,
+        className: "text-rose-500",
+        label: `${typeLabel} ${statusLabel}`,
+      };
+    }
+    if (item.status === "merged") {
+      return {
+        Icon: IssueClosedIcon,
+        className: "text-purple-500",
+        label: `${typeLabel} ${statusLabel}`,
+      };
+    }
+    return {
+      Icon: IssueOpenIcon,
+      className: "text-emerald-500",
+      label: `${typeLabel} ${statusLabel}`,
+    };
+  }
+
+  if (item.status === "closed") {
+    return {
+      Icon: DiscussionClosedIcon,
+      className: "text-rose-500",
+      label: `${typeLabel} ${statusLabel}`,
+    };
+  }
+
+  return {
+    Icon: DiscussionOpenIcon,
+    className: "text-sky-500",
+    label: `${typeLabel} ${statusLabel}`,
+  };
+}
+
+function arraysShallowEqual(first: string[], second: string[]) {
+  if (first.length !== second.length) {
+    return false;
+  }
+  return first.every((value, index) => value === second[index]);
+}
+
+function resolvePeopleCategories(categories: ActivityItemCategory[]) {
+  return categories.length ? categories : ALL_ACTIVITY_CATEGORIES;
+}
+
+function getPeopleRoleTargets(
+  categories: ActivityItemCategory[],
+): PeopleRoleKey[] {
+  const targets = new Set<PeopleRoleKey>();
+  resolvePeopleCategories(categories).forEach((item) => {
+    for (const role of PEOPLE_ROLE_MAP[item]) {
+      targets.add(role);
+    }
+  });
+  return Array.from(targets);
+}
+
+function derivePeopleState(
+  state: FilterState,
+  categoriesOverride?: ActivityItemCategory[],
+) {
+  const resolvedCategories = categoriesOverride ?? state.categories;
+  const targets = getPeopleRoleTargets(resolvedCategories);
+  if (!targets.length) {
+    return { selection: [], isSynced: true, targets };
+  }
+
+  let baseline: string[] | null = null;
+  let inSync = true;
+
+  for (const role of targets) {
+    const values = state[role];
+    if (baseline === null) {
+      baseline = values;
+      continue;
+    }
+    if (!arraysShallowEqual(baseline, values)) {
+      inSync = false;
+      break;
+    }
+  }
+
+  if (inSync) {
+    for (const role of PEOPLE_ROLE_KEYS) {
+      if (targets.includes(role)) {
+        continue;
+      }
+      if (state[role].length > 0) {
+        inSync = false;
+        break;
+      }
+    }
+  }
+
+  return {
+    selection: inSync && baseline ? [...baseline] : [],
+    isSynced: inSync,
+    targets,
+  };
+}
+
+function applyPeopleSelection(
+  state: FilterState,
+  peopleIds: string[],
+  categoriesOverride?: ActivityItemCategory[],
+): FilterState {
+  const resolvedCategories = categoriesOverride ?? state.categories;
+  const targets = getPeopleRoleTargets(resolvedCategories);
+  const unique = Array.from(new Set(peopleIds));
+  let changed = false;
+  const next: FilterState = { ...state };
+
+  targets.forEach((role) => {
+    if (!arraysShallowEqual(state[role], unique)) {
+      next[role] = unique;
+      changed = true;
+    }
+  });
+
+  PEOPLE_ROLE_KEYS.forEach((role) => {
+    if (targets.includes(role)) {
+      return;
+    }
+    if (state[role].length > 0) {
+      next[role] = [];
+      changed = true;
+    }
+  });
+
+  if (!changed) {
+    return state;
+  }
+
+  return next;
+}
+
+function sanitizePeopleIds(
+  state: FilterState,
+  allowed: ReadonlySet<string>,
+): FilterState {
+  let changed = false;
+  const next: FilterState = { ...state };
+
+  PEOPLE_ROLE_KEYS.forEach((role) => {
+    const filtered = state[role].filter((id) => allowed.has(id));
+    if (!arraysShallowEqual(state[role], filtered)) {
+      next[role] = filtered;
+      changed = true;
+    }
+  });
+
+  if (!changed) {
+    return state;
+  }
+
+  const peopleState = derivePeopleState(next);
+  if (peopleState.isSynced) {
+    return applyPeopleSelection(next, peopleState.selection);
+  }
+
+  return next;
+}
+
 function buildFilterState(
   params: ActivityListParams,
   perPageFallback: number,
@@ -100,7 +492,7 @@ function buildFilterState(
     page: params.page && params.page > 0 ? params.page : 1,
     perPage:
       params.perPage && params.perPage > 0 ? params.perPage : perPageFallback,
-    types: params.types ?? [],
+    categories: params.types ?? [],
     repositoryIds: params.repositoryIds ?? [],
     labelKeys: params.labelKeys ?? [],
     authorIds: params.authorIds ?? [],
@@ -134,10 +526,10 @@ function normalizeSearchParams(filters: FilterState, defaultPerPage: number) {
     });
   };
 
-  if (filters.types.length) {
+  if (filters.categories.length) {
     appendAll(
-      "type",
-      filters.types.map((value) => value),
+      "category",
+      filters.categories.map((value) => value),
     );
   }
 
@@ -278,22 +670,22 @@ function formatRelative(value: string | null) {
 function buildAttentionBadges(item: ActivityItem) {
   const badges: string[] = [];
   if (item.attention.unansweredMention) {
-    badges.push("Unanswered mention");
+    badges.push("응답 없는 멘션");
   }
   if (item.attention.reviewRequestPending) {
-    badges.push("Review needed");
+    badges.push("응답 없는 리뷰 요청");
   }
   if (item.attention.staleOpenPr) {
-    badges.push("Open too long");
+    badges.push("오래된 PR");
   }
   if (item.attention.idlePr) {
-    badges.push("Inactive");
+    badges.push("업데이트 없는 PR");
   }
   if (item.attention.backlogIssue) {
-    badges.push("Backlog");
+    badges.push("정체된 Backlog 이슈");
   }
   if (item.attention.stalledIssue) {
-    badges.push("Stalled");
+    badges.push("정체된 In Progress 이슈");
   }
   return badges;
 }
@@ -465,24 +857,122 @@ function MultiSelectInput({
   );
 }
 
+function PeopleToggleList({
+  label,
+  value,
+  onChange,
+  options,
+  synced,
+}: {
+  label: string;
+  value: string[];
+  onChange: (next: string[]) => void;
+  options: MultiSelectOption[];
+  synced: boolean;
+}) {
+  const selectedSet = useMemo(() => new Set(value), [value]);
+  const allSelected = synced && value.length === 0;
+
+  const toggleSelection = useCallback(
+    (optionValue: string) => {
+      if (selectedSet.has(optionValue)) {
+        onChange(value.filter((entry) => entry !== optionValue));
+      } else {
+        onChange([...value, optionValue]);
+      }
+    },
+    [onChange, selectedSet, value],
+  );
+
+  const handleSelectAll = useCallback(() => {
+    onChange([]);
+  }, [onChange]);
+
+  if (!options.length) {
+    return (
+      <div className="space-y-2">
+        <Label className="text-xs font-medium text-muted-foreground">
+          {label}
+        </Label>
+        <div className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+          연결된 사용자가 없습니다.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <Label className="text-xs font-medium text-muted-foreground">
+          {label}
+        </Label>
+        {!synced && (
+          <span className="text-[11px] text-muted-foreground">
+            고급 필터와 동기화되지 않음
+          </span>
+        )}
+      </div>
+      <div className="max-h-48 overflow-y-auto rounded-md border border-border bg-background p-2">
+        <div className="flex flex-wrap gap-2">
+          <TogglePill
+            active={allSelected}
+            variant={allSelected ? "active" : "inactive"}
+            onClick={handleSelectAll}
+          >
+            전체
+          </TogglePill>
+          {options.map((option) => {
+            const active = selectedSet.has(option.value);
+            const variant = allSelected
+              ? "muted"
+              : active
+                ? "active"
+                : "inactive";
+            return (
+              <TogglePill
+                key={option.value}
+                active={active}
+                variant={variant}
+                onClick={() => toggleSelection(option.value)}
+              >
+                {option.label}
+              </TogglePill>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TogglePill({
   active,
   children,
   onClick,
+  variant,
 }: {
   active: boolean;
   children: React.ReactNode;
   onClick: () => void;
+  variant?: "active" | "inactive" | "muted";
 }) {
+  const resolvedVariant = variant ?? (active ? "active" : "inactive");
+  const variantClass =
+    resolvedVariant === "active"
+      ? "border-primary bg-primary/10 text-primary"
+      : resolvedVariant === "muted"
+        ? "border-border/40 bg-muted/10 text-muted-foreground/60"
+        : "border-border text-muted-foreground hover:bg-muted";
+
   return (
     <button
       type="button"
       className={cn(
         "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-        active
-          ? "border-primary bg-primary/10 text-primary"
-          : "border-border text-muted-foreground hover:bg-muted",
+        variantClass,
       )}
+      aria-pressed={active}
       onClick={onClick}
     >
       {children}
@@ -659,13 +1149,34 @@ export function ActivityView({
     () =>
       filterOptions.users.map((user) => ({
         value: user.id,
-        label: user.login?.length ? `@${user.login}` : (user.name ?? user.id),
+        label: user.login?.length ? user.login : (user.name ?? user.id),
         description:
           user.name && user.login && user.name !== user.login
             ? user.name
             : null,
       })),
     [filterOptions.users],
+  );
+
+  const allowedUserIds = useMemo(
+    () => new Set(filterOptions.users.map((user) => user.id)),
+    [filterOptions.users],
+  );
+
+  useEffect(() => {
+    setDraft((current) => sanitizePeopleIds(current, allowedUserIds));
+    setApplied((current) => sanitizePeopleIds(current, allowedUserIds));
+  }, [allowedUserIds]);
+
+  const peopleState = useMemo(() => derivePeopleState(draft), [draft]);
+  const peopleSelection = peopleState.selection;
+  const peopleSynced = peopleState.isSynced;
+  const handlePeopleChange = useCallback(
+    (next: string[]) => {
+      const filtered = next.filter((id) => allowedUserIds.has(id));
+      setDraft((current) => applyPeopleSelection(current, filtered));
+    },
+    [allowedUserIds],
   );
 
   const showNotification = useCallback((message: string) => {
@@ -932,68 +1443,149 @@ export function ActivityView({
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
               <Label className="text-xs font-medium uppercase text-muted-foreground">
-                Type
+                카테고리
               </Label>
-              {TYPE_OPTIONS.map((option) => {
-                const active = draft.types.includes(option.value);
+              {(() => {
+                const allSelected = draft.categories.length === 0;
                 return (
-                  <TogglePill
-                    key={option.value}
-                    active={active}
-                    onClick={() => {
-                      setDraft((current) => {
-                        const nextSet = new Set(current.types);
-                        if (nextSet.has(option.value)) {
-                          nextSet.delete(option.value);
-                        } else {
-                          nextSet.add(option.value);
-                        }
-                        return {
-                          ...current,
-                          types: Array.from(nextSet),
-                        };
-                      });
-                    }}
-                  >
-                    {option.label}
-                  </TogglePill>
+                  <>
+                    <TogglePill
+                      active={allSelected}
+                      variant={allSelected ? "active" : "inactive"}
+                      onClick={() => {
+                        setDraft((current) => {
+                          const nextCategories: ActivityItemCategory[] = [];
+                          let nextState: FilterState = {
+                            ...current,
+                            categories: nextCategories,
+                          };
+                          const peopleState = derivePeopleState(current);
+                          if (peopleState.isSynced) {
+                            nextState = applyPeopleSelection(
+                              nextState,
+                              peopleState.selection,
+                              nextCategories,
+                            );
+                          }
+                          return nextState;
+                        });
+                      }}
+                    >
+                      전체
+                    </TogglePill>
+                    {CATEGORY_OPTIONS.map((option) => {
+                      const active = draft.categories.includes(option.value);
+                      const variant = allSelected
+                        ? "muted"
+                        : active
+                          ? "active"
+                          : "inactive";
+                      return (
+                        <TogglePill
+                          key={option.value}
+                          active={active}
+                          variant={variant}
+                          onClick={() => {
+                            setDraft((current) => {
+                              const nextSet = new Set(current.categories);
+                              if (nextSet.has(option.value)) {
+                                nextSet.delete(option.value);
+                              } else {
+                                nextSet.add(option.value);
+                              }
+                              const nextCategories = Array.from(
+                                nextSet,
+                              ) as ActivityItemCategory[];
+                              let nextState: FilterState = {
+                                ...current,
+                                categories: nextCategories,
+                              };
+                              const peopleState = derivePeopleState(current);
+                              if (peopleState.isSynced) {
+                                nextState = applyPeopleSelection(
+                                  nextState,
+                                  peopleState.selection,
+                                  nextCategories,
+                                );
+                              }
+                              return nextState;
+                            });
+                          }}
+                        >
+                          {option.label}
+                        </TogglePill>
+                      );
+                    })}
+                  </>
                 );
-              })}
+              })()}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Label className="text-xs font-medium uppercase text-muted-foreground">
-                Attention
+                주의
               </Label>
-              {ATTENTION_OPTIONS.map((option) => {
-                const active = draft.attention.includes(option.value);
-                const count = attentionSummary[option.value] ?? 0;
+              {(() => {
+                const allSelected = draft.attention.length === 0;
                 return (
-                  <TogglePill
-                    key={option.value}
-                    active={active}
-                    onClick={() => {
-                      setDraft((current) => {
-                        const nextSet = new Set(current.attention);
-                        if (nextSet.has(option.value)) {
-                          nextSet.delete(option.value);
-                        } else {
-                          nextSet.add(option.value);
-                        }
-                        return {
+                  <>
+                    <TogglePill
+                      active={allSelected}
+                      variant={allSelected ? "active" : "inactive"}
+                      onClick={() => {
+                        setDraft((current) => ({
                           ...current,
-                          attention: Array.from(nextSet),
-                        };
-                      });
-                    }}
-                  >
-                    <span>{option.label}</span>
-                    <span className="ml-1 text-muted-foreground">
-                      ({count})
-                    </span>
-                  </TogglePill>
+                          attention: [],
+                        }));
+                      }}
+                    >
+                      전체
+                    </TogglePill>
+                    {ATTENTION_OPTIONS.map((option) => {
+                      const active = draft.attention.includes(option.value);
+                      const variant = allSelected
+                        ? "muted"
+                        : active
+                          ? "active"
+                          : "inactive";
+                      const count = attentionSummary[option.value] ?? 0;
+                      return (
+                        <TogglePill
+                          key={option.value}
+                          active={active}
+                          variant={variant}
+                          onClick={() => {
+                            setDraft((current) => {
+                              const nextSet = new Set(current.attention);
+                              if (nextSet.has(option.value)) {
+                                nextSet.delete(option.value);
+                              } else {
+                                nextSet.add(option.value);
+                              }
+                              return {
+                                ...current,
+                                attention: Array.from(nextSet),
+                              };
+                            });
+                          }}
+                        >
+                          <span>{option.label}</span>
+                          <span className="ml-1 text-muted-foreground">
+                            ({count})
+                          </span>
+                        </TogglePill>
+                      );
+                    })}
+                  </>
                 );
-              })}
+              })()}
             </div>
+            <PeopleToggleList
+              label="사람"
+              value={peopleSelection}
+              onChange={handlePeopleChange}
+              options={userOptions}
+              synced={peopleSynced}
+            />
             <div className="flex justify-end">
               <Button
                 type="button"
@@ -1281,7 +1873,7 @@ export function ActivityView({
           )}
           <div className="flex flex-wrap items-center gap-3">
             <Button onClick={applyDraftFilters} disabled={isLoading}>
-              Apply Filters
+              필터 적용
             </Button>
             <Button
               type="button"
@@ -1289,11 +1881,11 @@ export function ActivityView({
               onClick={resetFilters}
               disabled={isLoading}
             >
-              Reset
+              초기화
             </Button>
             <div className="flex items-center gap-2 md:ml-4">
               <Label className="text-xs font-medium uppercase text-muted-foreground">
-                Jump to
+                날짜 이동
               </Label>
               <Input
                 type="date"
@@ -1311,7 +1903,7 @@ export function ActivityView({
                 onClick={jumpToDate}
                 disabled={isLoading}
               >
-                Go
+                이동
               </Button>
             </div>
           </div>
@@ -1326,8 +1918,8 @@ export function ActivityView({
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div className="text-sm text-muted-foreground">
-            Showing page {data.pageInfo.page} of {data.pageInfo.totalPages} (
-            {data.pageInfo.totalCount} items)
+            페이지 {data.pageInfo.page} / {data.pageInfo.totalPages} (총{" "}
+            {data.pageInfo.totalCount}건)
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs uppercase text-muted-foreground">
@@ -1371,6 +1963,8 @@ export function ActivityView({
                 repositoryLabel && numberLabel
                   ? `${repositoryLabel}${numberLabel}`
                   : (repositoryLabel ?? numberLabel);
+              const iconInfo = resolveActivityIcon(item);
+              const IconComponent = iconInfo.Icon;
 
               return (
                 <div
@@ -1389,12 +1983,15 @@ export function ActivityView({
                   >
                     <div className="flex flex-col gap-1">
                       <div className="flex items-center gap-2 text-sm text-foreground">
-                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium uppercase text-primary">
-                          {item.type === "pull_request"
-                            ? "PR"
-                            : item.type === "discussion"
-                              ? "Discussion"
-                              : "Issue"}
+                        <span
+                          className={cn(
+                            "inline-flex items-center justify-center rounded-full border border-border/60 bg-background p-1",
+                            iconInfo.className,
+                          )}
+                          title={iconInfo.label}
+                        >
+                          <IconComponent className="h-4 w-4" />
+                          <span className="sr-only">{iconInfo.label}</span>
                         </span>
                         {referenceLabel ? (
                           item.url ? (
@@ -1417,7 +2014,6 @@ export function ActivityView({
                         </span>
                       </div>
                       <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                        <span>Status: {item.status}</span>
                         {item.businessDaysOpen !== null &&
                           item.businessDaysOpen !== undefined && (
                             <span>
@@ -1508,26 +2104,28 @@ export function ActivityView({
               );
             })}
         </div>
-        <div className="flex items-center justify-between border-t border-border pt-3">
-          <Button
-            variant="outline"
-            onClick={() => changePage(data.pageInfo.page - 1)}
-            disabled={isLoading || data.pageInfo.page <= 1}
-          >
-            Previous
-          </Button>
+        <div className="flex flex-col items-center gap-3 border-t border-border pt-3">
           <span className="text-sm text-muted-foreground">
-            Page {data.pageInfo.page} / {data.pageInfo.totalPages}
+            페이지 {data.pageInfo.page} / {data.pageInfo.totalPages}
           </span>
-          <Button
-            variant="outline"
-            onClick={() => changePage(data.pageInfo.page + 1)}
-            disabled={
-              isLoading || data.pageInfo.page >= data.pageInfo.totalPages
-            }
-          >
-            Next
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => changePage(data.pageInfo.page - 1)}
+              disabled={isLoading || data.pageInfo.page <= 1}
+            >
+              이전
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => changePage(data.pageInfo.page + 1)}
+              disabled={
+                isLoading || data.pageInfo.page >= data.pageInfo.totalPages
+              }
+            >
+              다음
+            </Button>
+          </div>
         </div>
       </div>
     </div>
