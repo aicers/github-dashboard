@@ -175,6 +175,16 @@ const SCHEMA_STATEMENTS = [
   )`,
   `CREATE INDEX IF NOT EXISTS sync_log_resource_idx ON sync_log(resource)`,
   `CREATE INDEX IF NOT EXISTS sync_log_started_idx ON sync_log(started_at)`,
+  `CREATE TABLE IF NOT EXISTS activity_issue_status_history (
+    id SERIAL PRIMARY KEY,
+    issue_id TEXT NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK (status IN ('no_status', 'todo', 'in_progress', 'done', 'pending')),
+    occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    source TEXT NOT NULL DEFAULT 'activity',
+    inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS activity_issue_status_history_issue_idx ON activity_issue_status_history(issue_id)`,
+  `CREATE INDEX IF NOT EXISTS activity_issue_status_history_issue_occurred_idx ON activity_issue_status_history(issue_id, occurred_at DESC)`,
 ];
 
 let ensurePromise: Promise<void> | null = null;

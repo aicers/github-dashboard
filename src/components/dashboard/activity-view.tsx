@@ -37,6 +37,7 @@ import type {
   ActivityPullRequestStatusFilter,
   ActivityStatusFilter,
   ActivityThresholds,
+  IssueProjectStatus,
 } from "@/lib/activity/types";
 import { cn } from "@/lib/utils";
 
@@ -129,6 +130,10 @@ const ISSUE_STATUS_OPTIONS: Array<{
   { value: "done", label: "Done" },
   { value: "pending", label: "Pending" },
 ];
+
+const ISSUE_STATUS_LABEL_MAP = new Map(
+  ISSUE_STATUS_OPTIONS.map((option) => [option.value, option.label]),
+);
 
 const ISSUE_STATUS_VALUE_SET = new Set<ActivityStatusFilter>(
   ISSUE_STATUS_OPTIONS.map((option) => option.value),
@@ -926,6 +931,9 @@ export function ActivityView({
   const [loadingDetailIds, setLoadingDetailIds] = useState<Set<string>>(
     () => new Set<string>(),
   );
+  const [updatingStatusIds, setUpdatingStatusIds] = useState<Set<string>>(
+    () => new Set<string>(),
+  );
   const [jumpDate, setJumpDate] = useState("");
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
@@ -1437,6 +1445,102 @@ export function ActivityView({
       });
     }
   }, []);
+
+  const handleUpdateIssueStatus = useCallback(
+    async (item: ActivityItem, nextStatus: IssueProjectStatus) => {
+      if (item.type !== "issue") {
+        return;
+      }
+
+      const currentStatus = item.issueProjectStatus ?? "no_status";
+      if (currentStatus === nextStatus && nextStatus !== "no_status") {
+        return;
+      }
+
+      setUpdatingStatusIds((current) => {
+        if (current.has(item.id)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.add(item.id);
+        return next;
+      });
+
+      try {
+        const response = await fetch(
+          `/api/activity/${encodeURIComponent(item.id)}/status`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ status: nextStatus }),
+          },
+        );
+
+        if (!response.ok) {
+          let message = "상태를 변경하지 못했어요.";
+          try {
+            const error = (await response.json()) as {
+              error?: string;
+              todoStatus?: IssueProjectStatus;
+            };
+            if (response.status === 409 && error.todoStatus) {
+              const todoLabel =
+                ISSUE_STATUS_LABEL_MAP.get(error.todoStatus) ??
+                error.todoStatus;
+              message = `To-do 프로젝트 상태(${todoLabel})를 우선 적용하고 있어요.`;
+            } else if (typeof error.error === "string" && error.error.trim()) {
+              message = error.error;
+            }
+          } catch {
+            // Ignore JSON parse errors.
+          }
+          showNotification(message);
+          return;
+        }
+
+        const payload = (await response.json()) as { item?: ActivityItem };
+        const updatedItem = payload.item ?? item;
+
+        setData((current) => ({
+          ...current,
+          items: current.items.map((existing) =>
+            existing.id === updatedItem.id ? updatedItem : existing,
+          ),
+        }));
+        setDetailMap((current) => {
+          const existing = current[updatedItem.id];
+          if (!existing) {
+            return current;
+          }
+          return {
+            ...current,
+            [updatedItem.id]: { ...existing, item: updatedItem },
+          };
+        });
+
+        const label =
+          ISSUE_STATUS_LABEL_MAP.get(
+            updatedItem.issueProjectStatus ?? "no_status",
+          ) ?? "No Status";
+        showNotification(`상태를 ${label}로 업데이트했어요.`);
+      } catch (statusError) {
+        console.error(statusError);
+        showNotification("상태를 변경하지 못했어요.");
+      } finally {
+        setUpdatingStatusIds((current) => {
+          if (!current.has(item.id)) {
+            return current;
+          }
+          const next = new Set(current);
+          next.delete(item.id);
+          return next;
+        });
+      }
+    },
+    [showNotification],
+  );
 
   const handleSelectItem = useCallback(
     (id: string) => {
@@ -2295,6 +2399,32 @@ export function ActivityView({
                   : (repositoryLabel ?? numberLabel);
               const iconInfo = resolveActivityIcon(item);
               const IconComponent = iconInfo.Icon;
+              const isUpdatingStatus = updatingStatusIds.has(item.id);
+              const currentIssueStatus = item.issueProjectStatus ?? "no_status";
+              const statusLabel =
+                ISSUE_STATUS_LABEL_MAP.get(currentIssueStatus) ?? "No Status";
+              const statusSourceLabel =
+                item.issueProjectStatusSource === "todo_project"
+                  ? "To-do 프로젝트"
+                  : item.issueProjectStatusSource === "activity"
+                    ? "Activity"
+                    : "없음";
+              const todoStatusLabel = item.issueTodoProjectStatus
+                ? (ISSUE_STATUS_LABEL_MAP.get(item.issueTodoProjectStatus) ??
+                  item.issueTodoProjectStatus)
+                : "-";
+              const activityStatusLabel = item.issueActivityStatus
+                ? (ISSUE_STATUS_LABEL_MAP.get(item.issueActivityStatus) ??
+                  item.issueActivityStatus)
+                : "-";
+              const todoStatusTimestamp = item.issueTodoProjectStatusAt
+                ? formatDateTime(item.issueTodoProjectStatusAt, data.timezone)
+                : null;
+              const activityStatusTimestamp = item.issueActivityStatusAt
+                ? formatDateTime(item.issueActivityStatusAt, data.timezone)
+                : null;
+              const canEditStatus =
+                item.type === "issue" && !item.issueProjectStatusLocked;
 
               return (
                 <div
@@ -2411,6 +2541,94 @@ export function ActivityView({
                         </div>
                       ) : detail ? (
                         <div className="space-y-3">
+                          {item.type === "issue" && (
+                            <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-xs">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-semibold text-foreground">
+                                    {statusLabel}
+                                  </span>
+                                  <span className="text-muted-foreground/70">
+                                    {statusSourceLabel}
+                                  </span>
+                                </div>
+                                {isUpdatingStatus && (
+                                  <span className="text-muted-foreground/70">
+                                    업데이트 중...
+                                  </span>
+                                )}
+                              </div>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {ISSUE_STATUS_OPTIONS.map((option) => {
+                                  const optionStatus =
+                                    option.value as IssueProjectStatus;
+                                  const active =
+                                    currentIssueStatus === optionStatus;
+                                  return (
+                                    <Button
+                                      key={`status-action-${option.value}`}
+                                      type="button"
+                                      size="sm"
+                                      variant={active ? "default" : "outline"}
+                                      disabled={
+                                        isUpdatingStatus || !canEditStatus
+                                      }
+                                      onClick={() =>
+                                        handleUpdateIssueStatus(
+                                          item,
+                                          optionStatus,
+                                        )
+                                      }
+                                    >
+                                      {option.label}
+                                    </Button>
+                                  );
+                                })}
+                              </div>
+                              <dl className="mt-3 space-y-1 text-muted-foreground/80">
+                                <div className="flex items-center gap-2">
+                                  <dt className="min-w-[4rem] text-muted-foreground/60">
+                                    To-do
+                                  </dt>
+                                  <dd>
+                                    {todoStatusLabel}
+                                    {todoStatusTimestamp && (
+                                      <span className="ml-1 text-muted-foreground/50">
+                                        {todoStatusTimestamp}
+                                      </span>
+                                    )}
+                                  </dd>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <dt className="min-w-[4rem] text-muted-foreground/60">
+                                    Activity
+                                  </dt>
+                                  <dd>
+                                    {activityStatusLabel}
+                                    {activityStatusTimestamp && (
+                                      <span className="ml-1 text-muted-foreground/50">
+                                        {activityStatusTimestamp}
+                                      </span>
+                                    )}
+                                  </dd>
+                                </div>
+                              </dl>
+                              {item.issueProjectStatusLocked && (
+                                <p className="mt-2 text-amber-600">
+                                  To-do 프로젝트 상태({todoStatusLabel})로 잠겨
+                                  있어요.
+                                </p>
+                              )}
+                              {!item.issueProjectStatusLocked &&
+                                item.issueProjectStatusSource !==
+                                  "activity" && (
+                                  <p className="mt-2 text-muted-foreground">
+                                    Activity 상태는 To-do 프로젝트가 No Status
+                                    또는 Todo일 때만 적용돼요.
+                                  </p>
+                                )}
+                            </div>
+                          )}
                           <div className="whitespace-pre-wrap rounded-md border border-border bg-background px-4 py-3 text-sm">
                             {(() => {
                               if (!detail.body && !detail.bodyHtml) {

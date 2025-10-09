@@ -21,6 +21,7 @@ function createIssueRow(
     data: overrides.data ?? null,
     github_created_at: overrides.github_created_at,
     github_closed_at: overrides.github_closed_at,
+    activityStatusHistory: overrides.activityStatusHistory ?? [],
   };
 }
 
@@ -86,6 +87,63 @@ describe("analytics duration metrics", () => {
     expect(summary.parentWork).toBeCloseTo(48, 5);
     expect(summary.childWork).toBeCloseTo(48, 5);
     expect(summary.overallWork).toBeCloseTo(48, 5);
+  });
+
+  it("uses activity status history when to-do project lacks progress", () => {
+    const targetProject = "secondary";
+
+    const issue = createIssueRow({
+      github_created_at: "2024-02-01T00:00:00Z",
+      github_closed_at: "2024-02-10T00:00:00Z",
+      data: {
+        trackedIssues: { totalCount: 0 },
+        trackedInIssues: { totalCount: 1 },
+        projectStatusHistory: [],
+      },
+      activityStatusHistory: [
+        { status: "in_progress", occurredAt: "2024-02-02T00:00:00Z" },
+        { status: "done", occurredAt: "2024-02-06T00:00:00Z" },
+      ],
+    });
+
+    const summary = summarizeIssueDurations([issue], targetProject);
+
+    expect(summary.childWork).toBeCloseTo(96, 5);
+    expect(summary.overallWork).toBeCloseTo(96, 5);
+  });
+
+  it("defers to to-do project statuses when locked", () => {
+    const targetProject = "main";
+
+    const issue = createIssueRow({
+      github_created_at: "2024-03-01T00:00:00Z",
+      github_closed_at: "2024-03-15T00:00:00Z",
+      data: {
+        trackedIssues: { totalCount: 0 },
+        trackedInIssues: { totalCount: 1 },
+        projectStatusHistory: [
+          {
+            projectTitle: "Main",
+            status: "In Progress",
+            occurredAt: "2024-03-05T00:00:00Z",
+          },
+          {
+            projectTitle: "Main",
+            status: "Done",
+            occurredAt: "2024-03-12T00:00:00Z",
+          },
+        ],
+      },
+      activityStatusHistory: [
+        { status: "in_progress", occurredAt: "2024-03-03T00:00:00Z" },
+        { status: "done", occurredAt: "2024-03-08T00:00:00Z" },
+      ],
+    });
+
+    const summary = summarizeIssueDurations([issue], targetProject);
+
+    expect(summary.childWork).toBeCloseTo(168, 5);
+    expect(summary.overallWork).toBeCloseTo(168, 5);
   });
 
   it("builds five-period history series with normalized values", () => {

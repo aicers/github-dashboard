@@ -1,3 +1,8 @@
+import {
+  type ActivityStatusEvent,
+  getActivityStatusHistory,
+} from "@/lib/activity/status-store";
+import type { IssueProjectStatus } from "@/lib/activity/types";
 import { normalizeText } from "@/lib/dashboard/analytics/shared";
 import type { MultiTrendPoint } from "@/lib/dashboard/types";
 import { query } from "@/lib/db/client";
@@ -57,6 +62,7 @@ type IssueDurationDetailRow = {
   github_created_at: string | Date;
   github_closed_at: string | Date;
   data: unknown;
+  activityStatusHistory: ActivityStatusEvent[];
 };
 
 export async function fetchIssueDurationDetails(
@@ -78,7 +84,9 @@ export async function fetchIssueDurationDetails(
     authorClause = ` AND i.author_id = $${params.length}`;
   }
 
-  const result = await query<IssueDurationDetailRow>(
+  const result = await query<
+    Omit<IssueDurationDetailRow, "activityStatusHistory">
+  >(
     `SELECT
        i.id,
        i.github_created_at,
@@ -90,7 +98,17 @@ export async function fetchIssueDurationDetails(
     params,
   );
 
-  return result.rows;
+  const rows = result.rows;
+  if (!rows.length) {
+    return [];
+  }
+
+  const historyMap = await getActivityStatusHistory(rows.map((row) => row.id));
+
+  return rows.map((row) => ({
+    ...row,
+    activityStatusHistory: historyMap.get(row.id) ?? [],
+  }));
 }
 
 type IssueDurationSummary = {
@@ -271,29 +289,91 @@ function normalizeStatus(value: string | null): string | null {
   return value.trim().toLowerCase();
 }
 
-function isInProgressStatus(status: string) {
-  return (
-    status.includes("progress") ||
-    status === "doing" ||
-    status === "in-progress"
-  );
+function normalizeProjectStatus(value: string | null | undefined) {
+  if (!value) {
+    return "";
+  }
+
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_");
 }
 
-function isDoneStatus(status: string) {
-  return (
-    status === "done" ||
-    status === "completed" ||
-    status === "complete" ||
-    status === "finished" ||
-    status === "closed"
-  );
+function mapIssueProjectStatus(
+  value: string | null | undefined,
+): IssueProjectStatus {
+  const normalized = normalizeProjectStatus(value);
+
+  if (!normalized || normalized === "no" || normalized === "no_status") {
+    return "no_status";
+  }
+
+  if (normalized === "todo" || normalized === "to_do") {
+    return "todo";
+  }
+
+  if (
+    normalized.includes("in_progress") ||
+    normalized === "doing" ||
+    normalized === "in-progress"
+  ) {
+    return "in_progress";
+  }
+
+  if (
+    normalized === "done" ||
+    normalized === "completed" ||
+    normalized === "complete" ||
+    normalized === "finished" ||
+    normalized === "closed"
+  ) {
+    return "done";
+  }
+
+  if (normalized.startsWith("pending") || normalized === "waiting") {
+    return "pending";
+  }
+
+  return "no_status";
 }
 
-function extractWorkTimestamps(
+const ISSUE_PROJECT_STATUS_LOCKED = new Set<IssueProjectStatus>([
+  "in_progress",
+  "done",
+  "pending",
+]);
+
+type ProjectStatusEvent = {
+  status: string;
+  occurredAt: string;
+};
+
+type IssueStatusInfo = {
+  todoStatus: IssueProjectStatus | null;
+  todoStatusAt: string | null;
+  activityStatus: IssueProjectStatus | null;
+  activityStatusAt: string | null;
+  displayStatus: IssueProjectStatus;
+  source: "todo_project" | "activity" | "none";
+  locked: boolean;
+  timelineSource: "todo_project" | "activity" | "none";
+  projectEvents: ProjectStatusEvent[];
+  projectAddedAt: string | null;
+  activityEvents: ActivityStatusEvent[];
+};
+
+function collectProjectStatusEvents(
   raw: IssueRaw,
   targetProject: string | null,
-): WorkTimestamps {
-  const empty: WorkTimestamps = { startedAt: null, completedAt: null };
+): {
+  events: ProjectStatusEvent[];
+  projectAddedAt: string | null;
+} {
+  const empty = {
+    events: [] as ProjectStatusEvent[],
+    projectAddedAt: null as string | null,
+  };
   if (!targetProject) {
     return empty;
   }
@@ -302,7 +382,7 @@ function extractWorkTimestamps(
     ? (raw.timelineItems?.nodes as TimelineEventNode[])
     : [];
 
-  const statusEvents: Array<{ status: string; createdAt: string }> = [];
+  const statusEvents: ProjectStatusEvent[] = [];
   const seenStatusEvents = new Set<string>();
   let projectAddedAt: string | null = null;
 
@@ -324,7 +404,7 @@ function extractWorkTimestamps(
     }
 
     seenStatusEvents.add(key);
-    statusEvents.push({ status: normalizedStatus, createdAt });
+    statusEvents.push({ status: normalizedStatus, occurredAt: createdAt });
   };
 
   const addStatusEvent = (
@@ -493,32 +573,138 @@ function extractWorkTimestamps(
   }
 
   statusEvents.sort((a, b) => {
-    const left = parseTimestamp(a.createdAt) ?? 0;
-    const right = parseTimestamp(b.createdAt) ?? 0;
+    const left = parseTimestamp(a.occurredAt) ?? 0;
+    const right = parseTimestamp(b.occurredAt) ?? 0;
     return left - right;
   });
 
-  let startedAt: string | null = null;
-  let completedAt: string | null = null;
+  return { events: statusEvents, projectAddedAt };
+}
 
-  for (const event of statusEvents) {
-    if (!startedAt && isInProgressStatus(event.status)) {
-      startedAt = event.createdAt;
-    }
+function resolveIssueStatusInfo(
+  raw: IssueRaw,
+  targetProject: string | null,
+  activityEvents: ActivityStatusEvent[],
+): IssueStatusInfo {
+  const timeline = collectProjectStatusEvents(raw, targetProject);
+  const projectEvents = timeline.events;
+  const latestProjectEvent =
+    projectEvents.length > 0 ? projectEvents[projectEvents.length - 1] : null;
+  const todoStatus = latestProjectEvent
+    ? mapIssueProjectStatus(latestProjectEvent.status)
+    : timeline.projectAddedAt
+      ? "no_status"
+      : null;
+  const todoStatusAt = latestProjectEvent
+    ? latestProjectEvent.occurredAt
+    : timeline.projectAddedAt;
 
-    if (!completedAt && isDoneStatus(event.status)) {
-      completedAt = event.createdAt;
-      if (startedAt) {
-        break;
+  const latestActivityEvent =
+    activityEvents.length > 0
+      ? activityEvents[activityEvents.length - 1]
+      : null;
+  const activityStatus = latestActivityEvent?.status ?? null;
+  const activityStatusAt = latestActivityEvent?.occurredAt ?? null;
+  const locked =
+    todoStatus != null && ISSUE_PROJECT_STATUS_LOCKED.has(todoStatus);
+
+  let displayStatus: IssueProjectStatus = "no_status";
+  let source: IssueStatusInfo["source"] = "none";
+
+  if (todoStatus && (locked || !activityStatus)) {
+    displayStatus = todoStatus;
+    source = "todo_project";
+  } else if (activityStatus && !locked) {
+    displayStatus = activityStatus;
+    source = "activity";
+  } else if (todoStatus) {
+    displayStatus = todoStatus;
+    source = "todo_project";
+  }
+
+  let timelineSource: IssueStatusInfo["timelineSource"] = "none";
+  if (locked) {
+    timelineSource = "todo_project";
+  } else if (activityEvents.length > 0) {
+    timelineSource = "activity";
+  } else if (projectEvents.length > 0 || timeline.projectAddedAt) {
+    timelineSource = "todo_project";
+  }
+
+  return {
+    todoStatus,
+    todoStatusAt,
+    activityStatus,
+    activityStatusAt,
+    displayStatus,
+    source,
+    locked,
+    timelineSource,
+    projectEvents,
+    projectAddedAt: timeline.projectAddedAt,
+    activityEvents,
+  };
+}
+
+function resolveWorkTimestamps(info: IssueStatusInfo | null): WorkTimestamps {
+  if (!info) {
+    return { startedAt: null, completedAt: null };
+  }
+
+  if (info.timelineSource === "activity") {
+    let startedAt: string | null = null;
+    let completedAt: string | null = null;
+    info.activityEvents.forEach((event) => {
+      switch (event.status) {
+        case "in_progress":
+          startedAt = event.occurredAt;
+          completedAt = null;
+          break;
+        case "done":
+          if (startedAt && !completedAt) {
+            completedAt = event.occurredAt;
+          }
+          break;
+        case "todo":
+        case "no_status":
+          startedAt = null;
+          completedAt = null;
+          break;
+        default:
+          break;
       }
+    });
+    return { startedAt, completedAt };
+  }
+
+  if (info.timelineSource === "todo_project") {
+    let startedAt: string | null = null;
+    let completedAt: string | null = null;
+    info.projectEvents.forEach((event) => {
+      const mapped = mapIssueProjectStatus(event.status);
+      if (mapped === "in_progress") {
+        startedAt = event.occurredAt;
+        completedAt = null;
+        return;
+      }
+      if (mapped === "done") {
+        if (startedAt && !completedAt) {
+          completedAt = event.occurredAt;
+        }
+        return;
+      }
+      if (mapped === "todo" || mapped === "no_status") {
+        startedAt = null;
+        completedAt = null;
+      }
+    });
+    if (!startedAt && info.projectAddedAt) {
+      startedAt = info.projectAddedAt;
     }
+    return { startedAt, completedAt };
   }
 
-  if (!startedAt && projectAddedAt) {
-    startedAt = projectAddedAt;
-  }
-
-  return { startedAt, completedAt };
+  return { startedAt: null, completedAt: null };
 }
 
 export function summarizeIssueDurations(
@@ -549,10 +735,12 @@ export function summarizeIssueDurations(
     }
 
     if (targetProject && raw) {
-      const { startedAt, completedAt } = extractWorkTimestamps(
+      const statusInfo = resolveIssueStatusInfo(
         raw,
         targetProject,
+        row.activityStatusHistory,
       );
+      const { startedAt, completedAt } = resolveWorkTimestamps(statusInfo);
       const workHours = calculateHoursBetween(startedAt, completedAt);
       addSample(overallWork, workHours);
       if (classification.isParent) {
@@ -623,10 +811,12 @@ export function buildMonthlyDurationTrend(
     if (targetProject) {
       const raw = parseIssueRaw(row.data);
       if (raw) {
-        const { startedAt, completedAt } = extractWorkTimestamps(
+        const statusInfo = resolveIssueStatusInfo(
           raw,
           targetProject,
+          row.activityStatusHistory,
         );
+        const { startedAt, completedAt } = resolveWorkTimestamps(statusInfo);
         const workHours = calculateHoursBetween(startedAt, completedAt);
         addSample(bucket.work, workHours);
       }
