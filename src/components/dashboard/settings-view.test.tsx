@@ -197,11 +197,13 @@ describe("SettingsView", () => {
 
     await user.click(screen.getByRole("button", { name: "조직 설정 저장" }));
 
-    expect(
-      screen.getByText("동기화 주기는 1 이상의 정수여야 합니다.", {
-        selector: "p",
-      }),
-    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByText("동기화 주기는 1 이상의 정수여야 합니다.", {
+          selector: "p",
+        }),
+      ).toBeInTheDocument();
+    });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
