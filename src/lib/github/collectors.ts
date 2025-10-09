@@ -62,6 +62,35 @@ type RepositoryNode = {
   owner?: GithubActor | null;
 };
 
+type IssueTypeNode = {
+  id: string;
+  name?: string | null;
+};
+
+type MilestoneNode = {
+  id: string;
+  title?: string | null;
+  state?: string | null;
+  dueOn?: string | null;
+  url?: string | null;
+};
+
+type IssueRelationNode = {
+  id: string;
+  number: number;
+  title?: string | null;
+  url?: string | null;
+  state?: string | null;
+  repository?: {
+    nameWithOwner?: string | null;
+  } | null;
+};
+
+type IssueRelationConnection = {
+  totalCount?: number | null;
+  nodes?: IssueRelationNode[] | null;
+};
+
 type IssueNode = {
   id: string;
   number: number;
@@ -76,8 +105,10 @@ type IssueNode = {
   bodyHTML?: string | null;
   bodyMarkdown?: string | null;
   author?: GithubActor | null;
-  trackedIssues?: { totalCount?: number | null } | null;
-  trackedInIssues?: { totalCount?: number | null } | null;
+  issueType?: IssueTypeNode | null;
+  milestone?: MilestoneNode | null;
+  trackedIssues?: IssueRelationConnection | null;
+  trackedInIssues?: IssueRelationConnection | null;
   timelineItems?: {
     nodes: IssueTimelineItem[] | null;
   } | null;

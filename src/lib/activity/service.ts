@@ -2,11 +2,14 @@ import type {
   ActivityAttentionFilter,
   ActivityAttentionFlags,
   ActivityFilterOptions,
+  ActivityIssueBaseStatusFilter,
   ActivityItem,
   ActivityItemDetail,
   ActivityLabel,
+  ActivityLinkedIssue,
   ActivityListParams,
   ActivityListResult,
+  ActivityPullRequestStatusFilter,
   ActivityStatusFilter,
   ActivityThresholds,
   ActivityUser,
@@ -45,6 +48,34 @@ const ISSUE_PROJECT_STATUS_VALUES: IssueProjectStatus[] = [
 
 const ISSUE_PROJECT_STATUS_SET = new Set(ISSUE_PROJECT_STATUS_VALUES);
 
+const PR_STATUS_VALUES: ActivityPullRequestStatusFilter[] = [
+  "pr_open",
+  "pr_merged",
+  "pr_closed",
+];
+
+const PR_STATUS_MAP: Record<
+  ActivityPullRequestStatusFilter,
+  "open" | "closed" | "merged"
+> = {
+  pr_open: "open",
+  pr_merged: "merged",
+  pr_closed: "closed",
+};
+
+const ISSUE_BASE_STATUS_VALUES: ActivityIssueBaseStatusFilter[] = [
+  "issue_open",
+  "issue_closed",
+];
+
+const ISSUE_BASE_STATUS_MAP: Record<
+  ActivityIssueBaseStatusFilter,
+  "open" | "closed"
+> = {
+  issue_open: "open",
+  issue_closed: "closed",
+};
+
 type ActivityRow = {
   item_type: "issue" | "pull_request" | "discussion";
   id: string;
@@ -64,6 +95,15 @@ type ActivityRow = {
   reactor_ids: string[] | null;
   label_keys: string[] | null;
   label_names: string[] | null;
+  issue_type_id: string | null;
+  issue_type_name: string | null;
+  milestone_id: string | null;
+  milestone_title: string | null;
+  milestone_state: string | null;
+  milestone_due_on: string | null;
+  milestone_url: string | null;
+  tracked_issues_count: number | null;
+  tracked_in_issues_count: number | null;
   created_at: string | null;
   updated_at: string | null;
   closed_at: string | null;
@@ -152,6 +192,72 @@ function buildLabels(row: ActivityRow): ActivityLabel[] {
     repositoryId,
     repositoryNameWithOwner: repoNameWithOwner,
   }));
+}
+
+function extractLinkedIssues(connection: unknown): ActivityLinkedIssue[] {
+  if (!connection || typeof connection !== "object") {
+    return [];
+  }
+
+  const nodes = (connection as { nodes?: unknown }).nodes;
+  if (!Array.isArray(nodes)) {
+    return [];
+  }
+
+  const result: ActivityLinkedIssue[] = [];
+  nodes.forEach((entry) => {
+    if (!entry || typeof entry !== "object") {
+      return;
+    }
+
+    const record = entry as Record<string, unknown>;
+    const id = typeof record.id === "string" ? record.id : null;
+    if (!id) {
+      return;
+    }
+
+    const numberValue = record.number;
+    let issueNumber: number | null = null;
+    if (typeof numberValue === "number" && Number.isFinite(numberValue)) {
+      issueNumber = numberValue;
+    } else if (typeof numberValue === "string") {
+      const parsed = Number.parseInt(numberValue, 10);
+      if (Number.isFinite(parsed)) {
+        issueNumber = parsed;
+      }
+    }
+    const title =
+      typeof record.title === "string" && record.title.trim().length
+        ? record.title
+        : null;
+    const state =
+      typeof record.state === "string" && record.state.trim().length
+        ? record.state
+        : null;
+    const url =
+      typeof record.url === "string" && record.url.trim().length
+        ? record.url
+        : null;
+    const repository =
+      record.repository && typeof record.repository === "object"
+        ? (record.repository as { nameWithOwner?: unknown })
+        : null;
+    const repositoryNameWithOwner =
+      repository && typeof repository.nameWithOwner === "string"
+        ? repository.nameWithOwner
+        : null;
+
+    result.push({
+      id,
+      number: issueNumber,
+      title,
+      state,
+      repositoryNameWithOwner,
+      url,
+    });
+  });
+
+  return result;
 }
 
 function normalizeText(value: string | null | undefined) {
@@ -514,6 +620,42 @@ function buildQueryFilters(
     clauses.push(`items.label_keys && $${values.length}::text[]`);
   }
 
+  if (params.issueTypeIds?.length) {
+    values.push(params.issueTypeIds);
+    clauses.push(
+      `(items.item_type <> 'issue' OR items.issue_type_id = ANY($${values.length}::text[]))`,
+    );
+  }
+
+  if (params.milestoneIds?.length) {
+    values.push(params.milestoneIds);
+    clauses.push(
+      `(items.item_type <> 'issue' OR items.milestone_id = ANY($${values.length}::text[]))`,
+    );
+  }
+
+  if (params.pullRequestStatuses?.length) {
+    const unique = Array.from(new Set(params.pullRequestStatuses));
+    if (unique.length > 0 && unique.length < PR_STATUS_VALUES.length) {
+      const mapped = unique.map((status) => PR_STATUS_MAP[status]);
+      values.push(mapped);
+      clauses.push(
+        `(items.item_type <> 'pull_request' OR items.status = ANY($${values.length}::text[]))`,
+      );
+    }
+  }
+
+  if (params.issueBaseStatuses?.length) {
+    const unique = Array.from(new Set(params.issueBaseStatuses));
+    if (unique.length > 0 && unique.length < ISSUE_BASE_STATUS_VALUES.length) {
+      const mapped = unique.map((status) => ISSUE_BASE_STATUS_MAP[status]);
+      values.push(mapped);
+      clauses.push(
+        `(items.item_type <> 'issue' OR items.status = ANY($${values.length}::text[]))`,
+      );
+    }
+  }
+
   if (params.authorIds?.length) {
     values.push(params.authorIds);
     clauses.push(`items.author_id = ANY($${values.length}::text[])`);
@@ -548,6 +690,20 @@ function buildQueryFilters(
   if (params.reactorIds?.length) {
     values.push(params.reactorIds);
     clauses.push(`items.reactor_ids && $${values.length}::text[]`);
+  }
+
+  if (params.linkedIssueStates?.length) {
+    const filters = new Set(params.linkedIssueStates);
+    if (filters.has("has_sub")) {
+      clauses.push(
+        `(items.item_type <> 'issue' OR items.tracked_issues_count > 0)`,
+      );
+    }
+    if (filters.has("has_parent")) {
+      clauses.push(
+        `(items.item_type <> 'issue' OR items.tracked_issues_count = 0)`,
+      );
+    }
   }
 
   if (params.statuses?.length) {
@@ -644,6 +800,37 @@ WITH issue_items AS (
     COALESCE(reactors.reactor_ids, ARRAY[]::text[]) AS reactor_ids,
     COALESCE(labels.label_keys, ARRAY[]::text[]) AS label_keys,
     COALESCE(labels.label_names, ARRAY[]::text[]) AS label_names,
+    COALESCE(
+      NULLIF(i.data->'issueType'->>'id', ''),
+      CASE
+        WHEN COALESCE(labels.has_bug_label, FALSE) THEN 'label:issue_type:bug'
+        WHEN COALESCE(labels.has_feature_label, FALSE) THEN 'label:issue_type:feature'
+        WHEN COALESCE(labels.has_task_label, FALSE) THEN 'label:issue_type:task'
+        ELSE NULL
+      END
+    ) AS issue_type_id,
+    COALESCE(
+      NULLIF(i.data->'issueType'->>'name', ''),
+      CASE
+        WHEN COALESCE(labels.has_bug_label, FALSE) THEN 'Bug'
+        WHEN COALESCE(labels.has_feature_label, FALSE) THEN 'Feature'
+        WHEN COALESCE(labels.has_task_label, FALSE) THEN 'Task'
+        ELSE NULL
+      END
+    ) AS issue_type_name,
+    NULLIF(i.data->'milestone'->>'id', '') AS milestone_id,
+    NULLIF(i.data->'milestone'->>'title', '') AS milestone_title,
+    NULLIF(i.data->'milestone'->>'state', '') AS milestone_state,
+    NULLIF(i.data->'milestone'->>'dueOn', '') AS milestone_due_on,
+    NULLIF(i.data->'milestone'->>'url', '') AS milestone_url,
+    COALESCE(
+      NULLIF(i.data->'trackedIssues'->>'totalCount', '')::integer,
+      0
+    ) AS tracked_issues_count,
+    COALESCE(
+      NULLIF(i.data->'trackedInIssues'->>'totalCount', '')::integer,
+      0
+    ) AS tracked_in_issues_count,
     i.github_created_at AS created_at,
     i.github_updated_at AS updated_at,
     i.github_closed_at AS closed_at,
@@ -681,7 +868,10 @@ WITH issue_items AS (
   LEFT JOIN LATERAL (
     SELECT
       ARRAY_AGG(DISTINCT CONCAT(repo.name_with_owner, ':', label_node->>'name')) FILTER (WHERE label_node->>'name' IS NOT NULL) AS label_keys,
-      ARRAY_AGG(DISTINCT label_node->>'name') FILTER (WHERE label_node->>'name' IS NOT NULL) AS label_names
+      ARRAY_AGG(DISTINCT label_node->>'name') FILTER (WHERE label_node->>'name' IS NOT NULL) AS label_names,
+      BOOL_OR(LOWER(label_node->>'name') = 'bug') AS has_bug_label,
+      BOOL_OR(LOWER(label_node->>'name') IN ('feature', 'feature request', 'enhancement')) AS has_feature_label,
+      BOOL_OR(LOWER(label_node->>'name') IN ('task', 'todo', 'chore')) AS has_task_label
     FROM jsonb_array_elements(COALESCE(i.data->'labels'->'nodes', '[]'::jsonb)) AS label_node
   ) labels ON TRUE
   LEFT JOIN LATERAL (
@@ -721,6 +911,15 @@ pr_items AS (
     COALESCE(reactors.reactor_ids, ARRAY[]::text[]) AS reactor_ids,
     COALESCE(labels.label_keys, ARRAY[]::text[]) AS label_keys,
     COALESCE(labels.label_names, ARRAY[]::text[]) AS label_names,
+    NULL::text AS issue_type_id,
+    NULL::text AS issue_type_name,
+    NULL::text AS milestone_id,
+    NULL::text AS milestone_title,
+    NULL::text AS milestone_state,
+    NULL::text AS milestone_due_on,
+    NULL::text AS milestone_url,
+    0::integer AS tracked_issues_count,
+    0::integer AS tracked_in_issues_count,
     pr.github_created_at AS created_at,
     pr.github_updated_at AS updated_at,
     pr.github_closed_at AS closed_at,
@@ -923,6 +1122,27 @@ function buildActivityItem(
       ? mapIssueProjectStatus(row.issue_project_status)
       : null;
   const labels = buildLabels(row);
+  const hasParentIssue =
+    row.item_type === "issue" && (row.tracked_in_issues_count ?? 0) > 0;
+  const hasSubIssues =
+    row.item_type === "issue" && (row.tracked_issues_count ?? 0) > 0;
+  const issueType =
+    row.item_type === "issue" && row.issue_type_id
+      ? {
+          id: row.issue_type_id,
+          name: row.issue_type_name ?? null,
+        }
+      : null;
+  const milestone =
+    row.item_type === "issue" && row.milestone_id
+      ? {
+          id: row.milestone_id,
+          title: row.milestone_title ?? null,
+          state: row.milestone_state ?? null,
+          dueOn: toIso(row.milestone_due_on),
+          url: row.milestone_url ?? null,
+        }
+      : null;
 
   const author = mapUser(row.author_id, users);
   const assignees = mapUsers(coerceArray(row.assignee_ids), users);
@@ -992,6 +1212,10 @@ function buildActivityItem(
     commenters,
     reactors,
     labels,
+    issueType,
+    milestone,
+    hasParentIssue,
+    hasSubIssues,
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
     closedAt: toIso(row.closed_at),
@@ -1030,23 +1254,29 @@ function toRawObject(value: unknown) {
 export async function getActivityFilterOptions(): Promise<ActivityFilterOptions> {
   await ensureSchema();
 
-  const [repositoriesResult, labelsResult, usersResult, syncConfig] =
-    await Promise.all([
-      query<{
-        id: string;
-        name: string | null;
-        name_with_owner: string | null;
-      }>(
-        `SELECT id, name, name_with_owner
+  const [
+    repositoriesResult,
+    labelsResult,
+    usersResult,
+    issueTypesResult,
+    milestonesResult,
+    syncConfig,
+  ] = await Promise.all([
+    query<{
+      id: string;
+      name: string | null;
+      name_with_owner: string | null;
+    }>(
+      `SELECT id, name, name_with_owner
        FROM repositories
        ORDER BY name_with_owner`,
-      ),
-      query<{
-        repository_id: string;
-        repository_name_with_owner: string | null;
-        label_name: string;
-      }>(
-        `SELECT DISTINCT
+    ),
+    query<{
+      repository_id: string;
+      repository_name_with_owner: string | null;
+      label_name: string;
+    }>(
+      `SELECT DISTINCT
          repo.id AS repository_id,
          repo.name_with_owner AS repository_name_with_owner,
          label_node->>'name' AS label_name
@@ -1064,19 +1294,95 @@ export async function getActivityFilterOptions(): Promise<ActivityFilterOptions>
        CROSS JOIN LATERAL jsonb_array_elements(COALESCE(pr.data->'labels'->'nodes', '[]'::jsonb)) AS label_node
        WHERE label_node->>'name' IS NOT NULL
        ORDER BY repository_name_with_owner, label_name`,
-      ),
-      query<{
-        id: string;
-        login: string | null;
-        name: string | null;
-        avatar_url: string | null;
-      }>(
-        `SELECT id, login, name, avatar_url
+    ),
+    query<{
+      id: string;
+      login: string | null;
+      name: string | null;
+      avatar_url: string | null;
+    }>(
+      `SELECT id, login, name, avatar_url
          FROM users
          ORDER BY LOWER(COALESCE(NULLIF(login, ''), NULLIF(name, ''), id))`,
-      ),
-      getSyncConfig(),
-    ]);
+    ),
+    query<{
+      id: string | null;
+      name: string | null;
+    }>(
+      `SELECT id, name
+       FROM (
+         SELECT
+           COALESCE(
+             NULLIF(i.data->'issueType'->>'id', ''),
+             CASE
+               WHEN EXISTS (
+                 SELECT 1
+                 FROM jsonb_array_elements(COALESCE(i.data->'labels'->'nodes', '[]'::jsonb)) AS label_node
+                 WHERE LOWER(label_node->>'name') = 'bug'
+               ) THEN 'label:issue_type:bug'
+               WHEN EXISTS (
+                 SELECT 1
+                 FROM jsonb_array_elements(COALESCE(i.data->'labels'->'nodes', '[]'::jsonb)) AS label_node
+                 WHERE LOWER(label_node->>'name') IN ('feature', 'feature request', 'enhancement')
+               ) THEN 'label:issue_type:feature'
+               WHEN EXISTS (
+                 SELECT 1
+                 FROM jsonb_array_elements(COALESCE(i.data->'labels'->'nodes', '[]'::jsonb)) AS label_node
+                 WHERE LOWER(label_node->>'name') IN ('task', 'todo', 'chore')
+               ) THEN 'label:issue_type:task'
+               ELSE NULL
+             END
+           ) AS id,
+           COALESCE(
+             NULLIF(i.data->'issueType'->>'name', ''),
+             CASE
+               WHEN EXISTS (
+                 SELECT 1
+                 FROM jsonb_array_elements(COALESCE(i.data->'labels'->'nodes', '[]'::jsonb)) AS label_node
+                 WHERE LOWER(label_node->>'name') = 'bug'
+               ) THEN 'Bug'
+               WHEN EXISTS (
+                 SELECT 1
+                 FROM jsonb_array_elements(COALESCE(i.data->'labels'->'nodes', '[]'::jsonb)) AS label_node
+                 WHERE LOWER(label_node->>'name') IN ('feature', 'feature request', 'enhancement')
+               ) THEN 'Feature'
+               WHEN EXISTS (
+                 SELECT 1
+                 FROM jsonb_array_elements(COALESCE(i.data->'labels'->'nodes', '[]'::jsonb)) AS label_node
+                 WHERE LOWER(label_node->>'name') IN ('task', 'todo', 'chore')
+               ) THEN 'Task'
+               ELSE NULL
+             END
+           ) AS name
+         FROM issues i
+       ) AS issue_types
+       WHERE id IS NOT NULL
+       GROUP BY id, name
+       ORDER BY LOWER(COALESCE(NULLIF(name, ''), id))`,
+    ),
+    query<{
+      id: string | null;
+      title: string | null;
+      state: string | null;
+      due_on: string | null;
+      url: string | null;
+    }>(
+      `SELECT id, title, state, due_on, url
+       FROM (
+         SELECT
+           NULLIF(i.data->'milestone'->>'id', '') AS id,
+           NULLIF(i.data->'milestone'->>'title', '') AS title,
+           NULLIF(i.data->'milestone'->>'state', '') AS state,
+           NULLIF(i.data->'milestone'->>'dueOn', '') AS due_on,
+           NULLIF(i.data->'milestone'->>'url', '') AS url
+         FROM issues i
+       ) AS milestones
+       WHERE id IS NOT NULL
+       GROUP BY id, title, state, due_on, url
+       ORDER BY LOWER(COALESCE(NULLIF(title, ''), id))`,
+    ),
+    getSyncConfig(),
+  ]);
 
   const repositories = repositoriesResult.rows.map((row) => ({
     id: row.id,
@@ -1090,6 +1396,23 @@ export async function getActivityFilterOptions(): Promise<ActivityFilterOptions>
     repositoryId: row.repository_id,
     repositoryNameWithOwner: row.repository_name_with_owner,
   }));
+
+  const issueTypes = issueTypesResult.rows
+    .filter((row) => typeof row.id === "string" && row.id.length > 0)
+    .map((row) => ({
+      id: row.id as string,
+      name: row.name ?? null,
+    }));
+
+  const milestones = milestonesResult.rows
+    .filter((row) => typeof row.id === "string" && row.id.length > 0)
+    .map((row) => ({
+      id: row.id as string,
+      title: row.title ?? null,
+      state: row.state ?? null,
+      dueOn: row.due_on ?? null,
+      url: row.url ?? null,
+    }));
 
   const excludedUserIds = new Set<string>(
     Array.isArray(syncConfig?.excluded_user_ids)
@@ -1136,7 +1459,7 @@ export async function getActivityFilterOptions(): Promise<ActivityFilterOptions>
       return normalize(first).localeCompare(normalize(second));
     });
 
-  return { repositories, labels, users };
+  return { repositories, labels, users, issueTypes, milestones };
 }
 
 export async function getActivityItems(
@@ -1360,10 +1683,23 @@ export async function getActivityItemDetail(
     bodyHtml = (rawObject as { bodyHtml: string }).bodyHtml;
   }
 
+  const parentIssues = extractLinkedIssues(
+    rawObject && typeof rawObject === "object"
+      ? (rawObject as { trackedInIssues?: unknown }).trackedInIssues
+      : undefined,
+  );
+  const subIssues = extractLinkedIssues(
+    rawObject && typeof rawObject === "object"
+      ? (rawObject as { trackedIssues?: unknown }).trackedIssues
+      : undefined,
+  );
+
   return {
     item,
     body,
     bodyHtml,
     raw: rawObject ?? row.raw_data ?? null,
+    parentIssues,
+    subIssues,
   };
 }

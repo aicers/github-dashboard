@@ -1,7 +1,10 @@
 import type {
   ActivityAttentionFilter,
+  ActivityIssueBaseStatusFilter,
   ActivityItemType,
+  ActivityLinkedIssueFilter,
   ActivityListParams,
+  ActivityPullRequestStatusFilter,
   ActivityStatusFilter,
   ActivityThresholds,
 } from "@/lib/activity/types";
@@ -108,6 +111,18 @@ export function parseActivityListParams(
     types: categoryValues,
     repositoryIds: parseStringList(searchParams, "repositoryId"),
     labelKeys: parseStringList(searchParams, "labelKey"),
+    issueTypeIds: parseStringList(searchParams, "issueTypeId"),
+    milestoneIds: parseStringList(searchParams, "milestoneId"),
+    pullRequestStatuses: parseEnumValues<ActivityPullRequestStatusFilter>(
+      searchParams,
+      "prStatus",
+      ["pr_open", "pr_merged", "pr_closed"],
+    ),
+    issueBaseStatuses: parseEnumValues<ActivityIssueBaseStatusFilter>(
+      searchParams,
+      "issueBaseStatus",
+      ["issue_open", "issue_closed"],
+    ),
     authorIds: parseStringList(searchParams, "authorId"),
     assigneeIds: parseStringList(searchParams, "assigneeId"),
     reviewerIds: parseStringList(searchParams, "reviewerId"),
@@ -135,6 +150,11 @@ export function parseActivityListParams(
         "issue_backlog",
         "issue_stalled",
       ],
+    ),
+    linkedIssueStates: parseEnumValues<ActivityLinkedIssueFilter>(
+      searchParams,
+      "linkedIssue",
+      ["has_parent", "has_sub"],
     ),
     search: searchParams.get("search"),
     jumpToDate: searchParams.get("jumpTo"),

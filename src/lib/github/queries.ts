@@ -139,9 +139,40 @@ export const repositoryIssuesQuery = gql`
           }
           trackedIssues(first: 10) {
             totalCount
+            nodes {
+              id
+              number
+              title
+              url
+              state
+              repository {
+                nameWithOwner
+              }
+            }
           }
           trackedInIssues(first: 10) {
             totalCount
+            nodes {
+              id
+              number
+              title
+              url
+              state
+              repository {
+                nameWithOwner
+              }
+            }
+          }
+          issueType {
+            id
+            name
+          }
+          milestone {
+            id
+            title
+            state
+            dueOn
+            url
           }
           timelineItems(
             last: 50,
