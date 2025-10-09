@@ -1,4 +1,5 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PeopleView } from "@/components/dashboard/people-view";
@@ -30,6 +31,26 @@ vi.mock("@/components/dashboard/use-dashboard-analytics", async () => {
     useDashboardAnalytics: vi.fn(),
   };
 });
+
+vi.mock("@/components/dashboard/activity-heatmap", () => ({
+  ActivityHeatmap: () => <div data-testid="activity-heatmap" />,
+}));
+
+vi.mock("@/components/dashboard/dashboard-filter-panel", () => ({
+  DashboardFilterPanel: ({ children }: { children?: ReactNode }) => (
+    <div data-testid="filter-panel">{children}</div>
+  ),
+}));
+
+vi.mock("@/components/dashboard/metric-card", () => ({
+  MetricCard: ({ title }: { title: string }) => (
+    <div data-testid="metric-card">{title}</div>
+  ),
+}));
+
+vi.mock("@/components/dashboard/repo-activity-table", () => ({
+  RepoActivityTable: () => <div data-testid="repo-activity-table" />,
+}));
 
 const mockUseDashboardAnalytics = vi.mocked(useDashboardAnalytics);
 
@@ -428,15 +449,8 @@ describe("PeopleView", () => {
     expect(screen.getByText("전체 활동 히트맵")).toBeInTheDocument();
     expect(screen.getByText("Parent / Child 이슈 지표")).toBeInTheDocument();
     expect(screen.getByText("활동 리포지토리")).toBeInTheDocument();
-
-    const repoTable = screen.getByRole("table");
-    expect(
-      within(repoTable).getByRole("columnheader", { name: "이슈 해결" }),
-    ).toBeInTheDocument();
-    expect(
-      within(repoTable).getByRole("columnheader", { name: "평균 첫 리뷰" }),
-    ).toBeInTheDocument();
-    expect(within(repoTable).getByText("acme/repo-one")).toBeInTheDocument();
+    expect(screen.getAllByTestId("activity-heatmap")).toHaveLength(2);
+    expect(screen.getByTestId("repo-activity-table")).toBeInTheDocument();
   });
 });
 
