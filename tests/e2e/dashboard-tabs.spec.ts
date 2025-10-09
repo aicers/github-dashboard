@@ -11,20 +11,22 @@ test.describe("Dashboard navigation (Playwright)", () => {
     await expect(page).toHaveURL(/https:\/\/github\.com\/login/);
   });
 
-  test("redirects /dashboard to /dashboard/analytics", async ({ page }) => {
+  test("redirects /dashboard to /dashboard/activity", async ({ page }) => {
     await page.goto("/test-harness/auth/session?userId=e2e-user");
     await page.goto(DASHBOARD_ROOT);
-    await expect(page).toHaveURL(/\/dashboard\/analytics$/);
+    await expect(page).toHaveURL(/\/dashboard\/activity$/);
   });
 
   test("highlights active tab and updates on navigation", async ({ page }) => {
     await page.goto(DASHBOARD_TABS_PATH);
 
     const currentPath = page.getByTestId("current-path");
-    await expect(currentPath).toContainText("/dashboard/analytics");
+    await expect(currentPath).toContainText("/dashboard/activity");
 
+    const activityTab = page.getByRole("link", { name: "Activity" });
+    await expect(activityTab).toHaveClass(/text-primary/);
     const analyticsTab = page.getByRole("link", { name: "Analytics" });
-    await expect(analyticsTab).toHaveClass(/text-primary/);
+    await expect(analyticsTab).toHaveAttribute("href", "/dashboard/analytics");
     const peopleTab = page.getByRole("link", { name: "People" });
     await expect(peopleTab).toHaveAttribute("href", "/dashboard/people");
 

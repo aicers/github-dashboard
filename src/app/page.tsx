@@ -50,7 +50,9 @@ export default function Home() {
             size="lg"
             className="bg-blue-500 text-white shadow-lg shadow-blue-900/40 hover:bg-blue-400"
           >
-            <Link href="/auth/github?next=/dashboard">GitHub으로 로그인</Link>
+            <Link href="/auth/github?next=/dashboard/activity">
+              GitHub으로 로그인
+            </Link>
           </Button>
         </div>
       </section>
