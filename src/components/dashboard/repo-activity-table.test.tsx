@@ -1,7 +1,12 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { RepoActivityTable } from "@/components/dashboard/repo-activity-table";
+import {
+  REPO_ACTIVITY_SORT_DEFAULT_DIRECTION,
+  type RepoActivitySortKey,
+  RepoActivityTable,
+  sortRepoActivityItems,
+} from "@/components/dashboard/repo-activity-table";
 import type { RepoComparisonRow } from "@/lib/dashboard/types";
 
 function getRepositoryOrder() {
@@ -12,62 +17,140 @@ function getRepositoryOrder() {
   });
 }
 
-describe("RepoActivityTable sorting", () => {
-  const items: RepoComparisonRow[] = [
+const items: RepoComparisonRow[] = [
+  {
+    repositoryId: "repo-alpha",
+    repository: {
+      id: "repo-alpha",
+      name: "alpha",
+      nameWithOwner: "org/alpha",
+    },
+    issuesCreated: 5,
+    issuesResolved: 7,
+    pullRequestsCreated: 6,
+    pullRequestsMerged: 4,
+    pullRequestsMergedBy: 3,
+    reviews: 10,
+    activeReviews: 8,
+    comments: 12,
+    avgFirstReviewHours: 2,
+  },
+  {
+    repositoryId: "repo-beta",
+    repository: {
+      id: "repo-beta",
+      name: "beta",
+      nameWithOwner: "org/beta",
+    },
+    issuesCreated: 3,
+    issuesResolved: 5,
+    pullRequestsCreated: 9,
+    pullRequestsMerged: 1,
+    pullRequestsMergedBy: 1,
+    reviews: 2,
+    activeReviews: 1,
+    comments: 4,
+    avgFirstReviewHours: null,
+  },
+  {
+    repositoryId: "repo-gamma",
+    repository: {
+      id: "repo-gamma",
+      name: "gamma",
+      nameWithOwner: "org/gamma",
+    },
+    issuesCreated: 8,
+    issuesResolved: 2,
+    pullRequestsCreated: 4,
+    pullRequestsMerged: 7,
+    pullRequestsMergedBy: 5,
+    reviews: 5,
+    activeReviews: 5,
+    comments: 1,
+    avgFirstReviewHours: 6,
+  },
+];
+
+describe("sortRepoActivityItems", () => {
+  const repoNameOrder = (rows: RepoComparisonRow[]) =>
+    rows.map((row) => row.repository?.nameWithOwner ?? row.repositoryId);
+
+  const expectations: Array<{
+    key: RepoActivitySortKey;
+    descending: string[];
+    ascending: string[];
+  }> = [
     {
-      repositoryId: "repo-alpha",
-      repository: {
-        id: "repo-alpha",
-        name: "alpha",
-        nameWithOwner: "org/alpha",
-      },
-      issuesCreated: 5,
-      issuesResolved: 7,
-      pullRequestsCreated: 6,
-      pullRequestsMerged: 4,
-      pullRequestsMergedBy: 3,
-      reviews: 10,
-      activeReviews: 8,
-      comments: 12,
-      avgFirstReviewHours: 2,
+      key: "issuesResolved",
+      descending: ["org/alpha", "org/beta", "org/gamma"],
+      ascending: ["org/gamma", "org/beta", "org/alpha"],
     },
     {
-      repositoryId: "repo-beta",
-      repository: {
-        id: "repo-beta",
-        name: "beta",
-        nameWithOwner: "org/beta",
-      },
-      issuesCreated: 3,
-      issuesResolved: 5,
-      pullRequestsCreated: 9,
-      pullRequestsMerged: 1,
-      pullRequestsMergedBy: 1,
-      reviews: 2,
-      activeReviews: 1,
-      comments: 4,
-      avgFirstReviewHours: null,
+      key: "issuesCreated",
+      descending: ["org/gamma", "org/alpha", "org/beta"],
+      ascending: ["org/beta", "org/alpha", "org/gamma"],
     },
     {
-      repositoryId: "repo-gamma",
-      repository: {
-        id: "repo-gamma",
-        name: "gamma",
-        nameWithOwner: "org/gamma",
-      },
-      issuesCreated: 8,
-      issuesResolved: 2,
-      pullRequestsCreated: 4,
-      pullRequestsMerged: 7,
-      pullRequestsMergedBy: 5,
-      reviews: 5,
-      activeReviews: 5,
-      comments: 1,
-      avgFirstReviewHours: 6,
+      key: "pullRequestsCreated",
+      descending: ["org/beta", "org/alpha", "org/gamma"],
+      ascending: ["org/gamma", "org/alpha", "org/beta"],
+    },
+    {
+      key: "pullRequestsMerged",
+      descending: ["org/gamma", "org/alpha", "org/beta"],
+      ascending: ["org/beta", "org/alpha", "org/gamma"],
+    },
+    {
+      key: "pullRequestsMergedBy",
+      descending: ["org/gamma", "org/alpha", "org/beta"],
+      ascending: ["org/beta", "org/alpha", "org/gamma"],
+    },
+    {
+      key: "reviews",
+      descending: ["org/alpha", "org/gamma", "org/beta"],
+      ascending: ["org/beta", "org/gamma", "org/alpha"],
+    },
+    {
+      key: "activeReviews",
+      descending: ["org/alpha", "org/gamma", "org/beta"],
+      ascending: ["org/beta", "org/gamma", "org/alpha"],
+    },
+    {
+      key: "comments",
+      descending: ["org/alpha", "org/beta", "org/gamma"],
+      ascending: ["org/gamma", "org/beta", "org/alpha"],
+    },
+    {
+      key: "avgFirstReviewHours",
+      descending: ["org/gamma", "org/alpha", "org/beta"],
+      ascending: ["org/alpha", "org/gamma", "org/beta"],
     },
   ];
 
-  it("sorts rows for each metric column", () => {
+  it("orders repositories for each metric", () => {
+    expectations.forEach(({ key, descending, ascending }) => {
+      const defaultDirection = REPO_ACTIVITY_SORT_DEFAULT_DIRECTION[key];
+      const initial = sortRepoActivityItems(items, {
+        key,
+        direction: defaultDirection,
+      });
+      expect(repoNameOrder(initial)).toEqual(
+        defaultDirection === "desc" ? descending : ascending,
+      );
+
+      const toggled = sortRepoActivityItems(items, {
+        key,
+        direction: defaultDirection === "desc" ? "asc" : "desc",
+      });
+      expect(repoNameOrder(toggled)).toEqual(
+        defaultDirection === "desc" ? ascending : descending,
+      );
+    });
+  });
+});
+
+describe("RepoActivityTable sorting", () => {
+  it("toggles ordering when column headers are clicked", () => {
     render(<RepoActivityTable items={items} />);
 
     expect(getRepositoryOrder()).toEqual([
@@ -76,64 +159,18 @@ describe("RepoActivityTable sorting", () => {
       "org/gamma",
     ]);
 
-    const sortExpectations: Array<{
-      label: string;
-      firstOrder: string[];
-      secondOrder: string[];
-    }> = [
-      {
-        label: "이슈 해결",
-        firstOrder: ["org/gamma", "org/beta", "org/alpha"],
-        secondOrder: ["org/alpha", "org/beta", "org/gamma"],
-      },
-      {
-        label: "이슈 생성",
-        firstOrder: ["org/gamma", "org/alpha", "org/beta"],
-        secondOrder: ["org/beta", "org/alpha", "org/gamma"],
-      },
-      {
-        label: "PR 생성",
-        firstOrder: ["org/beta", "org/alpha", "org/gamma"],
-        secondOrder: ["org/gamma", "org/alpha", "org/beta"],
-      },
-      {
-        label: "PR 머지",
-        firstOrder: ["org/gamma", "org/alpha", "org/beta"],
-        secondOrder: ["org/beta", "org/alpha", "org/gamma"],
-      },
-      {
-        label: "PR 머지 수행",
-        firstOrder: ["org/gamma", "org/alpha", "org/beta"],
-        secondOrder: ["org/beta", "org/alpha", "org/gamma"],
-      },
-      {
-        label: "리뷰",
-        firstOrder: ["org/alpha", "org/gamma", "org/beta"],
-        secondOrder: ["org/beta", "org/gamma", "org/alpha"],
-      },
-      {
-        label: "적극 리뷰",
-        firstOrder: ["org/alpha", "org/gamma", "org/beta"],
-        secondOrder: ["org/beta", "org/gamma", "org/alpha"],
-      },
-      {
-        label: "댓글",
-        firstOrder: ["org/alpha", "org/beta", "org/gamma"],
-        secondOrder: ["org/gamma", "org/beta", "org/alpha"],
-      },
-      {
-        label: "평균 첫 리뷰",
-        firstOrder: ["org/alpha", "org/gamma", "org/beta"],
-        secondOrder: ["org/gamma", "org/alpha", "org/beta"],
-      },
-    ];
-
-    for (const { label, firstOrder, secondOrder } of sortExpectations) {
-      const button = screen.getByRole("button", { name: label });
-      fireEvent.click(button);
-      expect(getRepositoryOrder()).toEqual(firstOrder);
-      fireEvent.click(button);
-      expect(getRepositoryOrder()).toEqual(secondOrder);
-    }
+    const button = screen.getByRole("button", { name: "이슈 해결" });
+    fireEvent.click(button);
+    expect(getRepositoryOrder()).toEqual([
+      "org/gamma",
+      "org/beta",
+      "org/alpha",
+    ]);
+    fireEvent.click(button);
+    expect(getRepositoryOrder()).toEqual([
+      "org/alpha",
+      "org/beta",
+      "org/gamma",
+    ]);
   });
 });

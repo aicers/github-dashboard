@@ -9,7 +9,7 @@ import {
 import type { RepoComparisonRow } from "@/lib/dashboard/types";
 import { cn } from "@/lib/utils";
 
-type RepoActivitySortKey =
+export type RepoActivitySortKey =
   | "issuesCreated"
   | "issuesResolved"
   | "pullRequestsCreated"
@@ -19,7 +19,7 @@ type RepoActivitySortKey =
   | "activeReviews"
   | "comments"
   | "avgFirstReviewHours";
-type RepoActivitySortDirection = "asc" | "desc";
+export type RepoActivitySortDirection = "asc" | "desc";
 
 type RepoActivityTableProps = {
   items: RepoComparisonRow[];
@@ -92,7 +92,7 @@ const repoActivityColumns: Array<{
   },
 ];
 
-const REPO_ACTIVITY_SORT_DEFAULT_DIRECTION: Record<
+export const REPO_ACTIVITY_SORT_DEFAULT_DIRECTION: Record<
   RepoActivitySortKey,
   RepoActivitySortDirection
 > = {
@@ -145,38 +145,7 @@ export function RepoActivityTable({ items }: RepoActivityTableProps) {
   }));
 
   const sortedItems = useMemo(() => {
-    if (!items.length) {
-      return [];
-    }
-
-    const { key, direction } = sort;
-
-    return [...items].sort((first, second) => {
-      const valueA = getSortValue(first, key);
-      const valueB = getSortValue(second, key);
-
-      if (valueA == null && valueB == null) {
-        const nameA = first.repository?.nameWithOwner ?? first.repositoryId;
-        const nameB = second.repository?.nameWithOwner ?? second.repositoryId;
-        return nameA.localeCompare(nameB);
-      }
-
-      if (valueA == null) {
-        return 1;
-      }
-
-      if (valueB == null) {
-        return -1;
-      }
-
-      if (valueA === valueB) {
-        const nameA = first.repository?.nameWithOwner ?? first.repositoryId;
-        const nameB = second.repository?.nameWithOwner ?? second.repositoryId;
-        return nameA.localeCompare(nameB);
-      }
-
-      return direction === "asc" ? valueA - valueB : valueB - valueA;
-    });
+    return sortRepoActivityItems(items, sort);
   }, [items, sort]);
 
   const toggleSort = (key: RepoActivitySortKey) => {
@@ -271,4 +240,42 @@ export function RepoActivityTable({ items }: RepoActivityTableProps) {
       </table>
     </div>
   );
+}
+
+export function sortRepoActivityItems(
+  items: RepoComparisonRow[],
+  sort: { key: RepoActivitySortKey; direction: RepoActivitySortDirection },
+) {
+  if (!items.length) {
+    return [];
+  }
+
+  const { key, direction } = sort;
+
+  return [...items].sort((first, second) => {
+    const valueA = getSortValue(first, key);
+    const valueB = getSortValue(second, key);
+
+    if (valueA == null && valueB == null) {
+      const nameA = first.repository?.nameWithOwner ?? first.repositoryId;
+      const nameB = second.repository?.nameWithOwner ?? second.repositoryId;
+      return nameA.localeCompare(nameB);
+    }
+
+    if (valueA == null) {
+      return 1;
+    }
+
+    if (valueB == null) {
+      return -1;
+    }
+
+    if (valueA === valueB) {
+      const nameA = first.repository?.nameWithOwner ?? first.repositoryId;
+      const nameB = second.repository?.nameWithOwner ?? second.repositoryId;
+      return nameA.localeCompare(nameB);
+    }
+
+    return direction === "asc" ? valueA - valueB : valueB - valueA;
+  });
 }

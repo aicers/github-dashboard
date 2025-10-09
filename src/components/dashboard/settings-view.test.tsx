@@ -7,6 +7,13 @@ import { SettingsView } from "@/components/dashboard/settings-view";
 import type { RepositoryProfile, UserProfile } from "@/lib/db/operations";
 
 const routerRefreshMock = vi.fn();
+const intlWithSupported = Intl as typeof Intl & {
+  supportedValuesOf?: (keys: string) => string[];
+};
+if (typeof intlWithSupported.supportedValuesOf !== "function") {
+  intlWithSupported.supportedValuesOf = () => [];
+}
+const supportedValuesSpy = vi.spyOn(intlWithSupported, "supportedValuesOf");
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -88,10 +95,16 @@ describe("SettingsView", () => {
     routerRefreshMock.mockReset();
     fetchMock.mockReset();
     global.fetch = fetchMock;
+    supportedValuesSpy.mockImplementation(() => [
+      "UTC",
+      "Asia/Seoul",
+      "America/Los_Angeles",
+    ]);
   });
 
   afterEach(() => {
     global.fetch = originalFetch;
+    supportedValuesSpy.mockReset();
   });
 
   it("renders the current configuration values and summary counts", () => {
@@ -142,7 +155,7 @@ describe("SettingsView", () => {
     await user.type(intervalInput, "15");
 
     const timezoneSelect = screen.getByLabelText("표준 시간대");
-    await user.selectOptions(timezoneSelect, "Europe/London");
+    await user.selectOptions(timezoneSelect, "America/Los_Angeles");
 
     const weekStartSelect = screen.getByLabelText("주의 시작 요일");
     await user.selectOptions(weekStartSelect, "sunday");
@@ -168,7 +181,7 @@ describe("SettingsView", () => {
     expect(payload).toMatchObject({
       orgName: "new-org",
       syncIntervalMinutes: 15,
-      timezone: "Europe/London",
+      timezone: "America/Los_Angeles",
       weekStart: "sunday",
     });
     expect([...payload.excludedRepositories].sort()).toEqual([
@@ -237,7 +250,7 @@ describe("SettingsView", () => {
     renderSettings();
 
     const timezoneSelect = screen.getByLabelText("표준 시간대");
-    await user.selectOptions(timezoneSelect, "Europe/Berlin");
+    await user.selectOptions(timezoneSelect, "America/Los_Angeles");
 
     await user.click(screen.getByRole("button", { name: "개인 설정 저장" }));
 
@@ -249,7 +262,7 @@ describe("SettingsView", () => {
     expect(request?.[0]).toBe("/api/sync/config");
     expect(request?.[1]?.method).toBe("PATCH");
     expect(JSON.parse(String(request?.[1]?.body ?? "{}"))).toEqual({
-      timezone: "Europe/Berlin",
+      timezone: "America/Los_Angeles",
       weekStart: "monday",
     });
 
@@ -291,7 +304,7 @@ describe("SettingsView", () => {
     renderSettings({ isAdmin: false });
 
     const timezoneSelect = screen.getByLabelText("표준 시간대");
-    await user.selectOptions(timezoneSelect, "Europe/London");
+    await user.selectOptions(timezoneSelect, "America/Los_Angeles");
 
     await user.click(screen.getByRole("button", { name: "개인 설정 저장" }));
 
@@ -302,7 +315,10 @@ describe("SettingsView", () => {
     const payload = JSON.parse(
       String(fetchMock.mock.calls[0]?.[1]?.body ?? "{}"),
     );
-    expect(payload).toEqual({ timezone: "Europe/London", weekStart: "monday" });
+    expect(payload).toEqual({
+      timezone: "America/Los_Angeles",
+      weekStart: "monday",
+    });
 
     await waitFor(() => {
       expect(routerRefreshMock).toHaveBeenCalled();
