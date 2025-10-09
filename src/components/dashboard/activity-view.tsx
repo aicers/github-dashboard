@@ -27,11 +27,14 @@ import { Label } from "@/components/ui/label";
 import type {
   ActivityAttentionFilter,
   ActivityFilterOptions,
+  ActivityIssueBaseStatusFilter,
   ActivityItem,
   ActivityItemType as ActivityItemCategory,
   ActivityItemDetail,
+  ActivityLinkedIssueFilter,
   ActivityListParams,
   ActivityListResult,
+  ActivityPullRequestStatusFilter,
   ActivityStatusFilter,
   ActivityThresholds,
 } from "@/lib/activity/types";
@@ -49,6 +52,10 @@ type FilterState = {
   categories: ActivityItemCategory[];
   repositoryIds: string[];
   labelKeys: string[];
+  issueTypeIds: string[];
+  milestoneIds: string[];
+  prStatuses: ActivityPullRequestStatusFilter[];
+  issueBaseStatuses: ActivityIssueBaseStatusFilter[];
   authorIds: string[];
   assigneeIds: string[];
   reviewerIds: string[];
@@ -57,6 +64,7 @@ type FilterState = {
   reactorIds: string[];
   statuses: ActivityStatusFilter[];
   attention: ActivityAttentionFilter[];
+  linkedIssueStates: ActivityLinkedIssueFilter[];
   search: string;
   thresholds: Required<ActivityThresholds>;
 };
@@ -79,12 +87,12 @@ const ATTENTION_OPTIONS: Array<{
   value: ActivityAttentionFilter;
   label: string;
 }> = [
-  { value: "unanswered_mentions", label: "응답 없는 멘션" },
-  { value: "review_requests_pending", label: "응답 없는 리뷰 요청" },
-  { value: "pr_open_too_long", label: "오래된 PR" },
-  { value: "pr_inactive", label: "업데이트 없는 PR" },
   { value: "issue_backlog", label: "정체된 Backlog 이슈" },
   { value: "issue_stalled", label: "정체된 In Progress 이슈" },
+  { value: "pr_open_too_long", label: "오래된 PR" },
+  { value: "pr_inactive", label: "업데이트 없는 PR" },
+  { value: "review_requests_pending", label: "응답 없는 리뷰 요청" },
+  { value: "unanswered_mentions", label: "응답 없는 멘션" },
 ];
 
 const CATEGORY_OPTIONS: Array<{ value: ActivityItemCategory; label: string }> =
@@ -94,13 +102,21 @@ const CATEGORY_OPTIONS: Array<{ value: ActivityItemCategory; label: string }> =
     { value: "pull_request", label: "Pull Request" },
   ];
 
-const BASE_STATUS_OPTIONS: Array<{
-  value: ActivityStatusFilter;
+const PR_STATUS_OPTIONS: Array<{
+  value: ActivityPullRequestStatusFilter;
   label: string;
 }> = [
-  { value: "open", label: "Open" },
-  { value: "closed", label: "Closed" },
-  { value: "merged", label: "Merged" },
+  { value: "pr_open", label: "Open" },
+  { value: "pr_merged", label: "Merged" },
+  { value: "pr_closed", label: "Closed (Unmerged)" },
+];
+
+const ISSUE_BASE_STATUS_OPTIONS: Array<{
+  value: ActivityIssueBaseStatusFilter;
+  label: string;
+}> = [
+  { value: "issue_open", label: "Open" },
+  { value: "issue_closed", label: "Closed" },
 ];
 
 const ISSUE_STATUS_OPTIONS: Array<{
@@ -372,6 +388,10 @@ function buildFilterState(
     categories: params.types ?? [],
     repositoryIds: params.repositoryIds ?? [],
     labelKeys: params.labelKeys ?? [],
+    issueTypeIds: params.issueTypeIds ?? [],
+    milestoneIds: params.milestoneIds ?? [],
+    prStatuses: params.pullRequestStatuses ?? [],
+    issueBaseStatuses: params.issueBaseStatuses ?? [],
     authorIds: params.authorIds ?? [],
     assigneeIds: params.assigneeIds ?? [],
     reviewerIds: params.reviewerIds ?? [],
@@ -380,6 +400,7 @@ function buildFilterState(
     reactorIds: params.reactorIds ?? [],
     statuses: params.statuses ?? [],
     attention: params.attention ?? [],
+    linkedIssueStates: params.linkedIssueStates ?? [],
     search: params.search ?? "",
     thresholds: {
       ...DEFAULT_THRESHOLD_VALUES,
@@ -412,6 +433,16 @@ function normalizeSearchParams(filters: FilterState, defaultPerPage: number) {
 
   appendAll("repositoryId", filters.repositoryIds);
   appendAll("labelKey", filters.labelKeys);
+  appendAll("issueTypeId", filters.issueTypeIds);
+  appendAll("milestoneId", filters.milestoneIds);
+  appendAll(
+    "prStatus",
+    filters.prStatuses.map((value) => value),
+  );
+  appendAll(
+    "issueBaseStatus",
+    filters.issueBaseStatuses.map((value) => value),
+  );
   appendAll("authorId", filters.authorIds);
   appendAll("assigneeId", filters.assigneeIds);
   appendAll("reviewerId", filters.reviewerIds);
@@ -425,6 +456,10 @@ function normalizeSearchParams(filters: FilterState, defaultPerPage: number) {
   appendAll(
     "attention",
     filters.attention.map((value) => value),
+  );
+  appendAll(
+    "linkedIssue",
+    filters.linkedIssueStates.map((value) => value),
   );
 
   if (filters.search.trim().length) {
@@ -1006,6 +1041,45 @@ export function ActivityView({
       }));
   }, [draft.repositoryIds, filterOptions.labels]);
 
+  const issueTypeOptions = useMemo<MultiSelectOption[]>(() => {
+    return filterOptions.issueTypes.map((issueType) => ({
+      value: issueType.id,
+      label: issueType.name ?? issueType.id,
+      description:
+        issueType.name && issueType.name !== issueType.id ? issueType.id : null,
+    }));
+  }, [filterOptions.issueTypes]);
+
+  const milestoneOptions = useMemo<MultiSelectOption[]>(() => {
+    return filterOptions.milestones.map((milestone) => {
+      const parts: string[] = [];
+      if (milestone.state) {
+        parts.push(milestone.state);
+      }
+      if (milestone.dueOn) {
+        const due = DateTime.fromISO(milestone.dueOn);
+        if (due.isValid) {
+          parts.push(due.toFormat("yyyy-MM-dd"));
+        }
+      }
+      return {
+        value: milestone.id,
+        label: milestone.title ?? milestone.id,
+        description: parts.length ? parts.join(" · ") : milestone.url,
+      };
+    });
+  }, [filterOptions.milestones]);
+
+  const allowedIssueTypeIds = useMemo(
+    () => new Set(issueTypeOptions.map((type) => type.value)),
+    [issueTypeOptions],
+  );
+
+  const allowedMilestoneIds = useMemo(
+    () => new Set(milestoneOptions.map((option) => option.value)),
+    [milestoneOptions],
+  );
+
   useEffect(() => {
     if (!draft.repositoryIds.length) {
       return;
@@ -1021,6 +1095,48 @@ export function ActivityView({
       return { ...current, labelKeys: sanitized };
     });
   }, [draft.repositoryIds, labelOptions]);
+
+  useEffect(() => {
+    setDraft((current) => {
+      const sanitized = current.issueTypeIds.filter((id) =>
+        allowedIssueTypeIds.has(id),
+      );
+      if (arraysShallowEqual(current.issueTypeIds, sanitized)) {
+        return current;
+      }
+      return { ...current, issueTypeIds: sanitized };
+    });
+    setApplied((current) => {
+      const sanitized = current.issueTypeIds.filter((id) =>
+        allowedIssueTypeIds.has(id),
+      );
+      if (arraysShallowEqual(current.issueTypeIds, sanitized)) {
+        return current;
+      }
+      return { ...current, issueTypeIds: sanitized };
+    });
+  }, [allowedIssueTypeIds]);
+
+  useEffect(() => {
+    setDraft((current) => {
+      const sanitized = current.milestoneIds.filter((id) =>
+        allowedMilestoneIds.has(id),
+      );
+      if (arraysShallowEqual(current.milestoneIds, sanitized)) {
+        return current;
+      }
+      return { ...current, milestoneIds: sanitized };
+    });
+    setApplied((current) => {
+      const sanitized = current.milestoneIds.filter((id) =>
+        allowedMilestoneIds.has(id),
+      );
+      if (arraysShallowEqual(current.milestoneIds, sanitized)) {
+        return current;
+      }
+      return { ...current, milestoneIds: sanitized };
+    });
+  }, [allowedMilestoneIds]);
 
   const userOptions = useMemo<MultiSelectOption[]>(
     () =>
@@ -1045,6 +1161,12 @@ export function ActivityView({
     setApplied((current) => sanitizePeopleIds(current, allowedUserIds));
   }, [allowedUserIds]);
 
+  const allowPullRequestStatuses = useMemo(
+    () =>
+      draft.categories.length === 0 ||
+      draft.categories.includes("pull_request"),
+    [draft.categories],
+  );
   const allowIssueStatuses = useMemo(
     () => includesIssueCategory(draft.categories),
     [draft.categories],
@@ -1055,6 +1177,10 @@ export function ActivityView({
     [draft.statuses],
   );
   const issueStatusesAllSelected = selectedIssueStatuses.length === 0;
+  const prStatusesAllSelected = draft.prStatuses.length === 0;
+  const issueBaseStatusesAllSelected = draft.issueBaseStatuses.length === 0;
+  const issueTypesAllSelected = draft.issueTypeIds.length === 0;
+  const linkedIssueStatesAllSelected = draft.linkedIssueStates.length === 0;
 
   useEffect(() => {
     if (allowIssueStatuses) {
@@ -1062,27 +1188,59 @@ export function ActivityView({
     }
 
     setDraft((current) => {
-      const sanitized = current.statuses.filter(
+      const sanitizedStatuses = current.statuses.filter(
         (status) => !ISSUE_STATUS_VALUE_SET.has(status),
       );
-      if (sanitized.length === current.statuses.length) {
-        return current;
+      let next: FilterState = current;
+      if (sanitizedStatuses.length !== current.statuses.length) {
+        next = { ...next, statuses: sanitizedStatuses };
       }
-      return { ...current, statuses: sanitized };
+      if (next.issueBaseStatuses.length > 0) {
+        if (next === current) {
+          next = { ...next };
+        }
+        next.issueBaseStatuses = [];
+      }
+      return next;
     });
 
     setApplied((current) => {
-      const sanitized = current.statuses.filter(
+      const sanitizedStatuses = current.statuses.filter(
         (status) => !ISSUE_STATUS_VALUE_SET.has(status),
       );
-      if (sanitized.length === current.statuses.length) {
-        return current;
+      let next: FilterState = current;
+      if (sanitizedStatuses.length !== current.statuses.length) {
+        next = { ...next, statuses: sanitizedStatuses };
       }
-      return { ...current, statuses: sanitized };
+      if (next.issueBaseStatuses.length > 0) {
+        if (next === current) {
+          next = { ...next };
+        }
+        next.issueBaseStatuses = [];
+      }
+      return next;
     });
   }, [allowIssueStatuses]);
 
-  const statusOptions = BASE_STATUS_OPTIONS;
+  useEffect(() => {
+    if (allowPullRequestStatuses) {
+      return;
+    }
+
+    setDraft((current) => {
+      if (current.prStatuses.length === 0) {
+        return current;
+      }
+      return { ...current, prStatuses: [] };
+    });
+
+    setApplied((current) => {
+      if (current.prStatuses.length === 0) {
+        return current;
+      }
+      return { ...current, prStatuses: [] };
+    });
+  }, [allowPullRequestStatuses]);
 
   const peopleState = useMemo(() => derivePeopleState(draft), [draft]);
   const peopleSelection = peopleState.selection;
@@ -1317,30 +1475,6 @@ export function ActivityView({
     });
   }, [detailMap, loadDetail, loadingDetailIds, openItemIds]);
 
-  const attentionSummary = useMemo(() => {
-    const items = data.items;
-    const totals = {
-      unanswered_mentions: 0,
-      review_requests_pending: 0,
-      pr_open_too_long: 0,
-      pr_inactive: 0,
-      issue_backlog: 0,
-      issue_stalled: 0,
-    } satisfies Record<ActivityAttentionFilter, number>;
-
-    items.forEach((item) => {
-      if (item.attention.unansweredMention) totals.unanswered_mentions += 1;
-      if (item.attention.reviewRequestPending)
-        totals.review_requests_pending += 1;
-      if (item.attention.staleOpenPr) totals.pr_open_too_long += 1;
-      if (item.attention.idlePr) totals.pr_inactive += 1;
-      if (item.attention.backlogIssue) totals.issue_backlog += 1;
-      if (item.attention.stalledIssue) totals.issue_stalled += 1;
-    });
-
-    return totals;
-  }, [data.items]);
-
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between text-sm">
@@ -1438,7 +1572,7 @@ export function ActivityView({
                         className="mx-2 h-4 border-l border-border/50"
                       />
                       <Label className="text-xs font-medium text-muted-foreground">
-                        Issue 상태
+                        진행 상태
                       </Label>
                       <TogglePill
                         active={issueStatusesAllSelected}
@@ -1487,6 +1621,66 @@ export function ActivityView({
                           </TogglePill>
                         );
                       })}
+                      {filterOptions.issueTypes.length > 0 && (
+                        <>
+                          <span
+                            aria-hidden="true"
+                            className="mx-2 h-4 border-l border-border/50"
+                          />
+                          <Label className="text-xs font-medium text-muted-foreground">
+                            이슈 타입
+                          </Label>
+                          <TogglePill
+                            active={issueTypesAllSelected}
+                            variant={
+                              issueTypesAllSelected ? "active" : "inactive"
+                            }
+                            onClick={() => {
+                              setDraft((current) => ({
+                                ...current,
+                                issueTypeIds: [],
+                              }));
+                            }}
+                          >
+                            전체
+                          </TogglePill>
+                          {filterOptions.issueTypes.map((option) => {
+                            const active = draft.issueTypeIds.includes(
+                              option.id,
+                            );
+                            const variant = issueTypesAllSelected
+                              ? "muted"
+                              : active
+                                ? "active"
+                                : "inactive";
+                            return (
+                              <TogglePill
+                                key={`issue-type-${option.id}`}
+                                active={active}
+                                variant={variant}
+                                onClick={() => {
+                                  setDraft((current) => {
+                                    const nextSet = new Set(
+                                      current.issueTypeIds,
+                                    );
+                                    if (nextSet.has(option.id)) {
+                                      nextSet.delete(option.id);
+                                    } else {
+                                      nextSet.add(option.id);
+                                    }
+                                    return {
+                                      ...current,
+                                      issueTypeIds: Array.from(nextSet),
+                                    };
+                                  });
+                                }}
+                              >
+                                {option.name ?? option.id}
+                              </TogglePill>
+                            );
+                          })}
+                        </>
+                      )}
                     </>
                   )}
                 </>
@@ -1520,7 +1714,6 @@ export function ActivityView({
                       : active
                         ? "active"
                         : "inactive";
-                    const count = attentionSummary[option.value] ?? 0;
                     return (
                       <TogglePill
                         key={option.value}
@@ -1542,9 +1735,6 @@ export function ActivityView({
                         }}
                       >
                         <span>{option.label}</span>
-                        <span className="ml-1 text-muted-foreground">
-                          ({count})
-                        </span>
                       </TogglePill>
                     );
                   })}
@@ -1553,7 +1743,7 @@ export function ActivityView({
             })()}
           </div>
           <PeopleToggleList
-            label="사람"
+            label="구성원"
             value={peopleSelection}
             onChange={handlePeopleChange}
             options={userOptions}
@@ -1572,7 +1762,7 @@ export function ActivityView({
           </div>
           {showAdvancedFilters && (
             <div className="space-y-6 rounded-md border border-border/60 bg-muted/10 p-4">
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-3">
                 <MultiSelectInput
                   label="저장소"
                   placeholder="저장소 선택"
@@ -1586,26 +1776,6 @@ export function ActivityView({
                   options={repositoryOptions}
                   emptyLabel="모든 저장소"
                 />
-                <div className="space-y-2">
-                  <Label className="text-xs font-medium text-muted-foreground">
-                    검색
-                  </Label>
-                  <Input
-                    value={draft.search}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        search: event.target.value,
-                      }))
-                    }
-                    placeholder="제목, 본문, 코멘트 검색"
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        applyDraftFilters();
-                      }
-                    }}
-                  />
-                </div>
                 <MultiSelectInput
                   label="라벨"
                   placeholder="repo:label"
@@ -1615,6 +1785,26 @@ export function ActivityView({
                   }
                   options={labelOptions}
                   emptyLabel="모든 라벨"
+                />
+                <MultiSelectInput
+                  label="이슈 타입"
+                  placeholder="이슈 타입 선택"
+                  value={draft.issueTypeIds}
+                  onChange={(next) =>
+                    setDraft((current) => ({ ...current, issueTypeIds: next }))
+                  }
+                  options={issueTypeOptions}
+                  emptyLabel="모든 이슈 타입"
+                />
+                <MultiSelectInput
+                  label="마일스톤"
+                  placeholder="마일스톤 선택"
+                  value={draft.milestoneIds}
+                  onChange={(next) =>
+                    setDraft((current) => ({ ...current, milestoneIds: next }))
+                  }
+                  options={milestoneOptions}
+                  emptyLabel="모든 마일스톤"
                 />
                 <MultiSelectInput
                   label="작성자"
@@ -1647,7 +1837,7 @@ export function ActivityView({
                   emptyLabel="모든 리뷰어"
                 />
                 <MultiSelectInput
-                  label="멘션된 사람"
+                  label="멘션된 구성원"
                   placeholder="@mention"
                   value={draft.mentionedUserIds}
                   onChange={(next) =>
@@ -1670,7 +1860,7 @@ export function ActivityView({
                   emptyLabel="모든 사용자"
                 />
                 <MultiSelectInput
-                  label="리액션 남긴 사람"
+                  label="리액션 남긴 구성원"
                   placeholder="@reactor"
                   value={draft.reactorIds}
                   onChange={(next) =>
@@ -1679,33 +1869,193 @@ export function ActivityView({
                   options={userOptions}
                   emptyLabel="모든 사용자"
                 />
+                <div className="space-y-2 md:col-span-2 lg:col-span-2">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    검색
+                  </Label>
+                  <Input
+                    value={draft.search}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        search: event.target.value,
+                      }))
+                    }
+                    placeholder="제목, 본문, 코멘트 검색"
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        applyDraftFilters();
+                      }
+                    }}
+                  />
+                </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                {allowPullRequestStatuses && (
+                  <>
+                    <Label className="text-xs font-medium text-muted-foreground">
+                      PR 상태
+                    </Label>
+                    <TogglePill
+                      active={prStatusesAllSelected}
+                      variant={prStatusesAllSelected ? "active" : "inactive"}
+                      onClick={() =>
+                        setDraft((current) => ({ ...current, prStatuses: [] }))
+                      }
+                    >
+                      전체
+                    </TogglePill>
+                    {PR_STATUS_OPTIONS.map((option) => {
+                      const active = draft.prStatuses.includes(option.value);
+                      const variant = prStatusesAllSelected
+                        ? "muted"
+                        : active
+                          ? "active"
+                          : "inactive";
+                      return (
+                        <TogglePill
+                          key={`advanced-pr-status-${option.value}`}
+                          active={active}
+                          variant={variant}
+                          onClick={() => {
+                            setDraft((current) => {
+                              const nextSet = new Set(current.prStatuses);
+                              if (nextSet.has(option.value)) {
+                                nextSet.delete(option.value);
+                              } else {
+                                nextSet.add(option.value);
+                              }
+                              return {
+                                ...current,
+                                prStatuses: Array.from(nextSet),
+                              };
+                            });
+                          }}
+                        >
+                          {option.label}
+                        </TogglePill>
+                      );
+                    })}
+                  </>
+                )}
+                {allowIssueStatuses && (
+                  <>
+                    <span
+                      aria-hidden="true"
+                      className="mx-2 h-4 border-l border-border/50"
+                    />
+                    <Label className="text-xs font-medium text-muted-foreground">
+                      이슈 상태
+                    </Label>
+                    <TogglePill
+                      active={issueBaseStatusesAllSelected}
+                      variant={
+                        issueBaseStatusesAllSelected ? "active" : "inactive"
+                      }
+                      onClick={() =>
+                        setDraft((current) => ({
+                          ...current,
+                          issueBaseStatuses: [],
+                        }))
+                      }
+                    >
+                      전체
+                    </TogglePill>
+                    {ISSUE_BASE_STATUS_OPTIONS.map((option) => {
+                      const active = draft.issueBaseStatuses.includes(
+                        option.value,
+                      );
+                      const variant = issueBaseStatusesAllSelected
+                        ? "muted"
+                        : active
+                          ? "active"
+                          : "inactive";
+                      return (
+                        <TogglePill
+                          key={`advanced-issue-base-status-${option.value}`}
+                          active={active}
+                          variant={variant}
+                          onClick={() => {
+                            setDraft((current) => {
+                              const nextSet = new Set(
+                                current.issueBaseStatuses,
+                              );
+                              if (nextSet.has(option.value)) {
+                                nextSet.delete(option.value);
+                              } else {
+                                nextSet.add(option.value);
+                              }
+                              return {
+                                ...current,
+                                issueBaseStatuses: Array.from(nextSet),
+                              };
+                            });
+                          }}
+                        >
+                          {option.label}
+                        </TogglePill>
+                      );
+                    })}
+                  </>
+                )}
+                <span
+                  aria-hidden="true"
+                  className="mx-2 h-4 border-l border-border/50"
+                />
                 <Label className="text-xs font-medium uppercase text-muted-foreground">
-                  Status
+                  이슈 연결
                 </Label>
-                {statusOptions.map((option) => {
-                  const active = draft.statuses.includes(option.value);
+                <TogglePill
+                  active={linkedIssueStatesAllSelected}
+                  variant={linkedIssueStatesAllSelected ? "active" : "inactive"}
+                  onClick={() =>
+                    setDraft((current) => ({
+                      ...current,
+                      linkedIssueStates: [],
+                    }))
+                  }
+                >
+                  전체
+                </TogglePill>
+                {(
+                  [
+                    {
+                      key: "has_sub" as ActivityLinkedIssueFilter,
+                      label: "Parent 이슈",
+                    },
+                    {
+                      key: "has_parent" as ActivityLinkedIssueFilter,
+                      label: "Child 이슈",
+                    },
+                  ] as const
+                ).map(({ key, label }) => {
+                  const active = draft.linkedIssueStates.includes(key);
+                  const variant = linkedIssueStatesAllSelected
+                    ? "muted"
+                    : active
+                      ? "active"
+                      : "inactive";
                   return (
                     <TogglePill
-                      key={option.value}
+                      key={key}
                       active={active}
+                      variant={variant}
                       onClick={() => {
                         setDraft((current) => {
-                          const nextSet = new Set(current.statuses);
-                          if (nextSet.has(option.value)) {
-                            nextSet.delete(option.value);
+                          const nextSet = new Set(current.linkedIssueStates);
+                          if (nextSet.has(key)) {
+                            nextSet.delete(key);
                           } else {
-                            nextSet.add(option.value);
+                            nextSet.add(key);
                           }
                           return {
                             ...current,
-                            statuses: Array.from(nextSet),
+                            linkedIssueStates: Array.from(nextSet),
                           };
                         });
                       }}
                     >
-                      {option.label}
+                      {label}
                     </TogglePill>
                   );
                 })}
@@ -1713,50 +2063,9 @@ export function ActivityView({
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 <div className="space-y-2">
                   <Label className="text-xs font-medium uppercase text-muted-foreground">
-                    PR Thresholds (business days)
-                  </Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input
-                      type="number"
-                      min={1}
-                      value={draft.thresholds.stalePrDays}
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          thresholds: {
-                            ...current.thresholds,
-                            stalePrDays: toPositiveInt(
-                              event.target.value,
-                              DEFAULT_THRESHOLD_VALUES.stalePrDays,
-                            ),
-                          },
-                        }))
-                      }
-                      placeholder="Stale PRs"
-                    />
-                    <Input
-                      type="number"
-                      min={1}
-                      value={draft.thresholds.idlePrDays}
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          thresholds: {
-                            ...current.thresholds,
-                            idlePrDays: toPositiveInt(
-                              event.target.value,
-                              DEFAULT_THRESHOLD_VALUES.idlePrDays,
-                            ),
-                          },
-                        }))
-                      }
-                      placeholder="Inactive PRs"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-medium uppercase text-muted-foreground">
-                    Issue Thresholds (business days)
+                    이슈 임계값 (영업일) ·{" "}
+                    <span className="normal-case">Backlog 정체</span>,{" "}
+                    <span className="normal-case">In Progress 정체</span>
                   </Label>
                   <div className="grid grid-cols-2 gap-2">
                     <Input
@@ -1775,7 +2084,7 @@ export function ActivityView({
                           },
                         }))
                       }
-                      placeholder="Backlog"
+                      placeholder="Backlog 정체"
                     />
                     <Input
                       type="number"
@@ -1793,33 +2102,58 @@ export function ActivityView({
                           },
                         }))
                       }
-                      placeholder="Stalled"
+                      placeholder="In Progress 정체"
                     />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs font-medium uppercase text-muted-foreground">
-                    Mentions / Reviews (business days)
+                    PR 임계값 (영업일) · PR 생성, PR 정체
                   </Label>
                   <div className="grid grid-cols-2 gap-2">
                     <Input
                       type="number"
                       min={1}
-                      value={draft.thresholds.unansweredMentionDays}
+                      value={draft.thresholds.stalePrDays}
                       onChange={(event) =>
                         setDraft((current) => ({
                           ...current,
                           thresholds: {
                             ...current.thresholds,
-                            unansweredMentionDays: toPositiveInt(
+                            stalePrDays: toPositiveInt(
                               event.target.value,
-                              DEFAULT_THRESHOLD_VALUES.unansweredMentionDays,
+                              DEFAULT_THRESHOLD_VALUES.stalePrDays,
                             ),
                           },
                         }))
                       }
-                      placeholder="Mentions"
+                      placeholder="PR 생성"
                     />
+                    <Input
+                      type="number"
+                      min={1}
+                      value={draft.thresholds.idlePrDays}
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          thresholds: {
+                            ...current.thresholds,
+                            idlePrDays: toPositiveInt(
+                              event.target.value,
+                              DEFAULT_THRESHOLD_VALUES.idlePrDays,
+                            ),
+                          },
+                        }))
+                      }
+                      placeholder="PR 정체"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium uppercase text-muted-foreground">
+                    리뷰/멘션 임계값 (영업일) · 리뷰 무응답, 멘션 무응답
+                  </Label>
+                  <div className="grid grid-cols-2 gap-2">
                     <Input
                       type="number"
                       min={1}
@@ -1836,7 +2170,25 @@ export function ActivityView({
                           },
                         }))
                       }
-                      placeholder="Reviews"
+                      placeholder="리뷰 무응답"
+                    />
+                    <Input
+                      type="number"
+                      min={1}
+                      value={draft.thresholds.unansweredMentionDays}
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          thresholds: {
+                            ...current.thresholds,
+                            unansweredMentionDays: toPositiveInt(
+                              event.target.value,
+                              DEFAULT_THRESHOLD_VALUES.unansweredMentionDays,
+                            ),
+                          },
+                        }))
+                      }
+                      placeholder="멘션 무응답"
                     />
                   </div>
                 </div>
@@ -1929,6 +2281,12 @@ export function ActivityView({
               const detail = detailMap[item.id] ?? undefined;
               const isDetailLoading = loadingDetailIds.has(item.id);
               const badges = buildAttentionBadges(item);
+              if (item.hasParentIssue) {
+                badges.push("Child 이슈");
+              }
+              if (item.hasSubIssues) {
+                badges.push("Parent 이슈");
+              }
               const repositoryLabel = item.repository?.nameWithOwner ?? null;
               const numberLabel = item.number ? `#${item.number}` : null;
               const referenceLabel =
@@ -2009,6 +2367,17 @@ export function ActivityView({
                               Author {avatarFallback(item.author) ?? "-"}
                             </span>
                           )}
+                          {item.issueType && (
+                            <span className="rounded-md bg-sky-100 px-2 py-0.5 text-sky-700">
+                              {item.issueType.name ?? item.issueType.id}
+                            </span>
+                          )}
+                          {item.milestone && (
+                            <span>
+                              Milestone{" "}
+                              {item.milestone.title ?? item.milestone.id}
+                            </span>
+                          )}
                           {badges.map((badge) => (
                             <span
                               key={badge}
@@ -2061,6 +2430,113 @@ export function ActivityView({
                               return "내용이 없습니다.";
                             })()}
                           </div>
+                          {(detail.parentIssues.length > 0 ||
+                            detail.subIssues.length > 0) && (
+                            <div className="space-y-4 text-xs">
+                              {detail.parentIssues.length > 0 && (
+                                <div>
+                                  <h4 className="font-semibold text-muted-foreground">
+                                    상위 이슈
+                                  </h4>
+                                  <ul className="mt-1 space-y-1">
+                                    {detail.parentIssues.map((linked) => {
+                                      const referenceParts: string[] = [];
+                                      if (linked.repositoryNameWithOwner) {
+                                        referenceParts.push(
+                                          linked.repositoryNameWithOwner,
+                                        );
+                                      }
+                                      if (typeof linked.number === "number") {
+                                        referenceParts.push(
+                                          `#${linked.number}`,
+                                        );
+                                      }
+                                      const referenceLabel =
+                                        referenceParts.length > 0
+                                          ? referenceParts.join("")
+                                          : null;
+                                      const titleLabel =
+                                        linked.title ??
+                                        linked.state ??
+                                        linked.id;
+                                      const displayLabel = referenceLabel
+                                        ? `${referenceLabel}${titleLabel ? ` — ${titleLabel}` : ""}`
+                                        : titleLabel;
+                                      return (
+                                        <li key={`parent-${linked.id}`}>
+                                          {linked.url ? (
+                                            <a
+                                              href={linked.url}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="text-primary hover:underline"
+                                            >
+                                              {displayLabel ?? linked.id}
+                                            </a>
+                                          ) : (
+                                            <span>
+                                              {displayLabel ?? linked.id}
+                                            </span>
+                                          )}
+                                        </li>
+                                      );
+                                    })}
+                                  </ul>
+                                </div>
+                              )}
+                              {detail.subIssues.length > 0 && (
+                                <div>
+                                  <h4 className="font-semibold text-muted-foreground">
+                                    하위 이슈
+                                  </h4>
+                                  <ul className="mt-1 space-y-1">
+                                    {detail.subIssues.map((linked) => {
+                                      const referenceParts: string[] = [];
+                                      if (linked.repositoryNameWithOwner) {
+                                        referenceParts.push(
+                                          linked.repositoryNameWithOwner,
+                                        );
+                                      }
+                                      if (typeof linked.number === "number") {
+                                        referenceParts.push(
+                                          `#${linked.number}`,
+                                        );
+                                      }
+                                      const referenceLabel =
+                                        referenceParts.length > 0
+                                          ? referenceParts.join("")
+                                          : null;
+                                      const titleLabel =
+                                        linked.title ??
+                                        linked.state ??
+                                        linked.id;
+                                      const displayLabel = referenceLabel
+                                        ? `${referenceLabel}${titleLabel ? ` — ${titleLabel}` : ""}`
+                                        : titleLabel;
+                                      return (
+                                        <li key={`sub-${linked.id}`}>
+                                          {linked.url ? (
+                                            <a
+                                              href={linked.url}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="text-primary hover:underline"
+                                            >
+                                              {displayLabel ?? linked.id}
+                                            </a>
+                                          ) : (
+                                            <span>
+                                              {displayLabel ?? linked.id}
+                                            </span>
+                                          )}
+                                        </li>
+                                      );
+                                    })}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       ) : detail === null ? (
                         <div className="text-muted-foreground">

@@ -13,6 +13,13 @@ export type ActivityStatusFilter =
   | "merged"
   | IssueProjectStatus;
 
+export type ActivityPullRequestStatusFilter =
+  | "pr_open"
+  | "pr_merged"
+  | "pr_closed";
+
+export type ActivityIssueBaseStatusFilter = "issue_open" | "issue_closed";
+
 export type ActivityAttentionFilter =
   | "unanswered_mentions"
   | "review_requests_pending"
@@ -34,6 +41,10 @@ export type ActivityFilters = {
   types?: ActivityItemType[];
   repositoryIds?: string[];
   labelKeys?: string[];
+  issueTypeIds?: string[];
+  milestoneIds?: string[];
+  pullRequestStatuses?: ActivityPullRequestStatusFilter[];
+  issueBaseStatuses?: ActivityIssueBaseStatusFilter[];
   authorIds?: string[];
   assigneeIds?: string[];
   reviewerIds?: string[];
@@ -42,6 +53,7 @@ export type ActivityFilters = {
   reactorIds?: string[];
   statuses?: ActivityStatusFilter[];
   attention?: ActivityAttentionFilter[];
+  linkedIssueStates?: ActivityLinkedIssueFilter[];
   search?: string | null;
   jumpToDate?: string | null;
   thresholds?: ActivityThresholds;
@@ -74,6 +86,19 @@ export type ActivityLabel = {
   repositoryNameWithOwner: string | null;
 };
 
+export type ActivityIssueType = {
+  id: string;
+  name: string | null;
+};
+
+export type ActivityMilestone = {
+  id: string;
+  title: string | null;
+  state: string | null;
+  dueOn: string | null;
+  url: string | null;
+};
+
 export type ActivityAttentionFlags = {
   unansweredMention: boolean;
   reviewRequestPending: boolean;
@@ -82,6 +107,17 @@ export type ActivityAttentionFlags = {
   backlogIssue: boolean;
   stalledIssue: boolean;
 };
+
+export type ActivityLinkedIssue = {
+  id: string;
+  number: number | null;
+  title: string | null;
+  state: string | null;
+  repositoryNameWithOwner: string | null;
+  url: string | null;
+};
+
+export type ActivityLinkedIssueFilter = "has_parent" | "has_sub";
 
 export type ActivityItem = {
   id: string;
@@ -100,6 +136,10 @@ export type ActivityItem = {
   commenters: ActivityUser[];
   reactors: ActivityUser[];
   labels: ActivityLabel[];
+  issueType: ActivityIssueType | null;
+  milestone: ActivityMilestone | null;
+  hasParentIssue: boolean;
+  hasSubIssues: boolean;
   createdAt: string | null;
   updatedAt: string | null;
   closedAt: string | null;
@@ -130,10 +170,14 @@ export type ActivityItemDetail = {
   body: string | null;
   bodyHtml: string | null;
   raw: unknown;
+  parentIssues: ActivityLinkedIssue[];
+  subIssues: ActivityLinkedIssue[];
 };
 
 export type ActivityFilterOptions = {
   repositories: ActivityRepository[];
   labels: ActivityLabel[];
   users: ActivityUser[];
+  issueTypes: ActivityIssueType[];
+  milestones: ActivityMilestone[];
 };
