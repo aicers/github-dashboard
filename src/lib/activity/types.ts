@@ -1,6 +1,17 @@
 export type ActivityItemType = "issue" | "pull_request" | "discussion";
 
-export type ActivityStatusFilter = "open" | "closed" | "merged";
+export type IssueProjectStatus =
+  | "no_status"
+  | "todo"
+  | "in_progress"
+  | "done"
+  | "pending";
+
+export type ActivityStatusFilter =
+  | "open"
+  | "closed"
+  | "merged"
+  | IssueProjectStatus;
 
 export type ActivityAttentionFilter =
   | "unanswered_mentions"
@@ -79,7 +90,8 @@ export type ActivityItem = {
   title: string | null;
   url: string | null;
   state: string | null;
-  status: ActivityStatusFilter;
+  status: "open" | "closed" | "merged";
+  issueProjectStatus: IssueProjectStatus | null;
   repository: ActivityRepository | null;
   author: ActivityUser | null;
   assignees: ActivityUser[];

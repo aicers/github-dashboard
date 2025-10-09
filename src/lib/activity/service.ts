@@ -10,6 +10,7 @@ import type {
   ActivityStatusFilter,
   ActivityThresholds,
   ActivityUser,
+  IssueProjectStatus,
 } from "@/lib/activity/types";
 import { getAttentionInsights } from "@/lib/dashboard/attention";
 import {
@@ -34,13 +35,23 @@ const DEFAULT_THRESHOLDS: Required<ActivityThresholds> = {
   stalledIssueDays: 20,
 };
 
+const ISSUE_PROJECT_STATUS_VALUES: IssueProjectStatus[] = [
+  "no_status",
+  "todo",
+  "in_progress",
+  "done",
+  "pending",
+];
+
+const ISSUE_PROJECT_STATUS_SET = new Set(ISSUE_PROJECT_STATUS_VALUES);
+
 type ActivityRow = {
   item_type: "issue" | "pull_request" | "discussion";
   id: string;
   number: number | null;
   title: string | null;
   state: string | null;
-  status: ActivityStatusFilter;
+  status: "open" | "closed" | "merged";
   url: string | null;
   repository_id: string | null;
   repository_name: string | null;
@@ -60,6 +71,7 @@ type ActivityRow = {
   is_merged: boolean | null;
   raw_data: unknown;
   project_history: unknown;
+  issue_project_status: string | null;
   body_text: string | null;
   total_count: string | number;
 };
@@ -161,6 +173,55 @@ function matchProject(projectName: unknown, target: string | null) {
   }
 
   return normalizeText(projectName) === target;
+}
+
+function normalizeProjectStatus(value: string | null | undefined) {
+  if (!value) {
+    return "";
+  }
+
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_");
+}
+
+function mapIssueProjectStatus(
+  value: string | null | undefined,
+): IssueProjectStatus {
+  const normalized = normalizeProjectStatus(value);
+
+  if (!normalized || normalized === "no" || normalized === "no_status") {
+    return "no_status";
+  }
+
+  if (normalized === "todo" || normalized === "to_do") {
+    return "todo";
+  }
+
+  if (
+    normalized.includes("in_progress") ||
+    normalized === "doing" ||
+    normalized === "in-progress"
+  ) {
+    return "in_progress";
+  }
+
+  if (
+    normalized === "done" ||
+    normalized === "completed" ||
+    normalized === "complete" ||
+    normalized === "finished" ||
+    normalized === "closed"
+  ) {
+    return "done";
+  }
+
+  if (normalized.startsWith("pending") || normalized === "waiting") {
+    return "pending";
+  }
+
+  return "no_status";
 }
 
 function isInProgressStatus(status: string) {
@@ -385,7 +446,7 @@ function collectAttentionFilterIds(
   return union.size ? Array.from(union) : [];
 }
 
-function toStatus(value: string | null): ActivityStatusFilter {
+function toStatus(value: string | null): "open" | "closed" | "merged" {
   if (value === "merged" || value === "closed" || value === "open") {
     return value;
   }
@@ -418,14 +479,19 @@ function coerceSearch(value: string | null | undefined) {
 function buildQueryFilters(
   params: ActivityListParams,
   attentionIds: string[] | null,
-) {
+): {
+  clauses: string[];
+  values: unknown[];
+  issueProjectStatuses: IssueProjectStatus[];
+} {
   const clauses: string[] = [];
   const values: unknown[] = [];
+  const issueProjectStatuses: IssueProjectStatus[] = [];
 
   if (attentionIds?.length === 0) {
     // No matches for attention filters; force empty result set.
     clauses.push("FALSE");
-    return { clauses, values };
+    return { clauses, values, issueProjectStatuses };
   }
 
   if (attentionIds && attentionIds.length > 0) {
@@ -486,25 +552,48 @@ function buildQueryFilters(
 
   if (params.statuses?.length) {
     const statuses = params.statuses;
-    const withoutMerged = statuses.filter((status) => status !== "merged");
+    const baseStatuses = statuses.filter(
+      (status): status is "open" | "closed" =>
+        status === "open" || status === "closed",
+    );
+    const includeMerged = statuses.includes("merged");
+    issueProjectStatuses.push(
+      ...statuses.filter((status): status is IssueProjectStatus =>
+        ISSUE_PROJECT_STATUS_SET.has(status as IssueProjectStatus),
+      ),
+    );
 
-    if (withoutMerged.length === statuses.length) {
-      values.push(statuses);
-      clauses.push(`items.status = ANY($${values.length}::text[])`);
-    } else {
-      values.push(statuses);
-      const mergedIndex = values.length;
-
-      if (withoutMerged.length) {
-        values.push(withoutMerged);
-        clauses.push(
-          `((items.item_type = 'pull_request' AND items.status = ANY($${mergedIndex}::text[])) OR (items.item_type <> 'pull_request' AND items.status = ANY($${values.length}::text[])))`,
-        );
+    if (baseStatuses.length || includeMerged) {
+      if (includeMerged) {
+        values.push(["merged"]);
+        const mergedIndex = values.length;
+        if (baseStatuses.length) {
+          values.push(baseStatuses);
+          clauses.push(
+            `((items.item_type = 'pull_request' AND items.status = ANY($${mergedIndex}::text[])) OR (items.item_type <> 'pull_request' AND items.status = ANY($${values.length}::text[])))`,
+          );
+        } else {
+          clauses.push(
+            `items.item_type = 'pull_request' AND items.status = ANY($${mergedIndex}::text[])`,
+          );
+        }
       } else {
-        clauses.push(
-          `items.item_type = 'pull_request' AND items.status = ANY($${mergedIndex}::text[])`,
-        );
+        values.push(baseStatuses);
+        clauses.push(`items.status = ANY($${values.length}::text[])`);
       }
+    }
+
+    if (issueProjectStatuses.length) {
+      const uniqueIssueStatuses = Array.from(new Set(issueProjectStatuses));
+      values.push(uniqueIssueStatuses);
+      clauses.push(
+        `(items.item_type <> 'issue' OR items.issue_project_status = ANY($${values.length}::text[]))`,
+      );
+      issueProjectStatuses.splice(
+        0,
+        issueProjectStatuses.length,
+        ...uniqueIssueStatuses,
+      );
     }
   }
 
@@ -527,7 +616,7 @@ function buildQueryFilters(
     );
   }
 
-  return { clauses, values };
+  return { clauses, values, issueProjectStatuses };
 }
 
 const BASE_QUERY = /* sql */ `
@@ -562,6 +651,26 @@ WITH issue_items AS (
     FALSE AS is_merged,
     i.data AS raw_data,
     COALESCE(i.data->'projectStatusHistory', '[]'::jsonb) AS project_history,
+    CASE
+      WHEN jsonb_array_length(COALESCE(i.data->'projectStatusHistory', '[]'::jsonb)) = 0 THEN 'no_status'
+      ELSE (
+        SELECT CASE
+          WHEN normalized IN ('', 'no', 'no_status') THEN 'no_status'
+          WHEN normalized IN ('to_do', 'todo') THEN 'todo'
+          WHEN normalized LIKE 'in_progress%' OR normalized = 'doing' THEN 'in_progress'
+          WHEN normalized IN ('done', 'completed', 'complete', 'finished', 'closed') THEN 'done'
+          WHEN normalized LIKE 'pending%' THEN 'pending'
+          ELSE 'no_status'
+        END
+        FROM (
+          SELECT LOWER(REGEXP_REPLACE(COALESCE(entry->>'status', ''), '[^a-z0-9]+', '_', 'g')) AS normalized,
+                 entry->>'occurredAt' AS occurred_at
+          FROM jsonb_array_elements(COALESCE(i.data->'projectStatusHistory', '[]'::jsonb)) AS entry
+        ) AS status_entries
+        ORDER BY COALESCE(status_entries.occurred_at, '') DESC NULLS LAST
+        LIMIT 1
+      )
+    END AS issue_project_status,
     COALESCE(i.data->>'body', '') AS body_text
   FROM issues i
   JOIN repositories repo ON repo.id = i.repository_id
@@ -619,6 +728,7 @@ pr_items AS (
     COALESCE(pr.merged, FALSE) AS is_merged,
     pr.data AS raw_data,
     '[]'::jsonb AS project_history,
+    NULL::text AS issue_project_status,
     COALESCE(pr.data->>'body', '') AS body_text
   FROM pull_requests pr
   JOIN repositories repo ON repo.id = pr.repository_id
@@ -693,6 +803,7 @@ combined AS (
     is_merged,
     raw_data,
     project_history,
+    issue_project_status,
     body_text,
     CASE
       WHEN item_type = 'pull_request' AND is_merged THEN 'merged'
@@ -726,6 +837,7 @@ combined AS (
     is_merged,
     raw_data,
     project_history,
+    issue_project_status,
     body_text,
     CASE
       WHEN is_merged THEN 'merged'
@@ -806,6 +918,10 @@ function buildActivityItem(
   now: Date,
 ): ActivityItem {
   const status = toStatus(row.status);
+  const issueProjectStatus =
+    row.item_type === "issue"
+      ? mapIssueProjectStatus(row.issue_project_status)
+      : null;
   const labels = buildLabels(row);
 
   const author = mapUser(row.author_id, users);
@@ -861,6 +977,7 @@ function buildActivityItem(
     url: row.url,
     state: row.state,
     status,
+    issueProjectStatus,
     repository: row.repository_id
       ? {
           id: row.repository_id,

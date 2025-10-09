@@ -118,6 +118,11 @@ export function parseActivityListParams(
       "open",
       "closed",
       "merged",
+      "no_status",
+      "todo",
+      "in_progress",
+      "done",
+      "pending",
     ]),
     attention: parseEnumValues<ActivityAttentionFilter>(
       searchParams,

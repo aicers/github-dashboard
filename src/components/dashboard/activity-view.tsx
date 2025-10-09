@@ -94,11 +94,29 @@ const CATEGORY_OPTIONS: Array<{ value: ActivityItemCategory; label: string }> =
     { value: "pull_request", label: "Pull Request" },
   ];
 
-const STATUS_OPTIONS: Array<{ value: ActivityStatusFilter; label: string }> = [
+const BASE_STATUS_OPTIONS: Array<{
+  value: ActivityStatusFilter;
+  label: string;
+}> = [
   { value: "open", label: "Open" },
   { value: "closed", label: "Closed" },
   { value: "merged", label: "Merged" },
 ];
+
+const ISSUE_STATUS_OPTIONS: Array<{
+  value: ActivityStatusFilter;
+  label: string;
+}> = [
+  { value: "no_status", label: "No Status" },
+  { value: "todo", label: "Todo" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "done", label: "Done" },
+  { value: "pending", label: "Pending" },
+];
+
+const ISSUE_STATUS_VALUE_SET = new Set<ActivityStatusFilter>(
+  ISSUE_STATUS_OPTIONS.map((option) => option.value),
+);
 
 const DEFAULT_THRESHOLD_VALUES: Required<ActivityThresholds> = {
   unansweredMentionDays: 5,
@@ -143,6 +161,10 @@ const PEOPLE_ROLE_KEYS: PeopleRoleKey[] = [
   "reactorIds",
 ];
 
+function includesIssueCategory(categories: ActivityItemCategory[]) {
+  return categories.length === 0 || categories.includes("issue");
+}
+
 type ActivityIconInfo = {
   Icon: ComponentType<IconProps>;
   className: string;
@@ -155,7 +177,7 @@ const CATEGORY_LABELS: Record<ActivityItemCategory, string> = {
   discussion: "토론",
 };
 
-const STATUS_LABELS: Record<ActivityStatusFilter, string> = {
+const STATUS_LABELS: Record<ActivityItem["status"], string> = {
   open: "열림",
   closed: "닫힘",
   merged: "병합됨",
@@ -1023,6 +1045,45 @@ export function ActivityView({
     setApplied((current) => sanitizePeopleIds(current, allowedUserIds));
   }, [allowedUserIds]);
 
+  const allowIssueStatuses = useMemo(
+    () => includesIssueCategory(draft.categories),
+    [draft.categories],
+  );
+
+  const selectedIssueStatuses = useMemo(
+    () => draft.statuses.filter((status) => ISSUE_STATUS_VALUE_SET.has(status)),
+    [draft.statuses],
+  );
+  const issueStatusesAllSelected = selectedIssueStatuses.length === 0;
+
+  useEffect(() => {
+    if (allowIssueStatuses) {
+      return;
+    }
+
+    setDraft((current) => {
+      const sanitized = current.statuses.filter(
+        (status) => !ISSUE_STATUS_VALUE_SET.has(status),
+      );
+      if (sanitized.length === current.statuses.length) {
+        return current;
+      }
+      return { ...current, statuses: sanitized };
+    });
+
+    setApplied((current) => {
+      const sanitized = current.statuses.filter(
+        (status) => !ISSUE_STATUS_VALUE_SET.has(status),
+      );
+      if (sanitized.length === current.statuses.length) {
+        return current;
+      }
+      return { ...current, statuses: sanitized };
+    });
+  }, [allowIssueStatuses]);
+
+  const statusOptions = BASE_STATUS_OPTIONS;
+
   const peopleState = useMemo(() => derivePeopleState(draft), [draft]);
   const peopleSelection = peopleState.selection;
   const peopleSynced = peopleState.isSynced;
@@ -1295,163 +1356,219 @@ export function ActivityView({
       </div>
       <Card>
         <CardContent className="space-y-6">
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Label className="text-xs font-medium uppercase text-muted-foreground">
-                카테고리
-              </Label>
-              {(() => {
-                const allSelected = draft.categories.length === 0;
-                return (
-                  <>
-                    <TogglePill
-                      active={allSelected}
-                      variant={allSelected ? "active" : "inactive"}
-                      onClick={() => {
-                        setDraft((current) => {
-                          const nextCategories: ActivityItemCategory[] = [];
-                          let nextState: FilterState = {
-                            ...current,
-                            categories: nextCategories,
-                          };
-                          const peopleState = derivePeopleState(current);
-                          if (peopleState.isSynced) {
-                            nextState = applyPeopleSelection(
-                              nextState,
-                              peopleState.selection,
-                              nextCategories,
-                            );
-                          }
-                          return nextState;
-                        });
-                      }}
-                    >
-                      전체
-                    </TogglePill>
-                    {CATEGORY_OPTIONS.map((option) => {
-                      const active = draft.categories.includes(option.value);
-                      const variant = allSelected
-                        ? "muted"
-                        : active
-                          ? "active"
-                          : "inactive";
-                      return (
-                        <TogglePill
-                          key={option.value}
-                          active={active}
-                          variant={variant}
-                          onClick={() => {
-                            setDraft((current) => {
-                              const nextSet = new Set(current.categories);
-                              if (nextSet.has(option.value)) {
-                                nextSet.delete(option.value);
-                              } else {
-                                nextSet.add(option.value);
-                              }
-                              const nextCategories = Array.from(
-                                nextSet,
-                              ) as ActivityItemCategory[];
-                              let nextState: FilterState = {
-                                ...current,
-                                categories: nextCategories,
-                              };
-                              const peopleState = derivePeopleState(current);
-                              if (peopleState.isSynced) {
-                                nextState = applyPeopleSelection(
-                                  nextState,
-                                  peopleState.selection,
-                                  nextCategories,
-                                );
-                              }
-                              return nextState;
-                            });
-                          }}
-                        >
-                          {option.label}
-                        </TogglePill>
-                      );
-                    })}
-                  </>
-                );
-              })()}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Label className="text-xs font-medium uppercase text-muted-foreground">
-                주의
-              </Label>
-              {(() => {
-                const allSelected = draft.attention.length === 0;
-                return (
-                  <>
-                    <TogglePill
-                      active={allSelected}
-                      variant={allSelected ? "active" : "inactive"}
-                      onClick={() => {
-                        setDraft((current) => ({
+          <div className="flex flex-wrap items-center gap-2">
+            <Label className="text-xs font-medium uppercase text-muted-foreground">
+              카테고리
+            </Label>
+            {(() => {
+              const allSelected = draft.categories.length === 0;
+              return (
+                <>
+                  <TogglePill
+                    active={allSelected}
+                    variant={allSelected ? "active" : "inactive"}
+                    onClick={() => {
+                      setDraft((current) => {
+                        const nextCategories: ActivityItemCategory[] = [];
+                        let nextState: FilterState = {
                           ...current,
-                          attention: [],
-                        }));
-                      }}
-                    >
-                      전체
-                    </TogglePill>
-                    {ATTENTION_OPTIONS.map((option) => {
-                      const active = draft.attention.includes(option.value);
-                      const variant = allSelected
-                        ? "muted"
-                        : active
-                          ? "active"
-                          : "inactive";
-                      const count = attentionSummary[option.value] ?? 0;
-                      return (
-                        <TogglePill
-                          key={option.value}
-                          active={active}
-                          variant={variant}
-                          onClick={() => {
-                            setDraft((current) => {
-                              const nextSet = new Set(current.attention);
-                              if (nextSet.has(option.value)) {
-                                nextSet.delete(option.value);
-                              } else {
-                                nextSet.add(option.value);
-                              }
-                              return {
-                                ...current,
-                                attention: Array.from(nextSet),
-                              };
-                            });
-                          }}
-                        >
-                          <span>{option.label}</span>
-                          <span className="ml-1 text-muted-foreground">
-                            ({count})
-                          </span>
-                        </TogglePill>
-                      );
-                    })}
-                  </>
-                );
-              })()}
-            </div>
-            <PeopleToggleList
-              label="사람"
-              value={peopleSelection}
-              onChange={handlePeopleChange}
-              options={userOptions}
-              synced={peopleSynced}
-            />
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="px-2"
-                onClick={() => setShowAdvancedFilters((value) => !value)}
-              >
-                {showAdvancedFilters ? "숨기기" : "고급 필터 보기"}
-              </Button>
-            </div>
+                          categories: nextCategories,
+                        };
+                        const peopleState = derivePeopleState(current);
+                        if (peopleState.isSynced) {
+                          nextState = applyPeopleSelection(
+                            nextState,
+                            peopleState.selection,
+                            nextCategories,
+                          );
+                        }
+                        return nextState;
+                      });
+                    }}
+                  >
+                    전체
+                  </TogglePill>
+                  {CATEGORY_OPTIONS.map((option) => {
+                    const active = draft.categories.includes(option.value);
+                    const variant = allSelected
+                      ? "muted"
+                      : active
+                        ? "active"
+                        : "inactive";
+                    return (
+                      <TogglePill
+                        key={option.value}
+                        active={active}
+                        variant={variant}
+                        onClick={() => {
+                          setDraft((current) => {
+                            const nextSet = new Set(current.categories);
+                            if (nextSet.has(option.value)) {
+                              nextSet.delete(option.value);
+                            } else {
+                              nextSet.add(option.value);
+                            }
+                            const nextCategories = Array.from(
+                              nextSet,
+                            ) as ActivityItemCategory[];
+                            let nextState: FilterState = {
+                              ...current,
+                              categories: nextCategories,
+                            };
+                            const peopleState = derivePeopleState(current);
+                            if (peopleState.isSynced) {
+                              nextState = applyPeopleSelection(
+                                nextState,
+                                peopleState.selection,
+                                nextCategories,
+                              );
+                            }
+                            return nextState;
+                          });
+                        }}
+                      >
+                        {option.label}
+                      </TogglePill>
+                    );
+                  })}
+                  {allowIssueStatuses && (
+                    <>
+                      <span
+                        aria-hidden="true"
+                        className="mx-2 h-4 border-l border-border/50"
+                      />
+                      <Label className="text-xs font-medium text-muted-foreground">
+                        Issue 상태
+                      </Label>
+                      <TogglePill
+                        active={issueStatusesAllSelected}
+                        variant={
+                          issueStatusesAllSelected ? "active" : "inactive"
+                        }
+                        onClick={() => {
+                          setDraft((current) => ({
+                            ...current,
+                            statuses: current.statuses.filter(
+                              (status) => !ISSUE_STATUS_VALUE_SET.has(status),
+                            ),
+                          }));
+                        }}
+                      >
+                        전체
+                      </TogglePill>
+                      {ISSUE_STATUS_OPTIONS.map((option) => {
+                        const active = draft.statuses.includes(option.value);
+                        const variant = issueStatusesAllSelected
+                          ? "muted"
+                          : active
+                            ? "active"
+                            : "inactive";
+                        return (
+                          <TogglePill
+                            key={`issue-status-${option.value}`}
+                            active={active}
+                            variant={variant}
+                            onClick={() => {
+                              setDraft((current) => {
+                                const nextSet = new Set(current.statuses);
+                                if (nextSet.has(option.value)) {
+                                  nextSet.delete(option.value);
+                                } else {
+                                  nextSet.add(option.value);
+                                }
+                                return {
+                                  ...current,
+                                  statuses: Array.from(nextSet),
+                                };
+                              });
+                            }}
+                          >
+                            {option.label}
+                          </TogglePill>
+                        );
+                      })}
+                    </>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Label className="text-xs font-medium uppercase text-muted-foreground">
+              주의
+            </Label>
+            {(() => {
+              const allSelected = draft.attention.length === 0;
+              return (
+                <>
+                  <TogglePill
+                    active={allSelected}
+                    variant={allSelected ? "active" : "inactive"}
+                    onClick={() => {
+                      setDraft((current) => ({
+                        ...current,
+                        attention: [],
+                      }));
+                    }}
+                  >
+                    전체
+                  </TogglePill>
+                  {ATTENTION_OPTIONS.map((option) => {
+                    const active = draft.attention.includes(option.value);
+                    const variant = allSelected
+                      ? "muted"
+                      : active
+                        ? "active"
+                        : "inactive";
+                    const count = attentionSummary[option.value] ?? 0;
+                    return (
+                      <TogglePill
+                        key={option.value}
+                        active={active}
+                        variant={variant}
+                        onClick={() => {
+                          setDraft((current) => {
+                            const nextSet = new Set(current.attention);
+                            if (nextSet.has(option.value)) {
+                              nextSet.delete(option.value);
+                            } else {
+                              nextSet.add(option.value);
+                            }
+                            return {
+                              ...current,
+                              attention: Array.from(nextSet),
+                            };
+                          });
+                        }}
+                      >
+                        <span>{option.label}</span>
+                        <span className="ml-1 text-muted-foreground">
+                          ({count})
+                        </span>
+                      </TogglePill>
+                    );
+                  })}
+                </>
+              );
+            })()}
+          </div>
+          <PeopleToggleList
+            label="사람"
+            value={peopleSelection}
+            onChange={handlePeopleChange}
+            options={userOptions}
+            synced={peopleSynced}
+          />
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="px-2"
+              onClick={() => setShowAdvancedFilters((value) => !value)}
+            >
+              {showAdvancedFilters ? "숨기기" : "고급 필터 보기"}
+            </Button>
           </div>
           {showAdvancedFilters && (
             <div className="space-y-6 rounded-md border border-border/60 bg-muted/10 p-4">
@@ -1567,7 +1684,7 @@ export function ActivityView({
                 <Label className="text-xs font-medium uppercase text-muted-foreground">
                   Status
                 </Label>
-                {STATUS_OPTIONS.map((option) => {
+                {statusOptions.map((option) => {
                   const active = draft.statuses.includes(option.value);
                   return (
                     <TogglePill
