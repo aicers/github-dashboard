@@ -455,12 +455,18 @@ function buildQueryFilters(
 
   if (params.assigneeIds?.length) {
     values.push(params.assigneeIds);
-    clauses.push(`items.assignee_ids && $${values.length}::text[]`);
+    const assigneeIndex = values.length;
+    clauses.push(
+      `(items.item_type <> 'discussion' OR items.assignee_ids && $${assigneeIndex}::text[])`,
+    );
   }
 
   if (params.reviewerIds?.length) {
     values.push(params.reviewerIds);
-    clauses.push(`items.reviewer_ids && $${values.length}::text[]`);
+    const reviewerIndex = values.length;
+    clauses.push(
+      `(items.item_type <> 'pull_request' OR items.reviewer_ids && $${reviewerIndex}::text[])`,
+    );
   }
 
   if (params.mentionedUserIds?.length) {
@@ -479,8 +485,27 @@ function buildQueryFilters(
   }
 
   if (params.statuses?.length) {
-    values.push(params.statuses);
-    clauses.push(`items.status = ANY($${values.length}::text[])`);
+    const statuses = params.statuses;
+    const withoutMerged = statuses.filter((status) => status !== "merged");
+
+    if (withoutMerged.length === statuses.length) {
+      values.push(statuses);
+      clauses.push(`items.status = ANY($${values.length}::text[])`);
+    } else {
+      values.push(statuses);
+      const mergedIndex = values.length;
+
+      if (withoutMerged.length) {
+        values.push(withoutMerged);
+        clauses.push(
+          `((items.item_type = 'pull_request' AND items.status = ANY($${mergedIndex}::text[])) OR (items.item_type <> 'pull_request' AND items.status = ANY($${values.length}::text[])))`,
+        );
+      } else {
+        clauses.push(
+          `items.item_type = 'pull_request' AND items.status = ANY($${mergedIndex}::text[])`,
+        );
+      }
+    }
   }
 
   const search = coerceSearch(params.search);
