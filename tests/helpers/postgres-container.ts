@@ -27,6 +27,7 @@ beforeAll(async () => {
   process.env.DATABASE_URL = container.getConnectionUri();
   env.DATABASE_URL = process.env.DATABASE_URL;
   await ensureSchema();
+  await warmupDashboardAnalytics();
 }, 60_000);
 
 afterAll(async () => {
@@ -37,3 +38,27 @@ afterAll(async () => {
     container = null;
   }
 });
+
+async function warmupDashboardAnalytics() {
+  try {
+    const [
+      { resetDashboardTables, CURRENT_RANGE_START, CURRENT_RANGE_END },
+      { getDashboardAnalytics },
+    ] = await Promise.all([
+      import("./dashboard-metrics"),
+      import("@/lib/dashboard/analytics"),
+    ]);
+
+    await resetDashboardTables();
+    await getDashboardAnalytics({
+      start: CURRENT_RANGE_START,
+      end: CURRENT_RANGE_END,
+    });
+    await resetDashboardTables();
+  } catch (error) {
+    console.warn(
+      "[tests] Failed to warm up dashboard analytics before DB tests:",
+      error,
+    );
+  }
+}

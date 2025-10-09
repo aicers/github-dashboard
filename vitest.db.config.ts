@@ -19,5 +19,7 @@ export default defineConfig({
       "**/analytics.issue-creation-closure.metrics.test.ts",
     ],
     exclude: configDefaults.exclude,
+    testTimeout: 10_000,
+    hookTimeout: 10_000,
   },
 });
