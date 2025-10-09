@@ -77,6 +77,7 @@ function renderSettings(
       excludedRepositoryIds={["repo-2"]}
       members={members}
       excludedMemberIds={["user-3"]}
+      isAdmin
       {...overrides}
     />,
   );
@@ -117,6 +118,13 @@ describe("SettingsView", () => {
     expect(
       screen.getByText("제외된 구성원: 1명", { selector: "span" }),
     ).toBeInTheDocument();
+
+    expect(
+      screen.getByRole("button", { name: "개인 설정 저장" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "조직 설정 저장" }),
+    ).toBeInTheDocument();
   });
 
   it("submits trimmed values and refreshes the dashboard on success", async () => {
@@ -147,7 +155,7 @@ describe("SettingsView", () => {
     await user.deselectOptions(memberSelect, ["user-3"]);
     await user.selectOptions(memberSelect, ["user-1", "user-2"]);
 
-    await user.click(screen.getByRole("button", { name: "설정 저장" }));
+    await user.click(screen.getByRole("button", { name: "조직 설정 저장" }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -187,7 +195,7 @@ describe("SettingsView", () => {
     await user.clear(intervalInput);
     await user.type(intervalInput, "0");
 
-    await user.click(screen.getByRole("button", { name: "설정 저장" }));
+    await user.click(screen.getByRole("button", { name: "조직 설정 저장" }));
 
     expect(
       screen.getByText("동기화 주기는 1 이상의 정수여야 합니다.", {
@@ -218,5 +226,88 @@ describe("SettingsView", () => {
       screen.getByText("제외된 구성원: 0명", { selector: "span" }),
     ).toBeInTheDocument();
     expect(clearMembers).toBeDisabled();
+  });
+
+  it("updates personal settings independently", async () => {
+    const user = userEvent.setup();
+    fetchMock.mockResolvedValueOnce(createResponse({ success: true }));
+
+    renderSettings();
+
+    const timezoneSelect = screen.getByLabelText("표준 시간대");
+    await user.selectOptions(timezoneSelect, "Europe/Berlin");
+
+    await user.click(screen.getByRole("button", { name: "개인 설정 저장" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    const request = fetchMock.mock.calls[0];
+    expect(request?.[0]).toBe("/api/sync/config");
+    expect(request?.[1]?.method).toBe("PATCH");
+    expect(JSON.parse(String(request?.[1]?.body ?? "{}"))).toEqual({
+      timezone: "Europe/Berlin",
+      weekStart: "monday",
+    });
+
+    await waitFor(() => {
+      expect(routerRefreshMock).toHaveBeenCalled();
+    });
+
+    expect(
+      screen.getByText("설정이 저장되었습니다.", { selector: "p" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows organization controls as read-only for non-admin users", async () => {
+    renderSettings({ isAdmin: false });
+
+    const orgInput = screen.getByLabelText("Organization 이름");
+    expect(orgInput).toBeDisabled();
+
+    const intervalInput = screen.getByLabelText("자동 동기화 주기 (분)");
+    expect(intervalInput).toBeDisabled();
+
+    const repoSelect = screen.getByLabelText(/제외할 리포지토리를 선택하세요/);
+    expect(repoSelect).toBeDisabled();
+
+    const memberSelect = screen.getByLabelText(/제외할 구성원을 선택하세요/);
+    expect(memberSelect).toBeDisabled();
+
+    const saveButton = screen.getByRole("button", { name: "조직 설정 저장" });
+    expect(saveButton).toBeDisabled();
+    expect(
+      screen.getByText("관리자 권한이 있는 사용자만 수정할 수 있습니다."),
+    ).toBeInTheDocument();
+  });
+
+  it("allows non-admin users to update personal settings only", async () => {
+    const user = userEvent.setup();
+    fetchMock.mockResolvedValueOnce(createResponse({ success: true }));
+
+    renderSettings({ isAdmin: false });
+
+    const timezoneSelect = screen.getByLabelText("표준 시간대");
+    await user.selectOptions(timezoneSelect, "Europe/London");
+
+    await user.click(screen.getByRole("button", { name: "개인 설정 저장" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    const payload = JSON.parse(
+      String(fetchMock.mock.calls[0]?.[1]?.body ?? "{}"),
+    );
+    expect(payload).toEqual({ timezone: "Europe/London", weekStart: "monday" });
+
+    await waitFor(() => {
+      expect(routerRefreshMock).toHaveBeenCalled();
+    });
+
+    expect(
+      screen.getByText("설정이 저장되었습니다.", { selector: "p" }),
+    ).toBeInTheDocument();
   });
 });

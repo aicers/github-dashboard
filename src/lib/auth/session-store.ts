@@ -8,6 +8,7 @@ export type SessionRecord = {
   userId: string;
   orgSlug: string | null;
   orgVerified: boolean;
+  isAdmin: boolean;
   createdAt: Date;
   lastSeenAt: Date;
   expiresAt: Date;
@@ -18,6 +19,7 @@ type CreateSessionOptions = {
   userId: string;
   orgSlug: string | null;
   orgVerified: boolean;
+  isAdmin: boolean;
 };
 
 function mapRow(row: {
@@ -25,6 +27,7 @@ function mapRow(row: {
   user_id: string;
   org_slug: string | null;
   org_verified: boolean;
+  is_admin: boolean;
   created_at: string;
   last_seen_at: string;
   expires_at: string;
@@ -34,6 +37,7 @@ function mapRow(row: {
     userId: row.user_id,
     orgSlug: row.org_slug,
     orgVerified: row.org_verified,
+    isAdmin: row.is_admin,
     createdAt: new Date(row.created_at),
     lastSeenAt: new Date(row.last_seen_at),
     expiresAt: new Date(row.expires_at),
@@ -45,6 +49,7 @@ export async function createSessionRecord({
   userId,
   orgSlug,
   orgVerified,
+  isAdmin,
 }: CreateSessionOptions): Promise<SessionRecord> {
   await ensureSchema();
 
@@ -53,14 +58,22 @@ export async function createSessionRecord({
     user_id: string;
     org_slug: string | null;
     org_verified: boolean;
+    is_admin: boolean;
     created_at: string;
     last_seen_at: string;
     expires_at: string;
   }>(
-    `INSERT INTO auth_sessions (id, user_id, org_slug, org_verified, expires_at)
-     VALUES ($1, $2, $3, $4, NOW() + ($5 || ' seconds')::interval)
-     RETURNING id, user_id, org_slug, org_verified, created_at, last_seen_at, expires_at`,
-    [sessionId, userId, orgSlug, orgVerified, SESSION_DURATION_SECONDS],
+    `INSERT INTO auth_sessions (id, user_id, org_slug, org_verified, is_admin, expires_at)
+     VALUES ($1, $2, $3, $4, $5, NOW() + ($6 || ' seconds')::interval)
+     RETURNING id, user_id, org_slug, org_verified, is_admin, created_at, last_seen_at, expires_at`,
+    [
+      sessionId,
+      userId,
+      orgSlug,
+      orgVerified,
+      isAdmin,
+      SESSION_DURATION_SECONDS,
+    ],
   );
 
   return mapRow(rows[0]);
@@ -76,6 +89,7 @@ export async function refreshSessionRecord(
     user_id: string;
     org_slug: string | null;
     org_verified: boolean;
+    is_admin: boolean;
     created_at: string;
     last_seen_at: string;
     expires_at: string;
@@ -84,7 +98,7 @@ export async function refreshSessionRecord(
        SET last_seen_at = NOW(),
            expires_at = NOW() + ($2 || ' seconds')::interval
      WHERE id = $1 AND expires_at > NOW()
-     RETURNING id, user_id, org_slug, org_verified, created_at, last_seen_at, expires_at`,
+     RETURNING id, user_id, org_slug, org_verified, is_admin, created_at, last_seen_at, expires_at`,
     [sessionId, SESSION_DURATION_SECONDS],
   );
 

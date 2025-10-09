@@ -21,6 +21,7 @@ const SCHEMA_STATEMENTS = [
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     org_slug TEXT,
     org_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    is_admin BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     expires_at TIMESTAMPTZ NOT NULL
@@ -157,6 +158,7 @@ const SCHEMA_STATEMENTS = [
   `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS week_start TEXT NOT NULL DEFAULT 'monday'`,
   `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS excluded_repository_ids TEXT[] NOT NULL DEFAULT '{}'`,
   `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS excluded_user_ids TEXT[] NOT NULL DEFAULT '{}'`,
+  `ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE`,
   `CREATE TABLE IF NOT EXISTS sync_state (
     resource TEXT PRIMARY KEY,
     last_cursor TEXT,

@@ -40,7 +40,23 @@ const members: UserProfile[] = [
   },
 ];
 
-export default function SettingsHarnessPage() {
+function resolveIsAdmin(searchParams?: { admin?: string }) {
+  const value = searchParams?.admin;
+  if (!value) {
+    return true;
+  }
+
+  return ["true", "1", "yes"].includes(value.toLowerCase());
+}
+
+export default async function SettingsHarnessPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ admin?: string }>;
+}) {
+  const resolvedParams = await searchParams;
+  const isAdmin = resolveIsAdmin(resolvedParams);
+
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col gap-8 px-6 py-10">
       <SettingsView
@@ -52,7 +68,12 @@ export default function SettingsHarnessPage() {
         excludedRepositoryIds={["repo-2"]}
         members={members}
         excludedMemberIds={["user-3"]}
+        isAdmin={isAdmin}
       />
+      <p className="text-sm text-muted-foreground">
+        Query with <code>?admin=false</code> to preview the non-admin read-only
+        state.
+      </p>
     </main>
   );
 }

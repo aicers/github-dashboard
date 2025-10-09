@@ -19,6 +19,7 @@ beforeEach(() => {
     userId: "user",
     orgSlug: "org",
     orgVerified: true,
+    isAdmin: true,
     createdAt: new Date(),
     lastSeenAt: new Date(),
     expiresAt: new Date(),

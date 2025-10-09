@@ -36,6 +36,7 @@ configuration, sync controls, and analytics through a Next.js dashboard.
    export GITHUB_OAUTH_CLIENT_ID=<oauth_client_id>
    export GITHUB_OAUTH_CLIENT_SECRET=<oauth_client_secret>
    export GITHUB_ALLOWED_ORG=<allowed_org_slug>
+   export DASHBOARD_ADMIN_IDS=owner_login,ops-team
    export APP_BASE_URL=http://localhost:3000   # production: https://your-domain
    export SESSION_SECRET=$(openssl rand -hex 32)
    export DATABASE_URL=postgres://<user>:<password>@localhost:5432/<database>
@@ -83,6 +84,12 @@ curl -X POST http://localhost:3000/api/sync/reset -d '{"preserveLogs":true}' \
 - **Status & analytics** — the dashboard consumes `GET /api/sync/status` and
   `GET /api/data/stats` to present sync logs, data freshness, counts, and top
   contributors/repositories.
+
+Administrators are identified through `DASHBOARD_ADMIN_IDS`, a comma-separated
+list of GitHub logins or node IDs. Admin users can modify organization-wide
+settings (org name, sync cadence, excluded repositories/members), while all
+authenticated users can adjust their personal timezone and week-start
+preferences.
 
 ## Quality Tooling
 
@@ -233,6 +240,7 @@ Environment variables are parsed through `src/lib/env.ts`:
 | `GITHUB_OAUTH_CLIENT_ID` | ✅ | GitHub OAuth App client identifier |
 | `GITHUB_OAUTH_CLIENT_SECRET` | ✅ | GitHub OAuth App client secret |
 | `GITHUB_ALLOWED_ORG` | ✅ | GitHub organization slug allowed to sign in |
+| `DASHBOARD_ADMIN_IDS` | ⛔ | Comma-separated GitHub logins or node IDs with admin privileges |
 | `APP_BASE_URL` | ✅ | Absolute origin used to build OAuth callback URLs |
 | `SESSION_SECRET` | ✅ | Secret key for signing session cookies |
 | `DATABASE_URL` | ✅ | PostgreSQL connection string |

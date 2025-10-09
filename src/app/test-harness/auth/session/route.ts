@@ -40,6 +40,11 @@ export async function GET(request: Request) {
   const login = url.searchParams.get("login") ?? userId;
   const name = url.searchParams.get("name") ?? login;
   const orgSlug = url.searchParams.get("org") ?? "test-org";
+  const isAdminParam = url.searchParams.get("admin");
+  const isAdmin =
+    typeof isAdminParam === "string"
+      ? ["true", "1", "yes"].includes(isAdminParam.toLowerCase())
+      : false;
 
   await ensureSchema();
   await upsertUser(buildActor({ id: userId, login, name }));
@@ -48,6 +53,7 @@ export async function GET(request: Request) {
     userId,
     orgSlug,
     orgVerified: true,
+    isAdmin,
   });
 
   const response = NextResponse.json({

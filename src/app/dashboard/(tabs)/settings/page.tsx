@@ -1,10 +1,12 @@
 import { SettingsView } from "@/components/dashboard/settings-view";
+import { readActiveSession } from "@/lib/auth/session";
 import { listAllRepositories, listAllUsers } from "@/lib/db/operations";
 import { fetchSyncStatus } from "@/lib/sync/service";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
+  const session = await readActiveSession();
   const status = await fetchSyncStatus();
   const config = status.config;
   const timeZone = config?.timezone ?? "UTC";
@@ -27,6 +29,7 @@ export default async function SettingsPage() {
       excludedRepositoryIds={excludedRepositoryIds}
       members={members}
       excludedMemberIds={excludedMemberIds}
+      isAdmin={Boolean(session?.isAdmin)}
     />
   );
 }

@@ -33,11 +33,14 @@ following keys (see `.env.example` for placeholders):
 GITHUB_OAUTH_CLIENT_ID=<oauth_client_id>
 GITHUB_OAUTH_CLIENT_SECRET=<oauth_client_secret>
 GITHUB_ALLOWED_ORG=<allowed_org_slug>
+DASHBOARD_ADMIN_IDS=owner_login,other_admin
 APP_BASE_URL=http://localhost:3000   # production: https://your-domain
 SESSION_SECRET=$(openssl rand -hex 32)
 ```
 
 - `GITHUB_ALLOWED_ORG` is the GitHub organization slug used to gate access.
+- `DASHBOARD_ADMIN_IDS` is an optional comma-separated list of GitHub user
+  logins or node IDs that should receive admin access to organization settings.
 - `APP_BASE_URL` enables the server to build redirect URIs (GitHub requires an
   absolute URL).
 - `SESSION_SECRET` signs and encrypts the HTTP-only session cookie. Generate a
