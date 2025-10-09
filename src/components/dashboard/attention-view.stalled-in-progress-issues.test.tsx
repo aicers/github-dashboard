@@ -187,7 +187,7 @@ describe("AttentionView stalled in-progress issues", () => {
     }
 
     expect(
-      within(firstItem).getByText("acme/engineering #310"),
+      within(firstItem).getByText("acme/engineering#310"),
     ).toBeInTheDocument();
     expect(within(firstItem).getByText("Alice (@alice)")).toBeInTheDocument();
     expect(
@@ -199,7 +199,7 @@ describe("AttentionView stalled in-progress issues", () => {
     ).toBeInTheDocument();
 
     expect(
-      within(secondItem).getByText("acme/engineering #311"),
+      within(secondItem).getByText("acme/engineering#311"),
     ).toBeInTheDocument();
     expect(within(secondItem).getByText("Carol (@carol)")).toBeInTheDocument();
     expect(within(secondItem).getByText("Bob (@bob)")).toBeInTheDocument();
