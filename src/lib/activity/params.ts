@@ -167,15 +167,31 @@ export function createSearchParamsFromRecord(
   record: Record<string, string | string[] | undefined>,
 ) {
   const params = new URLSearchParams();
+  const seen = new Map<string, Set<string>>();
   Object.entries(record).forEach(([key, value]) => {
     if (typeof value === "string") {
-      params.append(key, value);
+      const trimmed = value.trim();
+      if (!trimmed.length) {
+        return;
+      }
+      const cache = seen.get(key) ?? new Set<string>();
+      if (!cache.has(trimmed)) {
+        params.append(key, trimmed);
+        cache.add(trimmed);
+        seen.set(key, cache);
+      }
     } else if (Array.isArray(value)) {
-      value.forEach((entry) => {
-        if (typeof entry === "string") {
-          params.append(key, entry);
-        }
-      });
+      value
+        .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+        .filter((entry) => entry.length > 0)
+        .forEach((entry) => {
+          const cache = seen.get(key) ?? new Set<string>();
+          if (!cache.has(entry)) {
+            params.append(key, entry);
+            cache.add(entry);
+            seen.set(key, cache);
+          }
+        });
     }
   });
   return params;
