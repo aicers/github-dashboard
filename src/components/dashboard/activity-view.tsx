@@ -53,6 +53,7 @@ type ActivityViewProps = {
   initialData: ActivityListResult;
   filterOptions: ActivityFilterOptions;
   initialParams: ActivityListParams;
+  currentUserId: string | null;
 };
 
 type FilterState = {
@@ -92,6 +93,13 @@ type MultiSelectOption = {
   description?: string | null;
 };
 
+type QuickFilterDefinition = {
+  id: string;
+  label: string;
+  description: string;
+  buildState: (perPage: number) => FilterState;
+};
+
 const ATTENTION_OPTIONS: Array<{
   value: ActivityAttentionFilter;
   label: string;
@@ -104,6 +112,11 @@ const ATTENTION_OPTIONS: Array<{
   { value: "review_requests_pending", label: "응답 없는 리뷰 요청" },
   { value: "unanswered_mentions", label: "응답 없는 멘션" },
 ];
+
+const ATTENTION_REQUIRED_VALUES: ActivityAttentionFilter[] =
+  ATTENTION_OPTIONS.filter((option) => option.value !== "no_attention").map(
+    (option) => option.value,
+  );
 
 const CATEGORY_OPTIONS: Array<{ value: ActivityItemCategory; label: string }> =
   [
@@ -159,6 +172,8 @@ const DEFAULT_THRESHOLD_VALUES: Required<ActivityThresholds> = {
 
 const PER_PAGE_CHOICES = [10, 25, 50];
 const SAVED_FILTER_LIMIT_DEFAULT = 30;
+const QUICK_FILTER_DUPLICATE_MESSAGE =
+  "기본 빠른 필터와 동일한 설정은 저장할 수 없어요.";
 
 const ALL_ACTIVITY_CATEGORIES = CATEGORY_OPTIONS.map(
   (option) => option.value,
@@ -512,6 +527,41 @@ function buildSavedFilterPayload(filters: FilterState): ActivityListParams {
     search: trimmedSearch.length ? trimmedSearch : undefined,
     thresholds,
   };
+}
+
+function canonicalizeActivityParams(params: ActivityListParams) {
+  const normalized: Record<string, unknown> = {};
+  Object.keys(params)
+    .sort((a, b) => a.localeCompare(b))
+    .forEach((key) => {
+      const value = params[key as keyof ActivityListParams];
+      if (value === undefined) {
+        return;
+      }
+      if (Array.isArray(value)) {
+        normalized[key] = [...value].sort((a, b) =>
+          String(a).localeCompare(String(b)),
+        );
+        return;
+      }
+      if (value && typeof value === "object") {
+        const entries = Object.entries(value as Record<string, number>)
+          .filter(([, entryValue]) => entryValue !== undefined)
+          .sort(([firstKey], [secondKey]) => firstKey.localeCompare(secondKey));
+        normalized[key] = entries.reduce<Record<string, number>>(
+          (accumulator, [entryKey, entryValue]) => {
+            if (typeof entryValue === "number") {
+              accumulator[entryKey] = entryValue;
+            }
+            return accumulator;
+          },
+          {},
+        );
+        return;
+      }
+      normalized[key] = value;
+    });
+  return JSON.stringify(normalized);
 }
 
 function normalizeSearchParams(filters: FilterState, defaultPerPage: number) {
@@ -1494,6 +1544,36 @@ function TogglePill({
   );
 }
 
+function QuickFilterButton({
+  active,
+  label,
+  description,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  description: string;
+  onClick: () => void;
+}) {
+  const baseClass =
+    "rounded-md border px-2.5 py-1 text-[12px] font-semibold uppercase tracking-wide transition-colors";
+  const stateClass = active
+    ? "border-primary/70 bg-primary/15 text-primary"
+    : "border-border/70 bg-muted/40 text-muted-foreground/90 hover:bg-muted/60";
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={description}
+      className={cn(baseClass, stateClass)}
+      aria-pressed={active}
+    >
+      {label}
+    </button>
+  );
+}
+
 type SavedFiltersManagerProps = {
   open: boolean;
   filters: ActivitySavedFilter[];
@@ -1842,6 +1922,7 @@ export function ActivityView({
   initialData,
   filterOptions,
   initialParams,
+  currentUserId,
 }: ActivityViewProps) {
   const router = useRouter();
   const perPageDefault =
@@ -2127,6 +2208,87 @@ export function ActivityView({
     setApplied((current) => sanitizePeopleIds(current, allowedUserIds));
   }, [allowedUserIds]);
 
+  const quickFilterDefinitions = useMemo<QuickFilterDefinition[]>(() => {
+    const definitions: QuickFilterDefinition[] = [
+      {
+        id: "all_updates",
+        label: "전체 업데이트",
+        description: "모든 최신 업데이트를 확인합니다.",
+        buildState: (perPage: number) => buildFilterState({}, perPage),
+      },
+      {
+        id: "attention_only",
+        label: "주의 필요한 업데이트",
+        description: '"주의 없음"을 제외한 주의 항목만 확인합니다.',
+        buildState: (perPage: number) => ({
+          ...buildFilterState({}, perPage),
+          attention: [...ATTENTION_REQUIRED_VALUES],
+        }),
+      },
+    ];
+
+    if (currentUserId && allowedUserIds.has(currentUserId)) {
+      const buildSelfState = (perPage: number) =>
+        applyPeopleSelection(buildFilterState({}, perPage), [currentUserId]);
+
+      definitions.push(
+        {
+          id: "my_updates",
+          label: "내 업데이트",
+          description: "나와 관련된 최신 업데이트를 확인합니다.",
+          buildState: (perPage: number) => buildSelfState(perPage),
+        },
+        {
+          id: "my_attention",
+          label: "내 주의 항목",
+          description: "나와 관련된 주의 항목을 빠르게 확인합니다.",
+          buildState: (perPage: number) => {
+            const state = buildSelfState(perPage);
+            return {
+              ...state,
+              attention: [...ATTENTION_REQUIRED_VALUES],
+            };
+          },
+        },
+      );
+    }
+
+    return definitions;
+  }, [allowedUserIds, currentUserId]);
+
+  const quickFilterCanonicalSet = useMemo(() => {
+    const keys = new Set<string>();
+    quickFilterDefinitions.forEach((definition) => {
+      const payload = buildSavedFilterPayload({
+        ...definition.buildState(draft.perPage),
+        page: 1,
+      });
+      keys.add(canonicalizeActivityParams(payload));
+    });
+    return keys;
+  }, [draft.perPage, quickFilterDefinitions]);
+
+  const canonicalDraftKey = useMemo(
+    () =>
+      canonicalizeActivityParams(
+        buildSavedFilterPayload({ ...draft, page: 1 }),
+      ),
+    [draft],
+  );
+
+  const activeQuickFilterId = useMemo(() => {
+    for (const definition of quickFilterDefinitions) {
+      const payload = buildSavedFilterPayload({
+        ...definition.buildState(draft.perPage),
+        page: 1,
+      });
+      if (canonicalizeActivityParams(payload) === canonicalDraftKey) {
+        return definition.id;
+      }
+    }
+    return null;
+  }, [canonicalDraftKey, draft.perPage, quickFilterDefinitions]);
+
   const allowPullRequestStatuses = useMemo(
     () =>
       draft.categories.length === 0 ||
@@ -2350,6 +2512,30 @@ export function ActivityView({
     [perPageDefault, router, showNotification],
   );
 
+  const handleApplyQuickFilter = useCallback(
+    (definition: QuickFilterDefinition) => {
+      const nextState = {
+        ...definition.buildState(draft.perPage),
+        page: 1,
+      };
+      const nextKey = canonicalizeActivityParams(
+        buildSavedFilterPayload(nextState),
+      );
+      if (nextKey === canonicalDraftKey) {
+        return;
+      }
+
+      setDraft(nextState);
+      setApplied(nextState);
+      setSelectedSavedFilterId("");
+      setShowSaveFilterForm(false);
+      setSaveFilterError(null);
+      setJumpDate("");
+      void fetchFeed(nextState);
+    },
+    [canonicalDraftKey, draft.perPage, fetchFeed],
+  );
+
   const applySavedFilter = useCallback(
     (filter: ActivitySavedFilter) => {
       const params: ActivityListParams = {
@@ -2386,6 +2572,11 @@ export function ActivityView({
     }
 
     const payload = buildSavedFilterPayload({ ...draft, page: 1 });
+    if (quickFilterCanonicalSet.has(canonicalizeActivityParams(payload))) {
+      setSaveFilterError(QUICK_FILTER_DUPLICATE_MESSAGE);
+      return;
+    }
+
     setIsSavingFilter(true);
     setSaveFilterError(null);
 
@@ -2456,6 +2647,7 @@ export function ActivityView({
     saveFilterName,
     savedFilters,
     savedFiltersLimit,
+    quickFilterCanonicalSet,
     showNotification,
   ]);
 
@@ -2539,12 +2731,18 @@ export function ActivityView({
 
   const replaceSavedFilter = useCallback(
     async (filter: ActivitySavedFilter) => {
+      const payload = buildSavedFilterPayload({ ...draft, page: 1 });
+      if (quickFilterCanonicalSet.has(canonicalizeActivityParams(payload))) {
+        setFiltersManagerMessage(null);
+        setFiltersManagerError(QUICK_FILTER_DUPLICATE_MESSAGE);
+        return;
+      }
+
       setFiltersManagerBusyId(filter.id);
       setFiltersManagerMessage(null);
       setFiltersManagerError(null);
 
       try {
-        const payload = buildSavedFilterPayload({ ...draft, page: 1 });
         const response = await fetch(
           `/api/activity/filters/${encodeURIComponent(filter.id)}`,
           {
@@ -2607,7 +2805,7 @@ export function ActivityView({
         setFiltersManagerBusyId(null);
       }
     },
-    [draft, loadSavedFilters],
+    [draft, loadSavedFilters, quickFilterCanonicalSet],
   );
 
   const deleteSavedFilter = useCallback(
@@ -3179,124 +3377,144 @@ export function ActivityView({
           {notification && <span>{notification}</span>}
         </div>
       </div>
-      <Card>
-        <CardContent className="space-y-6">
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Label className="text-xs font-medium uppercase text-muted-foreground/90">
-                저장된 필터
-              </Label>
-              <select
-                value={selectedSavedFilterId}
-                onChange={(event) => {
-                  const nextId = event.target.value;
-                  if (!nextId) {
-                    setSelectedSavedFilterId("");
-                    return;
-                  }
-                  const target = savedFilters.find(
-                    (filter) => filter.id === nextId,
-                  );
-                  if (target) {
-                    applySavedFilter(target);
-                  }
-                }}
-                disabled={savedFiltersLoading || savedFilters.length === 0}
-                className="h-9 min-w-[160px] rounded border border-border bg-background px-2 text-sm text-foreground focus:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <option value="">필터 선택</option>
-                {savedFilters.map((filter) => (
-                  <option key={filter.id} value={filter.id}>
-                    {filter.name}
-                  </option>
-                ))}
-              </select>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setShowSaveFilterForm((current) => !current);
-                  setSaveFilterError(null);
-                  if (!showSaveFilterForm && !saveFilterName.trim().length) {
-                    const selected = savedFilters.find(
-                      (filter) => filter.id === selectedSavedFilterId,
-                    );
-                    if (selected) {
-                      setSaveFilterName(selected.name);
-                    }
-                  }
-                }}
-                disabled={!canSaveMoreFilters}
-                className="h-8 px-3 text-xs"
-              >
-                현재 필터 저장
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setFiltersManagerOpen(true);
-                  setFiltersManagerMessage(null);
-                  setFiltersManagerError(null);
-                }}
-                className="h-8 px-3 text-xs"
-              >
-                필터 관리
-              </Button>
-              {savedFiltersLoading ? (
-                <span className="text-xs text-muted-foreground/80">
-                  불러오는 중…
-                </span>
-              ) : null}
-              <span className="text-[11px] text-muted-foreground/70">
-                {savedFiltersCount} / {savedFiltersLimit}
-              </span>
+      <div className="space-y-1.5 rounded-md border border-border/60 bg-muted/20 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Label className="text-xs font-medium uppercase text-muted-foreground/90">
+            저장된 필터
+          </Label>
+          {quickFilterDefinitions.length > 0 ? (
+            <div className="mr-2 flex items-center gap-1">
+              {quickFilterDefinitions.map((definition) => {
+                const active = definition.id === activeQuickFilterId;
+                return (
+                  <QuickFilterButton
+                    key={definition.id}
+                    active={active}
+                    label={definition.label}
+                    description={definition.description}
+                    onClick={() => handleApplyQuickFilter(definition)}
+                  />
+                );
+              })}
             </div>
+          ) : null}
+          <select
+            value={selectedSavedFilterId}
+            onChange={(event) => {
+              const nextId = event.target.value;
+              if (!nextId) {
+                setSelectedSavedFilterId("");
+                return;
+              }
+              const target = savedFilters.find(
+                (filter) => filter.id === nextId,
+              );
+              if (target) {
+                applySavedFilter(target);
+              }
+            }}
+            disabled={savedFiltersLoading || savedFilters.length === 0}
+            className="h-7 min-w-[160px] rounded border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <option value="">필터 선택</option>
+            {savedFilters.map((filter) => (
+              <option key={filter.id} value={filter.id}>
+                {filter.name}
+              </option>
+            ))}
+          </select>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setShowSaveFilterForm((current) => !current);
+              setSaveFilterError(null);
+              if (!showSaveFilterForm && !saveFilterName.trim().length) {
+                const selected = savedFilters.find(
+                  (filter) => filter.id === selectedSavedFilterId,
+                );
+                if (selected) {
+                  setSaveFilterName(selected.name);
+                }
+              }
+            }}
+            disabled={!canSaveMoreFilters}
+            className="h-7 px-2.5 text-xs"
+          >
+            현재 필터 저장
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setFiltersManagerOpen(true);
+              setFiltersManagerMessage(null);
+              setFiltersManagerError(null);
+            }}
+            className="h-7 px-2.5 text-xs"
+          >
+            필터 관리
+          </Button>
+          {savedFiltersLoading ? (
+            <span className="text-[10px] text-muted-foreground/80">
+              불러오는 중…
+            </span>
+          ) : null}
+          <span className="text-[10px] text-muted-foreground/70">
+            {savedFiltersCount} / {savedFiltersLimit}
+          </span>
+        </div>
+        {savedFiltersError || !canSaveMoreFilters ? (
+          <div className="flex flex-wrap items-center gap-2 text-[11px]">
             {savedFiltersError ? (
-              <p className="text-xs text-rose-600">{savedFiltersError}</p>
+              <span className="text-rose-600">{savedFiltersError}</span>
             ) : null}
             {!canSaveMoreFilters ? (
-              <p className="text-xs text-amber-600">
+              <span className="text-amber-600">
                 최대 {savedFiltersLimit}개의 필터를 저장할 수 있어요. 사용하지
                 않는 필터를 삭제해 주세요.
-              </p>
-            ) : null}
-            {showSaveFilterForm ? (
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void saveCurrentFilters();
-                }}
-                className="flex flex-wrap items-center gap-2"
-              >
-                <Input
-                  value={saveFilterName}
-                  onChange={(event) => setSaveFilterName(event.target.value)}
-                  maxLength={120}
-                  placeholder="필터 이름"
-                  className="h-9 w-full max-w-xs"
-                />
-                <Button type="submit" size="sm" disabled={isSavingFilter}>
-                  저장
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setShowSaveFilterForm(false);
-                    setSaveFilterName("");
-                    setSaveFilterError(null);
-                  }}
-                >
-                  취소
-                </Button>
-              </form>
-            ) : null}
-            {saveFilterError ? (
-              <p className="text-xs text-rose-600">{saveFilterError}</p>
+              </span>
             ) : null}
           </div>
+        ) : null}
+        {showSaveFilterForm ? (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveCurrentFilters();
+            }}
+            className="flex flex-wrap items-center gap-2 pt-1"
+          >
+            <Input
+              value={saveFilterName}
+              onChange={(event) => setSaveFilterName(event.target.value)}
+              maxLength={120}
+              placeholder="필터 이름"
+              className="h-8 w-full max-w-xs text-sm"
+            />
+            <Button type="submit" size="sm" disabled={isSavingFilter}>
+              저장
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setShowSaveFilterForm(false);
+                setSaveFilterName("");
+                setSaveFilterError(null);
+              }}
+            >
+              취소
+            </Button>
+          </form>
+        ) : null}
+        {saveFilterError ? (
+          <p className="text-[11px] text-rose-600">{saveFilterError}</p>
+        ) : null}
+      </div>
+      <Card>
+        <CardContent className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <Label className="text-xs font-medium uppercase text-muted-foreground/90">
               카테고리
