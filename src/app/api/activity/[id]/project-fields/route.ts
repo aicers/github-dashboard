@@ -29,6 +29,11 @@ const PRIORITY_VALUES = new Set(["P0", "P1", "P2"]);
 const WEIGHT_VALUES = new Set(["Heavy", "Medium", "Light"]);
 const INITIATION_VALUES = new Set(["Open to Start", "Requires Approval"]);
 
+type ProjectFieldExpectation = {
+  value: string | null;
+  updatedAt: string | null;
+};
+
 function normalizeText(value: string | null | undefined) {
   if (value == null) {
     return null;
@@ -62,6 +67,54 @@ function normalizeComparison(
   }
 
   return normalized;
+}
+
+function parseExpectedEntry(
+  expectedPayload: Record<string, unknown> | undefined,
+  key: ProjectFieldKey,
+): ProjectFieldExpectation | undefined {
+  if (!expectedPayload) {
+    return undefined;
+  }
+
+  const rawEntry = expectedPayload[key];
+  if (rawEntry === undefined) {
+    return undefined;
+  }
+
+  if (
+    rawEntry === null ||
+    typeof rawEntry !== "object" ||
+    Array.isArray(rawEntry)
+  ) {
+    throw new Error("기대한 값 형식이 올바르지 않아요.");
+  }
+
+  if (!Object.hasOwn(rawEntry, "value")) {
+    throw new Error("기대한 값 형식이 올바르지 않아요.");
+  }
+
+  const rawValue = (rawEntry as { value: unknown }).value;
+  let value: string | null;
+  if (rawValue === null) {
+    value = null;
+  } else if (typeof rawValue === "string") {
+    value = rawValue;
+  } else {
+    throw new Error("기대한 값 형식이 올바르지 않아요.");
+  }
+
+  const rawUpdatedAt = (rawEntry as { updatedAt?: unknown }).updatedAt;
+  let updatedAt: string | null = null;
+  if (rawUpdatedAt == null) {
+    updatedAt = null;
+  } else if (typeof rawUpdatedAt === "string") {
+    updatedAt = rawUpdatedAt;
+  } else {
+    throw new Error("기대한 값 형식이 올바르지 않아요.");
+  }
+
+  return { value, updatedAt };
 }
 
 function sanitizePayloadValue(key: ProjectFieldKey, raw: unknown) {
@@ -158,6 +211,22 @@ export async function PATCH(request: Request, context: RouteParams) {
     );
   }
 
+  const expectedPayloadRaw = record.expected;
+  let expectedPayload: Record<string, unknown> | undefined;
+  if (expectedPayloadRaw !== undefined) {
+    if (
+      expectedPayloadRaw === null ||
+      typeof expectedPayloadRaw !== "object" ||
+      Array.isArray(expectedPayloadRaw)
+    ) {
+      return NextResponse.json(
+        { error: "기대한 값 형식이 올바르지 않아요." },
+        { status: 400 },
+      );
+    }
+    expectedPayload = expectedPayloadRaw as Record<string, unknown>;
+  }
+
   const detail = await resolveIssueItem(id);
   if (!detail) {
     return NextResponse.json({ error: "Issue not found." }, { status: 404 });
@@ -206,8 +275,37 @@ export async function PATCH(request: Request, context: RouteParams) {
 
     const normalizedCurrent = normalizeComparison(key, currentValue);
     const normalizedNext = normalizeComparison(key, sanitized);
+
+    let normalizedExpected: string | null | undefined;
+    try {
+      const expectedEntry = parseExpectedEntry(expectedPayload, key);
+      if (expectedEntry) {
+        normalizedExpected = normalizeComparison(key, expectedEntry.value);
+      }
+    } catch (error) {
+      return NextResponse.json(
+        { error: (error as Error).message },
+        { status: 400 },
+      );
+    }
+
     if (normalizedCurrent === normalizedNext) {
       continue;
+    }
+
+    if (
+      normalizedExpected !== undefined &&
+      normalizedExpected !== normalizedCurrent
+    ) {
+      const refreshed = await resolveIssueItem(id);
+      const label = FIELD_LABEL_MAP[key];
+      return NextResponse.json(
+        {
+          error: `${label} 값이 이미 변경되었어요. 최신 값을 불러왔어요.`,
+          item: refreshed?.item ?? detail.item,
+        },
+        { status: 409 },
+      );
     }
 
     switch (key) {
