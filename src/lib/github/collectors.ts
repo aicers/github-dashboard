@@ -1,6 +1,7 @@
 import type { GraphQLClient, RequestDocument } from "graphql-request";
 import { ClientError } from "graphql-request";
 
+import { clearProjectFieldOverrides } from "@/lib/activity/project-field-store";
 import { clearActivityStatuses } from "@/lib/activity/status-store";
 import {
   fetchIssueRawMap,
@@ -198,6 +199,11 @@ type ProjectV2ItemFieldValue =
       updatedAt?: string | null;
     }
   | {
+      __typename: "ProjectV2ItemFieldDateValue";
+      date?: string | null;
+      updatedAt?: string | null;
+    }
+  | {
       __typename: string;
       updatedAt?: string | null;
     };
@@ -210,6 +216,9 @@ type ProjectV2ItemNode = {
     title?: string | null;
   } | null;
   status?: ProjectV2ItemFieldValue | null;
+  priority?: ProjectV2ItemFieldValue | null;
+  initiationOptions?: ProjectV2ItemFieldValue | null;
+  startDate?: ProjectV2ItemFieldValue | null;
 };
 
 type ProjectStatusHistoryEntry = {
@@ -917,6 +926,12 @@ function extractProjectFieldValueLabel(
   if (typeof record.number === "number" && Number.isFinite(record.number)) {
     return String(record.number);
   }
+  if (typeof (record as { date?: unknown }).date === "string") {
+    const dateValue = (record as { date?: string | null }).date;
+    if (dateValue?.trim()) {
+      return dateValue.trim();
+    }
+  }
 
   return null;
 }
@@ -1472,6 +1487,7 @@ async function collectIssuesForRepository(
         mergedHistory.some((entry) => isTargetProject(entry.projectTitle))
       ) {
         await clearActivityStatuses(issue.id);
+        await clearProjectFieldOverrides(issue.id);
       }
       const rawIssue =
         mergedHistory.length > 0

@@ -185,6 +185,20 @@ const SCHEMA_STATEMENTS = [
   )`,
   `CREATE INDEX IF NOT EXISTS activity_issue_status_history_issue_idx ON activity_issue_status_history(issue_id)`,
   `CREATE INDEX IF NOT EXISTS activity_issue_status_history_issue_occurred_idx ON activity_issue_status_history(issue_id, occurred_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS activity_issue_project_overrides (
+    issue_id TEXT PRIMARY KEY REFERENCES issues(id) ON DELETE CASCADE,
+    priority_value TEXT,
+    priority_updated_at TIMESTAMPTZ,
+    weight_value TEXT,
+    weight_updated_at TIMESTAMPTZ,
+    initiation_value TEXT,
+    initiation_updated_at TIMESTAMPTZ,
+    start_date_value TEXT,
+    start_date_updated_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `ALTER TABLE activity_issue_project_overrides ADD COLUMN IF NOT EXISTS weight_value TEXT`,
+  `ALTER TABLE activity_issue_project_overrides ADD COLUMN IF NOT EXISTS weight_updated_at TIMESTAMPTZ`,
 ];
 
 let ensurePromise: Promise<void> | null = null;

@@ -132,6 +132,14 @@ export type ActivityItem = {
   issueProjectStatusLocked: boolean;
   issueTodoProjectStatus: IssueProjectStatus | null;
   issueTodoProjectStatusAt: string | null;
+  issueTodoProjectPriority: string | null;
+  issueTodoProjectPriorityUpdatedAt: string | null;
+  issueTodoProjectWeight: string | null;
+  issueTodoProjectWeightUpdatedAt: string | null;
+  issueTodoProjectInitiationOptions: string | null;
+  issueTodoProjectInitiationOptionsUpdatedAt: string | null;
+  issueTodoProjectStartDate: string | null;
+  issueTodoProjectStartDateUpdatedAt: string | null;
   issueActivityStatus: IssueProjectStatus | null;
   issueActivityStatusAt: string | null;
   repository: ActivityRepository | null;
@@ -178,6 +186,8 @@ export type ActivityItemDetail = {
   raw: unknown;
   parentIssues: ActivityLinkedIssue[];
   subIssues: ActivityLinkedIssue[];
+  todoStatusTimes?: Partial<Record<IssueProjectStatus, string | null>>;
+  activityStatusTimes?: Partial<Record<IssueProjectStatus, string | null>>;
 };
 
 export type ActivityFilterOptions = {

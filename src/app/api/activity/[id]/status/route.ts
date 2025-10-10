@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { clearProjectFieldOverrides } from "@/lib/activity/project-field-store";
 import { getActivityItemDetail } from "@/lib/activity/service";
 import {
   clearActivityStatuses,
@@ -84,6 +85,12 @@ export async function PATCH(request: Request, context: RouteParams) {
   }
 
   const updated = await resolveIssueItem(id);
+  if (updated?.item.issueProjectStatusLocked) {
+    await clearProjectFieldOverrides(id);
+    const refreshed = await resolveIssueItem(id);
+    return NextResponse.json({ item: refreshed?.item ?? updated.item });
+  }
+
   return NextResponse.json({ item: updated?.item ?? detail.item });
 }
 
