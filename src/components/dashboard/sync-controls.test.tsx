@@ -1,9 +1,14 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SyncControls } from "@/components/dashboard/sync-controls";
 import type { BackfillChunkSuccess, SyncStatus } from "@/lib/sync/service";
+import {
+  fetchMock,
+  mockFetchJsonOnce,
+  mockFetchOnce,
+} from "../../../tests/setup/mock-fetch";
 
 const routerRefreshMock = vi.fn();
 
@@ -12,9 +17,6 @@ vi.mock("next/navigation", () => ({
     refresh: routerRefreshMock,
   }),
 }));
-
-const originalFetch = global.fetch;
-const fetchMock = vi.fn<typeof fetch>();
 
 function buildStatus(overrides: Partial<SyncStatus> = {}): SyncStatus {
   return {
@@ -66,23 +68,10 @@ function createChunk(
   };
 }
 
-function jsonResponse(body: unknown, init?: ResponseInit) {
-  return new Response(JSON.stringify(body), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
-}
-
 describe("SyncControls", () => {
   beforeEach(() => {
     routerRefreshMock.mockReset();
     fetchMock.mockReset();
-    global.fetch = fetchMock;
-  });
-
-  afterEach(() => {
-    global.fetch = originalFetch;
   });
 
   it("renders primary sections and the latest sync logs", () => {
@@ -145,9 +134,7 @@ describe("SyncControls", () => {
       chunks: [createChunk()],
     };
 
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({ success: true, result: backfillResult }),
-    );
+    mockFetchJsonOnce({ success: true, result: backfillResult });
 
     render(<SyncControls status={status} />);
     const user = userEvent.setup();
@@ -155,11 +142,11 @@ describe("SyncControls", () => {
     await user.click(screen.getByRole("button", { name: "백필 실행" }));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/sync/backfill",
-        expect.objectContaining({ method: "POST" }),
-      );
+      expect(fetchMock).toHaveBeenCalled();
     });
+    const request = fetchMock.mock.calls[0]?.[0] as Request;
+    expect(request.url).toContain("/api/sync/backfill");
+    expect(request.method).toBe("POST");
 
     await waitFor(() => {
       expect(
@@ -191,18 +178,16 @@ describe("SyncControls", () => {
       error: "API rate limit",
     };
 
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({
-        success: true,
-        result: {
-          startDate: "2024-04-01T00:00:00.000Z",
-          endDate: "2024-04-03T00:00:00.000Z",
-          chunkCount: 2,
-          totals: { issues: 0, pullRequests: 0, reviews: 0, comments: 0 },
-          chunks: [createChunk(), failedChunk],
-        },
-      }),
-    );
+    mockFetchJsonOnce({
+      success: true,
+      result: {
+        startDate: "2024-04-01T00:00:00.000Z",
+        endDate: "2024-04-03T00:00:00.000Z",
+        chunkCount: 2,
+        totals: { issues: 0, pullRequests: 0, reviews: 0, comments: 0 },
+        chunks: [createChunk(), failedChunk],
+      },
+    });
 
     render(<SyncControls status={status} />);
     const user = userEvent.setup();
@@ -222,12 +207,10 @@ describe("SyncControls", () => {
   it("surfaces server-provided errors when backfill response indicates failure", async () => {
     const status = buildStatus();
 
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse(
-        { success: false, message: "backfill failed" },
-        { status: 400 },
-      ),
-    );
+    mockFetchOnce({
+      status: 400,
+      json: { success: false, message: "backfill failed" },
+    });
 
     render(<SyncControls status={status} />);
     const user = userEvent.setup();
@@ -251,9 +234,7 @@ describe("SyncControls", () => {
       chunks: [createChunk()],
     };
 
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({ success: true, result: backfillResult }),
-    );
+    mockFetchJsonOnce({ success: true, result: backfillResult });
 
     render(<SyncControls status={status} />);
     const user = userEvent.setup();
@@ -267,7 +248,9 @@ describe("SyncControls", () => {
       expect(routerRefreshMock).toHaveBeenCalledTimes(1);
     });
 
-    fetchMock.mockRejectedValueOnce(new Error("network failure"));
+    mockFetchOnce(async () => {
+      throw new Error("network failure");
+    });
 
     await user.click(screen.getByRole("button", { name: "백필 실행" }));
 
@@ -306,7 +289,7 @@ describe("SyncControls", () => {
       },
     });
 
-    fetchMock.mockResolvedValueOnce(
+    mockFetchOnce(
       new Response(null, { status: 204, statusText: "No Content" }),
     );
 
@@ -331,7 +314,7 @@ describe("SyncControls", () => {
       },
     });
 
-    fetchMock.mockResolvedValueOnce(
+    mockFetchOnce(
       new Response("<!doctype html>", {
         status: 500,
         statusText: "Internal Server Error",
@@ -362,9 +345,7 @@ describe("SyncControls", () => {
       },
     });
 
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({ success: true, action: "enabled" }),
-    );
+    mockFetchJsonOnce({ success: true, action: "enabled" });
 
     render(<SyncControls status={status} />);
     const user = userEvent.setup();
@@ -372,14 +353,13 @@ describe("SyncControls", () => {
     await user.click(screen.getByRole("button", { name: "자동 동기화 시작" }));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/sync/auto",
-        expect.objectContaining({
-          method: "POST",
-          body: JSON.stringify({ enabled: true, intervalMinutes: 30 }),
-        }),
-      );
+      expect(fetchMock).toHaveBeenCalled();
     });
+    const request = fetchMock.mock.calls[0]?.[0] as Request;
+    expect(request.url).toContain("/api/sync/auto");
+    expect(request.method).toBe("POST");
+    const body = await request.clone().json();
+    expect(body).toEqual({ enabled: true, intervalMinutes: 30 });
 
     await waitFor(() => {
       expect(
@@ -400,12 +380,10 @@ describe("SyncControls", () => {
       },
     });
 
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse(
-        { success: false, message: "toggle failed" },
-        { status: 400 },
-      ),
-    );
+    mockFetchOnce({
+      status: 400,
+      json: { success: false, message: "toggle failed" },
+    });
 
     render(<SyncControls status={status} />);
     const user = userEvent.setup();
@@ -422,7 +400,7 @@ describe("SyncControls", () => {
     const status = buildStatus();
     const confirmMock = vi.spyOn(window, "confirm").mockReturnValue(true);
 
-    fetchMock.mockResolvedValueOnce(jsonResponse({ success: true }));
+    mockFetchJsonOnce({ success: true });
 
     render(<SyncControls status={status} />);
     const user = userEvent.setup();
@@ -432,14 +410,13 @@ describe("SyncControls", () => {
     expect(confirmMock).toHaveBeenCalled();
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/sync/reset",
-        expect.objectContaining({
-          method: "POST",
-          body: JSON.stringify({ preserveLogs: true }),
-        }),
-      );
+      expect(fetchMock).toHaveBeenCalled();
     });
+    const request = fetchMock.mock.calls[0]?.[0] as Request;
+    expect(request.url).toContain("/api/sync/reset");
+    expect(request.method).toBe("POST");
+    const body = await request.clone().json();
+    expect(body).toEqual({ preserveLogs: true });
 
     await waitFor(() => {
       expect(
@@ -454,12 +431,10 @@ describe("SyncControls", () => {
     const status = buildStatus();
     const confirmMock = vi.spyOn(window, "confirm").mockReturnValue(true);
 
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse(
-        { success: false, message: "reset failed" },
-        { status: 400 },
-      ),
-    );
+    mockFetchOnce({
+      status: 400,
+      json: { success: false, message: "reset failed" },
+    });
 
     render(<SyncControls status={status} />);
     const user = userEvent.setup();

@@ -1,12 +1,8 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
-
+import { describe, expect, it } from "vitest";
+import { fetchMock, mockFetchJsonOnce } from "../../../tests/setup/mock-fetch";
 import { RepositorySearchCard } from "./repository-search";
-
-afterEach(() => {
-  vi.restoreAllMocks();
-});
 
 describe("RepositorySearchCard", () => {
   it("shows validation errors when fields are empty", async () => {
@@ -40,23 +36,18 @@ describe("RepositorySearchCard", () => {
       updatedAt: new Date("2024-01-01T00:00:00Z").toISOString(),
     };
 
-    const fetchMock = vi.spyOn(global, "fetch").mockResolvedValue({
-      ok: true,
-      json: async () => ({ repository: mockRepository }),
-    } as unknown as Response);
+    mockFetchJsonOnce({ repository: mockRepository });
 
     render(<RepositorySearchCard />);
 
     await user.click(screen.getByRole("button", { name: /run test/i }));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/github/repository",
-        expect.objectContaining({
-          method: "POST",
-        }),
-      );
+      expect(fetchMock).toHaveBeenCalled();
     });
+    const request = fetchMock.mock.calls[0]?.[0] as Request;
+    expect(request.url).toContain("/api/github/repository");
+    expect(request.method).toBe("POST");
 
     const starsLabel = await screen.findByText(/Stars:/);
     const starsLine = starsLabel.closest("p");
