@@ -141,6 +141,11 @@ type AttentionSets = {
   stalledIssues: Set<string>;
 };
 
+type AttentionFilterSelection = {
+  includeIds: string[];
+  includeNone: boolean;
+};
+
 type IssueRaw = {
   projectStatusHistory?: unknown;
   projectItems?: { nodes?: unknown } | null;
@@ -843,12 +848,13 @@ async function resolveAttentionSets(
 function collectAttentionFilterIds(
   filters: ActivityAttentionFilter[] | undefined,
   sets: AttentionSets,
-) {
+): AttentionFilterSelection | null {
   if (!filters?.length) {
     return null;
   }
 
   const union = new Set<string>();
+  let includeNone = false;
   filters.forEach((filter) => {
     switch (filter) {
       case "unanswered_mentions":
@@ -881,12 +887,18 @@ function collectAttentionFilterIds(
           union.add(id);
         }
         break;
+      case "no_attention":
+        includeNone = true;
+        break;
       default:
         break;
     }
   });
 
-  return union.size ? Array.from(union) : [];
+  return {
+    includeIds: Array.from(union),
+    includeNone,
+  };
 }
 
 function toStatus(value: string | null): "open" | "closed" | "merged" {
@@ -929,7 +941,8 @@ function coerceSearch(value: string | null | undefined) {
 
 function buildQueryFilters(
   params: ActivityListParams,
-  attentionIds: string[] | null,
+  attentionSelection: AttentionFilterSelection | null,
+  attentionSets: AttentionSets,
 ): {
   clauses: string[];
   values: unknown[];
@@ -1038,15 +1051,46 @@ function buildQueryFilters(
     }
   }
 
-  if (attentionIds?.length === 0) {
-    // No matches for attention filters; force empty result set.
-    clauses.push("FALSE");
-    return { clauses, values, issueProjectStatuses };
-  }
+  if (attentionSelection) {
+    const { includeIds, includeNone } = attentionSelection;
+    const ensureExclusionClause = () => {
+      const fragments: string[] = [];
+      const setsInOrder: Array<Set<string>> = [
+        attentionSets.unansweredMentions,
+        attentionSets.reviewRequests,
+        attentionSets.stalePullRequests,
+        attentionSets.idlePullRequests,
+        attentionSets.backlogIssues,
+        attentionSets.stalledIssues,
+      ];
+      setsInOrder.forEach((set) => {
+        if (!set.size) {
+          return;
+        }
+        values.push(Array.from(set));
+        fragments.push(`items.id = ANY($${values.length}::text[])`);
+      });
+      return fragments;
+    };
 
-  if (attentionIds && attentionIds.length > 0) {
-    values.push(attentionIds);
-    clauses.push(`items.id = ANY($${values.length}::text[])`);
+    if (!includeNone && includeIds.length > 0) {
+      values.push(includeIds);
+      clauses.push(`items.id = ANY($${values.length}::text[])`);
+    } else if (includeNone && includeIds.length === 0) {
+      const exclusionClauses = ensureExclusionClause();
+      if (exclusionClauses.length > 0) {
+        clauses.push(`NOT (${exclusionClauses.join(" OR ")})`);
+      }
+    } else if (includeNone && includeIds.length > 0) {
+      values.push(includeIds);
+      const includeIndex = values.length;
+      const exclusionClauses = ensureExclusionClause();
+      let condition = `items.id = ANY($${includeIndex}::text[])`;
+      if (exclusionClauses.length > 0) {
+        condition = `(${condition} OR NOT (${exclusionClauses.join(" OR ")}))`;
+      }
+      clauses.push(condition);
+    }
   }
 
   if (params.types?.length) {
@@ -2056,12 +2100,15 @@ export async function getActivityItems(
   );
 
   const attentionSets = await resolveAttentionSets(thresholds);
-  const attentionIds = collectAttentionFilterIds(
+  const attentionSelection = collectAttentionFilterIds(
     params.attention,
     attentionSets,
   );
-
-  if (attentionIds && attentionIds.length === 0) {
+  if (
+    attentionSelection &&
+    !attentionSelection.includeNone &&
+    attentionSelection.includeIds.length === 0
+  ) {
     const config = await getSyncConfig();
     return {
       items: [],
@@ -2079,7 +2126,11 @@ export async function getActivityItems(
     };
   }
 
-  const { clauses, values } = buildQueryFilters(params, attentionIds);
+  const { clauses, values } = buildQueryFilters(
+    params,
+    attentionSelection,
+    attentionSets,
+  );
 
   let page = Math.max(1, params.page ?? 1);
 
