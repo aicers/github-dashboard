@@ -39,7 +39,7 @@ export const repositorySummaryQuery = gql`
 export const organizationRepositoriesQuery = gql`
   query OrganizationRepositories($login: String!, $cursor: String) {
     organization(login: $login) {
-      repositories(first: 50, after: $cursor, orderBy: { field: PUSHED_AT, direction: DESC }) {
+      repositories(first: 25, after: $cursor, orderBy: { field: PUSHED_AT, direction: DESC }) {
         pageInfo {
           hasNextPage
           endCursor
@@ -81,7 +81,7 @@ export const organizationRepositoriesQuery = gql`
 export const repositoryIssuesQuery = gql`
   query RepositoryIssues($owner: String!, $name: String!, $cursor: String, $since: DateTime) {
     repository(owner: $owner, name: $name) {
-      issues(first: 50, after: $cursor, orderBy: { field: UPDATED_AT, direction: ASC }, filterBy: { since: $since }) {
+      issues(first: 25, after: $cursor, orderBy: { field: UPDATED_AT, direction: ASC }, filterBy: { since: $since }) {
         pageInfo {
           hasNextPage
           endCursor
@@ -175,7 +175,7 @@ export const repositoryIssuesQuery = gql`
             url
           }
           timelineItems(
-            last: 50,
+            last: 25,
             itemTypes: [ADDED_TO_PROJECT_EVENT, MOVED_COLUMNS_IN_PROJECT_EVENT]
           ) {
             nodes {
@@ -296,7 +296,7 @@ export const repositoryIssuesQuery = gql`
 export const repositoryPullRequestsQuery = gql`
   query RepositoryPullRequests($owner: String!, $name: String!, $cursor: String) {
     repository(owner: $owner, name: $name) {
-      pullRequests(first: 50, after: $cursor, orderBy: { field: UPDATED_AT, direction: ASC }) {
+      pullRequests(first: 25, after: $cursor, orderBy: { field: UPDATED_AT, direction: ASC }) {
         pageInfo {
           hasNextPage
           endCursor
@@ -374,7 +374,7 @@ export const repositoryPullRequestsQuery = gql`
           reviews(first: 0) {
             totalCount
           }
-          timelineItems(last: 100, itemTypes: [REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT]) {
+          timelineItems(last: 50, itemTypes: [REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT]) {
             nodes {
               __typename
               ... on ReviewRequestedEvent {
@@ -419,7 +419,7 @@ export const repositoryPullRequestsQuery = gql`
               }
             }
           }
-          reactions(first: 100, orderBy: { field: CREATED_AT, direction: ASC }) {
+          reactions(first: 25, orderBy: { field: CREATED_AT, direction: ASC }) {
             nodes {
               id
               content
@@ -442,7 +442,7 @@ export const pullRequestReviewsQuery = gql`
   query PullRequestReviews($owner: String!, $name: String!, $number: Int!, $cursor: String) {
     repository(owner: $owner, name: $name) {
       pullRequest(number: $number) {
-        reviews(first: 50, after: $cursor) {
+        reviews(first: 25, after: $cursor) {
           pageInfo {
             hasNextPage
             endCursor
@@ -488,6 +488,65 @@ export const issueCommentsQuery = gql`
   query IssueComments($owner: String!, $name: String!, $number: Int!, $cursor: String) {
     repository(owner: $owner, name: $name) {
       issue(number: $number) {
+        comments(first: 25, after: $cursor) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+          nodes {
+            id
+            author {
+              __typename
+              ... on User {
+                id
+                login
+                name
+                avatarUrl(size: 200)
+                createdAt
+                updatedAt
+              }
+              ... on Organization {
+                id
+                login
+                name
+                avatarUrl(size: 200)
+                createdAt
+                updatedAt
+              }
+              ... on Bot {
+                id
+                login
+                avatarUrl(size: 200)
+              }
+            }
+            createdAt
+            updatedAt
+            url
+            body
+            reactions(first: 25, orderBy: { field: CREATED_AT, direction: ASC }) {
+              nodes {
+                id
+                content
+                createdAt
+                user {
+                  id
+                  login
+                  name
+                  avatarUrl(size: 200)
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export const pullRequestCommentsQuery = gql`
+  query PullRequestComments($owner: String!, $name: String!, $number: Int!, $cursor: String) {
+    repository(owner: $owner, name: $name) {
+      pullRequest(number: $number) {
         comments(first: 50, after: $cursor) {
           pageInfo {
             hasNextPage
@@ -523,66 +582,7 @@ export const issueCommentsQuery = gql`
             updatedAt
             url
             body
-            reactions(first: 50, orderBy: { field: CREATED_AT, direction: ASC }) {
-              nodes {
-                id
-                content
-                createdAt
-                user {
-                  id
-                  login
-                  name
-                  avatarUrl(size: 200)
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-`;
-
-export const pullRequestCommentsQuery = gql`
-  query PullRequestComments($owner: String!, $name: String!, $number: Int!, $cursor: String) {
-    repository(owner: $owner, name: $name) {
-      pullRequest(number: $number) {
-        comments(first: 100, after: $cursor) {
-          pageInfo {
-            hasNextPage
-            endCursor
-          }
-          nodes {
-            id
-            author {
-              __typename
-              ... on User {
-                id
-                login
-                name
-                avatarUrl(size: 200)
-                createdAt
-                updatedAt
-              }
-              ... on Organization {
-                id
-                login
-                name
-                avatarUrl(size: 200)
-                createdAt
-                updatedAt
-              }
-              ... on Bot {
-                id
-                login
-                avatarUrl(size: 200)
-              }
-            }
-            createdAt
-            updatedAt
-            url
-            body
-            reactions(first: 50, orderBy: { field: CREATED_AT, direction: ASC }) {
+            reactions(first: 25, orderBy: { field: CREATED_AT, direction: ASC }) {
               nodes {
                 id
                 content
@@ -606,14 +606,14 @@ export const pullRequestReviewCommentsQuery = gql`
   query PullRequestReviewComments($owner: String!, $name: String!, $number: Int!, $cursor: String) {
     repository(owner: $owner, name: $name) {
       pullRequest(number: $number) {
-        reviewThreads(first: 25, after: $cursor) {
+        reviewThreads(first: 20, after: $cursor) {
           pageInfo {
             hasNextPage
             endCursor
           }
           nodes {
             id
-            comments(first: 100) {
+            comments(first: 50) {
               nodes {
                 id
                 author {
@@ -647,16 +647,16 @@ export const pullRequestReviewCommentsQuery = gql`
                 pullRequestReview {
                   id
                 }
-                reactions(first: 50, orderBy: { field: CREATED_AT, direction: ASC }) {
+                reactions(first: 25, orderBy: { field: CREATED_AT, direction: ASC }) {
                   nodes {
                     id
                     content
                     createdAt
                     user {
-                        id
-                        login
-                        name
-                        avatarUrl(size: 200)
+                      id
+                      login
+                      name
+                      avatarUrl(size: 200)
                     }
                   }
                 }
