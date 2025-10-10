@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SettingsView } from "@/components/dashboard/settings-view";
 import type { RepositoryProfile, UserProfile } from "@/lib/db/operations";
+import { fetchMock, mockFetchJsonOnce } from "../../../tests/setup/mock-fetch";
 
 const routerRefreshMock = vi.fn();
 const intlWithSupported = Intl as typeof Intl & {
@@ -20,9 +21,6 @@ vi.mock("next/navigation", () => ({
     refresh: routerRefreshMock,
   }),
 }));
-
-const originalFetch = global.fetch;
-const fetchMock = vi.fn<typeof fetch>();
 
 const repositories: RepositoryProfile[] = [
   {
@@ -63,14 +61,6 @@ const members: UserProfile[] = [
   },
 ];
 
-function createResponse(body: unknown, init?: ResponseInit) {
-  return new Response(JSON.stringify(body), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
-}
-
 function renderSettings(
   overrides: Partial<ComponentProps<typeof SettingsView>> = {},
 ) {
@@ -93,8 +83,6 @@ function renderSettings(
 describe("SettingsView", () => {
   beforeEach(() => {
     routerRefreshMock.mockReset();
-    fetchMock.mockReset();
-    global.fetch = fetchMock;
     supportedValuesSpy.mockImplementation(() => [
       "UTC",
       "Asia/Seoul",
@@ -103,7 +91,6 @@ describe("SettingsView", () => {
   });
 
   afterEach(() => {
-    global.fetch = originalFetch;
     supportedValuesSpy.mockReset();
   });
 
@@ -142,7 +129,7 @@ describe("SettingsView", () => {
 
   it("submits trimmed values and refreshes the dashboard on success", async () => {
     const user = userEvent.setup();
-    fetchMock.mockResolvedValueOnce(createResponse({ success: true }));
+    mockFetchJsonOnce({ success: true });
 
     renderSettings();
 
@@ -174,10 +161,10 @@ describe("SettingsView", () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
-    const request = fetchMock.mock.calls[0];
-    expect(request?.[0]).toBe("/api/sync/config");
-    expect(request?.[1]?.method).toBe("PATCH");
-    const payload = JSON.parse(String(request?.[1]?.body ?? "{}"));
+    const request = fetchMock.mock.calls[0]?.[0] as Request;
+    expect(request.url).toContain("/api/sync/config");
+    expect(request.method).toBe("PATCH");
+    const payload = await request.clone().json();
     expect(payload).toMatchObject({
       orgName: "new-org",
       syncIntervalMinutes: 15,
@@ -245,7 +232,7 @@ describe("SettingsView", () => {
 
   it("updates personal settings independently", async () => {
     const user = userEvent.setup();
-    fetchMock.mockResolvedValueOnce(createResponse({ success: true }));
+    mockFetchJsonOnce({ success: true });
 
     renderSettings();
 
@@ -258,10 +245,10 @@ describe("SettingsView", () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
-    const request = fetchMock.mock.calls[0];
-    expect(request?.[0]).toBe("/api/sync/config");
-    expect(request?.[1]?.method).toBe("PATCH");
-    expect(JSON.parse(String(request?.[1]?.body ?? "{}"))).toEqual({
+    const request = fetchMock.mock.calls[0]?.[0] as Request;
+    expect(request.url).toContain("/api/sync/config");
+    expect(request.method).toBe("PATCH");
+    expect(await request.clone().json()).toEqual({
       timezone: "America/Los_Angeles",
       weekStart: "monday",
     });
@@ -299,7 +286,7 @@ describe("SettingsView", () => {
 
   it("allows non-admin users to update personal settings only", async () => {
     const user = userEvent.setup();
-    fetchMock.mockResolvedValueOnce(createResponse({ success: true }));
+    mockFetchJsonOnce({ success: true });
 
     renderSettings({ isAdmin: false });
 
@@ -312,9 +299,8 @@ describe("SettingsView", () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
-    const payload = JSON.parse(
-      String(fetchMock.mock.calls[0]?.[1]?.body ?? "{}"),
-    );
+    const request = fetchMock.mock.calls[0]?.[0] as Request;
+    const payload = await request.clone().json();
     expect(payload).toEqual({
       timezone: "America/Los_Angeles",
       weekStart: "monday",

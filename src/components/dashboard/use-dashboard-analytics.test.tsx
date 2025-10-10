@@ -1,32 +1,28 @@
 import { act, renderHook } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useDashboardAnalytics } from "@/components/dashboard/use-dashboard-analytics";
 import {
   buildDashboardAnalyticsFixture,
   buildDashboardAnalyticsForPerson,
 } from "@/components/test-harness/dashboard-fixtures";
-
-const originalFetch = global.fetch;
-
-function createResponse(body: unknown, init?: ResponseInit) {
-  return new Response(JSON.stringify(body), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
-}
+import {
+  createJsonResponse,
+  fetchMock,
+  mockFetchJsonOnce,
+  mockFetchOnce,
+} from "../../../tests/setup/mock-fetch";
 
 function createDeferredResponse(body: unknown) {
-  let resolver: ((value: Response) => void) | null = null;
+  let resolveResponse: ((value: Response) => void) | null = null;
   const promise = new Promise<Response>((resolve) => {
-    resolver = resolve;
+    resolveResponse = resolve;
   });
 
   return {
     promise,
     resolve() {
-      resolver?.(createResponse(body));
+      resolveResponse?.(createJsonResponse(body));
     },
   };
 }
@@ -34,10 +30,6 @@ function createDeferredResponse(body: unknown) {
 describe("useDashboardAnalytics", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    global.fetch = originalFetch;
   });
 
   it("loads analytics successfully and normalizes filters", async () => {
@@ -61,12 +53,7 @@ describe("useDashboardAnalytics", () => {
       weekStart: "sunday",
     };
 
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        createResponse({ success: true, analytics: nextAnalytics }),
-      );
-    global.fetch = fetchMock;
+    mockFetchJsonOnce({ success: true, analytics: nextAnalytics });
 
     const { result } = renderHook(() =>
       useDashboardAnalytics({ initialAnalytics, defaultRange }),
@@ -85,7 +72,9 @@ describe("useDashboardAnalytics", () => {
     });
 
     expect(fetchMock).toHaveBeenCalled();
-    expect(fetchMock.mock.calls[0]?.[0]).toContain("/api/dashboard/analytics");
+    const firstCall = fetchMock.mock.calls[0]?.[0];
+    expect(firstCall).toBeInstanceOf(Request);
+    expect((firstCall as Request).url).toContain("/api/dashboard/analytics");
     expect(result.current.analytics).toEqual(nextAnalytics);
     expect(result.current.timeZone).toBe("Asia/Seoul");
     expect(result.current.weekStart).toBe("sunday");
@@ -102,12 +91,7 @@ describe("useDashboardAnalytics", () => {
       end: initialAnalytics.range.end,
     };
 
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        createResponse({ success: false, message: "대시보드 오류" }),
-      );
-    global.fetch = fetchMock;
+    mockFetchJsonOnce({ success: false, message: "대시보드 오류" });
 
     const { result } = renderHook(() =>
       useDashboardAnalytics({ initialAnalytics, defaultRange }),
@@ -157,7 +141,7 @@ describe("useDashboardAnalytics", () => {
       end: "2024-04-07T23:59:59.999Z",
     };
     betaOnly.repositories = [repoBeta];
-    betaOnly.contributors = [personAlpha]; // omit the requested person to force sanitization.
+    betaOnly.contributors = [personAlpha];
     betaOnly.organization.repoDistribution =
       betaOnly.organization.repoDistribution.slice(1, 2);
     betaOnly.organization.repoComparison =
@@ -174,11 +158,8 @@ describe("useDashboardAnalytics", () => {
       analytics: betaOnly,
     });
 
-    const fetchMock = vi
-      .fn()
-      .mockReturnValueOnce(firstDeferred.promise)
-      .mockReturnValueOnce(secondDeferred.promise);
-    global.fetch = fetchMock;
+    mockFetchOnce(() => firstDeferred.promise);
+    mockFetchOnce(() => secondDeferred.promise);
 
     const { result } = renderHook(() =>
       useDashboardAnalytics({ initialAnalytics, defaultRange }),
@@ -248,12 +229,7 @@ describe("useDashboardAnalytics", () => {
     nextAnalytics.repositories = [repoAlpha];
     nextAnalytics.contributors = [personBeta];
 
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        createResponse({ success: true, analytics: nextAnalytics }),
-      );
-    global.fetch = fetchMock;
+    mockFetchJsonOnce({ success: true, analytics: nextAnalytics });
 
     const { result } = renderHook(() =>
       useDashboardAnalytics({ initialAnalytics, defaultRange }),
