@@ -12,7 +12,9 @@ import {
 import { DateTime } from "luxon";
 import { useRouter } from "next/navigation";
 import {
+  type ChangeEvent,
   type ComponentType,
+  type FormEvent,
   type KeyboardEvent,
   useCallback,
   useEffect,
@@ -180,6 +182,28 @@ const PEOPLE_ROLE_KEYS: PeopleRoleKey[] = [
   "mentionedUserIds",
   "commenterIds",
   "reactorIds",
+];
+
+type ProjectFieldKey =
+  | "priority"
+  | "weight"
+  | "initiationOptions"
+  | "startDate";
+
+const PROJECT_FIELD_LABELS: Record<ProjectFieldKey, string> = {
+  priority: "Priority",
+  weight: "Weight",
+  initiationOptions: "Initiation",
+  startDate: "Start date",
+};
+
+const PRIORITY_OPTIONS = ["P0", "P1", "P2"] as const;
+const WEIGHT_OPTIONS = ["Heavy", "Medium", "Light"] as const;
+const INITIATION_OPTIONS = ["Open to Start", "Requires Approval"] as const;
+const SOURCE_STATUS_KEYS: IssueProjectStatus[] = [
+  "todo",
+  "in_progress",
+  "done",
 ];
 
 function includesIssueCategory(categories: ActivityItemCategory[]) {
@@ -553,6 +577,120 @@ function formatDateTime(value: string | null, timeZone?: string | null) {
   }
 }
 
+function formatDateOnly(value: string | null, timeZone?: string | null) {
+  if (!value) {
+    return "-";
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed.length) {
+    return "-";
+  }
+
+  try {
+    let date = DateTime.fromISO(trimmed);
+    if (!date.isValid) {
+      return trimmed;
+    }
+
+    const zone = timeZone?.trim();
+    if (zone?.length) {
+      date = date.setZone(zone);
+    }
+
+    return date.toLocaleString(DateTime.DATE_MED);
+  } catch {
+    return trimmed;
+  }
+}
+
+function formatProjectField(value: string | null) {
+  if (!value) {
+    return "-";
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed : "-";
+}
+
+function normalizeProjectFieldValue(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed : null;
+}
+
+function normalizeProjectFieldForComparison(
+  field: ProjectFieldKey,
+  value: string | null | undefined,
+) {
+  const normalized = normalizeProjectFieldValue(value);
+  if (!normalized) {
+    return null;
+  }
+
+  if (field === "startDate") {
+    const parsed = DateTime.fromISO(normalized);
+    if (parsed.isValid) {
+      return parsed.toISODate();
+    }
+  }
+
+  if (field === "priority") {
+    return normalized.toUpperCase();
+  }
+
+  if (field === "weight") {
+    return normalized.toLowerCase();
+  }
+
+  return normalized;
+}
+
+function toProjectFieldInputValue(
+  field: ProjectFieldKey,
+  value: string | null,
+) {
+  if (!value) {
+    return "";
+  }
+
+  if (field === "startDate") {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toISOString().slice(0, 10);
+    }
+    if (value.length >= 10) {
+      return value.slice(0, 10);
+    }
+  }
+
+  return value;
+}
+
+function normalizeProjectFieldDraft(field: ProjectFieldKey, draft: string) {
+  const trimmed = draft.trim();
+  if (!trimmed.length) {
+    return null;
+  }
+
+  if (field === "priority") {
+    return trimmed.toUpperCase();
+  }
+
+  if (field === "weight") {
+    return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+  }
+
+  if (field === "startDate") {
+    return trimmed;
+  }
+
+  return trimmed;
+}
+
 function formatRelative(value: string | null) {
   if (!value) {
     return null;
@@ -613,6 +751,194 @@ function avatarFallback(user: ActivityItem["author"]) {
   }
 
   return user.login ?? user.name ?? user.id;
+}
+
+function ProjectFieldEditor({
+  item,
+  field,
+  label,
+  rawValue,
+  formattedValue,
+  timestamp,
+  disabled,
+  isUpdating,
+  onSubmit,
+}: {
+  item: ActivityItem;
+  field: ProjectFieldKey;
+  label: string;
+  rawValue: string | null;
+  formattedValue: string;
+  timestamp: string | null;
+  disabled: boolean;
+  isUpdating: boolean;
+  onSubmit: (
+    item: ActivityItem,
+    field: ProjectFieldKey,
+    value: string | null,
+  ) => Promise<boolean>;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState(() =>
+    toProjectFieldInputValue(field, rawValue),
+  );
+  const inputRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null);
+  const handleInputRef = useCallback(
+    (element: HTMLInputElement | HTMLSelectElement | null) => {
+      inputRef.current = element;
+    },
+    [],
+  );
+  const isSelect =
+    field === "priority" || field === "weight" || field === "initiationOptions";
+  const selectOptions =
+    field === "priority"
+      ? PRIORITY_OPTIONS
+      : field === "weight"
+        ? WEIGHT_OPTIONS
+        : field === "initiationOptions"
+          ? INITIATION_OPTIONS
+          : null;
+
+  useEffect(() => {
+    if (!isEditing) {
+      setDraft(toProjectFieldInputValue(field, rawValue));
+    }
+  }, [field, rawValue, isEditing]);
+
+  useEffect(() => {
+    if (!isEditing) {
+      return;
+    }
+
+    if (isSelect && selectOptions) {
+      if (!rawValue && selectOptions.length > 0 && draft.trim().length === 0) {
+        setDraft(selectOptions[0]);
+      }
+      return;
+    }
+
+    if (field === "startDate" && draft.trim().length === 0) {
+      const today = DateTime.local().toISODate();
+      if (today) {
+        setDraft(today);
+      }
+    }
+  }, [draft, field, isEditing, isSelect, rawValue, selectOptions]);
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [isEditing]);
+
+  const normalizedDraft = normalizeProjectFieldDraft(field, draft);
+  const hasChanges =
+    normalizeProjectFieldForComparison(field, rawValue) !==
+    normalizeProjectFieldForComparison(field, normalizedDraft);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!hasChanges) {
+      setIsEditing(false);
+      return;
+    }
+
+    const success = await onSubmit(item, field, normalizedDraft);
+    if (success) {
+      setIsEditing(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setDraft(toProjectFieldInputValue(field, rawValue));
+    setIsEditing(false);
+  };
+
+  const handleChange = (
+    event: ChangeEvent<HTMLInputElement | HTMLSelectElement>,
+  ) => {
+    setDraft(event.target.value);
+  };
+
+  const showEditButton = !disabled && !isEditing;
+  const displayValue = formattedValue.trim().length ? formattedValue : "-";
+
+  return (
+    <div className="flex items-center gap-2 text-xs text-muted-foreground/80">
+      <span className="text-muted-foreground/80">{label}:</span>
+      {isEditing ? (
+        <form
+          onSubmit={handleSubmit}
+          className="flex flex-wrap items-center gap-2"
+        >
+          {isSelect && selectOptions ? (
+            <select
+              value={draft}
+              onChange={handleChange}
+              disabled={isUpdating}
+              className="h-7 rounded border border-border bg-background px-1.5 text-[11px] text-foreground focus:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
+              ref={handleInputRef}
+            >
+              {selectOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              type="date"
+              value={draft}
+              disabled={isUpdating}
+              onChange={handleChange}
+              className="h-7 rounded border border-border bg-background px-1.5 text-[11px] text-foreground focus:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
+              ref={handleInputRef}
+            />
+          )}
+          <div className="flex items-center gap-1">
+            <Button
+              type="submit"
+              size="sm"
+              disabled={!hasChanges || isUpdating}
+              className="h-7 px-2 text-[11px]"
+            >
+              저장
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={handleCancel}
+              disabled={isUpdating}
+              className="h-7 px-2 text-[11px]"
+            >
+              취소
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-foreground">{displayValue}</span>
+          {timestamp ? (
+            <span className="text-muted-foreground/70">{timestamp}</span>
+          ) : null}
+          {showEditButton && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setIsEditing(true)}
+              disabled={isUpdating}
+              className="h-7 px-2 text-[11px]"
+            >
+              수정
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function MultiSelectInput({
@@ -705,7 +1031,7 @@ function MultiSelectInput({
 
   return (
     <div ref={containerRef} className="space-y-2">
-      <Label className="text-xs font-medium text-muted-foreground">
+      <Label className="text-xs font-medium text-muted-foreground/90">
         {label}
       </Label>
       <div
@@ -716,7 +1042,7 @@ function MultiSelectInput({
       >
         <div className="flex flex-wrap items-center gap-1">
           {value.length === 0 && (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs text-muted-foreground/70">
               {emptyLabel ?? "전체"}
             </span>
           )}
@@ -762,7 +1088,7 @@ function MultiSelectInput({
             >
               <span className="font-medium">{option.label}</span>
               {option.description && (
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs text-muted-foreground/70">
                   {option.description}
                 </span>
               )}
@@ -808,10 +1134,10 @@ function PeopleToggleList({
   if (!options.length) {
     return (
       <div className="space-y-2">
-        <Label className="text-xs font-medium text-muted-foreground">
+        <Label className="text-xs font-medium text-muted-foreground/90">
           {label}
         </Label>
-        <div className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+        <div className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground/80">
           연결된 사용자가 없습니다.
         </div>
       </div>
@@ -821,11 +1147,11 @@ function PeopleToggleList({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <Label className="text-xs font-medium text-muted-foreground">
+        <Label className="text-xs font-medium text-muted-foreground/90">
           {label}
         </Label>
         {!synced && (
-          <span className="text-[11px] text-muted-foreground">
+          <span className="text-[11px] text-muted-foreground/70">
             고급 필터와 동기화되지 않음
           </span>
         )}
@@ -934,6 +1260,9 @@ export function ActivityView({
   const [updatingStatusIds, setUpdatingStatusIds] = useState<Set<string>>(
     () => new Set<string>(),
   );
+  const [updatingProjectFieldIds, setUpdatingProjectFieldIds] = useState<
+    Set<string>
+  >(() => new Set<string>());
   const [jumpDate, setJumpDate] = useState("");
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
@@ -1542,6 +1871,131 @@ export function ActivityView({
     [showNotification],
   );
 
+  const handleUpdateProjectField = useCallback(
+    async (
+      item: ActivityItem,
+      field: ProjectFieldKey,
+      nextValue: string | null,
+    ) => {
+      if (item.type !== "issue") {
+        return false;
+      }
+
+      const currentValue = (() => {
+        switch (field) {
+          case "priority":
+            return item.issueTodoProjectPriority;
+          case "weight":
+            return item.issueTodoProjectWeight;
+          case "initiationOptions":
+            return item.issueTodoProjectInitiationOptions;
+          case "startDate":
+            return item.issueTodoProjectStartDate;
+          default:
+            return null;
+        }
+      })();
+
+      const normalizedCurrent = normalizeProjectFieldForComparison(
+        field,
+        currentValue,
+      );
+      const normalizedNext = normalizeProjectFieldForComparison(
+        field,
+        nextValue,
+      );
+
+      if (normalizedCurrent === normalizedNext) {
+        return true;
+      }
+
+      setUpdatingProjectFieldIds((current) => {
+        if (current.has(item.id)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.add(item.id);
+        return next;
+      });
+
+      try {
+        const payload = { [field]: nextValue } as Record<string, string | null>;
+        const response = await fetch(
+          `/api/activity/${encodeURIComponent(item.id)}/project-fields`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+          },
+        );
+
+        if (!response.ok) {
+          let message = "값을 업데이트하지 못했어요.";
+          try {
+            const error = (await response.json()) as {
+              error?: string;
+              todoStatus?: IssueProjectStatus;
+            };
+            if (response.status === 409 && error.todoStatus) {
+              const todoLabel =
+                ISSUE_STATUS_LABEL_MAP.get(error.todoStatus) ??
+                error.todoStatus;
+              message = `To-do 프로젝트 상태(${todoLabel})를 우선 적용하고 있어요.`;
+            } else if (typeof error.error === "string" && error.error.trim()) {
+              message = error.error;
+            }
+          } catch {
+            // Ignore JSON parse errors.
+          }
+          showNotification(message);
+          return false;
+        }
+
+        const payloadResponse = (await response.json()) as {
+          item?: ActivityItem;
+        };
+        const updatedItem = payloadResponse.item ?? item;
+
+        setData((current) => ({
+          ...current,
+          items: current.items.map((existing) =>
+            existing.id === updatedItem.id ? updatedItem : existing,
+          ),
+        }));
+        setDetailMap((current) => {
+          const existing = current[updatedItem.id];
+          if (!existing) {
+            return current;
+          }
+          return {
+            ...current,
+            [updatedItem.id]: { ...existing, item: updatedItem },
+          };
+        });
+
+        const label = PROJECT_FIELD_LABELS[field];
+        showNotification(`${label} 값을 업데이트했어요.`);
+        return true;
+      } catch (error) {
+        console.error(error);
+        showNotification("값을 업데이트하지 못했어요.");
+        return false;
+      } finally {
+        setUpdatingProjectFieldIds((current) => {
+          if (!current.has(item.id)) {
+            return current;
+          }
+          const next = new Set(current);
+          next.delete(item.id);
+          return next;
+        });
+      }
+    },
+    [showNotification],
+  );
+
   const handleSelectItem = useCallback(
     (id: string) => {
       setOpenItemIds((current) => {
@@ -1571,6 +2025,16 @@ export function ActivityView({
     [detailMap, loadDetail, loadingDetailIds],
   );
 
+  const handleItemKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>, id: string) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        handleSelectItem(id);
+      }
+    },
+    [handleSelectItem],
+  );
+
   useEffect(() => {
     openItemIds.forEach((id) => {
       if (!detailMap[id] && !loadingDetailIds.has(id)) {
@@ -1583,7 +2047,7 @@ export function ActivityView({
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between text-sm">
         <h2 className="text-lg font-semibold">Activity Feed</h2>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground/80">
           <span>
             Last sync:{" "}
             {formatDateTime(data.lastSyncCompletedAt, data.timezone) ??
@@ -1595,7 +2059,7 @@ export function ActivityView({
       <Card>
         <CardContent className="space-y-6">
           <div className="flex flex-wrap items-center gap-2">
-            <Label className="text-xs font-medium uppercase text-muted-foreground">
+            <Label className="text-xs font-medium uppercase text-muted-foreground/90">
               카테고리
             </Label>
             {(() => {
@@ -1675,7 +2139,7 @@ export function ActivityView({
                         aria-hidden="true"
                         className="mx-2 h-4 border-l border-border/50"
                       />
-                      <Label className="text-xs font-medium text-muted-foreground">
+                      <Label className="text-xs font-medium text-muted-foreground/90">
                         진행 상태
                       </Label>
                       <TogglePill
@@ -1731,7 +2195,7 @@ export function ActivityView({
                             aria-hidden="true"
                             className="mx-2 h-4 border-l border-border/50"
                           />
-                          <Label className="text-xs font-medium text-muted-foreground">
+                          <Label className="text-xs font-medium text-muted-foreground/90">
                             이슈 타입
                           </Label>
                           <TogglePill
@@ -1792,7 +2256,7 @@ export function ActivityView({
             })()}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Label className="text-xs font-medium uppercase text-muted-foreground">
+            <Label className="text-xs font-medium uppercase text-muted-foreground/90">
               주의
             </Label>
             {(() => {
@@ -1974,7 +2438,7 @@ export function ActivityView({
                   emptyLabel="모든 사용자"
                 />
                 <div className="space-y-2 md:col-span-2 lg:col-span-2">
-                  <Label className="text-xs font-medium text-muted-foreground">
+                  <Label className="text-xs font-medium text-muted-foreground/90">
                     검색
                   </Label>
                   <Input
@@ -1997,7 +2461,7 @@ export function ActivityView({
               <div className="flex flex-wrap items-center gap-2">
                 {allowPullRequestStatuses && (
                   <>
-                    <Label className="text-xs font-medium text-muted-foreground">
+                    <Label className="text-xs font-medium text-muted-foreground/90">
                       PR 상태
                     </Label>
                     <TogglePill
@@ -2106,7 +2570,7 @@ export function ActivityView({
                   aria-hidden="true"
                   className="mx-2 h-4 border-l border-border/50"
                 />
-                <Label className="text-xs font-medium uppercase text-muted-foreground">
+                <Label className="text-xs font-medium uppercase text-muted-foreground/90">
                   이슈 연결
                 </Label>
                 <TogglePill
@@ -2166,7 +2630,7 @@ export function ActivityView({
               </div>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 <div className="space-y-2">
-                  <Label className="text-xs font-medium uppercase text-muted-foreground">
+                  <Label className="text-xs font-medium uppercase text-muted-foreground/90">
                     이슈 임계값 (영업일) ·{" "}
                     <span className="normal-case">Backlog 정체</span>,{" "}
                     <span className="normal-case">In Progress 정체</span>
@@ -2211,7 +2675,7 @@ export function ActivityView({
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-xs font-medium uppercase text-muted-foreground">
+                  <Label className="text-xs font-medium uppercase text-muted-foreground/90">
                     PR 임계값 (영업일) · PR 생성, PR 정체
                   </Label>
                   <div className="grid grid-cols-2 gap-2">
@@ -2312,7 +2776,7 @@ export function ActivityView({
               초기화
             </Button>
             <div className="flex items-center gap-2 md:ml-4">
-              <Label className="text-xs font-medium uppercase text-muted-foreground">
+              <Label className="text-xs font-medium uppercase text-muted-foreground/90">
                 날짜 이동
               </Label>
               <Input
@@ -2345,12 +2809,12 @@ export function ActivityView({
 
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <div className="text-sm text-muted-foreground">
+          <div className="text-sm text-muted-foreground/80">
             페이지 {data.pageInfo.page} / {data.pageInfo.totalPages} (총{" "}
             {data.pageInfo.totalCount}건)
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-xs uppercase text-muted-foreground">
+            <span className="text-xs uppercase text-muted-foreground/80">
               Rows
             </span>
             <select
@@ -2370,12 +2834,12 @@ export function ActivityView({
         </div>
         <div className="space-y-3">
           {isLoading && (
-            <div className="rounded-md border border-border bg-muted/20 px-4 py-12 text-center text-sm text-muted-foreground">
+            <div className="rounded-md border border-border bg-muted/20 px-4 py-12 text-center text-sm text-muted-foreground/80">
               Loading activity feed...
             </div>
           )}
           {!isLoading && data.items.length === 0 && (
-            <div className="rounded-md border border-border bg-muted/20 px-4 py-12 text-center text-sm text-muted-foreground">
+            <div className="rounded-md border border-border bg-muted/20 px-4 py-12 text-center text-sm text-muted-foreground/80">
               필터 조건에 맞는 활동이 없습니다.
             </div>
           )}
@@ -2400,9 +2864,10 @@ export function ActivityView({
               const iconInfo = resolveActivityIcon(item);
               const IconComponent = iconInfo.Icon;
               const isUpdatingStatus = updatingStatusIds.has(item.id);
+              const isUpdatingProjectFields = updatingProjectFieldIds.has(
+                item.id,
+              );
               const currentIssueStatus = item.issueProjectStatus ?? "no_status";
-              const statusLabel =
-                ISSUE_STATUS_LABEL_MAP.get(currentIssueStatus) ?? "No Status";
               const statusSourceLabel =
                 item.issueProjectStatusSource === "todo_project"
                   ? "To-do 프로젝트"
@@ -2413,33 +2878,84 @@ export function ActivityView({
                 ? (ISSUE_STATUS_LABEL_MAP.get(item.issueTodoProjectStatus) ??
                   item.issueTodoProjectStatus)
                 : "-";
-              const activityStatusLabel = item.issueActivityStatus
-                ? (ISSUE_STATUS_LABEL_MAP.get(item.issueActivityStatus) ??
-                  item.issueActivityStatus)
-                : "-";
-              const todoStatusTimestamp = item.issueTodoProjectStatusAt
-                ? formatDateTime(item.issueTodoProjectStatusAt, data.timezone)
+              const todoPriorityLabel = formatProjectField(
+                item.issueTodoProjectPriority,
+              );
+              const todoPriorityTimestamp =
+                item.issueTodoProjectPriorityUpdatedAt
+                  ? formatDateTime(
+                      item.issueTodoProjectPriorityUpdatedAt,
+                      data.timezone,
+                    )
+                  : null;
+              const todoWeightLabel = formatProjectField(
+                item.issueTodoProjectWeight,
+              );
+              const todoWeightTimestamp = item.issueTodoProjectWeightUpdatedAt
+                ? formatDateTime(
+                    item.issueTodoProjectWeightUpdatedAt,
+                    data.timezone,
+                  )
                 : null;
-              const activityStatusTimestamp = item.issueActivityStatusAt
-                ? formatDateTime(item.issueActivityStatusAt, data.timezone)
-                : null;
+              const todoInitiationLabel = formatProjectField(
+                item.issueTodoProjectInitiationOptions,
+              );
+              const todoInitiationTimestamp =
+                item.issueTodoProjectInitiationOptionsUpdatedAt
+                  ? formatDateTime(
+                      item.issueTodoProjectInitiationOptionsUpdatedAt,
+                      data.timezone,
+                    )
+                  : null;
+              const todoStartDateLabel = formatDateOnly(
+                item.issueTodoProjectStartDate,
+                data.timezone,
+              );
+              const todoStartDateTimestamp =
+                item.issueTodoProjectStartDateUpdatedAt
+                  ? formatDateTime(
+                      item.issueTodoProjectStartDateUpdatedAt,
+                      data.timezone,
+                    )
+                  : null;
               const canEditStatus =
                 item.type === "issue" && !item.issueProjectStatusLocked;
+              const sourceStatusTimes =
+                item.issueProjectStatusSource === "todo_project"
+                  ? (detail?.todoStatusTimes ?? null)
+                  : item.issueProjectStatusSource === "activity"
+                    ? (detail?.activityStatusTimes ?? null)
+                    : null;
+              const sourceStatusEntries = SOURCE_STATUS_KEYS.map(
+                (statusKey) => {
+                  const label =
+                    ISSUE_STATUS_LABEL_MAP.get(statusKey) ?? statusKey;
+                  const value = sourceStatusTimes?.[statusKey] ?? null;
+                  const formatted = value
+                    ? formatDateTime(value, data.timezone)
+                    : "-";
+                  return { key: statusKey, label, value: formatted };
+                },
+              );
 
               return (
                 <div
                   key={item.id}
                   className="space-y-2 rounded-md border border-border bg-card/30 p-3"
                 >
-                  <button
-                    type="button"
+                  {/* biome-ignore lint/a11y/useSemanticElements: Nested project field editors render buttons, so this container cannot be a <button>. */}
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={isSelected}
                     className={cn(
-                      "w-full text-left transition-colors",
+                      "w-full cursor-pointer text-left transition-colors focus-visible:outline-none",
                       isSelected
                         ? "text-foreground"
                         : "text-foreground hover:text-primary",
                     )}
                     onClick={() => handleSelectItem(item.id)}
+                    onKeyDown={(event) => handleItemKeyDown(event, item.id)}
                   >
                     <div className="flex flex-col gap-1">
                       <div className="flex items-center gap-2 text-sm text-foreground">
@@ -2464,7 +2980,7 @@ export function ActivityView({
                               {referenceLabel}
                             </a>
                           ) : (
-                            <span className="text-muted-foreground">
+                            <span className="text-muted-foreground/80">
                               {referenceLabel}
                             </span>
                           )
@@ -2473,7 +2989,7 @@ export function ActivityView({
                           {item.title ?? "Untitled"}
                         </span>
                       </div>
-                      <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground">
+                      <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground/80">
                         <div className="flex flex-wrap items-center gap-3">
                           {item.businessDaysOpen !== null &&
                             item.businessDaysOpen !== undefined && (
@@ -2494,7 +3010,18 @@ export function ActivityView({
                           )}
                           {item.author && (
                             <span>
-                              Author {avatarFallback(item.author) ?? "-"}
+                              작성자 {avatarFallback(item.author) ?? "-"}
+                            </span>
+                          )}
+                          {item.reviewers.length > 0 && (
+                            <span>
+                              리뷰어{" "}
+                              {item.reviewers
+                                .map(
+                                  (reviewer) =>
+                                    avatarFallback(reviewer) ?? reviewer.id,
+                                )
+                                .join(", ")}
                             </span>
                           )}
                           {item.issueType && (
@@ -2507,6 +3034,22 @@ export function ActivityView({
                               Milestone{" "}
                               {item.milestone.title ?? item.milestone.id}
                             </span>
+                          )}
+                          {item.type === "issue" && (
+                            <>
+                              <span className="rounded bg-muted px-1.5 py-0.5 text-[11px]">
+                                Status:{" "}
+                                <span className="text-foreground">
+                                  {todoStatusLabel}
+                                </span>
+                              </span>
+                              <span className="rounded bg-muted px-1.5 py-0.5 text-[11px]">
+                                Priority:{" "}
+                                <span className="text-foreground">
+                                  {todoPriorityLabel}
+                                </span>
+                              </span>
+                            </>
                           )}
                           {badges.map((badge) => (
                             <span
@@ -2532,11 +3075,11 @@ export function ActivityView({
                         )}
                       </div>
                     </div>
-                  </button>
+                  </div>
                   {isSelected && (
                     <div className="rounded-md border border-border bg-background p-4 text-sm">
                       {isDetailLoading ? (
-                        <div className="text-muted-foreground">
+                        <div className="text-muted-foreground/80">
                           Loading details...
                         </div>
                       ) : detail ? (
@@ -2544,15 +3087,37 @@ export function ActivityView({
                           {item.type === "issue" && (
                             <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-xs">
                               <div className="flex flex-wrap items-center justify-between gap-2">
-                                <div className="flex flex-col">
-                                  <span className="text-sm font-semibold text-foreground">
-                                    {statusLabel}
+                                <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground/70">
+                                  <span className="flex items-center gap-1">
+                                    <span className="text-muted-foreground/60">
+                                      Source:
+                                    </span>
+                                    <span className="text-foreground">
+                                      {statusSourceLabel}
+                                    </span>
                                   </span>
-                                  <span className="text-muted-foreground/70">
-                                    {statusSourceLabel}
-                                  </span>
+                                  {sourceStatusEntries.map(
+                                    ({ key, label, value }) => (
+                                      <span
+                                        key={`${item.id}-source-${key}`}
+                                        className="flex items-center gap-1"
+                                      >
+                                        {label}:
+                                        <span className="text-foreground">
+                                          {value}
+                                        </span>
+                                      </span>
+                                    ),
+                                  )}
+                                  {item.issueProjectStatusLocked && (
+                                    <span className="text-amber-600">
+                                      To-do 프로젝트 상태({todoStatusLabel})로
+                                      잠겨 있어요.
+                                    </span>
+                                  )}
                                 </div>
-                                {isUpdatingStatus && (
+                                {(isUpdatingStatus ||
+                                  isUpdatingProjectFields) && (
                                   <span className="text-muted-foreground/70">
                                     업데이트 중...
                                   </span>
@@ -2571,7 +3136,9 @@ export function ActivityView({
                                       size="sm"
                                       variant={active ? "default" : "outline"}
                                       disabled={
-                                        isUpdatingStatus || !canEditStatus
+                                        isUpdatingStatus ||
+                                        isUpdatingProjectFields ||
+                                        !canEditStatus
                                       }
                                       onClick={() =>
                                         handleUpdateIssueStatus(
@@ -2585,44 +3152,67 @@ export function ActivityView({
                                   );
                                 })}
                               </div>
-                              <dl className="mt-3 space-y-1 text-muted-foreground/80">
-                                <div className="flex items-center gap-2">
-                                  <dt className="min-w-[4rem] text-muted-foreground/60">
-                                    To-do
-                                  </dt>
-                                  <dd>
-                                    {todoStatusLabel}
-                                    {todoStatusTimestamp && (
-                                      <span className="ml-1 text-muted-foreground/50">
-                                        {todoStatusTimestamp}
-                                      </span>
-                                    )}
-                                  </dd>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <dt className="min-w-[4rem] text-muted-foreground/60">
-                                    Activity
-                                  </dt>
-                                  <dd>
-                                    {activityStatusLabel}
-                                    {activityStatusTimestamp && (
-                                      <span className="ml-1 text-muted-foreground/50">
-                                        {activityStatusTimestamp}
-                                      </span>
-                                    )}
-                                  </dd>
-                                </div>
-                              </dl>
-                              {item.issueProjectStatusLocked && (
-                                <p className="mt-2 text-amber-600">
-                                  To-do 프로젝트 상태({todoStatusLabel})로 잠겨
-                                  있어요.
-                                </p>
-                              )}
+                              <div className="mt-3 flex flex-wrap items-center gap-3 text-muted-foreground/80">
+                                <ProjectFieldEditor
+                                  item={item}
+                                  field="priority"
+                                  label="Priority"
+                                  rawValue={item.issueTodoProjectPriority}
+                                  formattedValue={todoPriorityLabel}
+                                  timestamp={todoPriorityTimestamp}
+                                  disabled={
+                                    item.issueProjectStatusLocked ||
+                                    isUpdatingStatus
+                                  }
+                                  isUpdating={isUpdatingProjectFields}
+                                  onSubmit={handleUpdateProjectField}
+                                />
+                                <ProjectFieldEditor
+                                  item={item}
+                                  field="weight"
+                                  label="Weight"
+                                  rawValue={item.issueTodoProjectWeight}
+                                  formattedValue={todoWeightLabel}
+                                  timestamp={todoWeightTimestamp}
+                                  disabled={isUpdatingStatus}
+                                  isUpdating={isUpdatingProjectFields}
+                                  onSubmit={handleUpdateProjectField}
+                                />
+                                <ProjectFieldEditor
+                                  item={item}
+                                  field="initiationOptions"
+                                  label="Initiation"
+                                  rawValue={
+                                    item.issueTodoProjectInitiationOptions
+                                  }
+                                  formattedValue={todoInitiationLabel}
+                                  timestamp={todoInitiationTimestamp}
+                                  disabled={
+                                    item.issueProjectStatusLocked ||
+                                    isUpdatingStatus
+                                  }
+                                  isUpdating={isUpdatingProjectFields}
+                                  onSubmit={handleUpdateProjectField}
+                                />
+                                <ProjectFieldEditor
+                                  item={item}
+                                  field="startDate"
+                                  label="Start"
+                                  rawValue={item.issueTodoProjectStartDate}
+                                  formattedValue={todoStartDateLabel}
+                                  timestamp={todoStartDateTimestamp}
+                                  disabled={
+                                    item.issueProjectStatusLocked ||
+                                    isUpdatingStatus
+                                  }
+                                  isUpdating={isUpdatingProjectFields}
+                                  onSubmit={handleUpdateProjectField}
+                                />
+                              </div>
                               {!item.issueProjectStatusLocked &&
                                 item.issueProjectStatusSource !==
                                   "activity" && (
-                                  <p className="mt-2 text-muted-foreground">
+                                  <p className="mt-2 text-muted-foreground/80">
                                     Activity 상태는 To-do 프로젝트가 No Status
                                     또는 Todo일 때만 적용돼요.
                                   </p>
@@ -2653,7 +3243,7 @@ export function ActivityView({
                             <div className="space-y-4 text-xs">
                               {detail.parentIssues.length > 0 && (
                                 <div>
-                                  <h4 className="font-semibold text-muted-foreground">
+                                  <h4 className="font-semibold text-muted-foreground/85">
                                     상위 이슈
                                   </h4>
                                   <ul className="mt-1 space-y-1">
@@ -2704,7 +3294,7 @@ export function ActivityView({
                               )}
                               {detail.subIssues.length > 0 && (
                                 <div>
-                                  <h4 className="font-semibold text-muted-foreground">
+                                  <h4 className="font-semibold text-muted-foreground/85">
                                     하위 이슈
                                   </h4>
                                   <ul className="mt-1 space-y-1">
@@ -2757,11 +3347,11 @@ export function ActivityView({
                           )}
                         </div>
                       ) : detail === null ? (
-                        <div className="text-muted-foreground">
+                        <div className="text-muted-foreground/80">
                           선택한 항목의 내용을 불러오지 못했습니다.
                         </div>
                       ) : (
-                        <div className="text-muted-foreground">
+                        <div className="text-muted-foreground/80">
                           내용을 불러오는 중입니다.
                         </div>
                       )}
@@ -2772,7 +3362,7 @@ export function ActivityView({
             })}
         </div>
         <div className="flex flex-col items-center gap-3 border-t border-border pt-3">
-          <span className="text-sm text-muted-foreground">
+          <span className="text-sm text-muted-foreground/80">
             페이지 {data.pageInfo.page} / {data.pageInfo.totalPages}
           </span>
           <div className="flex items-center gap-2">

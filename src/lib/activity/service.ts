@@ -1,4 +1,8 @@
 import {
+  getProjectFieldOverrides,
+  type ProjectFieldOverrides,
+} from "@/lib/activity/project-field-store";
+import {
   type ActivityStatusEvent,
   getActivityStatusHistory,
 } from "@/lib/activity/status-store";
@@ -139,11 +143,35 @@ type AttentionSets = {
 
 type IssueRaw = {
   projectStatusHistory?: unknown;
+  projectItems?: { nodes?: unknown } | null;
 };
 
 type ProjectStatusEntry = {
   status: string;
   occurredAt: string;
+};
+
+type ProjectFieldAggregate = {
+  value: string | null;
+  updatedAt: string | null;
+  dateValue: string | null;
+};
+
+type ProjectFieldValueInfo = {
+  value: string | null;
+  updatedAt: string | null;
+  dateValue: string | null;
+};
+
+type TodoProjectFieldValues = {
+  priority: string | null;
+  priorityUpdatedAt: string | null;
+  weight: string | null;
+  weightUpdatedAt: string | null;
+  initiationOptions: string | null;
+  initiationOptionsUpdatedAt: string | null;
+  startDate: string | null;
+  startDateUpdatedAt: string | null;
 };
 
 function coerceArray(value: string[] | null | undefined) {
@@ -547,6 +575,209 @@ function extractProjectStatusEntries(
     .map(([, value]) => value);
 }
 
+function createProjectFieldAggregate(): ProjectFieldAggregate {
+  return { value: null, updatedAt: null, dateValue: null };
+}
+
+function compareTimestamps(left: string, right: string) {
+  const leftTime = Date.parse(left);
+  const rightTime = Date.parse(right);
+
+  if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) {
+    if (leftTime === rightTime) {
+      return 0;
+    }
+    return leftTime > rightTime ? 1 : -1;
+  }
+
+  return left.localeCompare(right);
+}
+
+function pickFirstTimestamp(candidates: string[]): string | null {
+  for (const candidate of candidates) {
+    const trimmed = candidate.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+  return null;
+}
+
+function extractProjectFieldValueInfo(
+  value: unknown,
+  fallbackTimestamps: string[],
+): ProjectFieldValueInfo {
+  if (!value || typeof value !== "object") {
+    return {
+      value: null,
+      updatedAt: pickFirstTimestamp(fallbackTimestamps),
+      dateValue: null,
+    };
+  }
+
+  const record = value as Record<string, unknown>;
+
+  let resolvedValue: string | null = null;
+  if (typeof record.name === "string" && record.name.trim().length) {
+    resolvedValue = record.name.trim();
+  } else if (typeof record.title === "string" && record.title.trim().length) {
+    resolvedValue = record.title.trim();
+  } else if (typeof record.text === "string" && record.text.trim().length) {
+    resolvedValue = record.text.trim();
+  } else if (
+    typeof record.number === "number" &&
+    Number.isFinite(record.number)
+  ) {
+    resolvedValue = String(record.number);
+  }
+
+  let dateValue: string | null = null;
+  if (typeof record.date === "string" && record.date.trim().length) {
+    dateValue = record.date.trim();
+    if (!resolvedValue) {
+      resolvedValue = dateValue;
+    }
+  }
+
+  let updatedAt: string | null = null;
+  if (typeof record.updatedAt === "string" && record.updatedAt.trim().length) {
+    updatedAt = record.updatedAt.trim();
+  } else {
+    updatedAt = pickFirstTimestamp(fallbackTimestamps);
+  }
+
+  return {
+    value: resolvedValue,
+    updatedAt,
+    dateValue,
+  };
+}
+
+function applyProjectFieldCandidate(
+  aggregate: ProjectFieldAggregate,
+  candidate: ProjectFieldValueInfo,
+) {
+  const candidateValue = candidate.value ?? candidate.dateValue ?? null;
+  if (!candidateValue) {
+    return;
+  }
+
+  if (!aggregate.value && !aggregate.dateValue) {
+    aggregate.value = candidateValue;
+    aggregate.dateValue = candidate.dateValue ?? null;
+    aggregate.updatedAt = candidate.updatedAt ?? aggregate.updatedAt;
+    return;
+  }
+
+  if (!candidate.updatedAt) {
+    return;
+  }
+
+  if (!aggregate.updatedAt) {
+    aggregate.value = candidateValue;
+    aggregate.dateValue = candidate.dateValue ?? null;
+    aggregate.updatedAt = candidate.updatedAt;
+    return;
+  }
+
+  if (compareTimestamps(candidate.updatedAt, aggregate.updatedAt) >= 0) {
+    aggregate.value = candidateValue;
+    aggregate.dateValue = candidate.dateValue ?? null;
+    aggregate.updatedAt = candidate.updatedAt;
+  }
+}
+
+function extractTodoProjectFieldValues(
+  raw: IssueRaw | null,
+  targetProject: string | null,
+): TodoProjectFieldValues {
+  const result: TodoProjectFieldValues = {
+    priority: null,
+    priorityUpdatedAt: null,
+    weight: null,
+    weightUpdatedAt: null,
+    initiationOptions: null,
+    initiationOptionsUpdatedAt: null,
+    startDate: null,
+    startDateUpdatedAt: null,
+  };
+
+  if (!raw || !raw.projectItems || typeof raw.projectItems !== "object") {
+    return result;
+  }
+
+  const connection = raw.projectItems as { nodes?: unknown };
+  const nodes = Array.isArray(connection.nodes)
+    ? (connection.nodes as unknown[])
+    : [];
+
+  const priorityAggregate = createProjectFieldAggregate();
+  const initiationAggregate = createProjectFieldAggregate();
+  const startAggregate = createProjectFieldAggregate();
+
+  nodes.forEach((entry) => {
+    if (!entry || typeof entry !== "object") {
+      return;
+    }
+
+    const record = entry as Record<string, unknown>;
+    const projectRecord = record.project;
+    const projectTitle =
+      projectRecord && typeof projectRecord === "object"
+        ? (projectRecord as { title?: unknown }).title
+        : null;
+
+    if (!matchProject(projectTitle, targetProject)) {
+      return;
+    }
+
+    const fallbackTimestamps: string[] = [];
+    const updatedAt =
+      typeof record.updatedAt === "string" ? record.updatedAt.trim() : null;
+    if (updatedAt?.length) {
+      fallbackTimestamps.push(updatedAt);
+    }
+    const createdAt =
+      typeof record.createdAt === "string" ? record.createdAt.trim() : null;
+    if (createdAt?.length) {
+      fallbackTimestamps.push(createdAt);
+    }
+
+    applyProjectFieldCandidate(
+      priorityAggregate,
+      extractProjectFieldValueInfo(
+        (record as { priority?: unknown }).priority,
+        fallbackTimestamps,
+      ),
+    );
+    applyProjectFieldCandidate(
+      initiationAggregate,
+      extractProjectFieldValueInfo(
+        (record as { initiationOptions?: unknown }).initiationOptions,
+        fallbackTimestamps,
+      ),
+    );
+    applyProjectFieldCandidate(
+      startAggregate,
+      extractProjectFieldValueInfo(
+        (record as { startDate?: unknown }).startDate,
+        fallbackTimestamps,
+      ),
+    );
+  });
+
+  return {
+    priority: priorityAggregate.value,
+    priorityUpdatedAt: priorityAggregate.updatedAt,
+    weight: null,
+    weightUpdatedAt: null,
+    initiationOptions: initiationAggregate.value,
+    initiationOptionsUpdatedAt: initiationAggregate.updatedAt,
+    startDate: startAggregate.dateValue ?? startAggregate.value,
+    startDateUpdatedAt: startAggregate.updatedAt,
+  };
+}
+
 async function resolveAttentionSets(
   thresholds: Required<ActivityThresholds>,
 ): Promise<AttentionSets> {
@@ -677,6 +908,14 @@ function toIso(value: string | null | undefined) {
   }
 
   return date.toISOString();
+}
+
+function toIsoWithFallback(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  return toIso(value) ?? value;
 }
 
 function coerceSearch(value: string | null | undefined) {
@@ -1265,6 +1504,7 @@ function buildActivityItem(
   sets: AttentionSets,
   targetProject: string | null,
   now: Date,
+  projectOverrides: Map<string, ProjectFieldOverrides>,
   activityStatusHistory: Map<string, ActivityStatusEvent[]>,
 ): ActivityItem {
   const status = toStatus(row.status);
@@ -1276,6 +1516,14 @@ function buildActivityItem(
   let issueTodoProjectStatusAt: string | null = null;
   let issueActivityStatus: IssueProjectStatus | null = null;
   let issueActivityStatusAt: string | null = null;
+  let issueTodoProjectPriorityValue: string | null = null;
+  let issueTodoProjectPriorityUpdatedAtValue: string | null = null;
+  let issueTodoProjectWeightValue: string | null = null;
+  let issueTodoProjectWeightUpdatedAtValue: string | null = null;
+  let issueTodoProjectInitiationOptionsValue: string | null = null;
+  let issueTodoProjectInitiationOptionsUpdatedAtValue: string | null = null;
+  let issueTodoProjectStartDateValue: string | null = null;
+  let issueTodoProjectStartDateUpdatedAtValue: string | null = null;
   const labels = buildLabels(row);
   const hasParentIssue =
     row.item_type === "issue" && (row.tracked_in_issues_count ?? 0) > 0;
@@ -1321,6 +1569,19 @@ function buildActivityItem(
 
   if (row.item_type === "issue") {
     const raw = parseIssueRaw(row.raw_data);
+    const todoProjectFields = extractTodoProjectFieldValues(raw, targetProject);
+    issueTodoProjectPriorityValue = todoProjectFields.priority;
+    issueTodoProjectPriorityUpdatedAtValue =
+      todoProjectFields.priorityUpdatedAt;
+    issueTodoProjectWeightValue = todoProjectFields.weight;
+    issueTodoProjectWeightUpdatedAtValue = todoProjectFields.weightUpdatedAt;
+    issueTodoProjectInitiationOptionsValue =
+      todoProjectFields.initiationOptions;
+    issueTodoProjectInitiationOptionsUpdatedAtValue =
+      todoProjectFields.initiationOptionsUpdatedAt;
+    issueTodoProjectStartDateValue = todoProjectFields.startDate;
+    issueTodoProjectStartDateUpdatedAtValue =
+      todoProjectFields.startDateUpdatedAt;
     const activityEvents = activityStatusHistory.get(row.id) ?? [];
     const statusInfo = resolveIssueStatusInfo(
       raw,
@@ -1334,6 +1595,35 @@ function buildActivityItem(
     issueTodoProjectStatusAt = statusInfo.todoStatusAt;
     issueActivityStatus = statusInfo.activityStatus;
     issueActivityStatusAt = statusInfo.activityStatusAt;
+
+    if (!issueProjectStatusLocked) {
+      const overrides = projectOverrides.get(row.id);
+      if (overrides) {
+        if (overrides.priority) {
+          issueTodoProjectPriorityValue = overrides.priority;
+          issueTodoProjectPriorityUpdatedAtValue =
+            overrides.priorityUpdatedAt ??
+            issueTodoProjectPriorityUpdatedAtValue;
+        }
+        if (overrides.initiationOptions) {
+          issueTodoProjectInitiationOptionsValue = overrides.initiationOptions;
+          issueTodoProjectInitiationOptionsUpdatedAtValue =
+            overrides.initiationOptionsUpdatedAt ??
+            issueTodoProjectInitiationOptionsUpdatedAtValue;
+        }
+        if (overrides.weight) {
+          issueTodoProjectWeightValue = overrides.weight;
+          issueTodoProjectWeightUpdatedAtValue =
+            overrides.weightUpdatedAt ?? issueTodoProjectWeightUpdatedAtValue;
+        }
+        if (overrides.startDate) {
+          issueTodoProjectStartDateValue = overrides.startDate;
+          issueTodoProjectStartDateUpdatedAtValue =
+            overrides.startDateUpdatedAt ??
+            issueTodoProjectStartDateUpdatedAtValue;
+        }
+      }
+    }
 
     const { startedAt, completedAt } = resolveWorkTimestamps(statusInfo);
     if (startedAt) {
@@ -1383,6 +1673,24 @@ function buildActivityItem(
     issueTodoProjectStatusAt: issueTodoProjectStatusAt
       ? toIso(issueTodoProjectStatusAt)
       : null,
+    issueTodoProjectPriority: issueTodoProjectPriorityValue,
+    issueTodoProjectPriorityUpdatedAt: toIsoWithFallback(
+      issueTodoProjectPriorityUpdatedAtValue,
+    ),
+    issueTodoProjectWeight: issueTodoProjectWeightValue,
+    issueTodoProjectWeightUpdatedAt: toIsoWithFallback(
+      issueTodoProjectWeightUpdatedAtValue,
+    ),
+    issueTodoProjectInitiationOptions: issueTodoProjectInitiationOptionsValue,
+    issueTodoProjectInitiationOptionsUpdatedAt: toIsoWithFallback(
+      issueTodoProjectInitiationOptionsUpdatedAtValue,
+    ),
+    issueTodoProjectStartDate: toIsoWithFallback(
+      issueTodoProjectStartDateValue,
+    ),
+    issueTodoProjectStartDateUpdatedAt: toIsoWithFallback(
+      issueTodoProjectStartDateUpdatedAtValue,
+    ),
     issueActivityStatus,
     issueActivityStatusAt: issueActivityStatusAt
       ? toIso(issueActivityStatusAt)
@@ -1730,7 +2038,10 @@ export async function getActivityItems(
   const issueIds = rows
     .filter((row) => row.item_type === "issue")
     .map((row) => row.id);
-  const activityStatusHistory = await getActivityStatusHistory(issueIds);
+  const [activityStatusHistory, projectOverrides] = await Promise.all([
+    getActivityStatusHistory(issueIds),
+    getProjectFieldOverrides(issueIds),
+  ]);
   const totalCount = rows.length > 0 ? Number(rows[0]?.total_count ?? 0) : 0;
   const totalPages =
     perPage > 0 ? Math.max(1, Math.ceil(totalCount / perPage)) : 1;
@@ -1770,6 +2081,7 @@ export async function getActivityItems(
       attentionSets,
       targetProject,
       now,
+      projectOverrides,
       activityStatusHistory,
     ),
   );
@@ -1842,14 +2154,61 @@ export async function getActivityItemDetail(
     row.item_type === "issue"
       ? await getActivityStatusHistory([row.id])
       : new Map<string, ActivityStatusEvent[]>();
+  const projectOverrides =
+    row.item_type === "issue"
+      ? await getProjectFieldOverrides([row.id])
+      : new Map<string, ProjectFieldOverrides>();
   const item = buildActivityItem(
     row,
     users,
     attentionSets,
     targetProject,
     now,
+    projectOverrides,
     activityStatusHistory,
   );
+  const rawIssue = parseIssueRaw(row.raw_data);
+  let todoStatusTimes: Partial<
+    Record<IssueProjectStatus, string | null>
+  > | null = null;
+  let activityStatusTimes: Partial<
+    Record<IssueProjectStatus, string | null>
+  > | null = null;
+
+  if (row.item_type === "issue") {
+    const todoMap: Partial<Record<IssueProjectStatus, string | null>> = {};
+    const entries = extractProjectStatusEntries(rawIssue, targetProject);
+    entries.forEach((entry) => {
+      const mapped = mapIssueProjectStatus(entry.status);
+      if (mapped === "todo" || mapped === "in_progress" || mapped === "done") {
+        const iso = toIso(entry.occurredAt);
+        if (iso) {
+          todoMap[mapped] = iso;
+        }
+      }
+    });
+    if (Object.keys(todoMap).length > 0) {
+      todoStatusTimes = todoMap;
+    }
+
+    const activityEvents = activityStatusHistory.get(row.id) ?? [];
+    const activityMap: Partial<Record<IssueProjectStatus, string | null>> = {};
+    activityEvents.forEach((event) => {
+      if (
+        event.status === "todo" ||
+        event.status === "in_progress" ||
+        event.status === "done"
+      ) {
+        const iso = toIso(event.occurredAt);
+        if (iso) {
+          activityMap[event.status] = iso;
+        }
+      }
+    });
+    if (Object.keys(activityMap).length > 0) {
+      activityStatusTimes = activityMap;
+    }
+  }
 
   const rawObject = toRawObject(row.raw_data);
   const bodyCandidates: Array<string | null> = [];
@@ -1912,5 +2271,7 @@ export async function getActivityItemDetail(
     raw: rawObject ?? row.raw_data ?? null,
     parentIssues,
     subIssues,
+    todoStatusTimes: todoStatusTimes ?? undefined,
+    activityStatusTimes: activityStatusTimes ?? undefined,
   };
 }

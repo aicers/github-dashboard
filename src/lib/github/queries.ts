@@ -224,6 +224,67 @@ export const repositoryIssuesQuery = gql`
                   updatedAt
                 }
               }
+              priority: fieldValueByName(name: "Priority") {
+                __typename
+                ... on ProjectV2ItemFieldSingleSelectValue {
+                  name
+                  updatedAt
+                }
+                ... on ProjectV2ItemFieldIterationValue {
+                  title
+                  updatedAt
+                }
+                ... on ProjectV2ItemFieldTextValue {
+                  text
+                  updatedAt
+                }
+                ... on ProjectV2ItemFieldNumberValue {
+                  number
+                  updatedAt
+                }
+              }
+              initiationOptions: fieldValueByName(name: "Initiation Options") {
+                __typename
+                ... on ProjectV2ItemFieldSingleSelectValue {
+                  name
+                  updatedAt
+                }
+                ... on ProjectV2ItemFieldIterationValue {
+                  title
+                  updatedAt
+                }
+                ... on ProjectV2ItemFieldTextValue {
+                  text
+                  updatedAt
+                }
+                ... on ProjectV2ItemFieldNumberValue {
+                  number
+                  updatedAt
+                }
+              }
+              startDate: fieldValueByName(name: "Start date") {
+                __typename
+                ... on ProjectV2ItemFieldSingleSelectValue {
+                  name
+                  updatedAt
+                }
+                ... on ProjectV2ItemFieldIterationValue {
+                  title
+                  updatedAt
+                }
+                ... on ProjectV2ItemFieldTextValue {
+                  text
+                  updatedAt
+                }
+                ... on ProjectV2ItemFieldNumberValue {
+                  number
+                  updatedAt
+                }
+                ... on ProjectV2ItemFieldDateValue {
+                  date
+                  updatedAt
+                }
+              }
             }
           }
         }
