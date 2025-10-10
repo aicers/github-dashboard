@@ -96,6 +96,7 @@ const ATTENTION_OPTIONS: Array<{
   value: ActivityAttentionFilter;
   label: string;
 }> = [
+  { value: "no_attention", label: "주의 없음" },
   { value: "issue_backlog", label: "정체된 Backlog 이슈" },
   { value: "issue_stalled", label: "정체된 In Progress 이슈" },
   { value: "pr_open_too_long", label: "오래된 PR" },

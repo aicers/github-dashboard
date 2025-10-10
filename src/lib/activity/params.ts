@@ -149,6 +149,7 @@ export function parseActivityListParams(
         "pr_inactive",
         "issue_backlog",
         "issue_stalled",
+        "no_attention",
       ],
     ),
     linkedIssueStates: parseEnumValues<ActivityLinkedIssueFilter>(

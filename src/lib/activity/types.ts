@@ -26,7 +26,8 @@ export type ActivityAttentionFilter =
   | "pr_open_too_long"
   | "pr_inactive"
   | "issue_backlog"
-  | "issue_stalled";
+  | "issue_stalled"
+  | "no_attention";
 
 export type ActivityThresholds = {
   unansweredMentionDays?: number;
