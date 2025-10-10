@@ -42,6 +42,7 @@ import type {
   ActivityListParams,
   ActivityListResult,
   ActivityPullRequestStatusFilter,
+  ActivitySavedFilter,
   ActivityStatusFilter,
   ActivityThresholds,
   IssueProjectStatus,
@@ -156,6 +157,7 @@ const DEFAULT_THRESHOLD_VALUES: Required<ActivityThresholds> = {
 };
 
 const PER_PAGE_CHOICES = [10, 25, 50];
+const SAVED_FILTER_LIMIT_DEFAULT = 30;
 
 const ALL_ACTIVITY_CATEGORIES = CATEGORY_OPTIONS.map(
   (option) => option.value,
@@ -442,6 +444,72 @@ function buildFilterState(
       ...DEFAULT_THRESHOLD_VALUES,
       ...(params.thresholds ?? {}),
     },
+  };
+}
+
+function buildSavedFilterPayload(filters: FilterState): ActivityListParams {
+  const thresholdsEntries = (
+    Object.entries(filters.thresholds) as Array<
+      [keyof ActivityThresholds, number]
+    >
+  ).filter(([key, value]) => {
+    const defaultValue = DEFAULT_THRESHOLD_VALUES[key] ?? null;
+    return defaultValue === null || value !== defaultValue;
+  });
+
+  const thresholds =
+    thresholdsEntries.length > 0
+      ? thresholdsEntries.reduce<ActivityThresholds>(
+          (accumulator, [key, value]) => {
+            accumulator[key] = value;
+            return accumulator;
+          },
+          {},
+        )
+      : undefined;
+
+  const trimmedSearch = filters.search.trim();
+
+  return {
+    perPage: filters.perPage,
+    types: filters.categories.length ? [...filters.categories] : undefined,
+    repositoryIds: filters.repositoryIds.length
+      ? [...filters.repositoryIds]
+      : undefined,
+    labelKeys: filters.labelKeys.length ? [...filters.labelKeys] : undefined,
+    issueTypeIds: filters.issueTypeIds.length
+      ? [...filters.issueTypeIds]
+      : undefined,
+    milestoneIds: filters.milestoneIds.length
+      ? [...filters.milestoneIds]
+      : undefined,
+    pullRequestStatuses: filters.prStatuses.length
+      ? [...filters.prStatuses]
+      : undefined,
+    issueBaseStatuses: filters.issueBaseStatuses.length
+      ? [...filters.issueBaseStatuses]
+      : undefined,
+    authorIds: filters.authorIds.length ? [...filters.authorIds] : undefined,
+    assigneeIds: filters.assigneeIds.length
+      ? [...filters.assigneeIds]
+      : undefined,
+    reviewerIds: filters.reviewerIds.length
+      ? [...filters.reviewerIds]
+      : undefined,
+    mentionedUserIds: filters.mentionedUserIds.length
+      ? [...filters.mentionedUserIds]
+      : undefined,
+    commenterIds: filters.commenterIds.length
+      ? [...filters.commenterIds]
+      : undefined,
+    reactorIds: filters.reactorIds.length ? [...filters.reactorIds] : undefined,
+    statuses: filters.statuses.length ? [...filters.statuses] : undefined,
+    attention: filters.attention.length ? [...filters.attention] : undefined,
+    linkedIssueStates: filters.linkedIssueStates.length
+      ? [...filters.linkedIssueStates]
+      : undefined,
+    search: trimmedSearch.length ? trimmedSearch : undefined,
+    thresholds,
   };
 }
 
@@ -1425,6 +1493,195 @@ function TogglePill({
   );
 }
 
+type SavedFiltersManagerProps = {
+  open: boolean;
+  filters: ActivitySavedFilter[];
+  limit: number;
+  busyId: string | null;
+  message: string | null;
+  error: string | null;
+  onClose: () => void;
+  onApply: (filter: ActivitySavedFilter) => void;
+  onRename: (filter: ActivitySavedFilter, name: string) => Promise<void>;
+  onReplace: (filter: ActivitySavedFilter) => Promise<void>;
+  onDelete: (filter: ActivitySavedFilter) => Promise<void>;
+};
+
+const SavedFiltersManager = ({
+  open,
+  filters,
+  limit,
+  busyId,
+  message,
+  error,
+  onClose,
+  onApply,
+  onRename,
+  onReplace,
+  onDelete,
+}: SavedFiltersManagerProps) => {
+  const [draftNames, setDraftNames] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const nextDrafts: Record<string, string> = {};
+    filters.forEach((filter) => {
+      nextDrafts[filter.id] = filter.name;
+    });
+    setDraftNames(nextDrafts);
+  }, [filters, open]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+      }
+    };
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open, onClose]);
+
+  if (!open) {
+    return null;
+  }
+
+  const handleNameChange = (filterId: string, nextName: string) => {
+    setDraftNames((current) => ({
+      ...current,
+      [filterId]: nextName,
+    }));
+  };
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-background/80 backdrop-blur">
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="relative flex w-full max-w-3xl flex-col gap-4 rounded-xl border border-border bg-background p-6 shadow-2xl"
+      >
+        <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <h3 className="text-lg font-semibold text-foreground">필터 관리</h3>
+          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground/80">
+            <span>
+              {filters.length} / {limit} 저장됨
+            </span>
+            <Button size="sm" variant="ghost" onClick={onClose}>
+              닫기
+            </Button>
+          </div>
+        </header>
+
+        {message ? (
+          <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+            {message}
+          </p>
+        ) : null}
+        {error ? (
+          <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">
+            {error}
+          </p>
+        ) : null}
+
+        <div className="flex-1 overflow-y-auto">
+          {filters.length === 0 ? (
+            <div className="rounded-md border border-dashed border-border/70 bg-muted/10 p-6 text-center text-sm text-muted-foreground/80">
+              저장된 필터가 아직 없어요. Activity에서 원하는 조건을 설정하고
+              &ldquo;현재 필터 저장&rdquo;을 눌러 시작해 보세요.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filters.map((filter) => {
+                const draftName = draftNames[filter.id] ?? filter.name;
+                const trimmed = draftName.trim();
+                const isFilterBusy = busyId === filter.id;
+                const canRename =
+                  trimmed.length > 0 &&
+                  trimmed !== filter.name &&
+                  !isFilterBusy;
+
+                return (
+                  <div
+                    key={filter.id}
+                    className="rounded-lg border border-border/60 bg-background px-4 py-3 shadow-sm"
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex flex-1 flex-col gap-2">
+                        <Input
+                          value={draftName}
+                          onChange={(event) =>
+                            handleNameChange(filter.id, event.target.value)
+                          }
+                          maxLength={120}
+                          className="h-9 text-sm"
+                        />
+                        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground/70">
+                          <span>
+                            마지막 수정: {formatDateTime(filter.updatedAt)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          size="sm"
+                          disabled={!canRename}
+                          onClick={() => void onRename(filter, draftName)}
+                          className="h-8 px-3 text-xs"
+                        >
+                          이름 저장
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void onReplace(filter)}
+                          disabled={isFilterBusy}
+                          className="h-8 px-3 text-xs"
+                        >
+                          현재 필터로 업데이트
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => onApply(filter)}
+                          className="h-8 px-3 text-xs"
+                        >
+                          필터 적용
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => void onDelete(filter)}
+                          disabled={isFilterBusy}
+                          className="h-8 px-3 text-xs text-rose-600 hover:text-rose-700"
+                        >
+                          삭제
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 type ActivityDetailOverlayProps = {
   item: ActivityItem;
   iconInfo: ActivityIconInfo;
@@ -1620,6 +1877,29 @@ export function ActivityView({
   >(() => new Set<string>());
   const [jumpDate, setJumpDate] = useState("");
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [savedFilters, setSavedFilters] = useState<ActivitySavedFilter[]>([]);
+  const [savedFiltersLimit, setSavedFiltersLimit] = useState(
+    SAVED_FILTER_LIMIT_DEFAULT,
+  );
+  const [savedFiltersLoading, setSavedFiltersLoading] = useState(false);
+  const [savedFiltersError, setSavedFiltersError] = useState<string | null>(
+    null,
+  );
+  const [selectedSavedFilterId, setSelectedSavedFilterId] = useState("");
+  const [showSaveFilterForm, setShowSaveFilterForm] = useState(false);
+  const [saveFilterName, setSaveFilterName] = useState("");
+  const [saveFilterError, setSaveFilterError] = useState<string | null>(null);
+  const [isSavingFilter, setIsSavingFilter] = useState(false);
+  const [filtersManagerOpen, setFiltersManagerOpen] = useState(false);
+  const [filtersManagerMessage, setFiltersManagerMessage] = useState<
+    string | null
+  >(null);
+  const [filtersManagerError, setFiltersManagerError] = useState<string | null>(
+    null,
+  );
+  const [filtersManagerBusyId, setFiltersManagerBusyId] = useState<
+    string | null
+  >(null);
 
   const fetchControllerRef = useRef<AbortController | null>(null);
   const detailControllersRef = useRef(new Map<string, AbortController>());
@@ -1638,6 +1918,14 @@ export function ActivityView({
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!filtersManagerOpen) {
+      setFiltersManagerMessage(null);
+      setFiltersManagerError(null);
+      setFiltersManagerBusyId(null);
+    }
+  }, [filtersManagerOpen]);
 
   useEffect(() => {
     const validIds = new Set(data.items.map((item) => item.id));
@@ -1940,6 +2228,63 @@ export function ActivityView({
     }, 3000);
   }, []);
 
+  const loadSavedFilters = useCallback(async () => {
+    setSavedFiltersLoading(true);
+    setSavedFiltersError(null);
+    try {
+      const response = await fetch("/api/activity/filters");
+      let payload: {
+        filters?: ActivitySavedFilter[];
+        limit?: number;
+        message?: string;
+      } = {};
+      try {
+        payload = (await response.json()) as typeof payload;
+      } catch {
+        payload = {};
+      }
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          setSavedFilters([]);
+          setSavedFiltersLimit(SAVED_FILTER_LIMIT_DEFAULT);
+          setSelectedSavedFilterId("");
+          return;
+        }
+        const message =
+          typeof payload.message === "string"
+            ? payload.message
+            : "Unexpected error while loading saved filters.";
+        throw new Error(message);
+      }
+
+      const filters = Array.isArray(payload.filters)
+        ? (payload.filters as ActivitySavedFilter[])
+        : [];
+      const limit =
+        typeof payload.limit === "number" && Number.isFinite(payload.limit)
+          ? payload.limit
+          : SAVED_FILTER_LIMIT_DEFAULT;
+
+      setSavedFilters(filters);
+      setSavedFiltersLimit(limit);
+      setSelectedSavedFilterId((currentId) =>
+        currentId && !filters.some((filter) => filter.id === currentId)
+          ? ""
+          : currentId,
+      );
+    } catch (loadError) {
+      console.error(loadError);
+      setSavedFiltersError("저장된 필터를 불러오지 못했어요.");
+    } finally {
+      setSavedFiltersLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSavedFilters();
+  }, [loadSavedFilters]);
+
   const fetchFeed = useCallback(
     async (
       nextFilters: FilterState,
@@ -2002,6 +2347,336 @@ export function ActivityView({
       }
     },
     [perPageDefault, router, showNotification],
+  );
+
+  const applySavedFilter = useCallback(
+    (filter: ActivitySavedFilter) => {
+      const params: ActivityListParams = {
+        ...filter.payload,
+        page: 1,
+      };
+      const nextState = {
+        ...buildFilterState(params, perPageDefault),
+        page: 1,
+      };
+      setDraft(nextState);
+      setApplied(nextState);
+      setSelectedSavedFilterId(filter.id);
+      setShowSaveFilterForm(false);
+      setSaveFilterError(null);
+      setJumpDate("");
+      void fetchFeed(nextState);
+    },
+    [fetchFeed, perPageDefault],
+  );
+
+  const saveCurrentFilters = useCallback(async () => {
+    if (savedFilters.length >= savedFiltersLimit) {
+      setSaveFilterError(
+        `필터는 최대 ${savedFiltersLimit}개까지 저장할 수 있어요. 사용하지 않는 필터를 삭제해 주세요.`,
+      );
+      return;
+    }
+
+    const trimmedName = saveFilterName.trim();
+    if (!trimmedName.length) {
+      setSaveFilterError("필터 이름을 입력해 주세요.");
+      return;
+    }
+
+    const payload = buildSavedFilterPayload({ ...draft, page: 1 });
+    setIsSavingFilter(true);
+    setSaveFilterError(null);
+
+    try {
+      const response = await fetch("/api/activity/filters", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmedName, payload }),
+      });
+
+      let body: {
+        filter?: ActivitySavedFilter;
+        limit?: number;
+        message?: string;
+      } = {};
+      try {
+        body = (await response.json()) as typeof body;
+      } catch {
+        body = {};
+      }
+
+      if (!response.ok) {
+        if (response.status === 400 && typeof body.message === "string") {
+          setSaveFilterError(body.message);
+        } else {
+          setSaveFilterError("필터를 저장하지 못했어요.");
+        }
+
+        if (response.status === 400) {
+          await loadSavedFilters();
+        }
+
+        return;
+      }
+
+      const newlySaved = body.filter as ActivitySavedFilter | undefined;
+      const limit =
+        typeof body.limit === "number" && Number.isFinite(body.limit)
+          ? body.limit
+          : savedFiltersLimit;
+
+      if (newlySaved) {
+        setSavedFilters((current) => {
+          const next = [
+            newlySaved,
+            ...current.filter((entry) => entry.id !== newlySaved.id),
+          ];
+          return next;
+        });
+        setSelectedSavedFilterId(newlySaved.id);
+      } else {
+        await loadSavedFilters();
+      }
+
+      setSavedFiltersLimit(limit);
+      setShowSaveFilterForm(false);
+      setSaveFilterName("");
+      showNotification("필터를 저장했어요.");
+    } catch (error) {
+      console.error(error);
+      setSaveFilterError("필터를 저장하지 못했어요.");
+    } finally {
+      setIsSavingFilter(false);
+    }
+  }, [
+    draft,
+    loadSavedFilters,
+    saveFilterName,
+    savedFilters,
+    savedFiltersLimit,
+    showNotification,
+  ]);
+
+  const renameSavedFilter = useCallback(
+    async (filter: ActivitySavedFilter, nextName: string) => {
+      const trimmed = nextName.trim();
+      if (!trimmed.length) {
+        setFiltersManagerError("필터 이름을 입력해 주세요.");
+        return;
+      }
+
+      setFiltersManagerBusyId(filter.id);
+      setFiltersManagerMessage(null);
+      setFiltersManagerError(null);
+
+      try {
+        const response = await fetch(
+          `/api/activity/filters/${encodeURIComponent(filter.id)}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: trimmed,
+              expected: { updatedAt: filter.updatedAt },
+            }),
+          },
+        );
+
+        let body: { filter?: ActivitySavedFilter; message?: string } = {};
+        try {
+          body = (await response.json()) as typeof body;
+        } catch {
+          body = {};
+        }
+
+        const updated = body.filter as ActivitySavedFilter | undefined;
+
+        if (!response.ok) {
+          if (response.status === 409 && updated) {
+            setSavedFilters((current) =>
+              current.map((item) => (item.id === updated.id ? updated : item)),
+            );
+            setFiltersManagerError(
+              body.message ?? "필터가 이미 변경되어 최신 정보를 불러왔어요.",
+            );
+            return;
+          }
+
+          if (response.status === 404) {
+            await loadSavedFilters();
+          }
+
+          setFiltersManagerError(
+            typeof body.message === "string"
+              ? body.message
+              : "필터 이름을 업데이트하지 못했어요.",
+          );
+          return;
+        }
+
+        if (updated) {
+          setSavedFilters((current) =>
+            current.map((item) => (item.id === updated.id ? updated : item)),
+          );
+          setSelectedSavedFilterId((currentId) =>
+            currentId === updated.id ? updated.id : currentId,
+          );
+          setFiltersManagerMessage("필터 이름을 업데이트했어요.");
+        } else {
+          await loadSavedFilters();
+        }
+      } catch (error) {
+        console.error(error);
+        setFiltersManagerError("필터 이름을 업데이트하지 못했어요.");
+      } finally {
+        setFiltersManagerBusyId(null);
+      }
+    },
+    [loadSavedFilters],
+  );
+
+  const replaceSavedFilter = useCallback(
+    async (filter: ActivitySavedFilter) => {
+      setFiltersManagerBusyId(filter.id);
+      setFiltersManagerMessage(null);
+      setFiltersManagerError(null);
+
+      try {
+        const payload = buildSavedFilterPayload({ ...draft, page: 1 });
+        const response = await fetch(
+          `/api/activity/filters/${encodeURIComponent(filter.id)}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              payload,
+              expected: { updatedAt: filter.updatedAt },
+            }),
+          },
+        );
+
+        let body: { filter?: ActivitySavedFilter; message?: string } = {};
+        try {
+          body = (await response.json()) as typeof body;
+        } catch {
+          body = {};
+        }
+
+        const updated = body.filter as ActivitySavedFilter | undefined;
+
+        if (!response.ok) {
+          if (response.status === 409 && updated) {
+            setSavedFilters((current) =>
+              current.map((item) => (item.id === updated.id ? updated : item)),
+            );
+            setFiltersManagerError(
+              body.message ?? "필터가 이미 변경되어 최신 정보를 불러왔어요.",
+            );
+            return;
+          }
+
+          if (response.status === 404) {
+            await loadSavedFilters();
+          }
+
+          setFiltersManagerError(
+            typeof body.message === "string"
+              ? body.message
+              : "필터를 업데이트하지 못했어요.",
+          );
+          return;
+        }
+
+        if (updated) {
+          setSavedFilters((current) =>
+            current.map((item) => (item.id === updated.id ? updated : item)),
+          );
+          setFiltersManagerMessage("필터 조건을 최신 설정으로 업데이트했어요.");
+          setSelectedSavedFilterId((currentId) =>
+            currentId === updated.id ? updated.id : currentId,
+          );
+        } else {
+          await loadSavedFilters();
+        }
+      } catch (error) {
+        console.error(error);
+        setFiltersManagerError("필터를 업데이트하지 못했어요.");
+      } finally {
+        setFiltersManagerBusyId(null);
+      }
+    },
+    [draft, loadSavedFilters],
+  );
+
+  const deleteSavedFilter = useCallback(
+    async (filter: ActivitySavedFilter) => {
+      setFiltersManagerBusyId(filter.id);
+      setFiltersManagerMessage(null);
+      setFiltersManagerError(null);
+
+      try {
+        const response = await fetch(
+          `/api/activity/filters/${encodeURIComponent(filter.id)}`,
+          {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              expected: { updatedAt: filter.updatedAt },
+            }),
+          },
+        );
+
+        let body: { filter?: ActivitySavedFilter; message?: string } = {};
+        try {
+          body = (await response.json()) as typeof body;
+        } catch {
+          body = {};
+        }
+
+        const returned = body.filter as ActivitySavedFilter | undefined;
+
+        if (!response.ok) {
+          if (response.status === 409 && returned) {
+            setSavedFilters((current) =>
+              current.map((item) =>
+                item.id === returned.id ? returned : item,
+              ),
+            );
+            setFiltersManagerError(
+              body.message ?? "필터가 이미 변경되어 최신 정보를 불러왔어요.",
+            );
+            return;
+          }
+
+          if (response.status === 404) {
+            await loadSavedFilters();
+          }
+
+          setFiltersManagerError(
+            typeof body.message === "string"
+              ? body.message
+              : "필터를 삭제하지 못했어요.",
+          );
+          return;
+        }
+
+        const deletedId = returned?.id ?? filter.id;
+        setSavedFilters((current) =>
+          current.filter((item) => item.id !== deletedId),
+        );
+        setFiltersManagerMessage("필터를 삭제했어요.");
+        setSelectedSavedFilterId((currentId) =>
+          currentId === deletedId ? "" : currentId,
+        );
+      } catch (error) {
+        console.error(error);
+        setFiltersManagerError("필터를 삭제하지 못했어요.");
+      } finally {
+        setFiltersManagerBusyId(null);
+      }
+    },
+    [loadSavedFilters],
   );
 
   const resetFilters = useCallback(() => {
@@ -2487,6 +3162,9 @@ export function ActivityView({
     }
   }, [detailMap, loadDetail, loadingDetailIds, openItemId]);
 
+  const savedFiltersCount = savedFilters.length;
+  const canSaveMoreFilters = savedFiltersCount < savedFiltersLimit;
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between text-sm">
@@ -2502,6 +3180,122 @@ export function ActivityView({
       </div>
       <Card>
         <CardContent className="space-y-6">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Label className="text-xs font-medium uppercase text-muted-foreground/90">
+                저장된 필터
+              </Label>
+              <select
+                value={selectedSavedFilterId}
+                onChange={(event) => {
+                  const nextId = event.target.value;
+                  if (!nextId) {
+                    setSelectedSavedFilterId("");
+                    return;
+                  }
+                  const target = savedFilters.find(
+                    (filter) => filter.id === nextId,
+                  );
+                  if (target) {
+                    applySavedFilter(target);
+                  }
+                }}
+                disabled={savedFiltersLoading || savedFilters.length === 0}
+                className="h-9 min-w-[160px] rounded border border-border bg-background px-2 text-sm text-foreground focus:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="">필터 선택</option>
+                {savedFilters.map((filter) => (
+                  <option key={filter.id} value={filter.id}>
+                    {filter.name}
+                  </option>
+                ))}
+              </select>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setShowSaveFilterForm((current) => !current);
+                  setSaveFilterError(null);
+                  if (!showSaveFilterForm && !saveFilterName.trim().length) {
+                    const selected = savedFilters.find(
+                      (filter) => filter.id === selectedSavedFilterId,
+                    );
+                    if (selected) {
+                      setSaveFilterName(selected.name);
+                    }
+                  }
+                }}
+                disabled={!canSaveMoreFilters}
+                className="h-8 px-3 text-xs"
+              >
+                현재 필터 저장
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setFiltersManagerOpen(true);
+                  setFiltersManagerMessage(null);
+                  setFiltersManagerError(null);
+                }}
+                className="h-8 px-3 text-xs"
+              >
+                필터 관리
+              </Button>
+              {savedFiltersLoading ? (
+                <span className="text-xs text-muted-foreground/80">
+                  불러오는 중…
+                </span>
+              ) : null}
+              <span className="text-[11px] text-muted-foreground/70">
+                {savedFiltersCount} / {savedFiltersLimit}
+              </span>
+            </div>
+            {savedFiltersError ? (
+              <p className="text-xs text-rose-600">{savedFiltersError}</p>
+            ) : null}
+            {!canSaveMoreFilters ? (
+              <p className="text-xs text-amber-600">
+                최대 {savedFiltersLimit}개의 필터를 저장할 수 있어요. 사용하지
+                않는 필터를 삭제해 주세요.
+              </p>
+            ) : null}
+            {showSaveFilterForm ? (
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void saveCurrentFilters();
+                }}
+                className="flex flex-wrap items-center gap-2"
+              >
+                <Input
+                  value={saveFilterName}
+                  onChange={(event) => setSaveFilterName(event.target.value)}
+                  maxLength={120}
+                  placeholder="필터 이름"
+                  className="h-9 w-full max-w-xs"
+                />
+                <Button type="submit" size="sm" disabled={isSavingFilter}>
+                  저장
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setShowSaveFilterForm(false);
+                    setSaveFilterName("");
+                    setSaveFilterError(null);
+                  }}
+                >
+                  취소
+                </Button>
+              </form>
+            ) : null}
+            {saveFilterError ? (
+              <p className="text-xs text-rose-600">{saveFilterError}</p>
+            ) : null}
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <Label className="text-xs font-medium uppercase text-muted-foreground/90">
               카테고리
@@ -3844,6 +4638,21 @@ export function ActivityView({
           </div>
         </div>
       </div>
+      {filtersManagerOpen ? (
+        <SavedFiltersManager
+          open={filtersManagerOpen}
+          filters={savedFilters}
+          limit={savedFiltersLimit}
+          busyId={filtersManagerBusyId}
+          message={filtersManagerMessage}
+          error={filtersManagerError}
+          onClose={() => setFiltersManagerOpen(false)}
+          onApply={applySavedFilter}
+          onRename={renameSavedFilter}
+          onReplace={replaceSavedFilter}
+          onDelete={deleteSavedFilter}
+        />
+      ) : null}
     </div>
   );
 }

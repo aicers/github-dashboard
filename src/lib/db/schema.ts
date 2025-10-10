@@ -199,6 +199,15 @@ const SCHEMA_STATEMENTS = [
   )`,
   `ALTER TABLE activity_issue_project_overrides ADD COLUMN IF NOT EXISTS weight_value TEXT`,
   `ALTER TABLE activity_issue_project_overrides ADD COLUMN IF NOT EXISTS weight_updated_at TIMESTAMPTZ`,
+  `CREATE TABLE IF NOT EXISTS activity_saved_filters (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    payload JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS activity_saved_filters_user_idx ON activity_saved_filters(user_id, updated_at DESC)`,
 ];
 
 let ensurePromise: Promise<void> | null = null;
