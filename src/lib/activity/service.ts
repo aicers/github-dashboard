@@ -966,6 +966,78 @@ function buildQueryFilters(
 
   const effectiveIssueStatusExpr = buildEffectiveStatusExpr("items");
 
+  const haveSameMembers = (first: string[], second: string[]) => {
+    if (first.length !== second.length) {
+      return false;
+    }
+    const baseline = new Set(first);
+    if (baseline.size !== second.length) {
+      return false;
+    }
+    return second.every((value) => baseline.has(value));
+  };
+
+  const mergedStringSet = (values: string[]) =>
+    Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
+
+  const peopleFiltersConfig = [
+    {
+      values: params.authorIds ?? [],
+      buildClause: (parameterIndex: number) =>
+        `items.author_id = ANY($${parameterIndex}::text[])`,
+    },
+    {
+      values: params.assigneeIds ?? [],
+      buildClause: (parameterIndex: number) =>
+        `COALESCE(items.assignee_ids && $${parameterIndex}::text[], FALSE)`,
+    },
+    {
+      values: params.reviewerIds ?? [],
+      buildClause: (parameterIndex: number) =>
+        `COALESCE(items.reviewer_ids && $${parameterIndex}::text[], FALSE)`,
+    },
+    {
+      values: params.mentionedUserIds ?? [],
+      buildClause: (parameterIndex: number) =>
+        `COALESCE(items.mentioned_ids && $${parameterIndex}::text[], FALSE)`,
+    },
+    {
+      values: params.commenterIds ?? [],
+      buildClause: (parameterIndex: number) =>
+        `COALESCE(items.commenter_ids && $${parameterIndex}::text[], FALSE)`,
+    },
+    {
+      values: params.reactorIds ?? [],
+      buildClause: (parameterIndex: number) =>
+        `COALESCE(items.reactor_ids && $${parameterIndex}::text[], FALSE)`,
+    },
+  ] as const;
+
+  const populatedPeopleFilters = peopleFiltersConfig.filter(
+    (entry) => entry.values.length > 0,
+  );
+
+  let peopleFiltersHandled = false;
+
+  if (populatedPeopleFilters.length > 0) {
+    const baselineValues = mergedStringSet(
+      populatedPeopleFilters[0]?.values ?? [],
+    );
+    const isSyncedSelection = populatedPeopleFilters.every((entry) =>
+      haveSameMembers(baselineValues, mergedStringSet(entry.values)),
+    );
+
+    if (isSyncedSelection) {
+      values.push(baselineValues);
+      const parameterIndex = values.length;
+      const peopleClauses = populatedPeopleFilters.map((entry) =>
+        entry.buildClause(parameterIndex),
+      );
+      clauses.push(`(${peopleClauses.join(" OR ")})`);
+      peopleFiltersHandled = true;
+    }
+  }
+
   if (attentionIds?.length === 0) {
     // No matches for attention filters; force empty result set.
     clauses.push("FALSE");
@@ -1028,40 +1100,49 @@ function buildQueryFilters(
     }
   }
 
-  if (params.authorIds?.length) {
+  if (!peopleFiltersHandled && params.authorIds?.length) {
     values.push(params.authorIds);
     clauses.push(`items.author_id = ANY($${values.length}::text[])`);
   }
 
-  if (params.assigneeIds?.length) {
-    values.push(params.assigneeIds);
-    const assigneeIndex = values.length;
+  if (!peopleFiltersHandled && params.assigneeIds?.length) {
+    const unique = mergedStringSet(params.assigneeIds);
+    values.push(unique);
     clauses.push(
-      `(items.item_type <> 'discussion' OR items.assignee_ids && $${assigneeIndex}::text[])`,
+      `COALESCE(items.assignee_ids && $${values.length}::text[], FALSE)`,
     );
   }
 
-  if (params.reviewerIds?.length) {
-    values.push(params.reviewerIds);
-    const reviewerIndex = values.length;
+  if (!peopleFiltersHandled && params.reviewerIds?.length) {
+    const unique = mergedStringSet(params.reviewerIds);
+    values.push(unique);
     clauses.push(
-      `(items.item_type <> 'pull_request' OR items.reviewer_ids && $${reviewerIndex}::text[])`,
+      `COALESCE(items.reviewer_ids && $${values.length}::text[], FALSE)`,
     );
   }
 
-  if (params.mentionedUserIds?.length) {
-    values.push(params.mentionedUserIds);
-    clauses.push(`items.mentioned_ids && $${values.length}::text[]`);
+  if (!peopleFiltersHandled && params.mentionedUserIds?.length) {
+    const unique = mergedStringSet(params.mentionedUserIds);
+    values.push(unique);
+    clauses.push(
+      `COALESCE(items.mentioned_ids && $${values.length}::text[], FALSE)`,
+    );
   }
 
-  if (params.commenterIds?.length) {
-    values.push(params.commenterIds);
-    clauses.push(`items.commenter_ids && $${values.length}::text[]`);
+  if (!peopleFiltersHandled && params.commenterIds?.length) {
+    const unique = mergedStringSet(params.commenterIds);
+    values.push(unique);
+    clauses.push(
+      `COALESCE(items.commenter_ids && $${values.length}::text[], FALSE)`,
+    );
   }
 
-  if (params.reactorIds?.length) {
-    values.push(params.reactorIds);
-    clauses.push(`items.reactor_ids && $${values.length}::text[]`);
+  if (!peopleFiltersHandled && params.reactorIds?.length) {
+    const unique = mergedStringSet(params.reactorIds);
+    values.push(unique);
+    clauses.push(
+      `COALESCE(items.reactor_ids && $${values.length}::text[], FALSE)`,
+    );
   }
 
   if (params.linkedIssueStates?.length) {
