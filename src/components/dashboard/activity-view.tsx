@@ -8,16 +8,21 @@ import {
   GitPullRequestIcon,
   IssueClosedIcon,
   IssueOpenedIcon,
+  XIcon,
 } from "@primer/octicons-react";
 import { DateTime } from "luxon";
 import { useRouter } from "next/navigation";
 import {
   type ChangeEvent,
   type ComponentType,
+  createElement,
   type FormEvent,
+  Fragment,
   type KeyboardEvent,
+  type ReactNode,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -205,6 +210,8 @@ const SOURCE_STATUS_KEYS: IssueProjectStatus[] = [
   "in_progress",
   "done",
 ];
+
+const DETAIL_PANEL_TRANSITION_MS = 300;
 
 function includesIssueCategory(categories: ActivityItemCategory[]) {
   return categories.length === 0 || categories.includes("issue");
@@ -532,8 +539,203 @@ function differenceLabel(value: number | null | undefined, suffix = "일") {
   return `${value.toString()}${suffix}`;
 }
 
-function stripHtml(value: string) {
-  return value.replace(/<[^>]*>/g, "");
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function sanitizeMarkdownHtml(value: string) {
+  return value
+    .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "")
+    .replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    .replace(
+      /\s+(href|src)\s*=\s*(?:"\s*javascript:[^"]*"|'\s*javascript:[^']*'|\s*javascript:[^\s>]*)/gi,
+      "",
+    )
+    .replace(/<(iframe|object|embed|form)[^>]*>[\s\S]*?<\/\1>/gi, "");
+}
+
+function formatPlaintextAsHtml(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed.length) {
+    return "";
+  }
+  const escaped = escapeHtml(trimmed);
+  const paragraphs = escaped
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.replace(/\n/g, "<br />"));
+  return paragraphs.map((paragraph) => `<p>${paragraph}</p>`).join("");
+}
+
+function resolveDetailBodyHtml(detail?: ActivityItemDetail | null) {
+  if (!detail) {
+    return null;
+  }
+  if (detail.bodyHtml?.trim()) {
+    return sanitizeMarkdownHtml(detail.bodyHtml);
+  }
+  if (detail.body?.trim()) {
+    return formatPlaintextAsHtml(detail.body);
+  }
+  return null;
+}
+
+const ALLOWED_HTML_TAGS = new Set([
+  "a",
+  "blockquote",
+  "br",
+  "code",
+  "em",
+  "hr",
+  "li",
+  "ol",
+  "p",
+  "pre",
+  "strong",
+  "ul",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "img",
+]);
+
+const SELF_CLOSING_HTML_TAGS = new Set(["br", "hr", "img"]);
+
+const ALLOWED_HTML_ATTRS = new Map<string, Set<string>>([
+  ["a", new Set(["href", "title"])],
+  ["img", new Set(["src", "alt", "title"])],
+]);
+
+const GLOBAL_ALLOWED_HTML_ATTRS = new Set(["title"]);
+
+function convertDomNodeToReact(node: ChildNode, key: string): ReactNode {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return node.textContent;
+  }
+
+  if (node.nodeType !== Node.ELEMENT_NODE) {
+    return null;
+  }
+
+  const element = node as HTMLElement;
+  const tagName = element.tagName.toLowerCase();
+
+  if (!ALLOWED_HTML_TAGS.has(tagName)) {
+    return Array.from(element.childNodes).map((child, index) =>
+      convertDomNodeToReact(child, `${key}-${index}`),
+    );
+  }
+
+  if (tagName === "img") {
+    const src = element.getAttribute("src");
+    if (!src) {
+      return null;
+    }
+    const alt = element.getAttribute("alt") ?? "";
+    const title = element.getAttribute("title") ?? undefined;
+    return createElement("img", {
+      key,
+      src,
+      alt,
+      title,
+      loading: "lazy",
+    });
+  }
+
+  const props: Record<string, unknown> = { key };
+  const allowedAttrs = ALLOWED_HTML_ATTRS.get(tagName);
+
+  element.getAttributeNames().forEach((attrName) => {
+    const value = element.getAttribute(attrName);
+    if (value === null) {
+      return;
+    }
+
+    if (attrName === "class") {
+      props.className = value;
+      return;
+    }
+
+    if (allowedAttrs) {
+      if (!allowedAttrs.has(attrName)) {
+        return;
+      }
+    } else if (!GLOBAL_ALLOWED_HTML_ATTRS.has(attrName)) {
+      return;
+    }
+
+    if (attrName === "href") {
+      props.href = value;
+      if (!value.startsWith("#")) {
+        props.target = "_blank";
+        props.rel = "noreferrer";
+      }
+      return;
+    }
+
+    props[attrName] = value;
+  });
+
+  const children = Array.from(element.childNodes).map((child, index) =>
+    convertDomNodeToReact(child, `${key}-${index}`),
+  );
+
+  if (SELF_CLOSING_HTML_TAGS.has(tagName)) {
+    return createElement(tagName, props);
+  }
+
+  return createElement(tagName, props, ...children);
+}
+
+function renderMarkdownHtml(html: string | null): ReactNode {
+  if (!html) {
+    return null;
+  }
+
+  if (typeof window === "undefined" || typeof DOMParser === "undefined") {
+    return null;
+  }
+
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, "text/html");
+  const nodes = Array.from(doc.body.childNodes).map((child, index) =>
+    convertDomNodeToReact(child, `md-${index}`),
+  );
+  return createElement(Fragment, null, ...nodes);
+}
+
+function renderTitleWithInlineCode(title: string | null): ReactNode {
+  if (!title) {
+    return "Untitled";
+  }
+  const segments = title.split(/(`[^`]*`)/g);
+  let keyCounter = 0;
+  return segments.map((segment) => {
+    const key = `title-segment-${keyCounter++}`;
+    const isCode =
+      segment.startsWith("`") && segment.endsWith("`") && segment.length >= 2;
+    if (!isCode) {
+      return (
+        <Fragment key={key}>{segment.length ? segment : "\u00a0"}</Fragment>
+      );
+    }
+    const content = segment.slice(1, -1);
+    return (
+      <code
+        key={key}
+        className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground/90"
+      >
+        {content.length ? content : "\u00a0"}
+      </code>
+    );
+  });
 }
 
 function toPositiveInt(value: string, fallback: number) {
@@ -1223,6 +1425,161 @@ function TogglePill({
   );
 }
 
+type ActivityDetailOverlayProps = {
+  item: ActivityItem;
+  iconInfo: ActivityIconInfo;
+  badges: string[];
+  onClose: () => void;
+  children: ReactNode;
+};
+
+function ActivityDetailOverlay({
+  item,
+  iconInfo,
+  badges,
+  onClose,
+  children,
+}: ActivityDetailOverlayProps) {
+  const headingId = useId();
+  const [isVisible, setIsVisible] = useState(false);
+  const closeTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleRequestClose = useCallback(() => {
+    setIsVisible(false);
+    if (closeTimerRef.current) {
+      return;
+    }
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = null;
+      onClose();
+    }, DETAIL_PANEL_TRANSITION_MS);
+  }, [onClose]);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setIsVisible(true));
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const handleKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        handleRequestClose();
+      }
+    };
+
+    document.addEventListener("keydown", handleKey);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", handleKey);
+      document.body.style.overflow = previousOverflow;
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
+    };
+  }, [handleRequestClose]);
+
+  const IconComponent = iconInfo.Icon;
+  const referenceParts: string[] = [];
+  if (item.repository?.nameWithOwner) {
+    referenceParts.push(item.repository.nameWithOwner);
+  }
+  if (typeof item.number === "number") {
+    referenceParts.push(`#${item.number}`);
+  }
+  const referenceLabel =
+    referenceParts.length > 0 ? referenceParts.join("") : null;
+  const titleLabel = item.title?.trim().length
+    ? item.title
+    : `${CATEGORY_LABELS[item.type]} 상세`;
+  const statusLabel = item.state ?? item.status ?? null;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex justify-end">
+      <div
+        className="absolute inset-0 transition-opacity duration-300"
+        style={{
+          opacity: isVisible ? 1 : 0,
+          pointerEvents: isVisible ? "auto" : "none",
+        }}
+        aria-hidden="true"
+        onClick={handleRequestClose}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={headingId}
+        className={cn(
+          "relative z-10 flex h-full w-full flex-col border-l border-border bg-background shadow-2xl transition-transform duration-300 ease-out",
+          "sm:mt-12 sm:mb-6 sm:mr-6 sm:h-auto sm:max-h-[85vh] sm:w-[90vw] sm:max-w-[90vw] sm:rounded-xl",
+          "md:mt-16 md:mb-8",
+          isVisible ? "translate-x-0" : "translate-x-full",
+        )}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <header className="flex flex-col gap-4 border-b border-border/70 p-5 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex flex-1 items-start gap-3">
+            <span
+              className={cn(
+                "mt-1 inline-flex items-center justify-center rounded-full border border-border/60 bg-background p-2",
+                iconInfo.className,
+              )}
+            >
+              <IconComponent className="h-5 w-5" />
+              <span className="sr-only">{iconInfo.label}</span>
+            </span>
+            <div className="space-y-2">
+              {referenceLabel ? (
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">
+                  {referenceLabel}
+                </div>
+              ) : null}
+              <h3
+                id={headingId}
+                className="text-lg font-semibold leading-tight text-foreground"
+              >
+                {titleLabel}
+              </h3>
+              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground/80">
+                {statusLabel ? <span>{statusLabel}</span> : null}
+                {badges.map((badge) => (
+                  <span
+                    key={badge}
+                    className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-700"
+                  >
+                    {badge}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 self-end sm:self-start">
+            {item.url ? (
+              <Button asChild size="sm" variant="outline">
+                <a href={item.url} target="_blank" rel="noreferrer">
+                  GitHub에서 열기
+                </a>
+              </Button>
+            ) : null}
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label="닫기"
+              onClick={handleRequestClose}
+            >
+              <XIcon />
+            </Button>
+          </div>
+        </header>
+        <div className="flex-1 overflow-y-auto px-5 py-5 text-sm sm:px-6">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ActivityView({
   initialData,
   filterOptions,
@@ -1248,9 +1605,7 @@ export function ActivityView({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
-  const [openItemIds, setOpenItemIds] = useState<Set<string>>(
-    () => new Set<string>(),
-  );
+  const [openItemId, setOpenItemId] = useState<string | null>(null);
   const [detailMap, setDetailMap] = useState<
     Record<string, ActivityItemDetail | null>
   >({});
@@ -1287,29 +1642,14 @@ export function ActivityView({
   useEffect(() => {
     const validIds = new Set(data.items.map((item) => item.id));
 
-    setOpenItemIds((current) => {
-      if (!current.size) {
-        return current;
+    if (openItemId && !validIds.has(openItemId)) {
+      const controller = detailControllersRef.current.get(openItemId);
+      if (controller) {
+        controller.abort();
+        detailControllersRef.current.delete(openItemId);
       }
-
-      let changed = false;
-      const next = new Set<string>();
-
-      current.forEach((id) => {
-        if (validIds.has(id)) {
-          next.add(id);
-        } else {
-          changed = true;
-          const controller = detailControllersRef.current.get(id);
-          if (controller) {
-            controller.abort();
-            detailControllersRef.current.delete(id);
-          }
-        }
-      });
-
-      return changed ? next : current;
-    });
+      setOpenItemId(null);
+    }
 
     setDetailMap((current) => {
       const entries = Object.entries(current);
@@ -1347,7 +1687,7 @@ export function ActivityView({
 
       return changed ? next : current;
     });
-  }, [data.items]);
+  }, [data.items, openItemId]);
 
   const repositoryOptions = useMemo<MultiSelectOption[]>(
     () =>
@@ -1998,13 +2338,13 @@ export function ActivityView({
 
   const handleSelectItem = useCallback(
     (id: string) => {
-      setOpenItemIds((current) => {
-        const next = new Set(current);
-        if (next.has(id)) {
-          next.delete(id);
+      setOpenItemId((current) => {
+        if (current === id) {
           const controller = detailControllersRef.current.get(id);
-          controller?.abort();
-          detailControllersRef.current.delete(id);
+          if (controller) {
+            controller.abort();
+            detailControllersRef.current.delete(id);
+          }
           setLoadingDetailIds((loadings) => {
             if (!loadings.has(id)) {
               return loadings;
@@ -2013,13 +2353,30 @@ export function ActivityView({
             updated.delete(id);
             return updated;
           });
-        } else {
-          next.add(id);
-          if (!detailMap[id] && !loadingDetailIds.has(id)) {
-            void loadDetail(id);
-          }
+          return null;
         }
-        return next;
+
+        if (current) {
+          const controller = detailControllersRef.current.get(current);
+          if (controller) {
+            controller.abort();
+            detailControllersRef.current.delete(current);
+          }
+          setLoadingDetailIds((loadings) => {
+            if (!loadings.has(current)) {
+              return loadings;
+            }
+            const updated = new Set(loadings);
+            updated.delete(current);
+            return updated;
+          });
+        }
+
+        if (!detailMap[id] && !loadingDetailIds.has(id)) {
+          void loadDetail(id);
+        }
+
+        return id;
       });
     },
     [detailMap, loadDetail, loadingDetailIds],
@@ -2035,13 +2392,37 @@ export function ActivityView({
     [handleSelectItem],
   );
 
-  useEffect(() => {
-    openItemIds.forEach((id) => {
-      if (!detailMap[id] && !loadingDetailIds.has(id)) {
-        void loadDetail(id);
+  const handleCloseItem = useCallback(() => {
+    setOpenItemId((current) => {
+      if (!current) {
+        return current;
       }
+      const controller = detailControllersRef.current.get(current);
+      if (controller) {
+        controller.abort();
+        detailControllersRef.current.delete(current);
+      }
+      setLoadingDetailIds((loadings) => {
+        if (!loadings.has(current)) {
+          return loadings;
+        }
+        const updated = new Set(loadings);
+        updated.delete(current);
+        return updated;
+      });
+      return null;
     });
-  }, [detailMap, loadDetail, loadingDetailIds, openItemIds]);
+  }, []);
+
+  useEffect(() => {
+    if (
+      openItemId &&
+      !detailMap[openItemId] &&
+      !loadingDetailIds.has(openItemId)
+    ) {
+      void loadDetail(openItemId);
+    }
+  }, [detailMap, loadDetail, loadingDetailIds, openItemId]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -2845,7 +3226,7 @@ export function ActivityView({
           )}
           {!isLoading &&
             data.items.map((item) => {
-              const isSelected = openItemIds.has(item.id);
+              const isSelected = openItemId === item.id;
               const detail = detailMap[item.id] ?? undefined;
               const isDetailLoading = loadingDetailIds.has(item.id);
               const badges = buildAttentionBadges(item);
@@ -2941,7 +3322,7 @@ export function ActivityView({
               return (
                 <div
                   key={item.id}
-                  className="space-y-2 rounded-md border border-border bg-card/30 p-3"
+                  className="rounded-md border border-border bg-card/30 p-3"
                 >
                   {/* biome-ignore lint/a11y/useSemanticElements: Nested project field editors render buttons, so this container cannot be a <button>. */}
                   <div
@@ -2986,7 +3367,7 @@ export function ActivityView({
                           )
                         ) : null}
                         <span className="font-semibold text-foreground truncate">
-                          {item.title ?? "Untitled"}
+                          {renderTitleWithInlineCode(item.title)}
                         </span>
                       </div>
                       <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground/80">
@@ -3077,285 +3458,300 @@ export function ActivityView({
                     </div>
                   </div>
                   {isSelected && (
-                    <div className="rounded-md border border-border bg-background p-4 text-sm">
-                      {isDetailLoading ? (
-                        <div className="text-muted-foreground/80">
-                          Loading details...
-                        </div>
-                      ) : detail ? (
-                        <div className="space-y-3">
-                          {item.type === "issue" && (
-                            <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-xs">
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground/70">
-                                  <span className="flex items-center gap-1">
-                                    <span className="text-muted-foreground/60">
-                                      Source:
-                                    </span>
-                                    <span className="text-foreground">
-                                      {statusSourceLabel}
-                                    </span>
-                                  </span>
-                                  {sourceStatusEntries.map(
-                                    ({ key, label, value }) => (
-                                      <span
-                                        key={`${item.id}-source-${key}`}
-                                        className="flex items-center gap-1"
-                                      >
-                                        {label}:
-                                        <span className="text-foreground">
-                                          {value}
-                                        </span>
-                                      </span>
-                                    ),
-                                  )}
-                                  {item.issueProjectStatusLocked && (
-                                    <span className="text-amber-600">
-                                      To-do 프로젝트 상태({todoStatusLabel})로
-                                      잠겨 있어요.
-                                    </span>
-                                  )}
-                                </div>
-                                {(isUpdatingStatus ||
-                                  isUpdatingProjectFields) && (
-                                  <span className="text-muted-foreground/70">
-                                    업데이트 중...
-                                  </span>
-                                )}
-                              </div>
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                {ISSUE_STATUS_OPTIONS.map((option) => {
-                                  const optionStatus =
-                                    option.value as IssueProjectStatus;
-                                  const active =
-                                    currentIssueStatus === optionStatus;
-                                  return (
-                                    <Button
-                                      key={`status-action-${option.value}`}
-                                      type="button"
-                                      size="sm"
-                                      variant={active ? "default" : "outline"}
-                                      disabled={
-                                        isUpdatingStatus ||
-                                        isUpdatingProjectFields ||
-                                        !canEditStatus
-                                      }
-                                      onClick={() =>
-                                        handleUpdateIssueStatus(
-                                          item,
-                                          optionStatus,
-                                        )
-                                      }
-                                    >
-                                      {option.label}
-                                    </Button>
-                                  );
-                                })}
-                              </div>
-                              <div className="mt-3 flex flex-wrap items-center gap-3 text-muted-foreground/80">
-                                <ProjectFieldEditor
-                                  item={item}
-                                  field="priority"
-                                  label="Priority"
-                                  rawValue={item.issueTodoProjectPriority}
-                                  formattedValue={todoPriorityLabel}
-                                  timestamp={todoPriorityTimestamp}
-                                  disabled={
-                                    item.issueProjectStatusLocked ||
-                                    isUpdatingStatus
-                                  }
-                                  isUpdating={isUpdatingProjectFields}
-                                  onSubmit={handleUpdateProjectField}
-                                />
-                                <ProjectFieldEditor
-                                  item={item}
-                                  field="weight"
-                                  label="Weight"
-                                  rawValue={item.issueTodoProjectWeight}
-                                  formattedValue={todoWeightLabel}
-                                  timestamp={todoWeightTimestamp}
-                                  disabled={isUpdatingStatus}
-                                  isUpdating={isUpdatingProjectFields}
-                                  onSubmit={handleUpdateProjectField}
-                                />
-                                <ProjectFieldEditor
-                                  item={item}
-                                  field="initiationOptions"
-                                  label="Initiation"
-                                  rawValue={
-                                    item.issueTodoProjectInitiationOptions
-                                  }
-                                  formattedValue={todoInitiationLabel}
-                                  timestamp={todoInitiationTimestamp}
-                                  disabled={
-                                    item.issueProjectStatusLocked ||
-                                    isUpdatingStatus
-                                  }
-                                  isUpdating={isUpdatingProjectFields}
-                                  onSubmit={handleUpdateProjectField}
-                                />
-                                <ProjectFieldEditor
-                                  item={item}
-                                  field="startDate"
-                                  label="Start"
-                                  rawValue={item.issueTodoProjectStartDate}
-                                  formattedValue={todoStartDateLabel}
-                                  timestamp={todoStartDateTimestamp}
-                                  disabled={
-                                    item.issueProjectStatusLocked ||
-                                    isUpdatingStatus
-                                  }
-                                  isUpdating={isUpdatingProjectFields}
-                                  onSubmit={handleUpdateProjectField}
-                                />
-                              </div>
-                              {!item.issueProjectStatusLocked &&
-                                item.issueProjectStatusSource !==
-                                  "activity" && (
-                                  <p className="mt-2 text-muted-foreground/80">
-                                    Activity 상태는 To-do 프로젝트가 No Status
-                                    또는 Todo일 때만 적용돼요.
-                                  </p>
-                                )}
-                            </div>
-                          )}
-                          <div className="whitespace-pre-wrap rounded-md border border-border bg-background px-4 py-3 text-sm">
-                            {(() => {
-                              if (!detail.body && !detail.bodyHtml) {
-                                return "내용이 없습니다.";
-                              }
-                              if (detail.body?.trim().length) {
-                                return detail.body;
-                              }
-                              if (detail.bodyHtml?.trim().length) {
-                                const sanitized = stripHtml(
-                                  detail.bodyHtml,
-                                ).trim();
-                                return sanitized.length
-                                  ? sanitized
-                                  : "내용이 없습니다.";
-                              }
-                              return "내용이 없습니다.";
-                            })()}
+                    <ActivityDetailOverlay
+                      item={item}
+                      iconInfo={iconInfo}
+                      badges={badges}
+                      onClose={handleCloseItem}
+                    >
+                      <div className="rounded-md border border-border bg-background p-4 text-sm">
+                        {isDetailLoading ? (
+                          <div className="text-muted-foreground/80">
+                            Loading details...
                           </div>
-                          {(detail.parentIssues.length > 0 ||
-                            detail.subIssues.length > 0) && (
-                            <div className="space-y-4 text-xs">
-                              {detail.parentIssues.length > 0 && (
-                                <div>
-                                  <h4 className="font-semibold text-muted-foreground/85">
-                                    상위 이슈
-                                  </h4>
-                                  <ul className="mt-1 space-y-1">
-                                    {detail.parentIssues.map((linked) => {
-                                      const referenceParts: string[] = [];
-                                      if (linked.repositoryNameWithOwner) {
-                                        referenceParts.push(
-                                          linked.repositoryNameWithOwner,
-                                        );
-                                      }
-                                      if (typeof linked.number === "number") {
-                                        referenceParts.push(
-                                          `#${linked.number}`,
-                                        );
-                                      }
-                                      const referenceLabel =
-                                        referenceParts.length > 0
-                                          ? referenceParts.join("")
-                                          : null;
-                                      const titleLabel =
-                                        linked.title ??
-                                        linked.state ??
-                                        linked.id;
-                                      const displayLabel = referenceLabel
-                                        ? `${referenceLabel}${titleLabel ? ` — ${titleLabel}` : ""}`
-                                        : titleLabel;
-                                      return (
-                                        <li key={`parent-${linked.id}`}>
-                                          {linked.url ? (
-                                            <a
-                                              href={linked.url}
-                                              target="_blank"
-                                              rel="noreferrer"
-                                              className="text-primary hover:underline"
-                                            >
-                                              {displayLabel ?? linked.id}
-                                            </a>
-                                          ) : (
-                                            <span>
-                                              {displayLabel ?? linked.id}
-                                            </span>
-                                          )}
-                                        </li>
-                                      );
-                                    })}
-                                  </ul>
+                        ) : detail ? (
+                          <div className="space-y-3">
+                            {item.type === "issue" && (
+                              <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-xs">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground/70">
+                                    <span className="flex items-center gap-1">
+                                      <span className="text-muted-foreground/60">
+                                        Source:
+                                      </span>
+                                      <span className="text-foreground">
+                                        {statusSourceLabel}
+                                      </span>
+                                    </span>
+                                    {sourceStatusEntries.map(
+                                      ({ key, label, value }) => (
+                                        <span
+                                          key={`${item.id}-source-${key}`}
+                                          className="flex items-center gap-1"
+                                        >
+                                          {label}:
+                                          <span className="text-foreground">
+                                            {value}
+                                          </span>
+                                        </span>
+                                      ),
+                                    )}
+                                    {item.issueProjectStatusLocked && (
+                                      <span className="text-amber-600">
+                                        To-do 프로젝트 상태({todoStatusLabel})로
+                                        잠겨 있어요.
+                                      </span>
+                                    )}
+                                  </div>
+                                  {(isUpdatingStatus ||
+                                    isUpdatingProjectFields) && (
+                                    <span className="text-muted-foreground/70">
+                                      업데이트 중...
+                                    </span>
+                                  )}
                                 </div>
-                              )}
-                              {detail.subIssues.length > 0 && (
-                                <div>
-                                  <h4 className="font-semibold text-muted-foreground/85">
-                                    하위 이슈
-                                  </h4>
-                                  <ul className="mt-1 space-y-1">
-                                    {detail.subIssues.map((linked) => {
-                                      const referenceParts: string[] = [];
-                                      if (linked.repositoryNameWithOwner) {
-                                        referenceParts.push(
-                                          linked.repositoryNameWithOwner,
-                                        );
-                                      }
-                                      if (typeof linked.number === "number") {
-                                        referenceParts.push(
-                                          `#${linked.number}`,
-                                        );
-                                      }
-                                      const referenceLabel =
-                                        referenceParts.length > 0
-                                          ? referenceParts.join("")
-                                          : null;
-                                      const titleLabel =
-                                        linked.title ??
-                                        linked.state ??
-                                        linked.id;
-                                      const displayLabel = referenceLabel
-                                        ? `${referenceLabel}${titleLabel ? ` — ${titleLabel}` : ""}`
-                                        : titleLabel;
-                                      return (
-                                        <li key={`sub-${linked.id}`}>
-                                          {linked.url ? (
-                                            <a
-                                              href={linked.url}
-                                              target="_blank"
-                                              rel="noreferrer"
-                                              className="text-primary hover:underline"
-                                            >
-                                              {displayLabel ?? linked.id}
-                                            </a>
-                                          ) : (
-                                            <span>
-                                              {displayLabel ?? linked.id}
-                                            </span>
-                                          )}
-                                        </li>
-                                      );
-                                    })}
-                                  </ul>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {ISSUE_STATUS_OPTIONS.map((option) => {
+                                    const optionStatus =
+                                      option.value as IssueProjectStatus;
+                                    const active =
+                                      currentIssueStatus === optionStatus;
+                                    return (
+                                      <Button
+                                        key={`status-action-${option.value}`}
+                                        type="button"
+                                        size="sm"
+                                        variant={active ? "default" : "outline"}
+                                        disabled={
+                                          isUpdatingStatus ||
+                                          isUpdatingProjectFields ||
+                                          !canEditStatus
+                                        }
+                                        onClick={() =>
+                                          handleUpdateIssueStatus(
+                                            item,
+                                            optionStatus,
+                                          )
+                                        }
+                                      >
+                                        {option.label}
+                                      </Button>
+                                    );
+                                  })}
                                 </div>
-                              )}
+                                <div className="mt-3 flex flex-wrap items-center gap-3 text-muted-foreground/80">
+                                  <ProjectFieldEditor
+                                    item={item}
+                                    field="priority"
+                                    label="Priority"
+                                    rawValue={item.issueTodoProjectPriority}
+                                    formattedValue={todoPriorityLabel}
+                                    timestamp={todoPriorityTimestamp}
+                                    disabled={
+                                      item.issueProjectStatusLocked ||
+                                      isUpdatingStatus
+                                    }
+                                    isUpdating={isUpdatingProjectFields}
+                                    onSubmit={handleUpdateProjectField}
+                                  />
+                                  <ProjectFieldEditor
+                                    item={item}
+                                    field="weight"
+                                    label="Weight"
+                                    rawValue={item.issueTodoProjectWeight}
+                                    formattedValue={todoWeightLabel}
+                                    timestamp={todoWeightTimestamp}
+                                    disabled={isUpdatingStatus}
+                                    isUpdating={isUpdatingProjectFields}
+                                    onSubmit={handleUpdateProjectField}
+                                  />
+                                  <ProjectFieldEditor
+                                    item={item}
+                                    field="initiationOptions"
+                                    label="Initiation"
+                                    rawValue={
+                                      item.issueTodoProjectInitiationOptions
+                                    }
+                                    formattedValue={todoInitiationLabel}
+                                    timestamp={todoInitiationTimestamp}
+                                    disabled={
+                                      item.issueProjectStatusLocked ||
+                                      isUpdatingStatus
+                                    }
+                                    isUpdating={isUpdatingProjectFields}
+                                    onSubmit={handleUpdateProjectField}
+                                  />
+                                  <ProjectFieldEditor
+                                    item={item}
+                                    field="startDate"
+                                    label="Start"
+                                    rawValue={item.issueTodoProjectStartDate}
+                                    formattedValue={todoStartDateLabel}
+                                    timestamp={todoStartDateTimestamp}
+                                    disabled={
+                                      item.issueProjectStatusLocked ||
+                                      isUpdatingStatus
+                                    }
+                                    isUpdating={isUpdatingProjectFields}
+                                    onSubmit={handleUpdateProjectField}
+                                  />
+                                </div>
+                                {!item.issueProjectStatusLocked &&
+                                  item.issueProjectStatusSource !==
+                                    "activity" && (
+                                    <p className="mt-2 text-muted-foreground/80">
+                                      Activity 상태는 To-do 프로젝트가 No Status
+                                      또는 Todo일 때만 적용돼요.
+                                    </p>
+                                  )}
+                              </div>
+                            )}
+                            <div className="rounded-md border border-border bg-background px-4 py-3 text-sm">
+                              {(() => {
+                                const renderedBody =
+                                  resolveDetailBodyHtml(detail);
+                                if (!renderedBody) {
+                                  return (
+                                    <div className="text-muted-foreground/80">
+                                      내용이 없습니다.
+                                    </div>
+                                  );
+                                }
+                                const content =
+                                  renderMarkdownHtml(renderedBody);
+                                if (!content) {
+                                  return (
+                                    <div className="text-muted-foreground/80">
+                                      내용을 표시할 수 없습니다.
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <div className="space-y-4 leading-relaxed [&_a]:text-primary [&_a]:underline-offset-2 [&_a:hover]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5">
+                                    {content}
+                                  </div>
+                                );
+                              })()}
                             </div>
-                          )}
-                        </div>
-                      ) : detail === null ? (
-                        <div className="text-muted-foreground/80">
-                          선택한 항목의 내용을 불러오지 못했습니다.
-                        </div>
-                      ) : (
-                        <div className="text-muted-foreground/80">
-                          내용을 불러오는 중입니다.
-                        </div>
-                      )}
-                    </div>
+                            {(detail.parentIssues.length > 0 ||
+                              detail.subIssues.length > 0) && (
+                              <div className="space-y-4 text-xs">
+                                {detail.parentIssues.length > 0 && (
+                                  <div>
+                                    <h4 className="font-semibold text-muted-foreground/85">
+                                      상위 이슈
+                                    </h4>
+                                    <ul className="mt-1 space-y-1">
+                                      {detail.parentIssues.map((linked) => {
+                                        const referenceParts: string[] = [];
+                                        if (linked.repositoryNameWithOwner) {
+                                          referenceParts.push(
+                                            linked.repositoryNameWithOwner,
+                                          );
+                                        }
+                                        if (typeof linked.number === "number") {
+                                          referenceParts.push(
+                                            `#${linked.number}`,
+                                          );
+                                        }
+                                        const referenceLabel =
+                                          referenceParts.length > 0
+                                            ? referenceParts.join("")
+                                            : null;
+                                        const titleLabel =
+                                          linked.title ??
+                                          linked.state ??
+                                          linked.id;
+                                        const displayLabel = referenceLabel
+                                          ? `${referenceLabel}${titleLabel ? ` — ${titleLabel}` : ""}`
+                                          : titleLabel;
+                                        return (
+                                          <li key={`parent-${linked.id}`}>
+                                            {linked.url ? (
+                                              <a
+                                                href={linked.url}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="text-primary hover:underline"
+                                              >
+                                                {displayLabel ?? linked.id}
+                                              </a>
+                                            ) : (
+                                              <span>
+                                                {displayLabel ?? linked.id}
+                                              </span>
+                                            )}
+                                          </li>
+                                        );
+                                      })}
+                                    </ul>
+                                  </div>
+                                )}
+                                {detail.subIssues.length > 0 && (
+                                  <div>
+                                    <h4 className="font-semibold text-muted-foreground/85">
+                                      하위 이슈
+                                    </h4>
+                                    <ul className="mt-1 space-y-1">
+                                      {detail.subIssues.map((linked) => {
+                                        const referenceParts: string[] = [];
+                                        if (linked.repositoryNameWithOwner) {
+                                          referenceParts.push(
+                                            linked.repositoryNameWithOwner,
+                                          );
+                                        }
+                                        if (typeof linked.number === "number") {
+                                          referenceParts.push(
+                                            `#${linked.number}`,
+                                          );
+                                        }
+                                        const referenceLabel =
+                                          referenceParts.length > 0
+                                            ? referenceParts.join("")
+                                            : null;
+                                        const titleLabel =
+                                          linked.title ??
+                                          linked.state ??
+                                          linked.id;
+                                        const displayLabel = referenceLabel
+                                          ? `${referenceLabel}${titleLabel ? ` — ${titleLabel}` : ""}`
+                                          : titleLabel;
+                                        return (
+                                          <li key={`sub-${linked.id}`}>
+                                            {linked.url ? (
+                                              <a
+                                                href={linked.url}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="text-primary hover:underline"
+                                              >
+                                                {displayLabel ?? linked.id}
+                                              </a>
+                                            ) : (
+                                              <span>
+                                                {displayLabel ?? linked.id}
+                                              </span>
+                                            )}
+                                          </li>
+                                        );
+                                      })}
+                                    </ul>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ) : detail === null ? (
+                          <div className="text-muted-foreground/80">
+                            선택한 항목의 내용을 불러오지 못했습니다.
+                          </div>
+                        ) : (
+                          <div className="text-muted-foreground/80">
+                            내용을 불러오는 중입니다.
+                          </div>
+                        )}
+                      </div>
+                    </ActivityDetailOverlay>
                   )}
                 </div>
               );
