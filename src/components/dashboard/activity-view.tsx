@@ -2143,33 +2143,56 @@ export function ActivityView({
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ status: nextStatus }),
+            body: JSON.stringify({
+              status: nextStatus,
+              expectedStatus: currentStatus,
+            }),
           },
         );
 
+        const payload = (await response.json()) as {
+          item?: ActivityItem;
+          error?: string;
+          todoStatus?: IssueProjectStatus;
+        };
+
         if (!response.ok) {
+          if (payload.item) {
+            const conflictItem = payload.item;
+            setData((current) => ({
+              ...current,
+              items: current.items.map((existing) =>
+                existing.id === conflictItem.id ? conflictItem : existing,
+              ),
+            }));
+            setDetailMap((current) => {
+              const existing = current[conflictItem.id];
+              if (!existing) {
+                return current;
+              }
+              return {
+                ...current,
+                [conflictItem.id]: { ...existing, item: conflictItem },
+              };
+            });
+          }
+
           let message = "상태를 변경하지 못했어요.";
-          try {
-            const error = (await response.json()) as {
-              error?: string;
-              todoStatus?: IssueProjectStatus;
-            };
-            if (response.status === 409 && error.todoStatus) {
-              const todoLabel =
-                ISSUE_STATUS_LABEL_MAP.get(error.todoStatus) ??
-                error.todoStatus;
-              message = `To-do 프로젝트 상태(${todoLabel})를 우선 적용하고 있어요.`;
-            } else if (typeof error.error === "string" && error.error.trim()) {
-              message = error.error;
-            }
-          } catch {
-            // Ignore JSON parse errors.
+          if (response.status === 409 && payload.todoStatus) {
+            const todoLabel =
+              ISSUE_STATUS_LABEL_MAP.get(payload.todoStatus) ??
+              payload.todoStatus;
+            message = `To-do 프로젝트 상태(${todoLabel})를 우선 적용하고 있어요.`;
+          } else if (
+            typeof payload.error === "string" &&
+            payload.error.trim()
+          ) {
+            message = payload.error;
           }
           showNotification(message);
           return;
         }
 
-        const payload = (await response.json()) as { item?: ActivityItem };
         const updatedItem = payload.item ?? item;
 
         setData((current) => ({
@@ -2235,6 +2258,20 @@ export function ActivityView({
             return null;
         }
       })();
+      const currentUpdatedAt = (() => {
+        switch (field) {
+          case "priority":
+            return item.issueTodoProjectPriorityUpdatedAt;
+          case "weight":
+            return item.issueTodoProjectWeightUpdatedAt;
+          case "initiationOptions":
+            return item.issueTodoProjectInitiationOptionsUpdatedAt;
+          case "startDate":
+            return item.issueTodoProjectStartDateUpdatedAt;
+          default:
+            return null;
+        }
+      })();
 
       const normalizedCurrent = normalizeProjectFieldForComparison(
         field,
@@ -2259,7 +2296,15 @@ export function ActivityView({
       });
 
       try {
-        const payload = { [field]: nextValue } as Record<string, string | null>;
+        const payload = {
+          [field]: nextValue,
+          expected: {
+            [field]: {
+              value: currentValue,
+              updatedAt: currentUpdatedAt,
+            },
+          },
+        } as Record<string, unknown>;
         const response = await fetch(
           `/api/activity/${encodeURIComponent(item.id)}/project-fields`,
           {
@@ -2271,31 +2316,49 @@ export function ActivityView({
           },
         );
 
+        const payloadResponse = (await response.json()) as {
+          item?: ActivityItem;
+          error?: string;
+          todoStatus?: IssueProjectStatus;
+        };
+
         if (!response.ok) {
+          if (payloadResponse.item) {
+            const conflictItem = payloadResponse.item;
+            setData((current) => ({
+              ...current,
+              items: current.items.map((existing) =>
+                existing.id === conflictItem.id ? conflictItem : existing,
+              ),
+            }));
+            setDetailMap((current) => {
+              const existing = current[conflictItem.id];
+              if (!existing) {
+                return current;
+              }
+              return {
+                ...current,
+                [conflictItem.id]: { ...existing, item: conflictItem },
+              };
+            });
+          }
+
           let message = "값을 업데이트하지 못했어요.";
-          try {
-            const error = (await response.json()) as {
-              error?: string;
-              todoStatus?: IssueProjectStatus;
-            };
-            if (response.status === 409 && error.todoStatus) {
-              const todoLabel =
-                ISSUE_STATUS_LABEL_MAP.get(error.todoStatus) ??
-                error.todoStatus;
-              message = `To-do 프로젝트 상태(${todoLabel})를 우선 적용하고 있어요.`;
-            } else if (typeof error.error === "string" && error.error.trim()) {
-              message = error.error;
-            }
-          } catch {
-            // Ignore JSON parse errors.
+          if (response.status === 409 && payloadResponse.todoStatus) {
+            const todoLabel =
+              ISSUE_STATUS_LABEL_MAP.get(payloadResponse.todoStatus) ??
+              payloadResponse.todoStatus;
+            message = `To-do 프로젝트 상태(${todoLabel})를 우선 적용하고 있어요.`;
+          } else if (
+            typeof payloadResponse.error === "string" &&
+            payloadResponse.error.trim()
+          ) {
+            message = payloadResponse.error;
           }
           showNotification(message);
           return false;
         }
 
-        const payloadResponse = (await response.json()) as {
-          item?: ActivityItem;
-        };
         const updatedItem = payloadResponse.item ?? item;
 
         setData((current) => ({

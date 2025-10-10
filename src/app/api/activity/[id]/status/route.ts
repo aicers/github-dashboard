@@ -63,6 +63,19 @@ export async function PATCH(request: Request, context: RouteParams) {
     );
   }
 
+  const rawExpectedStatus = (payload as { expectedStatus?: unknown })
+    ?.expectedStatus;
+  let expectedStatus: IssueProjectStatus | undefined;
+  if (rawExpectedStatus !== undefined) {
+    if (!isIssueProjectStatus(rawExpectedStatus)) {
+      return NextResponse.json(
+        { error: "Missing or invalid expected status value." },
+        { status: 400 },
+      );
+    }
+    expectedStatus = rawExpectedStatus;
+  }
+
   const detail = await resolveIssueItem(id);
   if (!detail) {
     return NextResponse.json({ error: "Issue not found." }, { status: 404 });
@@ -76,6 +89,20 @@ export async function PATCH(request: Request, context: RouteParams) {
       },
       { status: 409 },
     );
+  }
+
+  if (expectedStatus !== undefined) {
+    const currentStatus = detail.item.issueProjectStatus ?? "no_status";
+    if (currentStatus !== expectedStatus) {
+      const refreshed = await resolveIssueItem(id);
+      return NextResponse.json(
+        {
+          error: "이슈 상태가 이미 변경되었어요. 최신 상태를 불러왔어요.",
+          item: refreshed?.item ?? detail.item,
+        },
+        { status: 409 },
+      );
+    }
   }
 
   if (status === "no_status") {
