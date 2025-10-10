@@ -9,7 +9,8 @@ const requestSchema = z.object({
 
 function buildLogger(prefix: string) {
   return (message: string) => {
-    console.log(`[${prefix}] ${message}`);
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] [${prefix}] ${message}`);
   };
 }
 
