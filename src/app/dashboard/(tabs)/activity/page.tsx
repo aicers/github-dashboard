@@ -7,6 +7,7 @@ import {
   getActivityFilterOptions,
   getActivityItems,
 } from "@/lib/activity/service";
+import { readActiveSession } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
@@ -22,9 +23,10 @@ export default async function ActivityPage({
     createSearchParamsFromRecord(resolvedSearchParams),
   );
 
-  const [initialData, filterOptions] = await Promise.all([
+  const [initialData, filterOptions, session] = await Promise.all([
     getActivityItems(params),
     getActivityFilterOptions(),
+    readActiveSession(),
   ]);
 
   return (
@@ -32,6 +34,7 @@ export default async function ActivityPage({
       initialData={initialData}
       filterOptions={filterOptions}
       initialParams={params}
+      currentUserId={session?.userId ?? null}
     />
   );
 }
