@@ -197,3 +197,11 @@ export type ActivityFilterOptions = {
   issueTypes: ActivityIssueType[];
   milestones: ActivityMilestone[];
 };
+
+export type ActivitySavedFilter = {
+  id: string;
+  name: string;
+  payload: ActivityListParams;
+  createdAt: string;
+  updatedAt: string;
+};
