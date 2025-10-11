@@ -196,7 +196,7 @@ describe("AttentionView stalled in-progress issues", () => {
       within(firstItem).getByText("담당자 Bob (@bob), Dave (@dave)"),
     ).toBeInTheDocument();
     expect(within(firstItem).getByText("Age 55일")).toBeInTheDocument();
-    expect(within(firstItem).getByText("Idle 35일")).toBeInTheDocument();
+    expect(within(firstItem).getByText("Progress 35일")).toBeInTheDocument();
 
     expect(
       within(secondItem).getByText("acme/engineering#311"),
@@ -208,7 +208,7 @@ describe("AttentionView stalled in-progress issues", () => {
       within(secondItem).getByText("담당자 Bob (@bob)"),
     ).toBeInTheDocument();
     expect(within(secondItem).getByText("Age 50일")).toBeInTheDocument();
-    expect(within(secondItem).getByText("Idle 30일")).toBeInTheDocument();
+    expect(within(secondItem).getByText("Progress 30일")).toBeInTheDocument();
 
     expect(
       screen.getByText("생성자 In Progress 경과일수 합계 순위"),
