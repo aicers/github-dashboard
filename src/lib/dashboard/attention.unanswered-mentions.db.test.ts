@@ -75,6 +75,18 @@ function buildIssue(params: IssueParams): DbIssue {
   } satisfies DbIssue;
 }
 
+function buildDiscussion(params: IssueParams): DbIssue {
+  const issue = buildIssue(params);
+  return {
+    ...issue,
+    raw: {
+      ...(issue.raw as Record<string, unknown>),
+      __typename: "Discussion",
+      url: `https://github.com/${params.repositoryNameWithOwner}/discussions/${params.number.toString()}`,
+    },
+  };
+}
+
 describe("attention insights for unanswered mentions", () => {
   beforeEach(async () => {
     vi.useFakeTimers();
@@ -224,6 +236,18 @@ describe("attention insights for unanswered mentions", () => {
     });
     await upsertIssue(mainIssue);
 
+    const mainDiscussion = buildDiscussion({
+      id: "discussion-main",
+      number: 7001,
+      repositoryId: mainRepo.id,
+      repositoryNameWithOwner: mainRepo.nameWithOwner,
+      authorId: alice.id,
+      title: "Release coordination discussion",
+      createdAt: "2024-01-16T00:00:00.000Z",
+      updatedAt: "2024-02-09T00:00:00.000Z",
+    });
+    await upsertIssue(mainDiscussion);
+
     const targetReview = buildReview({
       id: "review-response",
       pullRequestId: respondedReviewPr.id,
@@ -261,6 +285,21 @@ describe("attention insights for unanswered mentions", () => {
         id: "comment-issue-unanswered",
         url: "https://github.com/acme/main/issues/9001#issuecomment-1",
         body: longBody,
+      },
+    } satisfies DbComment;
+
+    const unansweredDiscussionComment: DbComment = {
+      id: "comment-discussion-unanswered",
+      issueId: mainDiscussion.id,
+      pullRequestId: null,
+      reviewId: null,
+      authorId: alice.id,
+      createdAt: "2024-02-09T09:00:00.000Z",
+      updatedAt: "2024-02-09T09:00:00.000Z",
+      raw: {
+        id: "comment-discussion-unanswered",
+        url: "https://github.com/acme/main/discussions/7001#discussioncomment-1",
+        body: "@bob Could you weigh in on the rollout timeline?",
       },
     } satisfies DbComment;
 
@@ -404,6 +443,7 @@ describe("attention insights for unanswered mentions", () => {
     for (const comment of [
       unansweredPrComment,
       unansweredIssueComment,
+      unansweredDiscussionComment,
       respondedByCommentMention,
       commentResponse,
       respondedByReviewMention,
@@ -423,7 +463,7 @@ describe("attention insights for unanswered mentions", () => {
     expect(insights.timezone).toBe("Asia/Seoul");
     expect(new Date(insights.generatedAt).toISOString()).toBe(FIXED_NOW);
 
-    expect(insights.unansweredMentions).toHaveLength(2);
+    expect(insights.unansweredMentions).toHaveLength(3);
 
     const prItem = insights.unansweredMentions.find(
       (item) => item.commentId === unansweredPrComment.id,
@@ -431,8 +471,11 @@ describe("attention insights for unanswered mentions", () => {
     const issueItem = insights.unansweredMentions.find(
       (item) => item.commentId === unansweredIssueComment.id,
     );
+    const discussionItem = insights.unansweredMentions.find(
+      (item) => item.commentId === unansweredDiscussionComment.id,
+    );
 
-    if (!prItem || !issueItem) {
+    if (!prItem || !issueItem || !discussionItem) {
       throw new Error("Expected unanswered mention items to be present");
     }
 
@@ -445,9 +488,14 @@ describe("attention insights for unanswered mentions", () => {
       unansweredIssueComment.createdAt,
       now,
     );
+    const expectedDiscussionWaiting = differenceInBusinessDays(
+      unansweredDiscussionComment.createdAt,
+      now,
+    );
 
     expect(prItem.waitingDays).toBe(expectedPrWaiting);
     expect(issueItem.waitingDays).toBe(expectedIssueWaiting);
+    expect(discussionItem.waitingDays).toBe(expectedDiscussionWaiting);
 
     expect(prItem.author).toEqual({
       id: alice.id,
@@ -504,5 +552,31 @@ describe("attention insights for unanswered mentions", () => {
       },
     });
     expect(issueItem.commentExcerpt).toBe(expectedIssueExcerpt);
+
+    expect(discussionItem.author).toEqual({
+      id: alice.id,
+      login: alice.login ?? null,
+      name: alice.name ?? null,
+    });
+    expect(discussionItem.target).toEqual({
+      id: bob.id,
+      login: bob.login ?? null,
+      name: bob.name ?? null,
+    });
+    expect(discussionItem.container).toEqual({
+      type: "discussion",
+      id: mainDiscussion.id,
+      number: mainDiscussion.number,
+      title: mainDiscussion.title,
+      url: "https://github.com/owner/main/discussions/7001",
+      repository: {
+        id: mainRepo.id,
+        name: mainRepo.name,
+        nameWithOwner: mainRepo.nameWithOwner,
+      },
+    });
+    expect(discussionItem.commentExcerpt).toBe(
+      "@bob Could you weigh in on the rollout timeline?",
+    );
   });
 });

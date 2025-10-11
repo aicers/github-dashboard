@@ -46,7 +46,7 @@ function buildMentionItem(params: {
   author: UserReference;
   target: UserReference;
   container: {
-    type: "issue" | "pull_request";
+    type: "issue" | "pull_request" | "discussion";
     id: string;
     number: number;
     title: string;
@@ -133,6 +133,24 @@ describe("AttentionView unanswered mentions", () => {
       commentExcerpt: "Need a final sign-off on the rollout checklist items.",
     });
 
+    const discussionMention = buildMentionItem({
+      commentId: "comment-discussion",
+      url: "https://github.com/acme/github-dashboard/discussions/42#discussioncomment-1",
+      mentionedAt: "2024-02-03T12:00:00.000Z",
+      waitingDays: 7,
+      author: alice,
+      target: bob,
+      container: {
+        type: "discussion",
+        id: "discussion-42",
+        number: 42,
+        title: "Q1 release coordination",
+        url: "https://github.com/acme/github-dashboard/discussions/42",
+        repository: repo,
+      },
+      commentExcerpt: "Looping in @bob for additional context on the rollout.",
+    });
+
     const secondaryMention = buildMentionItem({
       commentId: "comment-secondary",
       url: "https://github.com/acme/github-dashboard/pull/70#discussion_r2",
@@ -160,7 +178,12 @@ describe("AttentionView unanswered mentions", () => {
       stuckReviewRequests: [],
       backlogIssues: [],
       stalledInProgressIssues: [],
-      unansweredMentions: [primaryMention, issueMention, secondaryMention],
+      unansweredMentions: [
+        primaryMention,
+        issueMention,
+        discussionMention,
+        secondaryMention,
+      ],
     } satisfies AttentionInsights;
 
     render(<AttentionView insights={insights} />);
@@ -209,9 +232,9 @@ describe("AttentionView unanswered mentions", () => {
     const [authorRankTop] = within(authorTotalCard).getAllByRole("listitem");
 
     expect(targetRankTop).toHaveTextContent("1. Bob (@bob)");
-    expect(targetRankTop).toHaveTextContent("17일");
+    expect(targetRankTop).toHaveTextContent("24일");
     expect(authorRankTop).toHaveTextContent("1. Alice (@alice)");
-    expect(authorRankTop).toHaveTextContent("20일");
+    expect(authorRankTop).toHaveTextContent("27일");
 
     const targetFilter = screen.getByLabelText("멘션 대상 필터");
     const authorFilter = screen.getByLabelText("요청자 필터");
@@ -222,15 +245,19 @@ describe("AttentionView unanswered mentions", () => {
     const issueItem = screen
       .getByText("acme/github-dashboard#99 코멘트")
       .closest("li");
+    const discussionItem = screen
+      .getByText("acme/github-dashboard#42 코멘트")
+      .closest("li");
     const secondaryItem = screen
       .getByText("acme/github-dashboard#70 코멘트")
       .closest("li");
 
     expect(primaryItem).not.toBeNull();
     expect(issueItem).not.toBeNull();
+    expect(discussionItem).not.toBeNull();
     expect(secondaryItem).not.toBeNull();
 
-    if (!primaryItem || !issueItem || !secondaryItem) {
+    if (!primaryItem || !issueItem || !discussionItem || !secondaryItem) {
       throw new Error("Expected unanswered mention list items to exist");
     }
 
@@ -248,6 +275,11 @@ describe("AttentionView unanswered mentions", () => {
     expect(within(issueItem).getByText("Idle 9일")).toBeInTheDocument();
     expect(
       within(issueItem).getByText("Mention @carol 9일"),
+    ).toBeInTheDocument();
+
+    expect(within(discussionItem).getByText("Idle 7일")).toBeInTheDocument();
+    expect(
+      within(discussionItem).getByText("Mention @bob 7일"),
     ).toBeInTheDocument();
 
     expect(within(secondaryItem).getByText("Idle 6일")).toBeInTheDocument();
@@ -284,6 +316,9 @@ describe("AttentionView unanswered mentions", () => {
         screen.getByText("acme/github-dashboard#70 코멘트"),
       ).toBeInTheDocument();
       expect(
+        screen.queryByText("acme/github-dashboard#42 코멘트"),
+      ).not.toBeInTheDocument();
+      expect(
         screen.queryByText("acme/github-dashboard#99 코멘트"),
       ).not.toBeInTheDocument();
     });
@@ -296,6 +331,9 @@ describe("AttentionView unanswered mentions", () => {
       ).toBeInTheDocument();
       expect(
         screen.getByText("acme/github-dashboard#99 코멘트"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("acme/github-dashboard#42 코멘트"),
       ).toBeInTheDocument();
       expect(
         screen.getByText("acme/github-dashboard#70 코멘트"),

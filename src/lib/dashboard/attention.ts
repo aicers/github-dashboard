@@ -78,7 +78,7 @@ export type MentionAttentionItem = {
   author: UserReference | null;
   target: UserReference | null;
   container: {
-    type: "issue" | "pull_request";
+    type: "issue" | "pull_request" | "discussion";
     id: string;
     number: number | null;
     title: string | null;
@@ -165,7 +165,7 @@ type MentionRawItem = {
   commentAuthorId: string | null;
   targetUserId: string | null;
   container: {
-    type: "issue" | "pull_request";
+    type: "issue" | "pull_request" | "discussion";
     id: string;
     number: number | null;
     title: string | null;
@@ -245,6 +245,7 @@ type MentionRow = {
   issue_number: number | null;
   issue_title: string | null;
   issue_url: string | null;
+  issue_type: "issue" | "discussion" | null;
   repository_id: string | null;
   repository_name: string | null;
   repository_name_with_owner: string | null;
@@ -984,6 +985,13 @@ async function fetchUnansweredMentions(
        iss.number AS issue_number,
        iss.title AS issue_title,
        iss.data->>'url' AS issue_url,
+        CASE
+          WHEN mc.issue_id IS NULL THEN NULL
+          WHEN LOWER(COALESCE(iss.data->>'__typename', '')) = 'discussion'
+            OR POSITION('/discussions/' IN COALESCE(iss.data->>'url', '')) > 0
+            THEN 'discussion'
+          ELSE 'issue'
+        END AS issue_type,
        COALESCE(pr.repository_id, iss.repository_id) AS repository_id,
        repo.name AS repository_name,
        repo.name_with_owner AS repository_name_with_owner
@@ -1037,13 +1045,21 @@ async function fetchUnansweredMentions(
     addUserId(userIds, row.mentioned_user_id);
     addUserId(userIds, row.comment_author_id);
 
-    const containerIsPr = Boolean(row.pr_id);
-    const containerId = containerIsPr
-      ? (row.pr_id as string)
-      : (row.issue_id as string);
-    const containerNumber = containerIsPr ? row.pr_number : row.issue_number;
-    const containerTitle = containerIsPr ? row.pr_title : row.issue_title;
-    const containerUrl = containerIsPr ? row.pr_url : row.issue_url;
+    const containerType: MentionAttentionItem["container"]["type"] = row.pr_id
+      ? "pull_request"
+      : row.issue_type === "discussion"
+        ? "discussion"
+        : "issue";
+    const containerId =
+      containerType === "pull_request"
+        ? (row.pr_id as string)
+        : (row.issue_id as string);
+    const containerNumber =
+      containerType === "pull_request" ? row.pr_number : row.issue_number;
+    const containerTitle =
+      containerType === "pull_request" ? row.pr_title : row.issue_title;
+    const containerUrl =
+      containerType === "pull_request" ? row.pr_url : row.issue_url;
     const repositoryId = row.repository_id;
 
     items.push({
@@ -1054,7 +1070,7 @@ async function fetchUnansweredMentions(
       commentAuthorId: row.comment_author_id,
       targetUserId: row.mentioned_user_id,
       container: {
-        type: containerIsPr ? "pull_request" : "issue",
+        type: containerType,
         id: containerId,
         number: containerNumber,
         title: containerTitle,
