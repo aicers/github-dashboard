@@ -186,13 +186,21 @@ describe("AttentionView stuck review requests", () => {
       throw new Error("Expected stuck review request items to exist");
     }
 
-    expect(within(indexingItem).getByText("Bob (@bob)")).toBeInTheDocument();
-    expect(within(indexingItem).getByText("Dave (@dave)")).toBeInTheDocument();
-    expect(within(indexingItem).getByText("11일 경과")).toBeInTheDocument();
+    expect(within(indexingItem).getByText("Idle 11일")).toBeInTheDocument();
+    expect(
+      within(indexingItem).getByText("생성자 Bob (@bob)"),
+    ).toBeInTheDocument();
+    expect(
+      within(indexingItem).getByText("대기 중 리뷰어 Dave (@dave)"),
+    ).toBeInTheDocument();
 
-    expect(within(cacheItem).getByText("Alice (@alice)")).toBeInTheDocument();
-    expect(within(cacheItem).getByText("Carol (@carol)")).toBeInTheDocument();
-    expect(within(cacheItem).getByText("7일 경과")).toBeInTheDocument();
+    expect(within(cacheItem).getByText("Idle 7일")).toBeInTheDocument();
+    expect(
+      within(cacheItem).getByText("생성자 Alice (@alice)"),
+    ).toBeInTheDocument();
+    expect(
+      within(cacheItem).getByText("대기 중 리뷰어 Carol (@carol)"),
+    ).toBeInTheDocument();
 
     await user.selectOptions(authorFilter, "user-bob");
     expect(

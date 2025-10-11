@@ -2,7 +2,15 @@
 
 import { RefreshCcw } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { type ReactNode, useMemo, useState, useTransition } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 
 import {
   Card,
@@ -11,7 +19,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-
+import { fetchActivityDetail } from "@/lib/activity/client";
+import type {
+  ActivityItem,
+  ActivityItemDetail,
+  ActivityRepository,
+  ActivityUser,
+} from "@/lib/activity/types";
 import type {
   AttentionInsights,
   IssueAttentionItem,
@@ -30,18 +44,13 @@ import {
   sortRankingByTotal,
 } from "@/lib/dashboard/attention-summaries";
 import { cn } from "@/lib/utils";
-
-const chipClass =
-  "inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs font-medium text-muted-foreground";
-
-function InfoBadge({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <span className="flex items-center gap-1 text-xs">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="font-medium text-foreground">{value}</span>
-    </span>
-  );
-}
+import { ActivityDetailOverlay } from "./activity/activity-detail-overlay";
+import { ActivityListItemSummary } from "./activity/activity-list-item-summary";
+import {
+  differenceLabel,
+  formatRelative,
+  resolveActivityIcon,
+} from "./activity/shared";
 
 function formatUserList(users: UserReference[]) {
   if (!users.length) {
@@ -57,23 +66,6 @@ function formatRepository(repository: RepositoryReference | null) {
   }
 
   return repository.nameWithOwner ?? repository.name ?? repository.id;
-}
-
-function renderLink(url: string | null, label: string) {
-  if (!url) {
-    return <span>{label}</span>;
-  }
-
-  return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="text-sm font-medium text-primary underline-offset-2 hover:underline"
-    >
-      {label}
-    </a>
-  );
 }
 
 function formatDays(value: number | null | undefined) {
@@ -117,6 +109,407 @@ function formatTimestamp(iso: string, timeZone: string) {
 
 function formatCount(value: number) {
   return `${value.toLocaleString()}건`;
+}
+
+function toActivityUser(user: UserReference | null): ActivityUser | null {
+  if (!user) {
+    return null;
+  }
+  return {
+    id: user.id,
+    login: user.login,
+    name: user.name,
+    avatarUrl: null,
+  };
+}
+
+function toActivityUsers(users: UserReference[]): ActivityUser[] {
+  return users
+    .map((user) => toActivityUser(user))
+    .filter((user): user is ActivityUser => user !== null);
+}
+
+function toActivityRepository(
+  repository: RepositoryReference | null,
+): ActivityRepository | null {
+  if (!repository) {
+    return null;
+  }
+  return {
+    id: repository.id,
+    name: repository.name,
+    nameWithOwner: repository.nameWithOwner,
+  };
+}
+
+function buildAttention(
+  overrides: Partial<ActivityItem["attention"]>,
+): ActivityItem["attention"] {
+  return {
+    unansweredMention: false,
+    reviewRequestPending: false,
+    staleOpenPr: false,
+    idlePr: false,
+    backlogIssue: false,
+    stalledIssue: false,
+    ...overrides,
+  };
+}
+
+function createBaseActivityItem({
+  id,
+  type,
+  status = "open",
+  number = null,
+  title = null,
+  url = null,
+  repository,
+  author,
+  createdAt = null,
+  updatedAt = null,
+  attention = {},
+}: {
+  id: string;
+  type: ActivityItem["type"];
+  status?: ActivityItem["status"];
+  number?: number | null;
+  title?: string | null;
+  url?: string | null;
+  repository: RepositoryReference | null;
+  author: UserReference | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  attention?: Partial<ActivityItem["attention"]>;
+}): ActivityItem {
+  return {
+    id,
+    type,
+    status,
+    number,
+    title,
+    url,
+    state: status,
+    issueProjectStatus: null,
+    issueProjectStatusSource: "none",
+    issueProjectStatusLocked: false,
+    issueTodoProjectStatus: null,
+    issueTodoProjectStatusAt: null,
+    issueTodoProjectPriority: null,
+    issueTodoProjectPriorityUpdatedAt: null,
+    issueTodoProjectWeight: null,
+    issueTodoProjectWeightUpdatedAt: null,
+    issueTodoProjectInitiationOptions: null,
+    issueTodoProjectInitiationOptionsUpdatedAt: null,
+    issueTodoProjectStartDate: null,
+    issueTodoProjectStartDateUpdatedAt: null,
+    issueActivityStatus: null,
+    issueActivityStatusAt: null,
+    repository: toActivityRepository(repository),
+    author: toActivityUser(author),
+    assignees: [],
+    reviewers: [],
+    mentionedUsers: [],
+    commenters: [],
+    reactors: [],
+    labels: [],
+    issueType: null,
+    milestone: null,
+    hasParentIssue: false,
+    hasSubIssues: false,
+    createdAt,
+    updatedAt,
+    closedAt: null,
+    mergedAt: null,
+    businessDaysOpen: null,
+    businessDaysIdle: null,
+    businessDaysSinceInProgress: null,
+    businessDaysInProgressOpen: null,
+    attention: buildAttention(attention),
+  };
+}
+
+function buildReferenceLabel(
+  repository: RepositoryReference | null,
+  number: number | null | undefined,
+) {
+  const repoLabel = formatRepository(repository);
+  if (number === null || number === undefined) {
+    return repoLabel;
+  }
+  return `${repoLabel}#${number.toString()}`;
+}
+
+function useActivityDetailState() {
+  const [openItemId, setOpenItemId] = useState<string | null>(null);
+  const [detailMap, setDetailMap] = useState<
+    Record<string, ActivityItemDetail | null>
+  >({});
+  const [loadingDetailIds, setLoadingDetailIds] = useState<Set<string>>(
+    () => new Set<string>(),
+  );
+  const controllersRef = useRef<Map<string, AbortController>>(new Map());
+
+  useEffect(() => {
+    return () => {
+      controllersRef.current.forEach((controller) => {
+        controller.abort();
+      });
+      controllersRef.current.clear();
+    };
+  }, []);
+
+  const loadDetail = useCallback(async (id: string) => {
+    if (!id.trim()) {
+      return;
+    }
+
+    setLoadingDetailIds((current) => {
+      if (current.has(id)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.add(id);
+      return next;
+    });
+
+    const existing = controllersRef.current.get(id);
+    existing?.abort();
+
+    const controller = new AbortController();
+    controllersRef.current.set(id, controller);
+
+    try {
+      const detail = await fetchActivityDetail(id, {
+        signal: controller.signal,
+      });
+      setDetailMap((current) => ({
+        ...current,
+        [id]: detail,
+      }));
+    } catch (error) {
+      if ((error as Error).name !== "AbortError") {
+        console.error(error);
+        setDetailMap((current) => ({
+          ...current,
+          [id]: null,
+        }));
+      }
+    } finally {
+      controllersRef.current.delete(id);
+      setLoadingDetailIds((current) => {
+        if (!current.has(id)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+    }
+  }, []);
+
+  const selectItem = useCallback(
+    (id: string) => {
+      setOpenItemId((current) => {
+        if (current === id) {
+          const controller = controllersRef.current.get(id);
+          controller?.abort();
+          controllersRef.current.delete(id);
+          setLoadingDetailIds((loadings) => {
+            if (!loadings.has(id)) {
+              return loadings;
+            }
+            const next = new Set(loadings);
+            next.delete(id);
+            return next;
+          });
+          return null;
+        }
+
+        if (current) {
+          const controller = controllersRef.current.get(current);
+          controller?.abort();
+          controllersRef.current.delete(current);
+          setLoadingDetailIds((loadings) => {
+            if (!loadings.has(current)) {
+              return loadings;
+            }
+            const next = new Set(loadings);
+            next.delete(current);
+            return next;
+          });
+        }
+
+        if (!detailMap[id] && !loadingDetailIds.has(id)) {
+          void loadDetail(id);
+        }
+
+        return id;
+      });
+    },
+    [detailMap, loadDetail, loadingDetailIds],
+  );
+
+  const closeItem = useCallback(() => {
+    setOpenItemId((current) => {
+      if (!current) {
+        return current;
+      }
+      const controller = controllersRef.current.get(current);
+      controller?.abort();
+      controllersRef.current.delete(current);
+      setLoadingDetailIds((loadings) => {
+        if (!loadings.has(current)) {
+          return loadings;
+        }
+        const next = new Set(loadings);
+        next.delete(current);
+        return next;
+      });
+      return null;
+    });
+  }, []);
+
+  return {
+    openItemId,
+    detailMap,
+    loadingDetailIds,
+    selectItem,
+    closeItem,
+  };
+}
+
+function FollowUpDetailContent({
+  detail,
+  isLoading,
+}: {
+  detail: ActivityItemDetail | undefined;
+  isLoading: boolean;
+}) {
+  if (isLoading) {
+    return (
+      <div className="text-sm text-muted-foreground/80">
+        내용을 불러오는 중입니다.
+      </div>
+    );
+  }
+
+  if (detail === null) {
+    return (
+      <div className="text-sm text-muted-foreground/80">
+        선택한 항목의 내용을 불러오지 못했습니다.
+      </div>
+    );
+  }
+
+  if (!detail) {
+    return (
+      <div className="text-sm text-muted-foreground/80">
+        내용을 불러오는 중입니다.
+      </div>
+    );
+  }
+
+  const body = detail.body?.trim()?.length
+    ? detail.body
+    : (detail.bodyHtml?.trim() ?? "");
+
+  return (
+    <div className="space-y-6 text-sm">
+      <div className="rounded-md border border-border bg-background px-4 py-3">
+        {body.length ? (
+          <pre className="whitespace-pre-wrap break-words text-foreground/90">
+            {body}
+          </pre>
+        ) : (
+          <div className="text-muted-foreground/80">내용이 없습니다.</div>
+        )}
+      </div>
+      {(detail.parentIssues.length > 0 || detail.subIssues.length > 0) && (
+        <div className="space-y-4 text-xs">
+          {detail.parentIssues.length > 0 && (
+            <div>
+              <h4 className="font-semibold text-muted-foreground/85">
+                상위 이슈
+              </h4>
+              <ul className="mt-1 space-y-1">
+                {detail.parentIssues.map((linked) => {
+                  const referenceParts: string[] = [];
+                  if (linked.repositoryNameWithOwner) {
+                    referenceParts.push(linked.repositoryNameWithOwner);
+                  }
+                  if (typeof linked.number === "number") {
+                    referenceParts.push(`#${linked.number}`);
+                  }
+                  const referenceLabel =
+                    referenceParts.length > 0 ? referenceParts.join("") : null;
+                  const titleLabel = linked.title ?? linked.state ?? linked.id;
+                  const displayLabel = referenceLabel
+                    ? `${referenceLabel}${titleLabel ? ` — ${titleLabel}` : ""}`
+                    : titleLabel;
+                  return (
+                    <li key={`parent-${linked.id}`}>
+                      {linked.url ? (
+                        <a
+                          href={linked.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-primary hover:underline"
+                        >
+                          {displayLabel ?? linked.id}
+                        </a>
+                      ) : (
+                        <span>{displayLabel ?? linked.id}</span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+          {detail.subIssues.length > 0 && (
+            <div>
+              <h4 className="font-semibold text-muted-foreground/85">
+                하위 이슈
+              </h4>
+              <ul className="mt-1 space-y-1">
+                {detail.subIssues.map((linked) => {
+                  const referenceParts: string[] = [];
+                  if (linked.repositoryNameWithOwner) {
+                    referenceParts.push(linked.repositoryNameWithOwner);
+                  }
+                  if (typeof linked.number === "number") {
+                    referenceParts.push(`#${linked.number}`);
+                  }
+                  const referenceLabel =
+                    referenceParts.length > 0 ? referenceParts.join("") : null;
+                  const titleLabel = linked.title ?? linked.state ?? linked.id;
+                  const displayLabel = referenceLabel
+                    ? `${referenceLabel}${titleLabel ? ` — ${titleLabel}` : ""}`
+                    : titleLabel;
+                  return (
+                    <li key={`sub-${linked.id}`}>
+                      {linked.url ? (
+                        <a
+                          href={linked.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-primary hover:underline"
+                        >
+                          {displayLabel ?? linked.id}
+                        </a>
+                      ) : (
+                        <span>{displayLabel ?? linked.id}</span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function RankingCard({
@@ -228,12 +621,14 @@ function PullRequestList({
   showUpdated,
   metricKey = "ageDays",
   metricLabel = "경과일수",
+  timezone,
 }: {
   items: PullRequestAttentionItem[];
   emptyText: string;
   showUpdated?: boolean;
   metricKey?: "ageDays" | "inactivityDays";
   metricLabel?: string;
+  timezone: string;
 }) {
   const [authorFilter, setAuthorFilter] = useState("all");
   const [reviewerFilter, setReviewerFilter] = useState("all");
@@ -340,6 +735,9 @@ function PullRequestList({
 
   const hasReviewerFilter = reviewerOptions.length > 0;
 
+  const { openItemId, detailMap, loadingDetailIds, selectItem, closeItem } =
+    useActivityDetailState();
+
   if (!items.length) {
     return <p className="text-sm text-muted-foreground">{emptyText}</p>;
   }
@@ -411,40 +809,108 @@ function PullRequestList({
 
       {sortedItems.length ? (
         <ul className="space-y-4">
-          {sortedItems.map((item) => (
-            <li key={item.id}>
-              <div className="rounded-lg border border-border/50 p-4">
-                <div className="flex flex-col gap-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {renderLink(
-                      item.url,
-                      `${formatRepository(item.repository)}#${item.number.toString()}`,
-                    )}
-                  </div>
-                  {item.title ? (
-                    <p className="text-sm text-foreground">{item.title}</p>
-                  ) : null}
-                  <div className="flex flex-wrap items-center gap-3 text-xs">
-                    <InfoBadge label="생성자" value={formatUser(item.author)} />
-                    <InfoBadge
-                      label="리뷰어"
-                      value={formatUserList(item.reviewers)}
-                    />
-                    <span className={chipClass}>
-                      {showUpdated
-                        ? `생성 ${formatDays(item.ageDays)} 경과`
-                        : `${formatDays(item.ageDays)} 경과`}
+          {sortedItems.map((item) => {
+            const attentionFlags = showUpdated
+              ? { idlePr: true }
+              : { staleOpenPr: true };
+            const activityItem = createBaseActivityItem({
+              id: item.id,
+              type: "pull_request",
+              number: item.number,
+              title: item.title,
+              url: item.url,
+              repository: item.repository,
+              author: item.author,
+              createdAt: item.createdAt,
+              updatedAt: item.updatedAt,
+              attention: attentionFlags,
+            });
+            activityItem.reviewers = toActivityUsers(item.reviewers);
+            activityItem.businessDaysOpen = item.ageDays ?? null;
+            if (item.inactivityDays !== undefined) {
+              activityItem.businessDaysIdle = item.inactivityDays ?? null;
+            }
+
+            const iconInfo = resolveActivityIcon(activityItem);
+            const referenceLabel = buildReferenceLabel(
+              item.repository,
+              item.number,
+            );
+            const isSelected = openItemId === item.id;
+            const detail = detailMap[item.id] ?? undefined;
+            const isDetailLoading = loadingDetailIds.has(item.id);
+            const badges = [showUpdated ? "업데이트 없는 PR" : "오래된 PR"];
+            const metadata = (
+              <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground/80">
+                <div className="flex flex-wrap items-center gap-3">
+                  {activityItem.businessDaysOpen !== null && (
+                    <span>
+                      Age {differenceLabel(activityItem.businessDaysOpen, "일")}
                     </span>
-                    {showUpdated && item.inactivityDays !== undefined ? (
-                      <span className={chipClass}>
-                        마지막 업데이트 {formatDays(item.inactivityDays)} 전
-                      </span>
-                    ) : null}
-                  </div>
+                  )}
+                  {activityItem.businessDaysIdle !== null && (
+                    <span>
+                      Idle{" "}
+                      {differenceLabel(activityItem.businessDaysIdle, "일")}
+                    </span>
+                  )}
+                  {item.updatedAt && (
+                    <span>{formatRelative(item.updatedAt) ?? "-"}</span>
+                  )}
+                  {item.author && <span>작성자 {formatUser(item.author)}</span>}
+                  {item.reviewers.length > 0 && (
+                    <span>리뷰어 {formatUserList(item.reviewers)}</span>
+                  )}
+                </div>
+                <div className="flex flex-col items-end text-muted-foreground/80">
+                  <span>
+                    {item.updatedAt
+                      ? formatTimestamp(item.updatedAt, timezone)
+                      : "-"}
+                  </span>
                 </div>
               </div>
-            </li>
-          ))}
+            );
+
+            return (
+              <li key={item.id}>
+                <div className="rounded-md border border-border bg-card/30 p-3">
+                  <button
+                    type="button"
+                    aria-expanded={isSelected}
+                    className={cn(
+                      "block w-full cursor-pointer bg-transparent p-0 text-left transition-colors focus-visible:outline-none border-none",
+                      isSelected
+                        ? "text-foreground"
+                        : "text-foreground hover:text-primary",
+                    )}
+                    onClick={() => selectItem(item.id)}
+                  >
+                    <ActivityListItemSummary
+                      iconInfo={iconInfo}
+                      referenceLabel={referenceLabel}
+                      referenceUrl={item.url ?? undefined}
+                      title={item.title}
+                      metadata={metadata}
+                    />
+                  </button>
+                  {isSelected ? (
+                    <ActivityDetailOverlay
+                      item={activityItem}
+                      iconInfo={iconInfo}
+                      badges={badges}
+                      onClose={closeItem}
+                    >
+                      <FollowUpDetailContent
+                        detail={detail}
+                        isLoading={isDetailLoading}
+                      />
+                    </ActivityDetailOverlay>
+                  ) : null}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       ) : (
         <p className="text-sm text-muted-foreground">
@@ -458,9 +924,11 @@ function PullRequestList({
 function ReviewRequestList({
   items,
   emptyText,
+  timezone,
 }: {
   items: ReviewRequestAttentionItem[];
   emptyText: string;
+  timezone: string;
 }) {
   const [authorFilter, setAuthorFilter] = useState("all");
   const [reviewerFilter, setReviewerFilter] = useState("all");
@@ -552,6 +1020,9 @@ function ReviewRequestList({
   const hasReviewerFilter = reviewerOptions.length > 0;
   const metricLabel = "대기일수";
 
+  const { openItemId, detailMap, loadingDetailIds, selectItem, closeItem } =
+    useActivityDetailState();
+
   if (!items.length) {
     return <p className="text-sm text-muted-foreground">{emptyText}</p>;
   }
@@ -623,38 +1094,112 @@ function ReviewRequestList({
 
       {sortedItems.length ? (
         <ul className="space-y-4">
-          {sortedItems.map((item) => (
-            <li key={item.id}>
-              <div className="rounded-lg border border-border/50 p-4">
-                <div className="flex flex-col gap-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {renderLink(
-                      item.pullRequest.url,
-                      `${formatRepository(item.pullRequest.repository)}#${item.pullRequest.number.toString()}`,
-                    )}
-                  </div>
-                  {item.pullRequest.title ? (
-                    <p className="text-sm text-foreground">
-                      {item.pullRequest.title}
-                    </p>
-                  ) : null}
-                  <div className="flex flex-wrap items-center gap-3 text-xs">
-                    <InfoBadge
-                      label="생성자"
-                      value={formatUser(item.pullRequest.author)}
-                    />
-                    <InfoBadge
-                      label="대기 중 리뷰어"
-                      value={formatUser(item.reviewer)}
-                    />
-                    <span className={chipClass}>
-                      {formatDays(item.waitingDays)} 경과
+          {sortedItems.map((item) => {
+            const selectionId = item.pullRequest.id?.trim().length
+              ? item.pullRequest.id
+              : item.id;
+            const activityItem = createBaseActivityItem({
+              id: selectionId,
+              type: "pull_request",
+              number: item.pullRequest.number,
+              title: item.pullRequest.title,
+              url: item.pullRequest.url,
+              repository: item.pullRequest.repository,
+              author: item.pullRequest.author,
+              attention: { reviewRequestPending: true },
+            });
+            activityItem.reviewers = toActivityUsers(
+              item.pullRequest.reviewers,
+            );
+            activityItem.businessDaysOpen = item.pullRequestAgeDays ?? null;
+            activityItem.businessDaysIdle =
+              item.pullRequestInactivityDays ?? item.waitingDays ?? null;
+
+            const iconInfo = resolveActivityIcon(activityItem);
+            const referenceLabel = buildReferenceLabel(
+              item.pullRequest.repository,
+              item.pullRequest.number,
+            );
+            const isSelected = openItemId === selectionId;
+            const detail = detailMap[selectionId] ?? undefined;
+            const isDetailLoading = loadingDetailIds.has(selectionId);
+            const badges = ["응답 없는 리뷰 요청"];
+            const metadata = (
+              <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground/80">
+                <div className="flex flex-wrap items-center gap-3">
+                  {activityItem.businessDaysOpen !== null && (
+                    <span>
+                      Age {differenceLabel(activityItem.businessDaysOpen, "일")}
                     </span>
-                  </div>
+                  )}
+                  {activityItem.businessDaysIdle !== null && (
+                    <span>
+                      Idle{" "}
+                      {differenceLabel(activityItem.businessDaysIdle, "일")}
+                    </span>
+                  )}
+                  {item.pullRequestUpdatedAt && (
+                    <span>
+                      {formatRelative(item.pullRequestUpdatedAt) ?? "-"}
+                    </span>
+                  )}
+                  <span>대기 {differenceLabel(item.waitingDays, "일")}</span>
+                  {item.pullRequest.author && (
+                    <span>생성자 {formatUser(item.pullRequest.author)}</span>
+                  )}
+                  {item.reviewer && (
+                    <span>대기 중 리뷰어 {formatUser(item.reviewer)}</span>
+                  )}
+                </div>
+                <div className="flex flex-col items-end text-muted-foreground/80">
+                  <span>
+                    {item.pullRequestUpdatedAt
+                      ? formatTimestamp(item.pullRequestUpdatedAt, timezone)
+                      : "-"}
+                  </span>
                 </div>
               </div>
-            </li>
-          ))}
+            );
+
+            return (
+              <li key={item.id}>
+                <div className="rounded-md border border-border bg-card/30 p-3">
+                  <button
+                    type="button"
+                    aria-expanded={isSelected}
+                    className={cn(
+                      "block w-full cursor-pointer bg-transparent p-0 text-left transition-colors focus-visible:outline-none border-none",
+                      isSelected
+                        ? "text-foreground"
+                        : "text-foreground hover:text-primary",
+                    )}
+                    onClick={() => selectItem(selectionId)}
+                  >
+                    <ActivityListItemSummary
+                      iconInfo={iconInfo}
+                      referenceLabel={referenceLabel}
+                      referenceUrl={item.pullRequest.url ?? undefined}
+                      title={item.pullRequest.title}
+                      metadata={metadata}
+                    />
+                  </button>
+                  {isSelected ? (
+                    <ActivityDetailOverlay
+                      item={activityItem}
+                      iconInfo={iconInfo}
+                      badges={badges}
+                      onClose={closeItem}
+                    >
+                      <FollowUpDetailContent
+                        detail={detail}
+                        isLoading={isDetailLoading}
+                      />
+                    </ActivityDetailOverlay>
+                  ) : null}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       ) : (
         <p className="text-sm text-muted-foreground">
@@ -671,12 +1216,14 @@ function IssueList({
   highlightInProgress,
   metricKey = "ageDays",
   metricLabel = "경과일수",
+  timezone,
 }: {
   items: IssueAttentionItem[];
   emptyText: string;
   highlightInProgress?: boolean;
   metricKey?: "ageDays" | "inProgressAgeDays";
   metricLabel?: string;
+  timezone: string;
 }) {
   const [authorFilter, setAuthorFilter] = useState("all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
@@ -776,6 +1323,9 @@ function IssueList({
 
   const hasAssigneeFilter = assigneeOptions.length > 0;
 
+  const { openItemId, detailMap, loadingDetailIds, selectItem, closeItem } =
+    useActivityDetailState();
+
   if (!items.length) {
     return <p className="text-sm text-muted-foreground">{emptyText}</p>;
   }
@@ -847,41 +1397,114 @@ function IssueList({
 
       {sortedItems.length ? (
         <ul className="space-y-4">
-          {sortedItems.map((item) => (
-            <li key={item.id}>
-              <div className="rounded-lg border border-border/50 p-4">
-                <div className="flex flex-col gap-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {renderLink(
-                      item.url,
-                      `${formatRepository(item.repository)}#${item.number.toString()}`,
-                    )}
-                  </div>
-                  {item.title ? (
-                    <p className="text-sm text-foreground">{item.title}</p>
-                  ) : null}
-                  <div className="flex flex-wrap items-center gap-3 text-xs">
-                    <InfoBadge label="생성자" value={formatUser(item.author)} />
-                    <InfoBadge
-                      label="담당자"
-                      value={formatUserList(item.assignees)}
-                    />
-                    <span className={chipClass}>
-                      {highlightInProgress
-                        ? `생성 ${formatDays(item.ageDays)} 경과`
-                        : `${formatDays(item.ageDays)} 경과`}
+          {sortedItems.map((item) => {
+            const attentionFlags = highlightInProgress
+              ? { stalledIssue: true }
+              : { backlogIssue: true };
+            const activityItem = createBaseActivityItem({
+              id: item.id,
+              type: "issue",
+              number: item.number,
+              title: item.title,
+              url: item.url,
+              repository: item.repository,
+              author: item.author,
+              attention: attentionFlags,
+            });
+            activityItem.assignees = toActivityUsers(item.assignees);
+            activityItem.businessDaysOpen = item.ageDays ?? null;
+            if (item.inProgressAgeDays !== undefined) {
+              activityItem.businessDaysSinceInProgress =
+                item.inProgressAgeDays ?? null;
+              activityItem.businessDaysInProgressOpen =
+                item.inProgressAgeDays ?? null;
+            }
+
+            const iconInfo = resolveActivityIcon(activityItem);
+            const referenceLabel = buildReferenceLabel(
+              item.repository,
+              item.number,
+            );
+            const isSelected = openItemId === item.id;
+            const detail = detailMap[item.id] ?? undefined;
+            const isDetailLoading = loadingDetailIds.has(item.id);
+            const badges = [
+              highlightInProgress
+                ? "정체된 In Progress 이슈"
+                : "정체된 Backlog 이슈",
+            ];
+            const metadata = (
+              <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground/80">
+                <div className="flex flex-wrap items-center gap-3">
+                  {activityItem.businessDaysOpen !== null && (
+                    <span>
+                      Age {differenceLabel(activityItem.businessDaysOpen, "일")}
                     </span>
-                    {highlightInProgress &&
-                    item.inProgressAgeDays !== undefined ? (
-                      <span className={chipClass}>
-                        In Progress {formatDays(item.inProgressAgeDays)} 경과
+                  )}
+                  {highlightInProgress &&
+                    item.inProgressAgeDays !== undefined && (
+                      <span>
+                        Idle{" "}
+                        {differenceLabel(item.inProgressAgeDays ?? null, "일")}
                       </span>
-                    ) : null}
-                  </div>
+                    )}
+                  {item.updatedAt && (
+                    <span>{formatRelative(item.updatedAt) ?? "-"}</span>
+                  )}
+                  {item.author && <span>생성자 {formatUser(item.author)}</span>}
+                  {item.assignees.length > 0 && (
+                    <span>담당자 {formatUserList(item.assignees)}</span>
+                  )}
+                </div>
+                <div className="flex flex-col items-end text-muted-foreground/80">
+                  <span>
+                    {item.updatedAt
+                      ? formatTimestamp(item.updatedAt, timezone)
+                      : "-"}
+                  </span>
                 </div>
               </div>
-            </li>
-          ))}
+            );
+
+            return (
+              <li key={item.id}>
+                <div className="rounded-md border border-border bg-card/30 p-3">
+                  <button
+                    type="button"
+                    aria-expanded={isSelected}
+                    className={cn(
+                      "block w-full cursor-pointer bg-transparent p-0 text-left transition-colors focus-visible:outline-none border-none",
+                      isSelected
+                        ? "text-foreground"
+                        : "text-foreground hover:text-primary",
+                    )}
+                    onClick={() => selectItem(item.id)}
+                  >
+                    <ActivityListItemSummary
+                      iconInfo={iconInfo}
+                      referenceLabel={referenceLabel}
+                      referenceUrl={item.url ?? undefined}
+                      title={item.title}
+                      metadata={metadata}
+                    />
+                  </button>
+                  {isSelected ? (
+                    <ActivityDetailOverlay
+                      item={activityItem}
+                      iconInfo={iconInfo}
+                      badges={badges}
+                      onClose={closeItem}
+                    >
+                      <FollowUpDetailContent
+                        detail={detail}
+                        isLoading={isDetailLoading}
+                      />
+                    </ActivityDetailOverlay>
+                  ) : null}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       ) : (
         <p className="text-sm text-muted-foreground">
@@ -895,9 +1518,11 @@ function IssueList({
 function MentionList({
   items,
   emptyText,
+  timezone,
 }: {
   items: MentionAttentionItem[];
   emptyText: string;
+  timezone: string;
 }) {
   const [targetFilter, setTargetFilter] = useState("all");
   const [authorFilter, setAuthorFilter] = useState("all");
@@ -986,6 +1611,9 @@ function MentionList({
 
   const metricLabel = "경과일수";
 
+  const { openItemId, detailMap, loadingDetailIds, selectItem, closeItem } =
+    useActivityDetailState();
+
   if (!items.length) {
     return <p className="text-sm text-muted-foreground">{emptyText}</p>;
   }
@@ -1055,37 +1683,100 @@ function MentionList({
 
       {sortedItems.length ? (
         <ul className="space-y-4">
-          {sortedItems.map((item) => {
-            const listKey = `${item.commentId}:${item.target?.id ?? "unknown"}`;
-            return (
-              <li key={listKey}>
-                <div className="rounded-lg border border-border/50 p-4">
-                  <div className="flex flex-col gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {renderLink(
-                        item.url,
-                        `${formatRepository(item.container.repository)}#${item.container.number ?? "?"} 코멘트`,
-                      )}
-                    </div>
-                    {item.commentExcerpt ? (
-                      <p className="text-sm text-muted-foreground">
-                        “{item.commentExcerpt}”
-                      </p>
-                    ) : null}
-                    <div className="flex flex-wrap items-center gap-3 text-xs">
-                      <InfoBadge
-                        label="멘션 대상"
-                        value={formatUser(item.target)}
-                      />
-                      <InfoBadge
-                        label="요청자"
-                        value={formatUser(item.author)}
-                      />
-                      <span className={chipClass}>
-                        {formatDays(item.waitingDays)} 경과
-                      </span>
-                    </div>
+          {sortedItems.map((item, index) => {
+            const containerId = item.container.id?.trim();
+            const selectionId =
+              containerId && containerId.length > 0
+                ? containerId
+                : item.commentId;
+            const activityItem = createBaseActivityItem({
+              id: selectionId,
+              type:
+                item.container.type === "pull_request"
+                  ? "pull_request"
+                  : "issue",
+              number: item.container.number ?? null,
+              title: item.container.title,
+              url: item.container.url,
+              repository: item.container.repository,
+              author: item.author,
+              attention: { unansweredMention: true },
+            });
+            activityItem.businessDaysOpen = item.waitingDays ?? null;
+            activityItem.businessDaysIdle = item.waitingDays ?? null;
+
+            const iconInfo = resolveActivityIcon(activityItem);
+            const referenceLabel = `${buildReferenceLabel(
+              item.container.repository,
+              item.container.number ?? null,
+            )} 코멘트`;
+            const isSelected = openItemId === selectionId;
+            const detail = detailMap[selectionId] ?? undefined;
+            const isDetailLoading = loadingDetailIds.has(selectionId);
+            const badges = ["응답 없는 멘션"];
+            const metadata = (
+              <div className="flex flex-col gap-2 text-xs text-muted-foreground/80">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span>Age {differenceLabel(item.waitingDays, "일")}</span>
+                    <span>Idle {differenceLabel(item.waitingDays, "일")}</span>
+                    <span>{formatRelative(item.mentionedAt) ?? "-"}</span>
+                    {item.target && (
+                      <span>멘션 대상 {formatUser(item.target)}</span>
+                    )}
+                    {item.author && (
+                      <span>요청자 {formatUser(item.author)}</span>
+                    )}
                   </div>
+                  <div className="flex flex-col items-end text-muted-foreground/80">
+                    <span>{formatTimestamp(item.mentionedAt, timezone)}</span>
+                  </div>
+                </div>
+                {item.commentExcerpt ? (
+                  <div className="text-muted-foreground/70">
+                    “{item.commentExcerpt}”
+                  </div>
+                ) : null}
+              </div>
+            );
+
+            return (
+              <li
+                key={`${item.commentId}:${item.target?.id ?? "unknown"}:${index}`}
+              >
+                <div className="rounded-md border border-border bg-card/30 p-3">
+                  <button
+                    type="button"
+                    aria-expanded={isSelected}
+                    className={cn(
+                      "block w-full cursor-pointer bg-transparent p-0 text-left transition-colors focus-visible:outline-none border-none",
+                      isSelected
+                        ? "text-foreground"
+                        : "text-foreground hover:text-primary",
+                    )}
+                    onClick={() => selectItem(selectionId)}
+                  >
+                    <ActivityListItemSummary
+                      iconInfo={iconInfo}
+                      referenceLabel={referenceLabel}
+                      referenceUrl={item.url ?? undefined}
+                      title={item.container.title}
+                      metadata={metadata}
+                    />
+                  </button>
+                  {isSelected ? (
+                    <ActivityDetailOverlay
+                      item={activityItem}
+                      iconInfo={iconInfo}
+                      badges={badges}
+                      onClose={closeItem}
+                    >
+                      <FollowUpDetailContent
+                        detail={detail}
+                        isLoading={isDetailLoading}
+                      />
+                    </ActivityDetailOverlay>
+                  ) : null}
                 </div>
               </li>
             );
@@ -1135,6 +1826,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
         <PullRequestList
           items={insights.staleOpenPrs}
           emptyText="현재 조건을 만족하는 PR이 없습니다."
+          timezone={insights.timezone}
         />
       ),
     },
@@ -1152,6 +1844,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
           showUpdated
           metricKey="inactivityDays"
           metricLabel="미업데이트 경과일수"
+          timezone={insights.timezone}
         />
       ),
     },
@@ -1167,6 +1860,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
         <ReviewRequestList
           items={insights.stuckReviewRequests}
           emptyText="현재 조건을 만족하는 리뷰 요청이 없습니다."
+          timezone={insights.timezone}
         />
       ),
     },
@@ -1182,6 +1876,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
           items={insights.backlogIssues}
           emptyText="현재 조건을 만족하는 이슈가 없습니다."
           metricLabel="경과일수"
+          timezone={insights.timezone}
         />
       ),
     },
@@ -1199,6 +1894,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
           highlightInProgress
           metricKey="inProgressAgeDays"
           metricLabel="In Progress 경과일수"
+          timezone={insights.timezone}
         />
       ),
     },
@@ -1214,6 +1910,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
         <MentionList
           items={insights.unansweredMentions}
           emptyText="현재 조건을 만족하는 멘션이 없습니다."
+          timezone={insights.timezone}
         />
       ),
     },

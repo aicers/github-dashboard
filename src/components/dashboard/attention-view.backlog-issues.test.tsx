@@ -184,18 +184,24 @@ describe("AttentionView backlog issues", () => {
     expect(
       within(firstItem).getByText("acme/repo-one#101"),
     ).toBeInTheDocument();
-    expect(within(firstItem).getByText("Alice (@alice)")).toBeInTheDocument();
     expect(
-      within(firstItem).getByText("Bob (@bob), Carol (@carol)"),
+      within(firstItem).getByText("생성자 Alice (@alice)"),
     ).toBeInTheDocument();
-    expect(within(firstItem).getByText("60일 경과")).toBeInTheDocument();
+    expect(
+      within(firstItem).getByText("담당자 Bob (@bob), Carol (@carol)"),
+    ).toBeInTheDocument();
+    expect(within(firstItem).getByText("Age 60일")).toBeInTheDocument();
 
     expect(
       within(secondItem).getByText("acme/repo-two#202"),
     ).toBeInTheDocument();
-    expect(within(secondItem).getByText("Carol (@carol)")).toBeInTheDocument();
-    expect(within(secondItem).getByText("Bob (@bob)")).toBeInTheDocument();
-    expect(within(secondItem).getByText("35일 경과")).toBeInTheDocument();
+    expect(
+      within(secondItem).getByText("생성자 Carol (@carol)"),
+    ).toBeInTheDocument();
+    expect(
+      within(secondItem).getByText("담당자 Bob (@bob)"),
+    ).toBeInTheDocument();
+    expect(within(secondItem).getByText("Age 35일")).toBeInTheDocument();
 
     expect(screen.getByText("생성자 경과일수 합계 순위")).toBeInTheDocument();
     expect(screen.getByText("담당자 건수 순위")).toBeInTheDocument();

@@ -175,14 +175,10 @@ describe("AttentionView idle pull requests", () => {
       throw new Error("Expected idle PR list items to be rendered");
     }
 
-    expect(within(firstItem).getByText("생성 40일 경과")).toBeInTheDocument();
-    expect(
-      within(firstItem).getByText("마지막 업데이트 15일 전"),
-    ).toBeInTheDocument();
-    expect(within(secondItem).getByText("생성 25일 경과")).toBeInTheDocument();
-    expect(
-      within(secondItem).getByText("마지막 업데이트 12일 전"),
-    ).toBeInTheDocument();
+    expect(within(firstItem).getByText("Age 40일")).toBeInTheDocument();
+    expect(within(firstItem).getByText("Idle 15일")).toBeInTheDocument();
+    expect(within(secondItem).getByText("Age 25일")).toBeInTheDocument();
+    expect(within(secondItem).getByText("Idle 12일")).toBeInTheDocument();
 
     expect(
       screen.getByText("생성자 미업데이트 경과일수 합계 순위"),
