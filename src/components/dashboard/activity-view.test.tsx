@@ -396,14 +396,15 @@ describe("ActivityView", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByRole("button", { name: "현재 필터 저장" }));
-    const nameInput = screen.getByPlaceholderText("필터 이름");
+    const manager = await screen.findByRole("dialog");
+    const nameInput = within(manager).getByPlaceholderText("필터 이름");
     fireEvent.change(nameInput, { target: { value: "Duplicate filter" } });
-    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    fireEvent.click(within(manager).getByRole("button", { name: "저장" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     expect(nameInput).toHaveValue("Duplicate filter");
     expect(
-      await screen.findByText("같은 이름의 필터가 이미 존재해요."),
+      await within(manager).findByText("같은 이름의 필터가 이미 존재해요."),
     ).toBeInTheDocument();
 
     consoleError.mockRestore();
@@ -461,17 +462,20 @@ describe("ActivityView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "현재 필터 저장" }));
 
-    const nameInput = screen.getByPlaceholderText("필터 이름");
+    const manager = await screen.findByRole("dialog");
+    const nameInput = within(manager).getByPlaceholderText("필터 이름");
     fireEvent.change(nameInput, { target: { value: newlySaved.name } });
 
-    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    fireEvent.click(within(manager).getByRole("button", { name: "저장" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
 
     const select = screen.getAllByRole("combobox")[0] as HTMLSelectElement;
     await waitFor(() => expect(select.value).toBe(newlySaved.id));
 
-    expect(screen.queryByPlaceholderText("필터 이름")).not.toBeInTheDocument();
     expect(
       screen.getByRole("option", { name: newlySaved.name }),
     ).toBeInTheDocument();
@@ -665,18 +669,21 @@ describe("ActivityView", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByRole("button", { name: "현재 필터 저장" }));
+    const manager = await screen.findByRole("dialog");
 
-    const nameInput = screen.getByPlaceholderText("필터 이름");
+    const nameInput = within(manager).getByPlaceholderText("필터 이름");
     fireEvent.change(nameInput, {
       target: { value: "Duplicate quick filter" },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    fireEvent.click(within(manager).getByRole("button", { name: "저장" }));
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     expect(
-      screen.getByText("기본 빠른 필터와 동일한 설정은 저장할 수 없어요."),
+      within(manager).getByText(
+        "기본 빠른 필터와 동일한 설정은 저장할 수 없어요.",
+      ),
     ).toBeInTheDocument();
 
     expect(nameInput).toHaveValue("Duplicate quick filter");
@@ -914,13 +921,17 @@ describe("ActivityView", () => {
       fireEvent.click(screen.getByRole("button", { name: "Issue" }));
       fireEvent.click(screen.getByRole("button", { name: "현재 필터 저장" }));
 
-      fireEvent.change(screen.getByPlaceholderText("필터 이름"), {
+      await act(async () => {});
+      const manager = screen.getByRole("dialog");
+
+      fireEvent.change(within(manager).getByPlaceholderText("필터 이름"), {
         target: { value: newlySaved.name },
       });
-      fireEvent.click(screen.getByRole("button", { name: "저장" }));
+      fireEvent.click(within(manager).getByRole("button", { name: "저장" }));
 
       await act(async () => {});
       expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
       expect(screen.getByText("필터를 저장했어요.")).toBeInTheDocument();
 

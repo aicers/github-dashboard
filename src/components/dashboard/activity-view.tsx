@@ -1240,12 +1240,20 @@ function QuickFilterButton({
 
 type SavedFiltersManagerProps = {
   open: boolean;
+  mode: "manage" | "save";
   filters: ActivitySavedFilter[];
   limit: number;
+  canCreate: boolean;
   busyId: string | null;
   message: string | null;
   error: string | null;
+  createName: string;
+  createError: string | null;
+  isCreating: boolean;
   onClose: () => void;
+  onCreate: () => void;
+  onCreateNameChange: (value: string) => void;
+  onCancelCreate: () => void;
   onApply: (filter: ActivitySavedFilter) => void;
   onRename: (filter: ActivitySavedFilter, name: string) => Promise<void>;
   onReplace: (filter: ActivitySavedFilter) => Promise<void>;
@@ -1254,18 +1262,27 @@ type SavedFiltersManagerProps = {
 
 const SavedFiltersManager = ({
   open,
+  mode,
   filters,
   limit,
+  canCreate,
   busyId,
   message,
   error,
+  createName,
+  createError,
+  isCreating,
   onClose,
+  onCreate,
+  onCreateNameChange,
+  onCancelCreate,
   onApply,
   onRename,
   onReplace,
   onDelete,
 }: SavedFiltersManagerProps) => {
   const [draftNames, setDraftNames] = useState<Record<string, string>>({});
+  const createInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -1299,6 +1316,20 @@ const SavedFiltersManager = ({
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    if (mode !== "save") {
+      return;
+    }
+    const target = createInputRef.current;
+    if (target) {
+      target.focus();
+      target.select();
+    }
+  }, [mode, open]);
 
   if (!open) {
     return null;
@@ -1342,6 +1373,64 @@ const SavedFiltersManager = ({
         ) : null}
 
         <div className="flex-1 overflow-y-auto">
+          {mode === "save" ? (
+            <section className="mb-6 space-y-3 rounded-lg border border-border/60 bg-muted/10 p-4">
+              <div className="flex flex-col gap-1">
+                <h4 className="text-sm font-semibold text-foreground">
+                  현재 필터 저장
+                </h4>
+                <p className="text-xs text-muted-foreground/80">
+                  Activity의 현재 조건을 저장해 두고 빠르게 불러올 수 있어요.
+                </p>
+              </div>
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  onCreate();
+                }}
+                className="flex flex-col gap-2 sm:flex-row sm:items-center"
+              >
+                <Input
+                  ref={createInputRef}
+                  value={createName}
+                  onChange={(event) => onCreateNameChange(event.target.value)}
+                  maxLength={120}
+                  placeholder="필터 이름"
+                  className="h-9 text-sm"
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={
+                      !canCreate || !createName.trim().length || isCreating
+                    }
+                    className="h-8 px-3 text-xs"
+                  >
+                    저장
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={onCancelCreate}
+                    className="h-8 px-3 text-xs"
+                  >
+                    취소
+                  </Button>
+                </div>
+              </form>
+              {createError ? (
+                <p className="text-xs text-rose-600">{createError}</p>
+              ) : null}
+              {!canCreate ? (
+                <p className="text-xs text-amber-600">
+                  최대 {limit}개의 필터를 저장할 수 있어요. 사용하지 않는 필터를
+                  삭제해 주세요.
+                </p>
+              ) : null}
+            </section>
+          ) : null}
           {filters.length === 0 ? (
             <div className="rounded-md border border-dashed border-border/70 bg-muted/10 p-6 text-center text-sm text-muted-foreground/80">
               저장된 필터가 아직 없어요. Activity에서 원하는 조건을 설정하고
@@ -1477,11 +1566,13 @@ export function ActivityView({
     null,
   );
   const [selectedSavedFilterId, setSelectedSavedFilterId] = useState("");
-  const [showSaveFilterForm, setShowSaveFilterForm] = useState(false);
   const [saveFilterName, setSaveFilterName] = useState("");
   const [saveFilterError, setSaveFilterError] = useState<string | null>(null);
   const [isSavingFilter, setIsSavingFilter] = useState(false);
   const [filtersManagerOpen, setFiltersManagerOpen] = useState(false);
+  const [filtersManagerMode, setFiltersManagerMode] = useState<
+    "manage" | "save"
+  >("manage");
   const [filtersManagerMessage, setFiltersManagerMessage] = useState<
     string | null
   >(null);
@@ -1515,6 +1606,9 @@ export function ActivityView({
       setFiltersManagerMessage(null);
       setFiltersManagerError(null);
       setFiltersManagerBusyId(null);
+      setFiltersManagerMode("manage");
+      setSaveFilterName("");
+      setSaveFilterError(null);
     }
   }, [filtersManagerOpen]);
 
@@ -2037,7 +2131,6 @@ export function ActivityView({
       setDraft(nextState);
       setApplied(nextState);
       setSelectedSavedFilterId("");
-      setShowSaveFilterForm(false);
       setSaveFilterError(null);
       setJumpDate("");
       void fetchFeed(nextState);
@@ -2058,7 +2151,6 @@ export function ActivityView({
       setDraft(nextState);
       setApplied(nextState);
       setSelectedSavedFilterId(filter.id);
-      setShowSaveFilterForm(false);
       setSaveFilterError(null);
       setJumpDate("");
       void fetchFeed(nextState);
@@ -2067,6 +2159,9 @@ export function ActivityView({
   );
 
   const saveCurrentFilters = useCallback(async () => {
+    setFiltersManagerMode("save");
+    setSaveFilterError(null);
+
     if (savedFilters.length >= savedFiltersLimit) {
       setSaveFilterError(
         `필터는 최대 ${savedFiltersLimit}개까지 저장할 수 있어요. 사용하지 않는 필터를 삭제해 주세요.`,
@@ -2087,7 +2182,8 @@ export function ActivityView({
     }
 
     setIsSavingFilter(true);
-    setSaveFilterError(null);
+    setFiltersManagerMessage(null);
+    setFiltersManagerError(null);
 
     try {
       const response = await fetch("/api/activity/filters", {
@@ -2141,8 +2237,9 @@ export function ActivityView({
       }
 
       setSavedFiltersLimit(limit);
-      setShowSaveFilterForm(false);
       setSaveFilterName("");
+      setFiltersManagerMode("manage");
+      setFiltersManagerOpen(false);
       showNotification("필터를 저장했어요.");
     } catch (error) {
       console.error(error);
@@ -2931,16 +3028,16 @@ export function ActivityView({
             size="sm"
             variant="outline"
             onClick={() => {
-              setShowSaveFilterForm((current) => !current);
+              setFiltersManagerMode("save");
+              setFiltersManagerOpen(true);
+              setFiltersManagerMessage(null);
+              setFiltersManagerError(null);
+              setFiltersManagerBusyId(null);
               setSaveFilterError(null);
-              if (!showSaveFilterForm && !saveFilterName.trim().length) {
-                const selected = savedFilters.find(
-                  (filter) => filter.id === selectedSavedFilterId,
-                );
-                if (selected) {
-                  setSaveFilterName(selected.name);
-                }
-              }
+              const selected = savedFilters.find(
+                (filter) => filter.id === selectedSavedFilterId,
+              );
+              setSaveFilterName(selected ? selected.name : "");
             }}
             disabled={!canSaveMoreFilters}
             className="h-7 px-2.5 text-xs"
@@ -2951,9 +3048,11 @@ export function ActivityView({
             size="sm"
             variant="ghost"
             onClick={() => {
+              setFiltersManagerMode("manage");
               setFiltersManagerOpen(true);
               setFiltersManagerMessage(null);
               setFiltersManagerError(null);
+              setSaveFilterError(null);
             }}
             className="h-7 px-2.5 text-xs"
           >
@@ -2980,41 +3079,6 @@ export function ActivityView({
               </span>
             ) : null}
           </div>
-        ) : null}
-        {showSaveFilterForm ? (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void saveCurrentFilters();
-            }}
-            className="flex flex-wrap items-center gap-2 pt-1"
-          >
-            <Input
-              value={saveFilterName}
-              onChange={(event) => setSaveFilterName(event.target.value)}
-              maxLength={120}
-              placeholder="필터 이름"
-              className="h-8 w-full max-w-xs text-sm"
-            />
-            <Button type="submit" size="sm" disabled={isSavingFilter}>
-              저장
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setShowSaveFilterForm(false);
-                setSaveFilterName("");
-                setSaveFilterError(null);
-              }}
-            >
-              취소
-            </Button>
-          </form>
-        ) : null}
-        {saveFilterError ? (
-          <p className="text-[11px] text-rose-600">{saveFilterError}</p>
         ) : null}
       </div>
       <Card>
@@ -4328,12 +4392,20 @@ export function ActivityView({
       {filtersManagerOpen ? (
         <SavedFiltersManager
           open={filtersManagerOpen}
+          mode={filtersManagerMode}
           filters={savedFilters}
           limit={savedFiltersLimit}
+          canCreate={canSaveMoreFilters}
           busyId={filtersManagerBusyId}
           message={filtersManagerMessage}
           error={filtersManagerError}
+          createName={saveFilterName}
+          createError={saveFilterError}
+          isCreating={isSavingFilter}
           onClose={() => setFiltersManagerOpen(false)}
+          onCreate={() => void saveCurrentFilters()}
+          onCreateNameChange={(value) => setSaveFilterName(value)}
+          onCancelCreate={() => setFiltersManagerOpen(false)}
           onApply={applySavedFilter}
           onRename={renameSavedFilter}
           onReplace={replaceSavedFilter}
