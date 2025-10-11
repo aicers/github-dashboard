@@ -170,7 +170,7 @@ function FollowUpOverview({
     <div className="space-y-6">
       <p className="text-sm text-foreground/80">
         각 하위 메뉴의 항목 수와 누적 경과일수를 요약했습니다. 자세한 내역은
-        왼쪽 메뉴에서 원하는 항목을 선택해 확인하세요.
+        상단 메뉴에서 원하는 항목을 선택해 확인하세요.
       </p>
       <div className="grid gap-4 lg:grid-cols-2">
         {summaries.map((summary) => (
@@ -1227,6 +1227,12 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
   const activeSection = activeSectionId
     ? sections.find((section) => section.id === activeSectionId)
     : undefined;
+  const overviewMenuDescription =
+    "전체 하위 메뉴의 요약 통계를 한눈에 확인합니다.";
+  const activeMenuDescription =
+    activeSectionId === null
+      ? overviewMenuDescription
+      : activeSection?.menuDescription;
 
   return (
     <section className="flex flex-col gap-8">
@@ -1255,57 +1261,53 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
         </button>
       </div>
 
-      <div className="flex flex-col gap-6 md:flex-row md:items-start">
+      <div className="flex flex-col gap-6">
         <nav
-          className="flex w-full flex-col gap-2 md:w-72"
+          className="flex w-full flex-col gap-3"
           aria-label="Follow-ups 하위 메뉴"
         >
-          <div className="mb-2 flex flex-col gap-2">
-            <span className="text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-primary/80">
-              Overview
-            </span>
+          <span className="text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-primary/80">
+            Overview
+          </span>
+          <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
             <button
               type="button"
               onClick={() => setActiveSectionId(null)}
               className={cn(
-                "group relative overflow-hidden rounded-lg border-2 px-4 py-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                "before:absolute before:-left-6 before:top-0 before:h-full before:w-20 before:-skew-x-12 before:bg-primary/10 before:transition-opacity before:content-['']",
+                "flex-shrink-0 whitespace-nowrap rounded-full border px-4 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                 activeSectionId === null
-                  ? "border-primary bg-primary/10 text-primary shadow-sm before:opacity-100"
-                  : "border-muted-foreground/40 bg-muted/20 text-foreground hover:border-primary/60 hover:bg-primary/10 before:opacity-50 hover:before:opacity-80",
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border/60 bg-background hover:border-primary/60 hover:bg-primary/10",
               )}
               aria-current={activeSectionId === null ? "true" : undefined}
             >
-              <div className="relative z-[1]">
-                <div className="text-sm font-semibold">Follow-ups 개요</div>
-                <p className="mt-2 text-xs text-foreground/80">
-                  전체 하위 메뉴의 요약 통계를 한눈에 확인합니다.
-                </p>
-              </div>
+              Follow-ups 개요
             </button>
+            {sections.map((section) => {
+              const selected = section.id === activeSectionId;
+              return (
+                <button
+                  key={section.id}
+                  type="button"
+                  onClick={() => setActiveSectionId(section.id)}
+                  className={cn(
+                    "flex-shrink-0 whitespace-nowrap rounded-full border px-4 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                    selected
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border/60 bg-background hover:border-primary/60 hover:bg-primary/10",
+                  )}
+                  aria-current={selected ? "true" : undefined}
+                >
+                  {section.menuLabel}
+                </button>
+              );
+            })}
           </div>
-          {sections.map((section) => {
-            const selected = section.id === activeSectionId;
-            return (
-              <button
-                key={section.id}
-                type="button"
-                onClick={() => setActiveSectionId(section.id)}
-                className={cn(
-                  "rounded-md border px-4 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                  selected
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "border-border/60 bg-background hover:border-border hover:bg-muted",
-                )}
-                aria-current={selected ? "true" : undefined}
-              >
-                <div className="text-sm font-semibold">{section.menuLabel}</div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {section.menuDescription}
-                </p>
-              </button>
-            );
-          })}
+          {activeMenuDescription ? (
+            <p className="text-xs text-muted-foreground">
+              {activeMenuDescription}
+            </p>
+          ) : null}
         </nav>
 
         <div className="flex-1">
@@ -1323,7 +1325,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
                 <CardHeader>
                   <CardTitle>Follow-ups 개요</CardTitle>
                   <CardDescription>
-                    전체 현황을 확인하거나 자세한 내용을 보려면 왼쪽 메뉴에서
+                    전체 현황을 확인하거나 자세한 내용을 보려면 상단 메뉴에서
                     항목을 선택하세요.
                   </CardDescription>
                 </CardHeader>
