@@ -9,6 +9,7 @@ import {
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ActivityView } from "@/components/dashboard/activity-view";
+import { buildActivityFilterOptionsFixture } from "@/components/test-harness/activity-fixtures";
 import type {
   ActivityListParams,
   ActivitySavedFilter,
@@ -477,6 +478,176 @@ describe("ActivityView", () => {
     expect(screen.getByText("필터를 저장했어요.")).toBeInTheDocument();
 
     expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it("disables saving when the saved filter limit is reached", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const props = createDefaultProps();
+
+    const savedFilters: ActivitySavedFilter[] = Array.from({ length: 2 }).map(
+      (_, index) => ({
+        id: `filter-${index + 1}`,
+        name: `Saved filter ${index + 1}`,
+        payload: buildActivityListParams({ repositoryIds: [`repo-${index}`] }),
+        createdAt: `2024-02-${index + 10}T00:00:00.000Z`,
+        updatedAt: `2024-02-${index + 10}T00:00:00.000Z`,
+      }),
+    );
+
+    mockFetchJsonOnce({ filters: savedFilters, limit: savedFilters.length });
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    expect(
+      screen.getByText(`${savedFilters.length} / ${savedFilters.length}`),
+    ).toBeInTheDocument();
+
+    expect(
+      screen.getByText(/최대 \d+개의 필터를 저장할 수 있어요/),
+    ).toBeInTheDocument();
+
+    expect(
+      screen.getByRole("button", { name: "현재 필터 저장" }),
+    ).toBeDisabled();
+
+    consoleError.mockRestore();
+  });
+
+  it("applies advanced filters with repository-scoped labels", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const filterOptions = buildActivityFilterOptionsFixture();
+
+    const props = {
+      ...createDefaultProps({
+        initialParams: buildActivityListParams({
+          labelKeys: ["bug", "feature"],
+        }),
+      }),
+      filterOptions,
+    };
+
+    mockFetchJsonOnce({
+      filters: [],
+      limit: filterOptions.repositories.length,
+    });
+
+    const advancedResult = buildActivityListResult({
+      items: [
+        buildActivityItem({
+          id: "activity-advanced",
+          title: "고급 필터 적용 결과",
+        }),
+      ],
+    });
+    mockFetchJsonOnce(advancedResult);
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
+
+    const repoInput = screen.getByPlaceholderText("저장소 선택");
+    fireEvent.focus(repoInput);
+    fireEvent.change(repoInput, { target: { value: "acme" } });
+    fireEvent.keyDown(repoInput, { key: "Enter", code: "Enter", charCode: 13 });
+    expect(screen.getByText("acme/alpha")).toBeInTheDocument();
+    expect(screen.queryByText("feature")).not.toBeInTheDocument();
+
+    const labelInput = screen.getByPlaceholderText("repo:label");
+    fireEvent.focus(labelInput);
+    fireEvent.change(labelInput, { target: { value: "bug" } });
+    fireEvent.keyDown(labelInput, {
+      key: "Enter",
+      code: "Enter",
+      charCode: 13,
+    });
+
+    await waitFor(() => expect(screen.getByText("bug")).toBeInTheDocument());
+    expect(screen.queryByText("feature")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "필터 적용" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    const request = fetchMock.mock.calls[1][0] as Request;
+    const url = new URL(request.url);
+    expect(url.searchParams.getAll("repositoryId")).toEqual(["repo-alpha"]);
+    expect(url.searchParams.getAll("labelKey")).toEqual(["bug"]);
+
+    await waitFor(() =>
+      expect(screen.getByText("고급 필터 적용 결과")).toBeInTheDocument(),
+    );
+
+    consoleError.mockRestore();
+  });
+
+  it("paginates activity items and shows the empty state on later pages", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const initialData = buildActivityListResult({
+      items: [
+        buildActivityItem({
+          id: "activity-initial",
+          title: "Initial activity",
+        }),
+      ],
+      pageInfo: { page: 1, perPage: 25, totalCount: 2, totalPages: 2 },
+    });
+
+    const props = createDefaultProps({ initialData });
+
+    mockFetchJsonOnce({ filters: [], limit: 30 });
+
+    const emptyResult = buildActivityListResult({
+      items: [],
+      pageInfo: { page: 2, perPage: 25, totalCount: 2, totalPages: 2 },
+    });
+    mockFetchJsonOnce(emptyResult);
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    expect(screen.getByText("페이지 1 / 2")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "이전" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "다음" })).not.toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "다음" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    const request = fetchMock.mock.calls[1][0] as Request;
+    const url = new URL(request.url);
+    expect(url.searchParams.get("page")).toBe("2");
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("필터 조건에 맞는 활동이 없습니다."),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.getByText("페이지 2 / 2")).toBeInTheDocument();
+
+    expect(screen.getByRole("button", { name: "이전" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "다음" })).toBeDisabled();
+
+    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalled());
+    const lastReplace = mockRouter.replace.mock.calls.at(-1);
+    const [path] = lastReplace ?? [""];
+    const params = new URLSearchParams((path ?? "").split("?")[1] ?? "");
+    expect(params.get("page")).toBe("2");
+
     consoleError.mockRestore();
   });
 
