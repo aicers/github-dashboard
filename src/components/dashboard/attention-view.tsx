@@ -1724,12 +1724,15 @@ function MentionList({
               containerId && containerId.length > 0
                 ? containerId
                 : item.commentId;
+            const activityType: ActivityItem["type"] =
+              item.container.type === "pull_request"
+                ? "pull_request"
+                : item.container.type === "discussion"
+                  ? "discussion"
+                  : "issue";
             const activityItem = createBaseActivityItem({
               id: selectionId,
-              type:
-                item.container.type === "pull_request"
-                  ? "pull_request"
-                  : "issue",
+              type: activityType,
               number: item.container.number ?? null,
               title: item.container.title,
               url: item.container.url,
