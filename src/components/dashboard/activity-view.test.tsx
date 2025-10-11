@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ActivityView } from "@/components/dashboard/activity-view";
@@ -282,6 +288,212 @@ describe("ActivityView", () => {
     expect(document.body.style.overflow).toBe(initialOverflow ?? "");
 
     expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it("saves the current filters and surfaces a success notification", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const props = createDefaultProps();
+
+    mockFetchJsonOnce({ filters: [], limit: 30 });
+
+    const newlySaved: ActivitySavedFilter = {
+      id: "filter-saved",
+      name: "Issue focus",
+      payload: buildActivityListParams({
+        types: ["issue"],
+        perPage: props.initialData.pageInfo.perPage,
+      }),
+      createdAt: "2024-02-03T00:00:00.000Z",
+      updatedAt: "2024-02-03T00:00:00.000Z",
+    };
+    mockFetchJsonOnce({ filter: newlySaved, limit: 25 });
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Issue" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "현재 필터 저장" }));
+
+    const nameInput = screen.getByPlaceholderText("필터 이름");
+    fireEvent.change(nameInput, { target: { value: newlySaved.name } });
+
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    const select = screen.getAllByRole("combobox")[0] as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe(newlySaved.id));
+
+    expect(screen.queryByPlaceholderText("필터 이름")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: newlySaved.name }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("필터를 저장했어요.")).toBeInTheDocument();
+
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it("blocks saving when the payload matches a built-in quick filter", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const props = createDefaultProps();
+
+    mockFetchJsonOnce({ filters: [], limit: 30 });
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "현재 필터 저장" }));
+
+    const nameInput = screen.getByPlaceholderText("필터 이름");
+    fireEvent.change(nameInput, {
+      target: { value: "Duplicate quick filter" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    expect(
+      screen.getByText("기본 빠른 필터와 동일한 설정은 저장할 수 없어요."),
+    ).toBeInTheDocument();
+
+    expect(nameInput).toHaveValue("Duplicate quick filter");
+
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it("clears the notification message after the timer elapses", async () => {
+    vi.useFakeTimers();
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    try {
+      const props = createDefaultProps();
+
+      mockFetchJsonOnce({ filters: [], limit: 30 });
+
+      const newlySaved: ActivitySavedFilter = {
+        id: "filter-saved",
+        name: "Issue focus",
+        payload: buildActivityListParams({
+          types: ["issue"],
+        }),
+        createdAt: "2024-02-03T00:00:00.000Z",
+        updatedAt: "2024-02-03T00:00:00.000Z",
+      };
+      mockFetchJsonOnce({ filter: newlySaved, limit: 30 });
+
+      render(<ActivityView {...props} />);
+
+      await act(async () => {});
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      fireEvent.click(screen.getByRole("button", { name: "Issue" }));
+      fireEvent.click(screen.getByRole("button", { name: "현재 필터 저장" }));
+
+      fireEvent.change(screen.getByPlaceholderText("필터 이름"), {
+        target: { value: newlySaved.name },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+      await act(async () => {});
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+
+      expect(screen.getByText("필터를 저장했어요.")).toBeInTheDocument();
+
+      act(() => {
+        vi.advanceTimersByTime(3000);
+      });
+      await act(async () => {});
+
+      expect(screen.queryByText("필터를 저장했어요.")).not.toBeInTheDocument();
+
+      expect(consoleError).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      consoleError.mockRestore();
+    }
+  });
+
+  it("invokes jump-to-date fetches with the normalized timestamp", async () => {
+    const props = createDefaultProps();
+
+    mockFetchJsonOnce({ filters: [], limit: 30 });
+
+    const jumpResult = buildActivityListResult({
+      items: [
+        buildActivityItem({
+          id: "jumped",
+          title: "Jump result",
+        }),
+      ],
+      pageInfo: { page: 1, perPage: 25, totalCount: 1, totalPages: 1 },
+    });
+
+    mockFetchJsonOnce(jumpResult);
+
+    render(<ActivityView {...props} />);
+
+    await act(async () => {});
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const dateInput =
+      document.querySelector<HTMLInputElement>('input[type="date"]');
+    expect(dateInput).not.toBeNull();
+
+    const inputElement = dateInput as HTMLInputElement;
+    fireEvent.change(inputElement, { target: { value: "2024-04-01" } });
+    fireEvent.click(screen.getByRole("button", { name: "이동" }));
+
+    await act(async () => {});
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const request = fetchMock.mock.calls[1][0];
+    const url = new URL(request.url);
+    expect(url.pathname).toBe("/api/activity");
+
+    const jumpTo = url.searchParams.get("jumpTo");
+    expect(jumpTo).toBe("2024-04-01T00:00Z");
+
+    expect(screen.getByText("Jump result")).toBeInTheDocument();
+  });
+
+  it("shows an error when saved filters fail to load", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const props = createDefaultProps();
+
+    mockFetchOnce({
+      status: 500,
+      json: { message: "boom" },
+    });
+
+    render(<ActivityView {...props} />);
+
+    await act(async () => {});
+    await act(async () => {});
+
+    expect(
+      screen.getByText("저장된 필터를 불러오지 못했어요."),
+    ).toBeInTheDocument();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    expect(consoleError).toHaveBeenCalled();
     consoleError.mockRestore();
   });
 });
