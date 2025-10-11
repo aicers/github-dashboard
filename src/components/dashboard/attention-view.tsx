@@ -1885,6 +1885,42 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
 
   const sections: FollowUpSection[] = [
     {
+      id: "backlog-issues",
+      menuLabel: "정체된 Backlog 이슈",
+      menuDescription: "40일 이상 In Progress로 이동하지 않은 이슈",
+      title: "40일 이상 (주말과 공휴일 제외) In Progress로 이동하지 않은 이슈",
+      description:
+        "프로젝트에 추가되었지만 주말과 공휴일을 제외한 40일 이상 진행 상태로 전환되지 않은 이슈입니다.",
+      content: (
+        <IssueList
+          items={insights.backlogIssues}
+          emptyText="현재 조건을 만족하는 이슈가 없습니다."
+          metricLabel="경과일수"
+          mentionWaitMap={mentionWaitMap}
+          timezone={insights.timezone}
+        />
+      ),
+    },
+    {
+      id: "stalled-in-progress-issues",
+      menuLabel: "정체된 In Progress 이슈",
+      menuDescription: "In Progress에서 20일 이상 머문 이슈",
+      title: "In Progress에서 20일 이상 (주말과 공휴일 제외) 정체된 이슈",
+      description:
+        "In Progress 상태로 전환된 후 주말과 공휴일을 제외한 20일 이상 종료되지 않은 이슈입니다.",
+      content: (
+        <IssueList
+          items={insights.stalledInProgressIssues}
+          emptyText="현재 조건을 만족하는 이슈가 없습니다."
+          highlightInProgress
+          metricKey="inProgressAgeDays"
+          metricLabel="In Progress 경과일수"
+          mentionWaitMap={mentionWaitMap}
+          timezone={insights.timezone}
+        />
+      ),
+    },
+    {
       id: "stale-open-prs",
       menuLabel: "오래된 PR",
       menuDescription: "20일 이상 머지되지 않은 PR",
@@ -1934,42 +1970,6 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
           items={insights.stuckReviewRequests}
           emptyText="현재 조건을 만족하는 리뷰 요청이 없습니다."
           reviewWaitMap={reviewWaitMap}
-          mentionWaitMap={mentionWaitMap}
-          timezone={insights.timezone}
-        />
-      ),
-    },
-    {
-      id: "backlog-issues",
-      menuLabel: "정체된 Backlog 이슈",
-      menuDescription: "40일 이상 In Progress로 이동하지 않은 이슈",
-      title: "40일 이상 (주말과 공휴일 제외) In Progress로 이동하지 않은 이슈",
-      description:
-        "프로젝트에 추가되었지만 주말과 공휴일을 제외한 40일 이상 진행 상태로 전환되지 않은 이슈입니다.",
-      content: (
-        <IssueList
-          items={insights.backlogIssues}
-          emptyText="현재 조건을 만족하는 이슈가 없습니다."
-          metricLabel="경과일수"
-          mentionWaitMap={mentionWaitMap}
-          timezone={insights.timezone}
-        />
-      ),
-    },
-    {
-      id: "stalled-in-progress-issues",
-      menuLabel: "정체된 In Progress 이슈",
-      menuDescription: "In Progress에서 20일 이상 머문 이슈",
-      title: "In Progress에서 20일 이상 (주말과 공휴일 제외) 정체된 이슈",
-      description:
-        "In Progress 상태로 전환된 후 주말과 공휴일을 제외한 20일 이상 종료되지 않은 이슈입니다.",
-      content: (
-        <IssueList
-          items={insights.stalledInProgressIssues}
-          emptyText="현재 조건을 만족하는 이슈가 없습니다."
-          highlightInProgress
-          metricKey="inProgressAgeDays"
-          metricLabel="In Progress 경과일수"
           mentionWaitMap={mentionWaitMap}
           timezone={insights.timezone}
         />
