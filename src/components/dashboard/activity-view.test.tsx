@@ -17,12 +17,14 @@ import type {
 import { buildActivityListParams } from "../../../tests/helpers/activity-filters";
 import {
   buildActivityItem,
+  buildActivityItemDetail,
   buildActivityListResult,
   buildActivityRepository,
   buildActivityUser,
   resetActivityHelperCounters,
 } from "../../../tests/helpers/activity-items";
 import {
+  createJsonResponse,
   fetchMock,
   mockFetchJsonOnce,
   mockFetchOnce,
@@ -470,6 +472,62 @@ describe("ActivityView", () => {
     ).toBeInTheDocument();
 
     expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it("retries detail loading after an error and shows the eventual success", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const props = createDefaultProps();
+
+    mockFetchJsonOnce({ filters: [], limit: 30 });
+    mockFetchOnce({
+      status: 500,
+      json: { message: "Detail failed" },
+    });
+
+    const detail = buildActivityItemDetail({
+      item: props.initialData.items[0],
+      body: "Detail body loaded",
+    });
+
+    let releaseDetail: (() => void) | null = null;
+    mockFetchOnce(async () => {
+      await new Promise<void>((resolve) => {
+        releaseDetail = resolve;
+      });
+      return createJsonResponse(detail);
+    });
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    const trigger = screen
+      .getByText("첫번째 이슈")
+      .closest("[role='button']") as HTMLElement;
+    fireEvent.click(trigger);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    expect(consoleError).toHaveBeenCalled();
+    await waitFor(() => expect(releaseDetail).not.toBeNull());
+
+    expect(await screen.findByText("Loading details...")).toBeInTheDocument();
+
+    await act(async () => {
+      releaseDetail?.();
+    });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    await screen.findByText("Detail body loaded");
+
+    expect(
+      screen.queryByText("선택한 항목의 내용을 불러오지 못했습니다."),
+    ).not.toBeInTheDocument();
+
     consoleError.mockRestore();
   });
 
