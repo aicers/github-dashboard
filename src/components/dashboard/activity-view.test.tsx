@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -369,6 +370,104 @@ describe("ActivityView", () => {
     ).toBeInTheDocument();
 
     expect(nameInput).toHaveValue("Duplicate quick filter");
+
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it("manages saved filters through rename, replace, and delete actions", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const existingPayload = buildActivityListParams({
+      types: ["pull_request"],
+      perPage: 25,
+    });
+    const existingFilter: ActivitySavedFilter = {
+      id: "filter-manage",
+      name: "Pull requests",
+      payload: existingPayload,
+      createdAt: "2024-02-10T00:00:00.000Z",
+      updatedAt: "2024-02-10T00:00:00.000Z",
+    };
+    const renamedFilter: ActivitySavedFilter = {
+      ...existingFilter,
+      name: "Renamed filter",
+      updatedAt: "2024-02-11T00:00:00.000Z",
+    };
+    const replacedPayload = buildActivityListParams({
+      types: ["pull_request", "issue"],
+      perPage: 25,
+    });
+    const replacedFilter: ActivitySavedFilter = {
+      ...renamedFilter,
+      payload: replacedPayload,
+      updatedAt: "2024-02-12T00:00:00.000Z",
+    };
+
+    mockFetchJsonOnce({ filters: [existingFilter], limit: 30 });
+    mockFetchJsonOnce({ filter: renamedFilter, limit: 30 });
+    mockFetchJsonOnce({ filter: replacedFilter, limit: 30 });
+    mockFetchJsonOnce({ filter: replacedFilter, limit: 30 });
+
+    const props = createDefaultProps({
+      initialParams: existingPayload,
+    });
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "필터 관리" }));
+
+    const manager = screen.getByRole("dialog");
+    const nameInput = within(manager).getByDisplayValue(existingFilter.name);
+    fireEvent.change(nameInput, { target: { value: renamedFilter.name } });
+    fireEvent.click(within(manager).getByRole("button", { name: "이름 저장" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await within(manager).findByText("필터 이름을 업데이트했어요.");
+    expect(
+      within(manager).getByDisplayValue(renamedFilter.name),
+    ).toBeInTheDocument();
+    expect(
+      within(manager).queryByText("필터를 삭제했어요."),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(within(manager).getByRole("button", { name: "닫기" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Issue" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "필터 관리" }));
+    const managerAfterToggle = screen.getByRole("dialog");
+    expect(
+      within(managerAfterToggle).queryByText("필터 이름을 업데이트했어요."),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(
+      within(managerAfterToggle).getByRole("button", {
+        name: "현재 필터로 업데이트",
+      }),
+    );
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    await within(managerAfterToggle).findByText(
+      "필터 조건을 최신 설정으로 업데이트했어요.",
+    );
+
+    fireEvent.click(
+      within(managerAfterToggle).getByRole("button", { name: "삭제" }),
+    );
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    await within(managerAfterToggle).findByText("필터를 삭제했어요.");
+    expect(
+      within(managerAfterToggle).getByText(/저장된 필터가 아직 없어요/),
+    ).toBeInTheDocument();
 
     expect(consoleError).not.toHaveBeenCalled();
     consoleError.mockRestore();
