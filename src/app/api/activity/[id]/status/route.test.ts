@@ -223,4 +223,164 @@ describe("PATCH /api/activity/[id]/status", () => {
     expect(recordActivityStatusMock).not.toHaveBeenCalled();
     expect(clearActivityStatusesMock).not.toHaveBeenCalled();
   });
+
+  it("returns 400 when the request body cannot be parsed", async () => {
+    const response = await handlers.PATCH(
+      new Request("http://localhost/api/activity/issue-1/status", {
+        method: "PATCH",
+        body: "not-json",
+      }),
+      buildContext("issue-1"),
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Invalid request body.");
+  });
+
+  it("returns 400 when the status value is missing or invalid", async () => {
+    const response = await handlers.PATCH(
+      new Request("http://localhost/api/activity/issue-1/status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "invalid" }),
+      }),
+      buildContext("issue-1"),
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Missing or invalid status value.");
+    expect(getActivityItemDetailMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when the expected status value is invalid", async () => {
+    const response = await handlers.PATCH(
+      new Request("http://localhost/api/activity/issue-1/status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "todo", expectedStatus: "invalid" }),
+      }),
+      buildContext("issue-1"),
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Missing or invalid expected status value.");
+    expect(getActivityItemDetailMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when the issue cannot be found", async () => {
+    getActivityItemDetailMock.mockResolvedValueOnce(null);
+
+    const response = await handlers.PATCH(
+      new Request("http://localhost/api/activity/missing/status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "todo" }),
+      }),
+      buildContext("missing"),
+    );
+
+    expect(response.status).toBe(404);
+    const body = await response.json();
+    expect(body.error).toBe("Issue not found.");
+  });
+
+  it("returns 404 when the target is not an issue", async () => {
+    getActivityItemDetailMock.mockResolvedValueOnce(
+      createDetail({
+        type: "pull_request",
+      }),
+    );
+
+    const response = await handlers.PATCH(
+      new Request("http://localhost/api/activity/pr-1/status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "todo" }),
+      }),
+      buildContext("pr-1"),
+    );
+
+    expect(response.status).toBe(404);
+    const body = await response.json();
+    expect(body.error).toBe("Issue not found.");
+  });
+
+  it("returns 400 when the issue id is invalid", async () => {
+    const response = await handlers.PATCH(
+      new Request("http://localhost/api/activity/%20/status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "todo" }),
+      }),
+      buildContext(" "),
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Invalid issue id.");
+  });
+});
+
+describe("DELETE /api/activity/[id]/status", () => {
+  let handlers: RouteHandlers;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    ensureSchemaMock.mockResolvedValue(undefined);
+    handlers = await import("./route");
+  });
+
+  it("clears activity statuses and returns the refreshed item", async () => {
+    getActivityItemDetailMock.mockResolvedValueOnce(
+      createDetail({ issueProjectStatus: "done" }),
+    );
+    getActivityItemDetailMock.mockResolvedValueOnce(
+      createDetail({ issueProjectStatus: "no_status" }),
+    );
+
+    const response = await handlers.DELETE(
+      new Request("http://localhost/api/activity/issue-1/status", {
+        method: "DELETE",
+      }),
+      buildContext("issue-1"),
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { item: ActivityItem };
+    expect(body.item.issueProjectStatus).toBe("no_status");
+    expect(clearActivityStatusesMock).toHaveBeenCalledWith("issue-1");
+  });
+
+  it("returns 400 when the issue id is invalid", async () => {
+    const response = await handlers.DELETE(
+      new Request("http://localhost/api/activity/%20/status", {
+        method: "DELETE",
+      }),
+      buildContext(" "),
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Invalid issue id.");
+    expect(clearActivityStatusesMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when the issue does not exist", async () => {
+    getActivityItemDetailMock.mockResolvedValueOnce(null);
+
+    const response = await handlers.DELETE(
+      new Request("http://localhost/api/activity/missing/status", {
+        method: "DELETE",
+      }),
+      buildContext("missing"),
+    );
+
+    expect(response.status).toBe(404);
+    const body = await response.json();
+    expect(body.error).toBe("Issue not found.");
+    expect(clearActivityStatusesMock).not.toHaveBeenCalled();
+  });
 });

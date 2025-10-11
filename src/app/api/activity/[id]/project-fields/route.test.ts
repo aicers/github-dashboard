@@ -224,6 +224,62 @@ describe("PATCH /api/activity/[id]/project-fields", () => {
     expect(body.item.issueTodoProjectPriority).toBe("P0");
     expect(applyProjectFieldOverridesMock).not.toHaveBeenCalled();
   });
+
+  it("returns 400 when the issue id is invalid", async () => {
+    const response = await handlers.PATCH(
+      new Request("http://localhost/api/activity/%20/project-fields", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priority: "P1" }),
+      }),
+      buildContext(" "),
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Invalid issue id.");
+    expect(applyProjectFieldOverridesMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when the issue cannot be found", async () => {
+    getActivityItemDetailMock.mockResolvedValueOnce(null);
+
+    const response = await handlers.PATCH(
+      new Request("http://localhost/api/activity/missing/project-fields", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priority: "P1" }),
+      }),
+      buildContext("missing"),
+    );
+
+    expect(response.status).toBe(404);
+    const body = await response.json();
+    expect(body.error).toBe("Issue not found.");
+    expect(applyProjectFieldOverridesMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when the target detail is not an issue", async () => {
+    getActivityItemDetailMock.mockResolvedValueOnce(
+      createDetail({
+        type: "pull_request",
+      }),
+    );
+
+    const response = await handlers.PATCH(
+      new Request("http://localhost/api/activity/pr-1/project-fields", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priority: "P1" }),
+      }),
+      buildContext("pr-1"),
+    );
+
+    expect(response.status).toBe(404);
+    const body = await response.json();
+    expect(body.error).toBe("Issue not found.");
+    expect(applyProjectFieldOverridesMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("DELETE /api/activity/[id]/project-fields", () => {
@@ -278,6 +334,36 @@ describe("DELETE /api/activity/[id]/project-fields", () => {
     expect(response.status).toBe(409);
     const body = await response.json();
     expect(body.todoStatus).toBe("in_progress");
+    expect(clearProjectFieldOverridesMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when the issue id is invalid", async () => {
+    const response = await handlers.DELETE(
+      new Request("http://localhost/api/activity/%20/project-fields", {
+        method: "DELETE",
+      }),
+      buildContext(" "),
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Invalid issue id.");
+    expect(clearProjectFieldOverridesMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when the issue cannot be found", async () => {
+    getActivityItemDetailMock.mockResolvedValueOnce(null);
+
+    const response = await handlers.DELETE(
+      new Request("http://localhost/api/activity/missing/project-fields", {
+        method: "DELETE",
+      }),
+      buildContext("missing"),
+    );
+
+    expect(response.status).toBe(404);
+    const body = await response.json();
+    expect(body.error).toBe("Issue not found.");
     expect(clearProjectFieldOverridesMock).not.toHaveBeenCalled();
   });
 });

@@ -195,4 +195,117 @@ test.describe("ActivityView (Playwright)", () => {
     await page.keyboard.press("Escape");
     await expect(page.locator('[role="dialog"]')).toHaveCount(0);
   });
+
+  test("applies advanced filters and paginates through filtered activity", async ({
+    page,
+  }) => {
+    await page.goto("/test-harness/auth/session?userId=activity-user");
+
+    await page.route("**/api/activity/filters**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ filters: [], limit: 2 }),
+      });
+    });
+
+    const initialList = buildActivityListResultFixture({
+      items: [
+        buildActivityItemFixture({
+          id: "issue-1",
+          number: 101,
+          title: "Initial issue",
+        }),
+      ],
+      pageInfo: { page: 1, perPage: 25, totalCount: 2, totalPages: 2 },
+    });
+
+    const advancedList = buildActivityListResultFixture({
+      items: [
+        buildActivityItemFixture({
+          id: "issue-advanced",
+          number: 202,
+          title: "Advanced filter match",
+        }),
+      ],
+      pageInfo: { page: 1, perPage: 25, totalCount: 2, totalPages: 2 },
+    });
+
+    const emptySecondPage = buildActivityListResultFixture({
+      items: [],
+      pageInfo: { page: 2, perPage: 25, totalCount: 2, totalPages: 2 },
+    });
+
+    await page.route("**/api/activity?**", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.searchParams.get("page") === "2") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(emptySecondPage),
+        });
+        return;
+      }
+      if (url.searchParams.get("repositoryId") === "repo-alpha") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(advancedList),
+        });
+        return;
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(initialList),
+      });
+    });
+
+    await page.goto(ACTIVITY_PATH);
+
+    await page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/activity/filters") &&
+        response.request().method() === "GET",
+    );
+
+    await page.getByRole("button", { name: "고급 필터 보기" }).click();
+
+    const repoInput = page.getByPlaceholder("저장소 선택");
+    await repoInput.fill("acme");
+    await repoInput.press("Enter");
+
+    const labelInput = page.getByPlaceholder("repo:label");
+    await labelInput.fill("bug");
+    await labelInput.press("Enter");
+
+    const applyResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/activity") &&
+        response.request().method() === "GET" &&
+        response.url().includes("repositoryId=repo-alpha"),
+    );
+    await page.getByRole("button", { name: "필터 적용" }).click();
+    await applyResponse;
+
+    await expect(
+      page.getByRole("button", { name: /Advanced filter match/ }),
+    ).toBeVisible();
+
+    const nextPageResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/activity") &&
+        response.request().method() === "GET" &&
+        response.url().includes("page=2"),
+    );
+    await page.getByRole("button", { name: "다음" }).click();
+    await nextPageResponse;
+
+    await expect(
+      page.getByText("필터 조건에 맞는 활동이 없습니다."),
+    ).toBeVisible();
+    await expect(page.getByText("페이지 2 / 2 (총 2건)")).toBeVisible();
+    await expect(page.getByRole("button", { name: "다음" })).toBeDisabled();
+  });
 });
