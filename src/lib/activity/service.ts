@@ -23,7 +23,11 @@ import type {
   ActivityUser,
   IssueProjectStatus,
 } from "@/lib/activity/types";
-import { getAttentionInsights } from "@/lib/dashboard/attention";
+import {
+  getAttentionInsights,
+  type MentionAttentionItem,
+  type ReviewRequestAttentionItem,
+} from "@/lib/dashboard/attention";
 import {
   differenceInBusinessDays,
   differenceInBusinessDaysOrNull,
@@ -139,6 +143,8 @@ type AttentionSets = {
   idlePullRequests: Set<string>;
   backlogIssues: Set<string>;
   stalledIssues: Set<string>;
+  reviewRequestDetails: Map<string, ReviewRequestAttentionItem[]>;
+  mentionDetails: Map<string, MentionAttentionItem[]>;
 };
 
 type AttentionFilterSelection = {
@@ -223,6 +229,83 @@ function mapUsers(ids: string[], users: Map<string, ActivityUser>) {
     }
   });
   return result;
+}
+
+type UserReferenceLike = {
+  id: string;
+  login: string | null;
+  name: string | null;
+} | null;
+
+function mapReferencedUser(
+  reference: UserReferenceLike,
+  users: Map<string, ActivityUser>,
+): ActivityUser | null {
+  if (!reference?.id) {
+    return null;
+  }
+
+  const profile = users.get(reference.id);
+  if (profile) {
+    return {
+      ...profile,
+      login: profile.login ?? reference.login,
+      name: profile.name ?? reference.name,
+    };
+  }
+
+  return {
+    id: reference.id,
+    login: reference.login ?? null,
+    name: reference.name ?? null,
+    avatarUrl: null,
+  };
+}
+
+function dedupeReviewRequestDetails(details: ReviewRequestAttentionItem[]) {
+  const byReviewer = new Map<string, ReviewRequestAttentionItem>();
+  const fallback = new Map<string, ReviewRequestAttentionItem>();
+
+  details.forEach((detail) => {
+    const reviewerId = detail.reviewer?.id?.trim();
+    const key = reviewerId && reviewerId.length > 0 ? reviewerId : detail.id;
+    const targetMap = reviewerId ? byReviewer : fallback;
+    const existing = targetMap.get(key);
+    if (!existing || detail.waitingDays > existing.waitingDays) {
+      targetMap.set(key, detail);
+    }
+  });
+
+  return [
+    ...byReviewer.values(),
+    ...fallback.values().filter((detail) => !byReviewer.has(detail.id)),
+  ];
+}
+
+function dedupeMentionDetails(details: MentionAttentionItem[]) {
+  const byTarget = new Map<string, MentionAttentionItem>();
+  const fallback = new Map<string, MentionAttentionItem>();
+
+  details.forEach((detail) => {
+    const targetId = detail.target?.id?.trim();
+    const key = targetId && targetId.length > 0 ? targetId : detail.commentId;
+    const targetMap = targetId ? byTarget : fallback;
+    const existing = targetMap.get(key);
+    if (!existing || detail.waitingDays > existing.waitingDays) {
+      targetMap.set(key, detail);
+    }
+  });
+
+  return [
+    ...byTarget.values(),
+    ...fallback.values().filter((detail) => {
+      const fallbackKey = detail.commentId;
+      if (!fallbackKey) {
+        return true;
+      }
+      return !byTarget.has(fallbackKey);
+    }),
+  ];
 }
 
 function buildLabels(row: ActivityRow): ActivityLabel[] {
@@ -793,6 +876,8 @@ async function resolveAttentionSets(
   const idlePullRequests = new Set<string>();
   const backlogIssues = new Set<string>();
   const stalledIssues = new Set<string>();
+  const reviewRequestDetails = new Map<string, ReviewRequestAttentionItem[]>();
+  const mentionDetails = new Map<string, MentionAttentionItem[]>();
 
   insights.unansweredMentions.forEach((item) => {
     if (item.waitingDays >= thresholds.unansweredMentionDays) {
@@ -801,12 +886,24 @@ async function resolveAttentionSets(
         unansweredMentions.add(id);
       }
     }
+
+    const containerId = item.container.id;
+    if (containerId) {
+      const existing = mentionDetails.get(containerId) ?? [];
+      existing.push(item);
+      mentionDetails.set(containerId, existing);
+    }
   });
 
   insights.stuckReviewRequests.forEach((item) => {
     if (item.waitingDays >= thresholds.reviewRequestDays) {
       reviewRequests.add(item.pullRequest.id);
     }
+
+    const pullRequestId = item.pullRequest.id;
+    const existing = reviewRequestDetails.get(pullRequestId) ?? [];
+    existing.push(item);
+    reviewRequestDetails.set(pullRequestId, existing);
   });
 
   insights.staleOpenPrs.forEach((item) => {
@@ -842,6 +939,8 @@ async function resolveAttentionSets(
     idlePullRequests,
     backlogIssues,
     stalledIssues,
+    reviewRequestDetails,
+    mentionDetails,
   };
 }
 
@@ -1783,6 +1882,32 @@ function buildActivityItem(
     issueProjectStatusLocked = false;
   }
 
+  const reviewRequestDetails =
+    sets.reviewRequestDetails.get(row.id) ??
+    ([] as ReviewRequestAttentionItem[]);
+  const dedupedReviewRequests =
+    dedupeReviewRequestDetails(reviewRequestDetails);
+  const reviewRequestWaits = dedupedReviewRequests.length
+    ? dedupedReviewRequests.map((detail) => ({
+        id: detail.id,
+        reviewer: mapReferencedUser(detail.reviewer ?? null, users),
+        requestedAt: toIso(detail.requestedAt),
+        businessDaysWaiting: detail.waitingDays ?? null,
+      }))
+    : undefined;
+
+  const mentionDetails =
+    sets.mentionDetails.get(row.id) ?? ([] as MentionAttentionItem[]);
+  const dedupedMentions = dedupeMentionDetails(mentionDetails);
+  const mentionWaits = dedupedMentions.length
+    ? dedupedMentions.map((detail) => ({
+        id: detail.commentId,
+        user: mapReferencedUser(detail.target ?? null, users),
+        mentionedAt: toIso(detail.mentionedAt),
+        businessDaysWaiting: detail.waitingDays ?? null,
+      }))
+    : undefined;
+
   return {
     id: row.id,
     type: row.item_type,
@@ -1846,6 +1971,8 @@ function buildActivityItem(
     businessDaysIdle,
     businessDaysSinceInProgress,
     businessDaysInProgressOpen,
+    reviewRequestWaits,
+    mentionWaits,
     attention: buildAttentionFlags(row, sets, status),
   };
 }

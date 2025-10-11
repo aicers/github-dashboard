@@ -47,7 +47,7 @@ import { cn } from "@/lib/utils";
 import { ActivityDetailOverlay } from "./activity/activity-detail-overlay";
 import { ActivityListItemSummary } from "./activity/activity-list-item-summary";
 import {
-  differenceLabel,
+  buildActivityMetricEntries,
   formatRelative,
   resolveActivityIcon,
 } from "./activity/shared";
@@ -127,6 +127,28 @@ function toActivityUsers(users: UserReference[]): ActivityUser[] {
   return users
     .map((user) => toActivityUser(user))
     .filter((user): user is ActivityUser => user !== null);
+}
+
+function toActivityReviewWaits(
+  entries: ReviewRequestAttentionItem[],
+): NonNullable<ActivityItem["reviewRequestWaits"]> {
+  return entries.map((entry) => ({
+    id: entry.id,
+    reviewer: toActivityUser(entry.reviewer ?? null),
+    requestedAt: entry.requestedAt ?? null,
+    businessDaysWaiting: entry.waitingDays ?? null,
+  }));
+}
+
+function toActivityMentionWaits(
+  entries: MentionAttentionItem[],
+): NonNullable<ActivityItem["mentionWaits"]> {
+  return entries.map((entry) => ({
+    id: entry.commentId,
+    user: toActivityUser(entry.target ?? null),
+    mentionedAt: entry.mentionedAt ?? null,
+    businessDaysWaiting: entry.waitingDays ?? null,
+  }));
 }
 
 function toActivityRepository(
@@ -621,6 +643,8 @@ function PullRequestList({
   showUpdated,
   metricKey = "ageDays",
   metricLabel = "경과일수",
+  reviewWaitMap,
+  mentionWaitMap,
   timezone,
 }: {
   items: PullRequestAttentionItem[];
@@ -628,6 +652,8 @@ function PullRequestList({
   showUpdated?: boolean;
   metricKey?: "ageDays" | "inactivityDays";
   metricLabel?: string;
+  reviewWaitMap: Map<string, ReviewRequestAttentionItem[]>;
+  mentionWaitMap: Map<string, MentionAttentionItem[]>;
   timezone: string;
 }) {
   const [authorFilter, setAuthorFilter] = useState("all");
@@ -830,6 +856,16 @@ function PullRequestList({
             if (item.inactivityDays !== undefined) {
               activityItem.businessDaysIdle = item.inactivityDays ?? null;
             }
+            const reviewWaitDetails = reviewWaitMap.get(item.id) ?? [];
+            if (reviewWaitDetails.length) {
+              activityItem.reviewRequestWaits =
+                toActivityReviewWaits(reviewWaitDetails);
+            }
+            const mentionDetails = mentionWaitMap.get(item.id) ?? [];
+            if (mentionDetails.length) {
+              activityItem.mentionWaits =
+                toActivityMentionWaits(mentionDetails);
+            }
 
             const iconInfo = resolveActivityIcon(activityItem);
             const referenceLabel = buildReferenceLabel(
@@ -840,21 +876,13 @@ function PullRequestList({
             const detail = detailMap[item.id] ?? undefined;
             const isDetailLoading = loadingDetailIds.has(item.id);
             const badges = [showUpdated ? "업데이트 없는 PR" : "오래된 PR"];
-            const ageLabel =
-              activityItem.businessDaysOpen !== null &&
-              activityItem.businessDaysOpen !== undefined
-                ? differenceLabel(activityItem.businessDaysOpen, "일")
-                : null;
-            const idleLabel =
-              activityItem.businessDaysIdle !== null &&
-              activityItem.businessDaysIdle !== undefined
-                ? differenceLabel(activityItem.businessDaysIdle, "일")
-                : null;
+            const metrics = buildActivityMetricEntries(activityItem);
             const metadata = (
               <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground/80">
                 <div className="flex flex-wrap items-center gap-3">
-                  <span>Age {ageLabel ?? "-"}</span>
-                  <span>Idle {idleLabel ?? "-"}</span>
+                  {metrics.map((metric) => (
+                    <span key={metric.key}>{metric.content}</span>
+                  ))}
                   {item.updatedAt && (
                     <span>{formatRelative(item.updatedAt) ?? "-"}</span>
                   )}
@@ -925,10 +953,14 @@ function PullRequestList({
 function ReviewRequestList({
   items,
   emptyText,
+  reviewWaitMap,
+  mentionWaitMap,
   timezone,
 }: {
   items: ReviewRequestAttentionItem[];
   emptyText: string;
+  reviewWaitMap: Map<string, ReviewRequestAttentionItem[]>;
+  mentionWaitMap: Map<string, MentionAttentionItem[]>;
   timezone: string;
 }) {
   const [authorFilter, setAuthorFilter] = useState("all");
@@ -1115,6 +1147,20 @@ function ReviewRequestList({
             activityItem.businessDaysOpen = item.pullRequestAgeDays ?? null;
             activityItem.businessDaysIdle =
               item.pullRequestInactivityDays ?? item.waitingDays ?? null;
+            const reviewWaitDetails =
+              reviewWaitMap.get(item.pullRequest.id) ?? [];
+            if (reviewWaitDetails.length) {
+              activityItem.reviewRequestWaits =
+                toActivityReviewWaits(reviewWaitDetails);
+            } else {
+              activityItem.reviewRequestWaits = toActivityReviewWaits([item]);
+            }
+            const mentionDetails =
+              mentionWaitMap.get(item.pullRequest.id) ?? [];
+            if (mentionDetails.length) {
+              activityItem.mentionWaits =
+                toActivityMentionWaits(mentionDetails);
+            }
 
             const iconInfo = resolveActivityIcon(activityItem);
             const referenceLabel = buildReferenceLabel(
@@ -1125,32 +1171,20 @@ function ReviewRequestList({
             const detail = detailMap[selectionId] ?? undefined;
             const isDetailLoading = loadingDetailIds.has(selectionId);
             const badges = ["응답 없는 리뷰 요청"];
-            const ageLabel =
-              activityItem.businessDaysOpen !== null &&
-              activityItem.businessDaysOpen !== undefined
-                ? differenceLabel(activityItem.businessDaysOpen, "일")
-                : null;
-            const idleLabel =
-              activityItem.businessDaysIdle !== null &&
-              activityItem.businessDaysIdle !== undefined
-                ? differenceLabel(activityItem.businessDaysIdle, "일")
-                : null;
+            const metrics = buildActivityMetricEntries(activityItem);
             const metadata = (
               <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground/80">
                 <div className="flex flex-wrap items-center gap-3">
-                  <span>Age {ageLabel ?? "-"}</span>
-                  <span>Idle {idleLabel ?? "-"}</span>
+                  {metrics.map((metric) => (
+                    <span key={metric.key}>{metric.content}</span>
+                  ))}
                   {item.pullRequestUpdatedAt && (
                     <span>
                       {formatRelative(item.pullRequestUpdatedAt) ?? "-"}
                     </span>
                   )}
-                  <span>대기 {differenceLabel(item.waitingDays, "일")}</span>
                   {item.pullRequest.author && (
                     <span>생성자 {formatUser(item.pullRequest.author)}</span>
-                  )}
-                  {item.reviewer && (
-                    <span>대기 중 리뷰어 {formatUser(item.reviewer)}</span>
                   )}
                 </div>
                 <div className="flex flex-col items-end text-muted-foreground/80">
@@ -1218,6 +1252,7 @@ function IssueList({
   highlightInProgress,
   metricKey = "ageDays",
   metricLabel = "경과일수",
+  mentionWaitMap,
   timezone,
 }: {
   items: IssueAttentionItem[];
@@ -1225,6 +1260,7 @@ function IssueList({
   highlightInProgress?: boolean;
   metricKey?: "ageDays" | "inProgressAgeDays";
   metricLabel?: string;
+  mentionWaitMap: Map<string, MentionAttentionItem[]>;
   timezone: string;
 }) {
   const [authorFilter, setAuthorFilter] = useState("all");
@@ -1421,6 +1457,11 @@ function IssueList({
               activityItem.businessDaysInProgressOpen =
                 item.inProgressAgeDays ?? null;
             }
+            const mentionDetails = mentionWaitMap.get(item.id) ?? [];
+            if (mentionDetails.length) {
+              activityItem.mentionWaits =
+                toActivityMentionWaits(mentionDetails);
+            }
 
             const iconInfo = resolveActivityIcon(activityItem);
             const referenceLabel = buildReferenceLabel(
@@ -1435,22 +1476,13 @@ function IssueList({
                 ? "정체된 In Progress 이슈"
                 : "정체된 Backlog 이슈",
             ];
-            const ageLabel =
-              activityItem.businessDaysOpen !== null &&
-              activityItem.businessDaysOpen !== undefined
-                ? differenceLabel(activityItem.businessDaysOpen, "일")
-                : null;
-            const idleLabel =
-              highlightInProgress && item.inProgressAgeDays !== undefined
-                ? differenceLabel(item.inProgressAgeDays ?? null, "일")
-                : null;
+            const metrics = buildActivityMetricEntries(activityItem);
             const metadata = (
               <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground/80">
                 <div className="flex flex-wrap items-center gap-3">
-                  <span>Age {ageLabel ?? "-"}</span>
-                  {highlightInProgress ? (
-                    <span>Idle {idleLabel ?? "-"}</span>
-                  ) : null}
+                  {metrics.map((metric) => (
+                    <span key={metric.key}>{metric.content}</span>
+                  ))}
                   {item.updatedAt && (
                     <span>{formatRelative(item.updatedAt) ?? "-"}</span>
                   )}
@@ -1707,6 +1739,7 @@ function MentionList({
             });
             activityItem.businessDaysOpen = item.waitingDays ?? null;
             activityItem.businessDaysIdle = item.waitingDays ?? null;
+            activityItem.mentionWaits = toActivityMentionWaits([item]);
 
             const iconInfo = resolveActivityIcon(activityItem);
             const referenceLabel = `${buildReferenceLabel(
@@ -1717,13 +1750,14 @@ function MentionList({
             const detail = detailMap[selectionId] ?? undefined;
             const isDetailLoading = loadingDetailIds.has(selectionId);
             const badges = ["응답 없는 멘션"];
-            const ageLabel = differenceLabel(item.waitingDays, "일");
+            const metrics = buildActivityMetricEntries(activityItem);
             const metadata = (
               <div className="flex flex-col gap-2 text-xs text-muted-foreground/80">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex flex-wrap items-center gap-3">
-                    <span>Age {ageLabel ?? "-"}</span>
-                    <span>Idle {ageLabel ?? "-"}</span>
+                    {metrics.map((metric) => (
+                      <span key={metric.key}>{metric.content}</span>
+                    ))}
                     <span>{formatRelative(item.mentionedAt) ?? "-"}</span>
                     {item.target && (
                       <span>멘션 대상 {formatUser(item.target)}</span>
@@ -1812,6 +1846,34 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
   const router = useRouter();
   const [isRefreshing, startTransition] = useTransition();
 
+  const reviewWaitMap = useMemo(() => {
+    const map = new Map<string, ReviewRequestAttentionItem[]>();
+    insights.stuckReviewRequests.forEach((item) => {
+      const prId = item.pullRequest.id;
+      if (!prId) {
+        return;
+      }
+      const existing = map.get(prId) ?? [];
+      existing.push(item);
+      map.set(prId, existing);
+    });
+    return map;
+  }, [insights.stuckReviewRequests]);
+
+  const mentionWaitMap = useMemo(() => {
+    const map = new Map<string, MentionAttentionItem[]>();
+    insights.unansweredMentions.forEach((item) => {
+      const containerId = item.container.id;
+      if (!containerId) {
+        return;
+      }
+      const existing = map.get(containerId) ?? [];
+      existing.push(item);
+      map.set(containerId, existing);
+    });
+    return map;
+  }, [insights.unansweredMentions]);
+
   const handleRefresh = () => {
     startTransition(() => {
       router.refresh();
@@ -1830,6 +1892,8 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
         <PullRequestList
           items={insights.staleOpenPrs}
           emptyText="현재 조건을 만족하는 PR이 없습니다."
+          reviewWaitMap={reviewWaitMap}
+          mentionWaitMap={mentionWaitMap}
           timezone={insights.timezone}
         />
       ),
@@ -1848,6 +1912,8 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
           showUpdated
           metricKey="inactivityDays"
           metricLabel="미업데이트 경과일수"
+          reviewWaitMap={reviewWaitMap}
+          mentionWaitMap={mentionWaitMap}
           timezone={insights.timezone}
         />
       ),
@@ -1864,6 +1930,8 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
         <ReviewRequestList
           items={insights.stuckReviewRequests}
           emptyText="현재 조건을 만족하는 리뷰 요청이 없습니다."
+          reviewWaitMap={reviewWaitMap}
+          mentionWaitMap={mentionWaitMap}
           timezone={insights.timezone}
         />
       ),
@@ -1880,6 +1948,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
           items={insights.backlogIssues}
           emptyText="현재 조건을 만족하는 이슈가 없습니다."
           metricLabel="경과일수"
+          mentionWaitMap={mentionWaitMap}
           timezone={insights.timezone}
         />
       ),
@@ -1898,6 +1967,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
           highlightInProgress
           metricKey="inProgressAgeDays"
           metricLabel="In Progress 경과일수"
+          mentionWaitMap={mentionWaitMap}
           timezone={insights.timezone}
         />
       ),

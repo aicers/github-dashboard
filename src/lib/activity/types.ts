@@ -120,6 +120,20 @@ export type ActivityLinkedIssue = {
 
 export type ActivityLinkedIssueFilter = "has_parent" | "has_sub";
 
+export type ActivityReviewRequestWait = {
+  id: string;
+  reviewer: ActivityUser | null;
+  requestedAt: string | null;
+  businessDaysWaiting: number | null;
+};
+
+export type ActivityMentionWait = {
+  id: string;
+  user: ActivityUser | null;
+  mentionedAt: string | null;
+  businessDaysWaiting: number | null;
+};
+
 export type ActivityItem = {
   id: string;
   type: ActivityItemType;
@@ -163,6 +177,8 @@ export type ActivityItem = {
   businessDaysIdle?: number | null;
   businessDaysSinceInProgress?: number | null;
   businessDaysInProgressOpen?: number | null;
+  reviewRequestWaits?: ActivityReviewRequestWait[];
+  mentionWaits?: ActivityMentionWait[];
   attention: ActivityAttentionFlags;
 };
 

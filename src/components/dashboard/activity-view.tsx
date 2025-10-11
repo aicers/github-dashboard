@@ -46,7 +46,7 @@ import { cn } from "@/lib/utils";
 import { ActivityDetailOverlay } from "./activity/activity-detail-overlay";
 import { ActivityListItemSummary } from "./activity/activity-list-item-summary";
 import {
-  differenceLabel,
+  buildActivityMetricEntries,
   formatRelative,
   resolveActivityIcon,
 } from "./activity/shared";
@@ -3897,6 +3897,7 @@ export function ActivityView({
                   return { key: statusKey, label, value: formatted };
                 },
               );
+              const metrics = buildActivityMetricEntries(item);
 
               return (
                 <div
@@ -3925,20 +3926,9 @@ export function ActivityView({
                       metadata={
                         <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground/80">
                           <div className="flex flex-wrap items-center gap-3">
-                            {item.businessDaysOpen !== null &&
-                              item.businessDaysOpen !== undefined && (
-                                <span>
-                                  Age{" "}
-                                  {differenceLabel(item.businessDaysOpen, "일")}
-                                </span>
-                              )}
-                            {item.businessDaysIdle !== null &&
-                              item.businessDaysIdle !== undefined && (
-                                <span>
-                                  Idle{" "}
-                                  {differenceLabel(item.businessDaysIdle, "일")}
-                                </span>
-                              )}
+                            {metrics.map((metric) => (
+                              <span key={metric.key}>{metric.content}</span>
+                            ))}
                             {item.updatedAt && (
                               <span>
                                 {formatRelative(item.updatedAt) ?? "-"}
@@ -3971,22 +3961,18 @@ export function ActivityView({
                                 {item.milestone.title ?? item.milestone.id}
                               </span>
                             )}
-                            {item.type === "issue" && (
-                              <>
-                                <span className="rounded bg-muted px-1.5 py-0.5 text-[11px]">
-                                  Status:{" "}
-                                  <span className="text-foreground">
-                                    {todoStatusLabel}
-                                  </span>
+                            {item.type === "issue" &&
+                              todoStatusLabel !== "-" && (
+                                <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-foreground">
+                                  {todoStatusLabel}
                                 </span>
-                                <span className="rounded bg-muted px-1.5 py-0.5 text-[11px]">
-                                  Priority:{" "}
-                                  <span className="text-foreground">
-                                    {todoPriorityLabel}
-                                  </span>
+                              )}
+                            {item.type === "issue" &&
+                              todoPriorityLabel !== "-" && (
+                                <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-foreground">
+                                  {todoPriorityLabel}
                                 </span>
-                              </>
-                            )}
+                              )}
                             {badges.map((badge) => (
                               <span
                                 key={badge}

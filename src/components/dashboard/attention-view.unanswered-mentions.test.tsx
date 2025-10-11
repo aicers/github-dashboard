@@ -241,10 +241,19 @@ describe("AttentionView unanswered mentions", () => {
     expect(
       within(primaryItem).getByText("요청자 Alice (@alice)"),
     ).toBeInTheDocument();
+    expect(
+      within(primaryItem).getByText("Mention @bob 11일"),
+    ).toBeInTheDocument();
 
     expect(within(issueItem).getByText("Idle 9일")).toBeInTheDocument();
+    expect(
+      within(issueItem).getByText("Mention @carol 9일"),
+    ).toBeInTheDocument();
 
     expect(within(secondaryItem).getByText("Idle 6일")).toBeInTheDocument();
+    expect(
+      within(secondaryItem).getByText("Mention @bob 6일"),
+    ).toBeInTheDocument();
 
     await user.selectOptions(targetFilter, "user-carol");
 

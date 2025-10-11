@@ -120,6 +120,85 @@ export function differenceLabel(
   return `${value.toString()}${suffix}`;
 }
 
+export type ActivityMetricEntry = { key: string; content: ReactNode };
+
+export function formatUserHandle(user: ActivityItem["author"]) {
+  if (!user) {
+    return null;
+  }
+
+  const base = user.login ?? user.name ?? user.id;
+  if (!base) {
+    return null;
+  }
+
+  const trimmed = base.trim();
+  if (!trimmed.length) {
+    return null;
+  }
+
+  return trimmed.startsWith("@") ? trimmed : `@${trimmed}`;
+}
+
+function sortByBusinessDays<
+  T extends { businessDaysWaiting: number | null | undefined },
+>(entries: T[]) {
+  return entries.slice().sort((a, b) => {
+    const left = a.businessDaysWaiting ?? 0;
+    const right = b.businessDaysWaiting ?? 0;
+    return right - left;
+  });
+}
+
+export function buildActivityMetricEntries(
+  item: ActivityItem,
+): ActivityMetricEntry[] {
+  const metrics: ActivityMetricEntry[] = [];
+
+  const ageLabel = differenceLabel(item.businessDaysOpen, "일") ?? "-";
+  metrics.push({ key: "age", content: <>Age {ageLabel}</> });
+
+  const idleLabel = differenceLabel(item.businessDaysIdle, "일") ?? "-";
+  metrics.push({ key: "idle", content: <>Idle {idleLabel}</> });
+
+  if (
+    item.businessDaysSinceInProgress !== undefined &&
+    item.businessDaysSinceInProgress !== null
+  ) {
+    const progressLabel =
+      differenceLabel(item.businessDaysSinceInProgress, "일") ?? "-";
+    metrics.push({ key: "progress", content: <>Progress {progressLabel}</> });
+  }
+
+  if (item.reviewRequestWaits?.length) {
+    const reviewWaits = sortByBusinessDays(item.reviewRequestWaits);
+    const parts = reviewWaits.map((wait) => {
+      const handle = formatUserHandle(wait.reviewer) ?? "-";
+      const waitLabel = differenceLabel(wait.businessDaysWaiting, "일") ?? "-";
+      return `${handle} ${waitLabel}`;
+    });
+    metrics.push({
+      key: "review",
+      content: <>Review {parts.join(", ")}</>,
+    });
+  }
+
+  if (item.mentionWaits?.length) {
+    const mentionWaits = sortByBusinessDays(item.mentionWaits);
+    const parts = mentionWaits.map((wait) => {
+      const handle = formatUserHandle(wait.user) ?? "-";
+      const waitLabel = differenceLabel(wait.businessDaysWaiting, "일") ?? "-";
+      return `${handle} ${waitLabel}`;
+    });
+    metrics.push({
+      key: "mention",
+      content: <>Mention {parts.join(", ")}</>,
+    });
+  }
+
+  return metrics;
+}
+
 export function formatRelative(value: string | null) {
   if (!value) {
     return null;
