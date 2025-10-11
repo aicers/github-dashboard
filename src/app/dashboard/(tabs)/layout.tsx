@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
+import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { DashboardTabs } from "@/components/dashboard/dashboard-tabs";
 import { readActiveSession } from "@/lib/auth/session";
 
@@ -15,7 +16,8 @@ export default async function DashboardTabsLayout({
   }
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-8 px-6 py-10">
+    <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 px-6 py-10">
+      <DashboardHeader userId={session.userId} />
       <DashboardTabs />
       <div className="flex-1 pb-10">{children}</div>
     </div>
