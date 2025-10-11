@@ -531,6 +531,52 @@ describe("ActivityView", () => {
     consoleError.mockRestore();
   });
 
+  it("aborts the detail request when the drawer closes before completion", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const props = createDefaultProps();
+
+    mockFetchJsonOnce({ filters: [], limit: 30 });
+
+    let aborted = false;
+    mockFetchOnce((_request, signal) => {
+      return new Promise<never>((_resolve, reject) => {
+        if (signal?.aborted) {
+          aborted = true;
+          reject(new DOMException("Aborted", "AbortError"));
+          return;
+        }
+        signal?.addEventListener("abort", () => {
+          aborted = true;
+          reject(new DOMException("Aborted", "AbortError"));
+        });
+      });
+    });
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    const trigger = screen
+      .getByText("첫번째 이슈")
+      .closest("[role='button']") as HTMLElement;
+    fireEvent.click(trigger);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "닫기" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    await waitFor(() => expect(aborted).toBe(true));
+
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
   it("clears the notification message after the timer elapses", async () => {
     vi.useFakeTimers();
     const consoleError = vi
