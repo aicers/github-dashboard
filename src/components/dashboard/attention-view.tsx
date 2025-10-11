@@ -840,20 +840,21 @@ function PullRequestList({
             const detail = detailMap[item.id] ?? undefined;
             const isDetailLoading = loadingDetailIds.has(item.id);
             const badges = [showUpdated ? "업데이트 없는 PR" : "오래된 PR"];
+            const ageLabel =
+              activityItem.businessDaysOpen !== null &&
+              activityItem.businessDaysOpen !== undefined
+                ? differenceLabel(activityItem.businessDaysOpen, "일")
+                : null;
+            const idleLabel =
+              activityItem.businessDaysIdle !== null &&
+              activityItem.businessDaysIdle !== undefined
+                ? differenceLabel(activityItem.businessDaysIdle, "일")
+                : null;
             const metadata = (
               <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground/80">
                 <div className="flex flex-wrap items-center gap-3">
-                  {activityItem.businessDaysOpen !== null && (
-                    <span>
-                      Age {differenceLabel(activityItem.businessDaysOpen, "일")}
-                    </span>
-                  )}
-                  {activityItem.businessDaysIdle !== null && (
-                    <span>
-                      Idle{" "}
-                      {differenceLabel(activityItem.businessDaysIdle, "일")}
-                    </span>
-                  )}
+                  <span>Age {ageLabel ?? "-"}</span>
+                  <span>Idle {idleLabel ?? "-"}</span>
                   {item.updatedAt && (
                     <span>{formatRelative(item.updatedAt) ?? "-"}</span>
                   )}
@@ -1124,20 +1125,21 @@ function ReviewRequestList({
             const detail = detailMap[selectionId] ?? undefined;
             const isDetailLoading = loadingDetailIds.has(selectionId);
             const badges = ["응답 없는 리뷰 요청"];
+            const ageLabel =
+              activityItem.businessDaysOpen !== null &&
+              activityItem.businessDaysOpen !== undefined
+                ? differenceLabel(activityItem.businessDaysOpen, "일")
+                : null;
+            const idleLabel =
+              activityItem.businessDaysIdle !== null &&
+              activityItem.businessDaysIdle !== undefined
+                ? differenceLabel(activityItem.businessDaysIdle, "일")
+                : null;
             const metadata = (
               <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground/80">
                 <div className="flex flex-wrap items-center gap-3">
-                  {activityItem.businessDaysOpen !== null && (
-                    <span>
-                      Age {differenceLabel(activityItem.businessDaysOpen, "일")}
-                    </span>
-                  )}
-                  {activityItem.businessDaysIdle !== null && (
-                    <span>
-                      Idle{" "}
-                      {differenceLabel(activityItem.businessDaysIdle, "일")}
-                    </span>
-                  )}
+                  <span>Age {ageLabel ?? "-"}</span>
+                  <span>Idle {idleLabel ?? "-"}</span>
                   {item.pullRequestUpdatedAt && (
                     <span>
                       {formatRelative(item.pullRequestUpdatedAt) ?? "-"}
@@ -1433,21 +1435,22 @@ function IssueList({
                 ? "정체된 In Progress 이슈"
                 : "정체된 Backlog 이슈",
             ];
+            const ageLabel =
+              activityItem.businessDaysOpen !== null &&
+              activityItem.businessDaysOpen !== undefined
+                ? differenceLabel(activityItem.businessDaysOpen, "일")
+                : null;
+            const idleLabel =
+              highlightInProgress && item.inProgressAgeDays !== undefined
+                ? differenceLabel(item.inProgressAgeDays ?? null, "일")
+                : null;
             const metadata = (
               <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground/80">
                 <div className="flex flex-wrap items-center gap-3">
-                  {activityItem.businessDaysOpen !== null && (
-                    <span>
-                      Age {differenceLabel(activityItem.businessDaysOpen, "일")}
-                    </span>
-                  )}
-                  {highlightInProgress &&
-                    item.inProgressAgeDays !== undefined && (
-                      <span>
-                        Idle{" "}
-                        {differenceLabel(item.inProgressAgeDays ?? null, "일")}
-                      </span>
-                    )}
+                  <span>Age {ageLabel ?? "-"}</span>
+                  {highlightInProgress ? (
+                    <span>Idle {idleLabel ?? "-"}</span>
+                  ) : null}
                   {item.updatedAt && (
                     <span>{formatRelative(item.updatedAt) ?? "-"}</span>
                   )}
@@ -1714,12 +1717,13 @@ function MentionList({
             const detail = detailMap[selectionId] ?? undefined;
             const isDetailLoading = loadingDetailIds.has(selectionId);
             const badges = ["응답 없는 멘션"];
+            const ageLabel = differenceLabel(item.waitingDays, "일");
             const metadata = (
               <div className="flex flex-col gap-2 text-xs text-muted-foreground/80">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex flex-wrap items-center gap-3">
-                    <span>Age {differenceLabel(item.waitingDays, "일")}</span>
-                    <span>Idle {differenceLabel(item.waitingDays, "일")}</span>
+                    <span>Age {ageLabel ?? "-"}</span>
+                    <span>Idle {ageLabel ?? "-"}</span>
                     <span>{formatRelative(item.mentionedAt) ?? "-"}</span>
                     {item.target && (
                       <span>멘션 대상 {formatUser(item.target)}</span>

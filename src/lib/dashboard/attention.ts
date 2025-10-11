@@ -133,7 +133,7 @@ type ReviewRequestRawItem = {
   pullRequest: PullRequestReferenceRaw;
   pullRequestCreatedAt: string;
   pullRequestUpdatedAt: string | null;
-  pullRequestAgeDays: number;
+  pullRequestAgeDays: number | null;
   pullRequestInactivityDays: number | null;
 };
 
@@ -818,10 +818,7 @@ async function fetchStuckReviewRequests(
     addUserId(userIds, row.pr_author_id);
     addUserId(userIds, row.reviewer_id);
 
-    const pullRequestAgeDays = differenceInDays(
-      row.pr_created_at ?? row.requested_at,
-      now,
-    );
+    const pullRequestAgeDays = differenceInDaysOrNull(row.pr_created_at, now);
     const pullRequestInactivityDays = differenceInDaysOrNull(
       row.pr_updated_at,
       now,
@@ -1212,7 +1209,7 @@ export async function getAttentionInsights(): Promise<AttentionInsights> {
       waitingDays: item.waitingDays,
       reviewer: item.reviewerId ? (userMap.get(item.reviewerId) ?? null) : null,
       pullRequest: toPullRequestReference(item.pullRequest, userMap),
-      pullRequestAgeDays: item.pullRequestAgeDays,
+      pullRequestAgeDays: item.pullRequestAgeDays ?? undefined,
       pullRequestInactivityDays: item.pullRequestInactivityDays,
       pullRequestUpdatedAt: item.pullRequestUpdatedAt,
     }));
