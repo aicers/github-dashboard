@@ -294,6 +294,143 @@ describe("ActivityView", () => {
     consoleError.mockRestore();
   });
 
+  it("shows an error when detail fetch fails and recovers on retry", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const props = createDefaultProps();
+
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+    mockFetchOnce({
+      status: 500,
+      json: { message: "Failed to load detail" },
+    });
+    mockFetchJsonOnce(
+      buildActivityItemDetail({
+        item: buildActivityItem({ id: "activity-1", title: "첫번째 이슈" }),
+        body: "Recovered detail body.",
+      }),
+    );
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: /첫번째 이슈/ }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(consoleError).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole("button", { name: "닫기" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /첫번째 이슈/ }));
+    await screen.findByText("Recovered detail body.");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    consoleError.mockRestore();
+  });
+
+  it("shows a conflict notification when status updates are locked", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const props = createDefaultProps();
+
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+    mockFetchJsonOnce(
+      buildActivityItemDetail({
+        item: buildActivityItem({
+          id: "activity-1",
+          title: "첫번째 이슈",
+          issueProjectStatusLocked: true,
+          issueTodoProjectStatus: "done",
+        }),
+      }),
+    );
+    mockFetchOnce({
+      status: 409,
+      json: {
+        error: "Status managed by the to-do list project.",
+        todoStatus: "done",
+      },
+    });
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: /첫번째 이슈/ }));
+    const dialog = await screen.findByRole("dialog");
+
+    within(dialog).getByRole("button", { name: "Done" }).click();
+    await waitFor(() => expect(consoleError).toHaveBeenCalled());
+
+    consoleError.mockRestore();
+  });
+
+  it("shows an error message when saving a filter fails", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const props = createDefaultProps({
+      initialParams: buildActivityListParams({
+        repositoryIds: ["repo-1"],
+      }),
+    });
+
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+    mockFetchOnce({
+      status: 400,
+      json: { message: "같은 이름의 필터가 이미 존재해요." },
+    });
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "현재 필터 저장" }));
+    const nameInput = screen.getByPlaceholderText("필터 이름");
+    fireEvent.change(nameInput, { target: { value: "Duplicate filter" } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(nameInput).toHaveValue("Duplicate filter");
+    expect(
+      await screen.findByText("같은 이름의 필터가 이미 존재해요."),
+    ).toBeInTheDocument();
+
+    consoleError.mockRestore();
+  });
+
+  it("shows a feed error when activity fetch fails", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const props = createDefaultProps();
+
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+    mockFetchOnce({ status: 500, json: { error: "Server error" } });
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "주의 필요한 업데이트" }),
+    );
+
+    await screen.findByText("활동 데이터를 불러오지 못했습니다.");
+
+    consoleError.mockRestore();
+  });
+
   it("saves the current filters and surfaces a success notification", async () => {
     const consoleError = vi
       .spyOn(console, "error")
