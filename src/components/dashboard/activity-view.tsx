@@ -1,20 +1,9 @@
 "use client";
 
-import type { IconProps } from "@primer/octicons-react";
-import {
-  CommentDiscussionIcon,
-  GitMergeIcon,
-  GitPullRequestClosedIcon,
-  GitPullRequestIcon,
-  IssueClosedIcon,
-  IssueOpenedIcon,
-  XIcon,
-} from "@primer/octicons-react";
 import { DateTime } from "luxon";
 import { useRouter } from "next/navigation";
 import {
   type ChangeEvent,
-  type ComponentType,
   createElement,
   type FormEvent,
   Fragment,
@@ -22,7 +11,6 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState,
@@ -31,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { fetchActivityDetail } from "@/lib/activity/client";
 import type { ActivityFilterState as FilterState } from "@/lib/activity/filter-state";
 import {
   buildFilterState,
@@ -54,6 +43,13 @@ import type {
   IssueProjectStatus,
 } from "@/lib/activity/types";
 import { cn } from "@/lib/utils";
+import { ActivityDetailOverlay } from "./activity/activity-detail-overlay";
+import { ActivityListItemSummary } from "./activity/activity-list-item-summary";
+import {
+  differenceLabel,
+  formatRelative,
+  resolveActivityIcon,
+} from "./activity/shared";
 
 type ActivityViewProps = {
   initialData: ActivityListResult;
@@ -203,77 +199,8 @@ const SOURCE_STATUS_KEYS: IssueProjectStatus[] = [
   "done",
 ];
 
-const DETAIL_PANEL_TRANSITION_MS = 300;
-
 function includesIssueCategory(categories: ActivityItemCategory[]) {
   return categories.length === 0 || categories.includes("issue");
-}
-
-type ActivityIconInfo = {
-  Icon: ComponentType<IconProps>;
-  className: string;
-  label: string;
-};
-
-const CATEGORY_LABELS: Record<ActivityItemCategory, string> = {
-  issue: "이슈",
-  pull_request: "PR",
-  discussion: "토론",
-};
-
-const STATUS_LABELS: Record<ActivityItem["status"], string> = {
-  open: "열림",
-  closed: "닫힘",
-  merged: "병합됨",
-};
-
-function resolveActivityIcon(item: ActivityItem): ActivityIconInfo {
-  const typeLabel = CATEGORY_LABELS[item.type] ?? "항목";
-  const statusLabel = STATUS_LABELS[item.status] ?? item.status;
-
-  if (item.type === "pull_request") {
-    if (item.status === "merged") {
-      return {
-        Icon: GitMergeIcon,
-        className: "text-purple-500",
-        label: `${typeLabel} ${statusLabel}`,
-      };
-    }
-    if (item.status === "closed") {
-      return {
-        Icon: GitPullRequestClosedIcon,
-        className: "text-rose-500",
-        label: `${typeLabel} ${statusLabel}`,
-      };
-    }
-    return {
-      Icon: GitPullRequestIcon,
-      className: "text-emerald-500",
-      label: `${typeLabel} ${statusLabel}`,
-    };
-  }
-
-  if (item.type === "issue") {
-    if (item.status === "closed" || item.status === "merged") {
-      return {
-        Icon: IssueClosedIcon,
-        className:
-          item.status === "merged" ? "text-purple-500" : "text-rose-500",
-        label: `${typeLabel} ${statusLabel}`,
-      };
-    }
-    return {
-      Icon: IssueOpenedIcon,
-      className: "text-emerald-500",
-      label: `${typeLabel} ${statusLabel}`,
-    };
-  }
-
-  return {
-    Icon: CommentDiscussionIcon,
-    className: item.status === "closed" ? "text-rose-500" : "text-sky-500",
-    label: `${typeLabel} ${statusLabel}`,
-  };
 }
 
 function arraysShallowEqual(first: string[], second: string[]) {
@@ -453,16 +380,6 @@ function applyFiltersToQuery(
   );
 }
 
-function differenceLabel(value: number | null | undefined, suffix = "일") {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  if (value <= 0) {
-    return `오늘 (0${suffix})`;
-  }
-  return `${value.toString()}${suffix}`;
-}
-
 function escapeHtml(value: string) {
   return value
     .replace(/&/g, "&amp;")
@@ -635,33 +552,6 @@ function renderMarkdownHtml(html: string | null): ReactNode {
   return createElement(Fragment, null, ...nodes);
 }
 
-function renderTitleWithInlineCode(title: string | null): ReactNode {
-  if (!title) {
-    return "Untitled";
-  }
-  const segments = title.split(/(`[^`]*`)/g);
-  let keyCounter = 0;
-  return segments.map((segment) => {
-    const key = `title-segment-${keyCounter++}`;
-    const isCode =
-      segment.startsWith("`") && segment.endsWith("`") && segment.length >= 2;
-    if (!isCode) {
-      return (
-        <Fragment key={key}>{segment.length ? segment : "\u00a0"}</Fragment>
-      );
-    }
-    const content = segment.slice(1, -1);
-    return (
-      <code
-        key={key}
-        className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground/90"
-      >
-        {content.length ? content : "\u00a0"}
-      </code>
-    );
-  });
-}
-
 function toPositiveInt(value: string, fallback: number) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -815,37 +705,6 @@ function normalizeProjectFieldDraft(field: ProjectFieldKey, draft: string) {
   }
 
   return trimmed;
-}
-
-function formatRelative(value: string | null) {
-  if (!value) {
-    return null;
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-
-  const diffMs = date.getTime() - Date.now();
-  const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
-    ["year", 1000 * 60 * 60 * 24 * 365],
-    ["month", 1000 * 60 * 60 * 24 * 30],
-    ["week", 1000 * 60 * 60 * 24 * 7],
-    ["day", 1000 * 60 * 60 * 24],
-    ["hour", 1000 * 60 * 60],
-    ["minute", 1000 * 60],
-  ];
-
-  const formatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
-  for (const [unit, unitMs] of units) {
-    const valueInUnit = diffMs / unitMs;
-    if (Math.abs(valueInUnit) >= 1) {
-      return formatter.format(Math.round(valueInUnit), unit);
-    }
-  }
-
-  return "just now";
 }
 
 function buildAttentionBadges(item: ActivityItem) {
@@ -1567,161 +1426,6 @@ const SavedFiltersManager = ({
     </div>
   );
 };
-
-type ActivityDetailOverlayProps = {
-  item: ActivityItem;
-  iconInfo: ActivityIconInfo;
-  badges: string[];
-  onClose: () => void;
-  children: ReactNode;
-};
-
-function ActivityDetailOverlay({
-  item,
-  iconInfo,
-  badges,
-  onClose,
-  children,
-}: ActivityDetailOverlayProps) {
-  const headingId = useId();
-  const [isVisible, setIsVisible] = useState(false);
-  const closeTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  const handleRequestClose = useCallback(() => {
-    setIsVisible(false);
-    if (closeTimerRef.current) {
-      return;
-    }
-    closeTimerRef.current = setTimeout(() => {
-      closeTimerRef.current = null;
-      onClose();
-    }, DETAIL_PANEL_TRANSITION_MS);
-  }, [onClose]);
-
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setIsVisible(true));
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    const handleKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        handleRequestClose();
-      }
-    };
-
-    document.addEventListener("keydown", handleKey);
-
-    return () => {
-      cancelAnimationFrame(frame);
-      document.removeEventListener("keydown", handleKey);
-      document.body.style.overflow = previousOverflow;
-      if (closeTimerRef.current) {
-        clearTimeout(closeTimerRef.current);
-        closeTimerRef.current = null;
-      }
-    };
-  }, [handleRequestClose]);
-
-  const IconComponent = iconInfo.Icon;
-  const referenceParts: string[] = [];
-  if (item.repository?.nameWithOwner) {
-    referenceParts.push(item.repository.nameWithOwner);
-  }
-  if (typeof item.number === "number") {
-    referenceParts.push(`#${item.number}`);
-  }
-  const referenceLabel =
-    referenceParts.length > 0 ? referenceParts.join("") : null;
-  const titleLabel = item.title?.trim().length
-    ? item.title
-    : `${CATEGORY_LABELS[item.type]} 상세`;
-  const statusLabel = item.state ?? item.status ?? null;
-
-  return (
-    <div className="fixed inset-0 z-[60] flex justify-end">
-      <div
-        className="absolute inset-0 transition-opacity duration-300"
-        style={{
-          opacity: isVisible ? 1 : 0,
-          pointerEvents: isVisible ? "auto" : "none",
-        }}
-        aria-hidden="true"
-        onClick={handleRequestClose}
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={headingId}
-        className={cn(
-          "relative z-10 flex h-full w-full flex-col border-l border-border bg-background shadow-2xl transition-transform duration-300 ease-out",
-          "sm:mt-12 sm:mb-6 sm:mr-6 sm:h-auto sm:max-h-[85vh] sm:w-[90vw] sm:max-w-[90vw] sm:rounded-xl",
-          "md:mt-16 md:mb-8",
-          isVisible ? "translate-x-0" : "translate-x-full",
-        )}
-        onPointerDown={(event) => event.stopPropagation()}
-      >
-        <header className="flex flex-col gap-4 border-b border-border/70 p-5 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex flex-1 items-start gap-3">
-            <span
-              className={cn(
-                "mt-1 inline-flex items-center justify-center rounded-full border border-border/60 bg-background p-2",
-                iconInfo.className,
-              )}
-            >
-              <IconComponent className="h-5 w-5" />
-              <span className="sr-only">{iconInfo.label}</span>
-            </span>
-            <div className="space-y-2">
-              {referenceLabel ? (
-                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">
-                  {referenceLabel}
-                </div>
-              ) : null}
-              <h3
-                id={headingId}
-                className="text-lg font-semibold leading-tight text-foreground"
-              >
-                {titleLabel}
-              </h3>
-              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground/80">
-                {statusLabel ? <span>{statusLabel}</span> : null}
-                {badges.map((badge) => (
-                  <span
-                    key={badge}
-                    className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-700"
-                  >
-                    {badge}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 self-end sm:self-start">
-            {item.url ? (
-              <Button asChild size="sm" variant="outline">
-                <a href={item.url} target="_blank" rel="noreferrer">
-                  GitHub에서 열기
-                </a>
-              </Button>
-            ) : null}
-            <Button
-              size="icon"
-              variant="ghost"
-              aria-label="닫기"
-              onClick={handleRequestClose}
-            >
-              <XIcon />
-            </Button>
-          </div>
-        </header>
-        <div className="flex-1 overflow-y-auto px-5 py-5 text-sm sm:px-6">
-          {children}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export function ActivityView({
   initialData,
@@ -2760,14 +2464,9 @@ export function ActivityView({
     detailControllersRef.current.set(id, controller);
 
     try {
-      const response = await fetch(`/api/activity/${id}`, {
+      const detail = await fetchActivityDetail(id, {
         signal: controller.signal,
       });
-      if (!response.ok) {
-        throw new Error("Failed to fetch activity detail.");
-      }
-
-      const detail = (await response.json()) as ActivityItemDetail;
       setDetailMap((current) => ({
         ...current,
         [id]: detail,
@@ -4124,7 +3823,6 @@ export function ActivityView({
                   ? `${repositoryLabel}${numberLabel}`
                   : (repositoryLabel ?? numberLabel);
               const iconInfo = resolveActivityIcon(item);
-              const IconComponent = iconInfo.Icon;
               const isUpdatingStatus = updatingStatusIds.has(item.id);
               const isUpdatingProjectFields = updatingProjectFieldIds.has(
                 item.id,
@@ -4219,124 +3917,103 @@ export function ActivityView({
                     onClick={() => handleSelectItem(item.id)}
                     onKeyDown={(event) => handleItemKeyDown(event, item.id)}
                   >
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-2 text-sm text-foreground">
-                        <span
-                          className={cn(
-                            "inline-flex items-center justify-center rounded-full border border-border/60 bg-background p-1",
-                            iconInfo.className,
-                          )}
-                          title={iconInfo.label}
-                        >
-                          <IconComponent className="h-4 w-4" />
-                          <span className="sr-only">{iconInfo.label}</span>
-                        </span>
-                        {referenceLabel ? (
-                          item.url ? (
-                            <a
-                              href={item.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-primary hover:underline"
-                            >
-                              {referenceLabel}
-                            </a>
-                          ) : (
-                            <span className="text-muted-foreground/80">
-                              {referenceLabel}
-                            </span>
-                          )
-                        ) : null}
-                        <span className="font-semibold text-foreground truncate">
-                          {renderTitleWithInlineCode(item.title)}
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground/80">
-                        <div className="flex flex-wrap items-center gap-3">
-                          {item.businessDaysOpen !== null &&
-                            item.businessDaysOpen !== undefined && (
+                    <ActivityListItemSummary
+                      iconInfo={iconInfo}
+                      referenceLabel={referenceLabel}
+                      referenceUrl={item.url ?? undefined}
+                      title={item.title}
+                      metadata={
+                        <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground/80">
+                          <div className="flex flex-wrap items-center gap-3">
+                            {item.businessDaysOpen !== null &&
+                              item.businessDaysOpen !== undefined && (
+                                <span>
+                                  Age{" "}
+                                  {differenceLabel(item.businessDaysOpen, "일")}
+                                </span>
+                              )}
+                            {item.businessDaysIdle !== null &&
+                              item.businessDaysIdle !== undefined && (
+                                <span>
+                                  Idle{" "}
+                                  {differenceLabel(item.businessDaysIdle, "일")}
+                                </span>
+                              )}
+                            {item.updatedAt && (
                               <span>
-                                Age{" "}
-                                {differenceLabel(item.businessDaysOpen, "일")}
+                                {formatRelative(item.updatedAt) ?? "-"}
                               </span>
                             )}
-                          {item.businessDaysIdle !== null &&
-                            item.businessDaysIdle !== undefined && (
+                            {item.author && (
                               <span>
-                                Idle{" "}
-                                {differenceLabel(item.businessDaysIdle, "일")}
+                                작성자 {avatarFallback(item.author) ?? "-"}
                               </span>
                             )}
-                          {item.updatedAt && (
-                            <span>{formatRelative(item.updatedAt) ?? "-"}</span>
-                          )}
-                          {item.author && (
-                            <span>
-                              작성자 {avatarFallback(item.author) ?? "-"}
-                            </span>
-                          )}
-                          {item.reviewers.length > 0 && (
-                            <span>
-                              리뷰어{" "}
-                              {item.reviewers
-                                .map(
-                                  (reviewer) =>
-                                    avatarFallback(reviewer) ?? reviewer.id,
-                                )
-                                .join(", ")}
-                            </span>
-                          )}
-                          {item.issueType && (
-                            <span className="rounded-md bg-sky-100 px-2 py-0.5 text-sky-700">
-                              {item.issueType.name ?? item.issueType.id}
-                            </span>
-                          )}
-                          {item.milestone && (
-                            <span>
-                              Milestone{" "}
-                              {item.milestone.title ?? item.milestone.id}
-                            </span>
-                          )}
-                          {item.type === "issue" && (
-                            <>
-                              <span className="rounded bg-muted px-1.5 py-0.5 text-[11px]">
-                                Status:{" "}
-                                <span className="text-foreground">
-                                  {todoStatusLabel}
-                                </span>
+                            {item.reviewers.length > 0 && (
+                              <span>
+                                리뷰어{" "}
+                                {item.reviewers
+                                  .map(
+                                    (reviewer) =>
+                                      avatarFallback(reviewer) ?? reviewer.id,
+                                  )
+                                  .join(", ")}
                               </span>
-                              <span className="rounded bg-muted px-1.5 py-0.5 text-[11px]">
-                                Priority:{" "}
-                                <span className="text-foreground">
-                                  {todoPriorityLabel}
-                                </span>
+                            )}
+                            {item.issueType && (
+                              <span className="rounded-md bg-sky-100 px-2 py-0.5 text-sky-700">
+                                {item.issueType.name ?? item.issueType.id}
                               </span>
-                            </>
-                          )}
-                          {badges.map((badge) => (
-                            <span
-                              key={badge}
-                              className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-700"
-                            >
-                              {badge}
-                            </span>
-                          ))}
-                          {item.labels.slice(0, 2).map((label) => (
-                            <span
-                              key={label.key}
-                              className="rounded-md bg-muted px-2 py-0.5"
-                            >
-                              {label.key}
-                            </span>
-                          ))}
-                        </div>
-                        {item.updatedAt && (
-                          <div className="flex flex-col items-end text-muted-foreground/80">
-                            <span>{formatDateTime(item.updatedAt) ?? "-"}</span>
+                            )}
+                            {item.milestone && (
+                              <span>
+                                Milestone{" "}
+                                {item.milestone.title ?? item.milestone.id}
+                              </span>
+                            )}
+                            {item.type === "issue" && (
+                              <>
+                                <span className="rounded bg-muted px-1.5 py-0.5 text-[11px]">
+                                  Status:{" "}
+                                  <span className="text-foreground">
+                                    {todoStatusLabel}
+                                  </span>
+                                </span>
+                                <span className="rounded bg-muted px-1.5 py-0.5 text-[11px]">
+                                  Priority:{" "}
+                                  <span className="text-foreground">
+                                    {todoPriorityLabel}
+                                  </span>
+                                </span>
+                              </>
+                            )}
+                            {badges.map((badge) => (
+                              <span
+                                key={badge}
+                                className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-700"
+                              >
+                                {badge}
+                              </span>
+                            ))}
+                            {item.labels.slice(0, 2).map((label) => (
+                              <span
+                                key={label.key}
+                                className="rounded-md bg-muted px-2 py-0.5"
+                              >
+                                {label.key}
+                              </span>
+                            ))}
                           </div>
-                        )}
-                      </div>
-                    </div>
+                          {item.updatedAt && (
+                            <div className="flex flex-col items-end text-muted-foreground/80">
+                              <span>
+                                {formatDateTime(item.updatedAt) ?? "-"}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      }
+                    />
                   </div>
                   {isSelected && (
                     <ActivityDetailOverlay

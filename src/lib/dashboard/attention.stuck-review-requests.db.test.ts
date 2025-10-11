@@ -5,7 +5,10 @@ import "../../../tests/helpers/postgres-container";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getAttentionInsights } from "@/lib/dashboard/attention";
-import { differenceInBusinessDays } from "@/lib/dashboard/business-days";
+import {
+  differenceInBusinessDays,
+  differenceInBusinessDaysOrNull,
+} from "@/lib/dashboard/business-days";
 import { ensureSchema } from "@/lib/db";
 import {
   type DbComment,
@@ -382,6 +385,17 @@ describe("attention insights for stuck review requests", () => {
       login: dave.login ?? null,
       name: dave.name ?? null,
     });
+
+    const expectedPrAgeRaw = differenceInBusinessDays(targetPr.createdAt, now);
+    const expectedPrAge =
+      expectedPrAgeRaw === 0 ? expectedCarolWaiting : expectedPrAgeRaw;
+    const expectedPrInactivity = differenceInBusinessDaysOrNull(
+      targetPr.updatedAt,
+      now,
+    );
+
+    expect(carolItem.pullRequestAgeDays).toBe(expectedPrAge);
+    expect(carolItem.pullRequestInactivityDays).toBe(expectedPrInactivity);
 
     expect(carolItem.pullRequest.id).toBe(targetPr.id);
     expect(carolItem.pullRequest.number).toBe(401);

@@ -234,9 +234,17 @@ describe("AttentionView unanswered mentions", () => {
       throw new Error("Expected unanswered mention list items to exist");
     }
 
-    expect(within(primaryItem).getByText("11일 경과")).toBeInTheDocument();
-    expect(within(issueItem).getByText("9일 경과")).toBeInTheDocument();
-    expect(within(secondaryItem).getByText("6일 경과")).toBeInTheDocument();
+    expect(within(primaryItem).getByText("Idle 11일")).toBeInTheDocument();
+    expect(
+      within(primaryItem).getByText("멘션 대상 Bob (@bob)"),
+    ).toBeInTheDocument();
+    expect(
+      within(primaryItem).getByText("요청자 Alice (@alice)"),
+    ).toBeInTheDocument();
+
+    expect(within(issueItem).getByText("Idle 9일")).toBeInTheDocument();
+
+    expect(within(secondaryItem).getByText("Idle 6일")).toBeInTheDocument();
 
     await user.selectOptions(targetFilter, "user-carol");
 

@@ -47,6 +47,9 @@ export type ReviewRequestAttentionItem = {
   waitingDays: number;
   reviewer: UserReference | null;
   pullRequest: PullRequestReference;
+  pullRequestAgeDays?: number;
+  pullRequestInactivityDays?: number | null;
+  pullRequestUpdatedAt?: string | null;
 };
 
 export type IssueReference = {
@@ -128,6 +131,10 @@ type ReviewRequestRawItem = {
   waitingDays: number;
   reviewerId: string | null;
   pullRequest: PullRequestReferenceRaw;
+  pullRequestCreatedAt: string;
+  pullRequestUpdatedAt: string | null;
+  pullRequestAgeDays: number;
+  pullRequestInactivityDays: number | null;
 };
 
 type IssueReferenceRaw = {
@@ -196,6 +203,8 @@ type ReviewRequestRow = {
   repository_name: string | null;
   repository_name_with_owner: string | null;
   pr_reviewers: string[] | null;
+  pr_created_at: string;
+  pr_updated_at: string | null;
 };
 
 type ReviewerRow = {
@@ -591,6 +600,9 @@ async function fetchStalePullRequests(
       addUserId(userIds, id);
     });
 
+    const inactivityDays =
+      differenceInDaysOrNull(row.github_updated_at, now) ?? undefined;
+
     items.push({
       id: row.id,
       number: row.number,
@@ -604,6 +616,7 @@ async function fetchStalePullRequests(
       createdAt: row.github_created_at,
       updatedAt: row.github_updated_at,
       ageDays,
+      inactivityDays,
     });
   });
 
@@ -696,6 +709,8 @@ async function fetchStuckReviewRequests(
          pr.number AS pr_number,
          pr.title AS pr_title,
          pr.data->>'url' AS pr_url,
+         pr.github_created_at AS pr_created_at,
+         pr.github_updated_at AS pr_updated_at,
          pr.repository_id AS pr_repository_id,
          pr.author_id AS pr_author_id,
          repo.name AS repository_name,
@@ -745,12 +760,14 @@ async function fetchStuckReviewRequests(
        base.reviewer_id,
        base.requested_at,
        base.pr_number,
-       base.pr_title,
-       base.pr_url,
-       base.pr_repository_id,
-       base.pr_author_id,
-       base.repository_name,
-       base.repository_name_with_owner,
+     base.pr_title,
+     base.pr_url,
+      base.pr_created_at,
+      base.pr_updated_at,
+     base.pr_repository_id,
+     base.pr_author_id,
+     base.repository_name,
+     base.repository_name_with_owner,
        ARRAY(SELECT DISTINCT reviewer_id
              FROM review_requests
              WHERE pull_request_id = base.pull_request_id
@@ -801,6 +818,15 @@ async function fetchStuckReviewRequests(
     addUserId(userIds, row.pr_author_id);
     addUserId(userIds, row.reviewer_id);
 
+    const pullRequestAgeDays = differenceInDays(
+      row.pr_created_at ?? row.requested_at,
+      now,
+    );
+    const pullRequestInactivityDays = differenceInDaysOrNull(
+      row.pr_updated_at,
+      now,
+    );
+
     items.push({
       id: row.id,
       requestedAt: row.requested_at,
@@ -817,6 +843,10 @@ async function fetchStuckReviewRequests(
         authorId: row.pr_author_id,
         reviewerIds,
       },
+      pullRequestCreatedAt: row.pr_created_at,
+      pullRequestUpdatedAt: row.pr_updated_at,
+      pullRequestAgeDays,
+      pullRequestInactivityDays,
     });
   });
 
@@ -1182,6 +1212,9 @@ export async function getAttentionInsights(): Promise<AttentionInsights> {
       waitingDays: item.waitingDays,
       reviewer: item.reviewerId ? (userMap.get(item.reviewerId) ?? null) : null,
       pullRequest: toPullRequestReference(item.pullRequest, userMap),
+      pullRequestAgeDays: item.pullRequestAgeDays,
+      pullRequestInactivityDays: item.pullRequestInactivityDays,
+      pullRequestUpdatedAt: item.pullRequestUpdatedAt,
     }));
 
   const backlogIssues = issueInsights.backlog.items.map<IssueAttentionItem>(

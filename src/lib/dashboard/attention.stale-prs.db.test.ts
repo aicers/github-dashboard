@@ -5,6 +5,7 @@ import "../../../tests/helpers/postgres-container";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getAttentionInsights } from "@/lib/dashboard/attention";
+import { differenceInBusinessDaysOrNull } from "@/lib/dashboard/business-days";
 import { ensureSchema } from "@/lib/db";
 import {
   updateSyncConfig,
@@ -180,7 +181,11 @@ describe("attention insights for stale pull requests", () => {
     expect(new Date(item.updatedAt as string).toISOString()).toBe(
       staleUpdatedAt,
     );
-    expect(item.inactivityDays).toBeUndefined();
+    const expectedInactivity = differenceInBusinessDaysOrNull(
+      staleUpdatedAt,
+      new Date(FIXED_NOW),
+    );
+    expect(item.inactivityDays).toBe(expectedInactivity);
 
     expect(item.repository).toEqual({
       id: includedRepo.id,

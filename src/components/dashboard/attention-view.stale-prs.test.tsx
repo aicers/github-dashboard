@@ -164,15 +164,21 @@ describe("AttentionView stale pull requests", () => {
       throw new Error("Expected list items to exist in the DOM");
     }
 
-    expect(within(firstPrItem).getByText("Alice (@alice)")).toBeInTheDocument();
-    expect(within(firstPrItem).getByText("Bob (@bob)")).toBeInTheDocument();
-    expect(within(firstPrItem).getByText("40일 경과")).toBeInTheDocument();
-
-    expect(within(secondPrItem).getByText("Bob (@bob)")).toBeInTheDocument();
+    expect(within(firstPrItem).getByText("Age 40일")).toBeInTheDocument();
     expect(
-      within(secondPrItem).getByText("Carol (@carol)"),
+      within(firstPrItem).getByText("작성자 Alice (@alice)"),
     ).toBeInTheDocument();
-    expect(within(secondPrItem).getByText("20일 경과")).toBeInTheDocument();
+    expect(
+      within(firstPrItem).getByText("리뷰어 Bob (@bob)"),
+    ).toBeInTheDocument();
+
+    expect(within(secondPrItem).getByText("Age 20일")).toBeInTheDocument();
+    expect(
+      within(secondPrItem).getByText("작성자 Bob (@bob)"),
+    ).toBeInTheDocument();
+    expect(
+      within(secondPrItem).getByText("리뷰어 Carol (@carol)"),
+    ).toBeInTheDocument();
 
     expect(screen.getByText("생성자 경과일수 합계 순위")).toBeInTheDocument();
 
