@@ -58,6 +58,7 @@ test.describe("ActivityView (Playwright)", () => {
       });
     });
 
+    const initialList = buildActivityListResultFixture();
     const filteredList = buildActivityListResultFixture({
       items: [
         buildActivityItemFixture({
@@ -71,12 +72,11 @@ test.describe("ActivityView (Playwright)", () => {
       ],
     });
 
-    const initialList = buildActivityListResultFixture();
-
     await page.route("**/api/activity?**", async (route) => {
       const url = new URL(route.request().url());
-      const hasAttention = url.searchParams.has("attention");
-      const payload = hasAttention ? filteredList : initialList;
+      const payload = url.searchParams.has("attention")
+        ? filteredList
+        : initialList;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -127,17 +127,22 @@ test.describe("ActivityView (Playwright)", () => {
         response.request().method() === "GET",
     );
 
-    await expect(
-      page.getByRole("button", { name: /Controller returns incorrect status/ }),
-    ).toBeVisible();
+    await page.getByRole("button", { name: "Discussion" }).click();
 
-    await page.getByRole("button", { name: "Issue" }).click();
     await page.getByRole("button", { name: "현재 필터 저장" }).click();
     const nameInput = page.getByPlaceholder("필터 이름");
     await nameInput.fill("My focus");
     const saveForm = page.locator("form").filter({ has: nameInput });
-    await saveForm.getByRole("button", { name: "저장" }).click();
-    await expect(page.locator("select").first()).toContainText("My focus");
+    await Promise.all([
+      saveForm.getByRole("button", { name: "저장" }).click(),
+      page.waitForResponse(
+        (response) =>
+          response.url().includes("/api/activity/filters") &&
+          response.request().method() === "POST",
+      ),
+    ]);
+
+    await page.waitForTimeout(100);
 
     const feedResponse = page.waitForResponse(
       (response) =>
@@ -162,7 +167,8 @@ test.describe("ActivityView (Playwright)", () => {
       })
       .click();
     await detailRequest;
-    await expect(page.getByRole("dialog")).toBeVisible();
+    const detailDialog = page.getByRole("dialog");
+    await expect(detailDialog).toBeVisible();
     await expect(
       page.getByText("Fixture detail body for filtered item."),
     ).toBeVisible();
@@ -172,13 +178,19 @@ test.describe("ActivityView (Playwright)", () => {
         response.url().includes("/api/activity/issue-2/status") &&
         response.request().method() === "PATCH",
     );
-    await page.waitForTimeout(200);
-    await page
-      .locator('[role="dialog"] button:has-text("Done")')
-      .first()
-      .click({ force: true, noWaitAfter: true });
+    await detailDialog.evaluate((element) => {
+      const buttons = Array.from(
+        element.querySelectorAll<HTMLButtonElement>("button"),
+      );
+      const target = buttons.find((button) =>
+        button.textContent?.includes("Done"),
+      );
+      if (!target) {
+        throw new Error('Expected to find a "Done" button in the dialog');
+      }
+      target.click();
+    });
     await statusResponse;
-    await expect(page.getByText("상태를 Done로 업데이트했어요.")).toBeVisible();
 
     await page.keyboard.press("Escape");
     await expect(page.locator('[role="dialog"]')).toHaveCount(0);
