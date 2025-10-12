@@ -1928,7 +1928,6 @@ export function ActivityView({
   const issueStatusesAllSelected = selectedIssueStatuses.length === 0;
   const prStatusesAllSelected = draft.prStatuses.length === 0;
   const issueBaseStatusesAllSelected = draft.issueBaseStatuses.length === 0;
-  const issueTypesAllSelected = draft.issueTypeIds.length === 0;
   const linkedIssueStatesAllSelected = draft.linkedIssueStates.length === 0;
 
   useEffect(() => {
@@ -3250,66 +3249,6 @@ export function ActivityView({
                           </TogglePill>
                         );
                       })}
-                      {filterOptions.issueTypes.length > 0 && (
-                        <>
-                          <span
-                            aria-hidden="true"
-                            className="mx-2 h-4 border-l border-border/50"
-                          />
-                          <Label className="text-xs font-medium text-muted-foreground/90">
-                            이슈 타입
-                          </Label>
-                          <TogglePill
-                            active={issueTypesAllSelected}
-                            variant={
-                              issueTypesAllSelected ? "active" : "inactive"
-                            }
-                            onClick={() => {
-                              setDraft((current) => ({
-                                ...current,
-                                issueTypeIds: [],
-                              }));
-                            }}
-                          >
-                            전체
-                          </TogglePill>
-                          {filterOptions.issueTypes.map((option) => {
-                            const active = draft.issueTypeIds.includes(
-                              option.id,
-                            );
-                            const variant = issueTypesAllSelected
-                              ? "muted"
-                              : active
-                                ? "active"
-                                : "inactive";
-                            return (
-                              <TogglePill
-                                key={`issue-type-${option.id}`}
-                                active={active}
-                                variant={variant}
-                                onClick={() => {
-                                  setDraft((current) => {
-                                    const nextSet = new Set(
-                                      current.issueTypeIds,
-                                    );
-                                    if (nextSet.has(option.id)) {
-                                      nextSet.delete(option.id);
-                                    } else {
-                                      nextSet.add(option.id);
-                                    }
-                                    return {
-                                      ...current,
-                                      issueTypeIds: Array.from(nextSet),
-                                    };
-                                  });
-                                }}
-                              >
-                                {option.name ?? option.id}
-                              </TogglePill>
-                            );
-                          })}
-                        </>
-                      )}
                     </>
                   )}
                 </>
