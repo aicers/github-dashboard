@@ -1354,6 +1354,19 @@ export function ActivityView({
     [draft],
   );
 
+  const savedFilterCanonicalEntries = useMemo(
+    () =>
+      savedFilters.map((filter) => ({
+        id: filter.id,
+        key: canonicalizeActivityParams(
+          buildSavedFilterPayload(
+            buildFilterState(filter.payload, perPageDefault),
+          ),
+        ),
+      })),
+    [perPageDefault, savedFilters],
+  );
+
   const activeQuickFilterId = useMemo(() => {
     for (const definition of quickFilterDefinitions) {
       const payload = buildSavedFilterPayload({
@@ -1366,6 +1379,16 @@ export function ActivityView({
     }
     return null;
   }, [canonicalDraftKey, draft.perPage, quickFilterDefinitions]);
+
+  useEffect(() => {
+    const matched = savedFilterCanonicalEntries.find(
+      (entry) => entry.key === canonicalDraftKey,
+    );
+    const nextId = matched ? matched.id : "";
+    setSelectedSavedFilterId((currentId) =>
+      currentId === nextId ? currentId : nextId,
+    );
+  }, [canonicalDraftKey, savedFilterCanonicalEntries]);
 
   const allowPullRequestStatuses = useMemo(
     () =>
