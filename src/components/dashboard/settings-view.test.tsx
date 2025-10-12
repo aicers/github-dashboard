@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -94,33 +94,79 @@ describe("SettingsView", () => {
     supportedValuesSpy.mockReset();
   });
 
-  it("renders the current configuration values and summary counts", () => {
+  it("renders the current configuration values and summary counts", async () => {
+    const user = userEvent.setup();
+
     renderSettings();
 
-    expect(screen.getByLabelText("Organization 이름")).toHaveValue("acme");
-    expect(screen.getByLabelText("자동 동기화 주기 (분)")).toHaveValue(30);
-    expect(screen.getByLabelText("표준 시간대")).toHaveValue("Asia/Seoul");
-    expect(screen.getByLabelText("주의 시작 요일")).toHaveValue("monday");
+    const personalSection = screen
+      .getByRole("button", { name: "개인 설정 저장" })
+      .closest("section");
+    expect(personalSection).not.toBeNull();
 
     expect(
-      screen.getByRole("option", { name: "acme/repo-two" }),
-    ).toBeInTheDocument();
+      within(personalSection as HTMLElement).getByLabelText("표준 시간대"),
+    ).toHaveValue("Asia/Seoul");
     expect(
-      screen.getByRole("option", { name: "monalisa" }),
-    ).toBeInTheDocument();
-
+      within(personalSection as HTMLElement).getByLabelText("주의 시작 요일"),
+    ).toHaveValue("monday");
     expect(
-      screen.getByText("제외된 리포지토리: 1개", { selector: "span" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("제외된 구성원: 1명", { selector: "span" }),
+      within(personalSection as HTMLElement).getByRole("button", {
+        name: "개인 설정 저장",
+      }),
     ).toBeInTheDocument();
 
+    await user.click(screen.getByRole("button", { name: "Organization" }));
+
+    const organizationSection = (
+      await screen.findByRole("button", { name: "조직 설정 저장" })
+    ).closest("section");
+    expect(organizationSection).not.toBeNull();
+
     expect(
-      screen.getByRole("button", { name: "개인 설정 저장" }),
+      within(organizationSection as HTMLElement).getByLabelText(
+        "Organization 이름",
+      ),
+    ).toHaveValue("acme");
+    expect(
+      within(organizationSection as HTMLElement).getByLabelText(
+        "자동 동기화 주기 (분)",
+      ),
+    ).toHaveValue(30);
+    expect(
+      within(organizationSection as HTMLElement).getByLabelText("표준 시간대"),
+    ).toHaveValue("Asia/Seoul");
+    expect(
+      within(organizationSection as HTMLElement).getByLabelText(
+        "주의 시작 요일",
+      ),
+    ).toHaveValue("monday");
+    expect(
+      within(organizationSection as HTMLElement).getByRole("option", {
+        name: "acme/repo-two",
+      }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "조직 설정 저장" }),
+      within(organizationSection as HTMLElement).getByRole("option", {
+        name: "monalisa",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(organizationSection as HTMLElement).getByText(
+        "제외된 리포지토리: 1개",
+        { selector: "span" },
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(organizationSection as HTMLElement).getByText(
+        "제외된 구성원: 1명",
+        { selector: "span" },
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(organizationSection as HTMLElement).getByRole("button", {
+        name: "조직 설정 저장",
+      }),
     ).toBeInTheDocument();
   });
 
@@ -130,25 +176,40 @@ describe("SettingsView", () => {
 
     renderSettings();
 
-    const orgInput = screen.getByLabelText("Organization 이름");
+    await user.click(screen.getByRole("button", { name: "Organization" }));
+
+    const organizationSection = (
+      await screen.findByRole("button", { name: "조직 설정 저장" })
+    ).closest("section") as HTMLElement;
+
+    const orgInput =
+      within(organizationSection).getByLabelText("Organization 이름");
     await user.clear(orgInput);
     await user.type(orgInput, "  new-org  ");
 
-    const intervalInput = screen.getByLabelText("자동 동기화 주기 (분)");
+    const intervalInput = within(organizationSection).getByLabelText(
+      "자동 동기화 주기 (분)",
+    );
     await user.clear(intervalInput);
     await user.type(intervalInput, "15");
 
-    const timezoneSelect = screen.getByLabelText("표준 시간대");
+    const timezoneSelect =
+      within(organizationSection).getByLabelText("표준 시간대");
     await user.selectOptions(timezoneSelect, "America/Los_Angeles");
 
-    const weekStartSelect = screen.getByLabelText("주의 시작 요일");
+    const weekStartSelect =
+      within(organizationSection).getByLabelText("주의 시작 요일");
     await user.selectOptions(weekStartSelect, "sunday");
 
-    const repoSelect = screen.getByLabelText(/제외할 리포지토리를 선택하세요/);
+    const repoSelect =
+      within(organizationSection).getByLabelText(
+        /제외할 리포지토리를 선택하세요/,
+      );
     await user.deselectOptions(repoSelect, ["repo-2"]);
     await user.selectOptions(repoSelect, ["repo-1", "repo-3"]);
 
-    const memberSelect = screen.getByLabelText(/제외할 구성원을 선택하세요/);
+    const memberSelect =
+      within(organizationSection).getByLabelText(/제외할 구성원을 선택하세요/);
     await user.deselectOptions(memberSelect, ["user-3"]);
     await user.selectOptions(memberSelect, ["user-1", "user-2"]);
 
@@ -188,11 +249,23 @@ describe("SettingsView", () => {
 
     renderSettings();
 
-    const intervalInput = screen.getByLabelText("자동 동기화 주기 (분)");
+    await user.click(screen.getByRole("button", { name: "Organization" }));
+
+    const organizationSection = (
+      await screen.findByRole("button", { name: "조직 설정 저장" })
+    ).closest("section") as HTMLElement;
+
+    const intervalInput = within(organizationSection).getByLabelText(
+      "자동 동기화 주기 (분)",
+    );
     await user.clear(intervalInput);
     await user.type(intervalInput, "0");
 
-    await user.click(screen.getByRole("button", { name: "조직 설정 저장" }));
+    await user.click(
+      within(organizationSection).getByRole("button", {
+        name: "조직 설정 저장",
+      }),
+    );
 
     await waitFor(() => {
       expect(
@@ -209,20 +282,33 @@ describe("SettingsView", () => {
 
     renderSettings();
 
-    const [clearRepos, clearMembers] = screen.getAllByRole("button", {
-      name: "제외 목록 비우기",
-    });
+    await user.click(screen.getByRole("button", { name: "Organization" }));
+
+    const organizationSection = (
+      await screen.findByRole("button", { name: "조직 설정 저장" })
+    ).closest("section") as HTMLElement;
+
+    const [clearRepos, clearMembers] = within(organizationSection).getAllByRole(
+      "button",
+      {
+        name: "제외 목록 비우기",
+      },
+    );
     await user.click(clearRepos);
 
     expect(
-      screen.getByText("제외된 리포지토리: 0개", { selector: "span" }),
+      within(organizationSection).getByText("제외된 리포지토리: 0개", {
+        selector: "span",
+      }),
     ).toBeInTheDocument();
     expect(clearRepos).toBeDisabled();
 
     await user.click(clearMembers);
 
     expect(
-      screen.getByText("제외된 구성원: 0명", { selector: "span" }),
+      within(organizationSection).getByText("제외된 구성원: 0명", {
+        selector: "span",
+      }),
     ).toBeInTheDocument();
     expect(clearMembers).toBeDisabled();
   });
@@ -260,21 +346,38 @@ describe("SettingsView", () => {
   });
 
   it("shows organization controls as read-only for non-admin users", async () => {
+    const user = userEvent.setup();
+
     renderSettings({ isAdmin: false });
 
-    const orgInput = screen.getByLabelText("Organization 이름");
+    await user.click(screen.getByRole("button", { name: "Organization" }));
+
+    const organizationSection = (
+      await screen.findByRole("button", { name: "조직 설정 저장" })
+    ).closest("section") as HTMLElement;
+
+    const orgInput =
+      within(organizationSection).getByLabelText("Organization 이름");
     expect(orgInput).toBeDisabled();
 
-    const intervalInput = screen.getByLabelText("자동 동기화 주기 (분)");
+    const intervalInput = within(organizationSection).getByLabelText(
+      "자동 동기화 주기 (분)",
+    );
     expect(intervalInput).toBeDisabled();
 
-    const repoSelect = screen.getByLabelText(/제외할 리포지토리를 선택하세요/);
+    const repoSelect =
+      within(organizationSection).getByLabelText(
+        /제외할 리포지토리를 선택하세요/,
+      );
     expect(repoSelect).toBeDisabled();
 
-    const memberSelect = screen.getByLabelText(/제외할 구성원을 선택하세요/);
+    const memberSelect =
+      within(organizationSection).getByLabelText(/제외할 구성원을 선택하세요/);
     expect(memberSelect).toBeDisabled();
 
-    const saveButton = screen.getByRole("button", { name: "조직 설정 저장" });
+    const saveButton = within(organizationSection).getByRole("button", {
+      name: "조직 설정 저장",
+    });
     expect(saveButton).toBeDisabled();
     expect(
       screen.getByText("관리자 권한이 있는 사용자만 수정할 수 있습니다."),
