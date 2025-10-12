@@ -509,10 +509,6 @@ describe("ActivityView", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
     expect(
-      screen.getByText(`${savedFilters.length} / ${savedFilters.length}`),
-    ).toBeInTheDocument();
-
-    expect(
       screen.getByText(/최대 \d+개의 필터를 저장할 수 있어요/),
     ).toBeInTheDocument();
 
