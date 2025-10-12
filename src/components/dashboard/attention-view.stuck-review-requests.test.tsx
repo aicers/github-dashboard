@@ -157,7 +157,7 @@ describe("AttentionView stuck review requests", () => {
 
     expect(
       screen.getByText(
-        "주말과 공휴일을 제외하고 5일 이상 리뷰 제출, 댓글, 리액션 중 어떤 응답도 없었던 리뷰 요청을 모았습니다.",
+        "5일 이상 (리뷰 제출·댓글·리액션 모두 없는) 응답 없는 리뷰 요청",
       ),
     ).toBeInTheDocument();
 
@@ -222,7 +222,7 @@ describe("AttentionView stuck review requests", () => {
     await user.selectOptions(authorFilter, "user-alice");
     await user.selectOptions(reviewerFilter, "user-dave");
     expect(
-      screen.getByText("선택한 조건에 해당하는 리뷰 요청이 없습니다."),
+      screen.getByText("현재 조건을 만족하는 리뷰 요청이 없습니다."),
     ).toBeInTheDocument();
 
     await user.selectOptions(authorFilter, "all");
@@ -266,10 +266,11 @@ describe("AttentionView stuck review requests", () => {
     expect(
       screen.getByText("현재 조건을 만족하는 리뷰 요청이 없습니다."),
     ).toBeInTheDocument();
+    expect(screen.getByText("생성자 대기일수 합계 순위")).toBeInTheDocument();
     expect(
-      screen.queryByText("생성자 대기일수 합계 순위"),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("생성자 필터")).not.toBeInTheDocument();
+      screen.getAllByText("생성자 데이터가 없습니다.").length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByLabelText("생성자 필터")).toBeInTheDocument();
     expect(screen.queryByLabelText("리뷰어 필터")).not.toBeInTheDocument();
   });
 });

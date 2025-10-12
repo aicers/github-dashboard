@@ -202,7 +202,7 @@ describe("AttentionView unanswered mentions", () => {
 
     expect(
       screen.getByText(
-        "주말과 공휴일을 제외하고 5일 넘게 리뷰 제출, 댓글, 리액션 중 어떤 응답도 없었던 멘션을 모았습니다.",
+        "5일 이상 (리뷰 제출·댓글·리액션 모두 없는) 응답 없는 멘션",
       ),
     ).toBeInTheDocument();
 
@@ -301,7 +301,7 @@ describe("AttentionView unanswered mentions", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText("선택한 조건에 해당하는 멘션이 없습니다."),
+        screen.getByText("현재 조건을 만족하는 멘션이 없습니다."),
       ).toBeInTheDocument();
     });
 

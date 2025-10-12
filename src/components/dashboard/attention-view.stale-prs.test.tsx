@@ -144,9 +144,7 @@ describe("AttentionView stale pull requests", () => {
     const overviewButton = screen.getByRole("button", { name: /오래된 PR/ });
     await user.click(overviewButton);
 
-    expect(
-      screen.getByText("20일 이상 (주말과 공휴일 제외) 머지되지 않은 PR"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("20일 이상 머지되지 않은 PR")).toBeInTheDocument();
     expect(screen.getByText("Refine search experience")).toBeInTheDocument();
     expect(screen.getByText("Fix caching logic")).toBeInTheDocument();
 
@@ -232,10 +230,11 @@ describe("AttentionView stale pull requests", () => {
     expect(
       screen.getByText("현재 조건을 만족하는 PR이 없습니다."),
     ).toBeInTheDocument();
+    expect(screen.getByText("생성자 경과일수 합계 순위")).toBeInTheDocument();
     expect(
-      screen.queryByText("생성자 경과일수 합계 순위"),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("생성자 필터")).not.toBeInTheDocument();
+      screen.getAllByText("생성자 데이터가 없습니다.").length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByLabelText("생성자 필터")).toBeInTheDocument();
     expect(screen.queryByLabelText("리뷰어 필터")).not.toBeInTheDocument();
   });
 });

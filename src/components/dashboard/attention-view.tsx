@@ -111,6 +111,17 @@ function formatCount(value: number) {
   return `${value.toLocaleString()}건`;
 }
 
+const FOLLOW_UP_SECTION_ORDER = [
+  "backlog-issues",
+  "stalled-in-progress-issues",
+  "stale-open-prs",
+  "idle-open-prs",
+  "stuck-review-requests",
+  "unanswered-mentions",
+] as const;
+
+const FOLLOW_UP_SECTION_SET = new Set<string>(FOLLOW_UP_SECTION_ORDER);
+
 function toActivityUser(user: UserReference | null): ActivityUser | null {
   if (!user) {
     return null;
@@ -581,20 +592,12 @@ function FollowUpOverview({
   summaries: FollowUpSummary[];
   onSelect: (id: string) => void;
 }) {
-  const summaryOrder = [
-    "backlog-issues",
-    "stalled-in-progress-issues",
-    "stale-open-prs",
-    "idle-open-prs",
-    "stuck-review-requests",
-    "unanswered-mentions",
-  ];
   const summaryMap = new Map(summaries.map((summary) => [summary.id, summary]));
-  const orderedSummaries = summaryOrder
-    .map((summaryId) => summaryMap.get(summaryId))
-    .filter((summary): summary is FollowUpSummary => Boolean(summary));
+  const orderedSummaries = FOLLOW_UP_SECTION_ORDER.map((summaryId) =>
+    summaryMap.get(summaryId),
+  ).filter((summary): summary is FollowUpSummary => Boolean(summary));
   const remainingSummaries = summaries.filter(
-    (summary) => !summaryOrder.includes(summary.id),
+    (summary) => !FOLLOW_UP_SECTION_SET.has(summary.id),
   );
   const visibleSummaries =
     remainingSummaries.length === 0
@@ -662,6 +665,7 @@ function PullRequestList({
   reviewWaitMap,
   mentionWaitMap,
   timezone,
+  segmented = false,
 }: {
   items: PullRequestAttentionItem[];
   emptyText: string;
@@ -671,6 +675,7 @@ function PullRequestList({
   reviewWaitMap: Map<string, ReviewRequestAttentionItem[]>;
   mentionWaitMap: Map<string, MentionAttentionItem[]>;
   timezone: string;
+  segmented?: boolean;
 }) {
   const [authorFilter, setAuthorFilter] = useState("all");
   const [reviewerFilter, setReviewerFilter] = useState("all");
@@ -780,188 +785,208 @@ function PullRequestList({
   const { openItemId, detailMap, loadingDetailIds, selectItem, closeItem } =
     useActivityDetailState();
 
-  if (!items.length) {
+  if (!items.length && !segmented) {
     return <p className="text-sm text-muted-foreground">{emptyText}</p>;
+  }
+
+  const rankingGrid = (
+    <div className="grid gap-4 md:grid-cols-2">
+      <RankingCard
+        title={`생성자 ${metricLabel} 합계 순위`}
+        entries={authorRankingByTotal}
+        valueFormatter={(entry) => formatDays(entry.total)}
+        emptyText="생성자 데이터가 없습니다."
+      />
+      <RankingCard
+        title="생성자 건수 순위"
+        entries={authorRankingByCount}
+        valueFormatter={(entry) => formatCount(entry.count)}
+        emptyText="생성자 데이터가 없습니다."
+      />
+      <RankingCard
+        title={`리뷰어 ${metricLabel} 합계 순위`}
+        entries={reviewerRankingByTotal}
+        valueFormatter={(entry) => formatDays(entry.total)}
+        emptyText="리뷰어 데이터가 없습니다."
+      />
+      <RankingCard
+        title="리뷰어 건수 순위"
+        entries={reviewerRankingByCount}
+        valueFormatter={(entry) => formatCount(entry.count)}
+        emptyText="리뷰어 데이터가 없습니다."
+      />
+    </div>
+  );
+
+  const filterControls = (
+    <div className="flex flex-wrap gap-4">
+      <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+        생성자 필터
+        <select
+          className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          value={authorFilter}
+          onChange={(event) => setAuthorFilter(event.target.value)}
+        >
+          <option value="all">전체</option>
+          {authorOptions.map((option) => (
+            <option key={option.key} value={option.key}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {hasReviewerFilter ? (
+        <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+          리뷰어 필터
+          <select
+            className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            value={reviewerFilter}
+            onChange={(event) => setReviewerFilter(event.target.value)}
+          >
+            <option value="all">전체</option>
+            {reviewerOptions.map((option) => (
+              <option key={option.key} value={option.key}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+    </div>
+  );
+
+  const listContent = sortedItems.length ? (
+    <ul className="space-y-4">
+      {sortedItems.map((item) => {
+        const attentionFlags = showUpdated
+          ? { idlePr: true }
+          : { staleOpenPr: true };
+        const activityItem = createBaseActivityItem({
+          id: item.id,
+          type: "pull_request",
+          number: item.number,
+          title: item.title,
+          url: item.url,
+          repository: item.repository,
+          author: item.author,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+          attention: attentionFlags,
+        });
+        activityItem.reviewers = toActivityUsers(item.reviewers);
+        activityItem.businessDaysOpen = item.ageDays ?? null;
+        if (item.inactivityDays !== undefined) {
+          activityItem.businessDaysIdle = item.inactivityDays ?? null;
+        }
+        const reviewWaitDetails = reviewWaitMap.get(item.id) ?? [];
+        if (reviewWaitDetails.length) {
+          activityItem.reviewRequestWaits =
+            toActivityReviewWaits(reviewWaitDetails);
+        }
+        const mentionDetails = mentionWaitMap.get(item.id) ?? [];
+        if (mentionDetails.length) {
+          activityItem.mentionWaits = toActivityMentionWaits(mentionDetails);
+        }
+
+        const iconInfo = resolveActivityIcon(activityItem);
+        const referenceLabel = buildReferenceLabel(
+          item.repository,
+          item.number,
+        );
+        const isSelected = openItemId === item.id;
+        const detail = detailMap[item.id] ?? undefined;
+        const isDetailLoading = loadingDetailIds.has(item.id);
+        const badges = [showUpdated ? "업데이트 없는 PR" : "오래된 PR"];
+        const metrics = buildActivityMetricEntries(activityItem);
+        const metadata = (
+          <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground/80">
+            <div className="flex flex-wrap items-center gap-3">
+              {metrics.map((metric) => (
+                <span key={metric.key}>{metric.content}</span>
+              ))}
+              {item.updatedAt && (
+                <span>{formatRelative(item.updatedAt) ?? "-"}</span>
+              )}
+              {item.author && <span>작성자 {formatUser(item.author)}</span>}
+              {item.reviewers.length > 0 && (
+                <span>리뷰어 {formatUserList(item.reviewers)}</span>
+              )}
+            </div>
+            <div className="flex flex-col items-end text-muted-foreground/80">
+              <span>
+                {item.updatedAt
+                  ? formatTimestamp(item.updatedAt, timezone)
+                  : "-"}
+              </span>
+            </div>
+          </div>
+        );
+
+        return (
+          <li key={item.id}>
+            <div className="rounded-md border border-border bg-background p-3">
+              <button
+                type="button"
+                aria-expanded={isSelected}
+                className={cn(
+                  "block w-full cursor-pointer bg-transparent p-0 text-left transition-colors focus-visible:outline-none border-none",
+                  isSelected
+                    ? "text-foreground"
+                    : "text-foreground hover:text-primary",
+                )}
+                onClick={() => selectItem(item.id)}
+              >
+                <ActivityListItemSummary
+                  iconInfo={iconInfo}
+                  referenceLabel={referenceLabel}
+                  referenceUrl={item.url ?? undefined}
+                  title={item.title}
+                  metadata={metadata}
+                />
+              </button>
+              {isSelected ? (
+                <ActivityDetailOverlay
+                  item={activityItem}
+                  iconInfo={iconInfo}
+                  badges={badges}
+                  onClose={closeItem}
+                >
+                  <FollowUpDetailContent
+                    detail={detail}
+                    isLoading={isDetailLoading}
+                  />
+                </ActivityDetailOverlay>
+              ) : null}
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  ) : (
+    <p className="text-sm text-muted-foreground">{emptyText}</p>
+  );
+
+  if (segmented) {
+    return (
+      <div className="space-y-6">
+        <section className="rounded-lg border border-border/50 bg-background p-4 shadow-sm">
+          {rankingGrid}
+        </section>
+        <section className="space-y-4 rounded-lg border border-border/50 bg-background p-4 shadow-sm">
+          {filterControls}
+          {listContent}
+        </section>
+      </div>
+    );
   }
 
   return (
     <div className="space-y-6">
       <div className="space-y-4">
-        <div className="grid gap-4 md:grid-cols-2">
-          <RankingCard
-            title={`생성자 ${metricLabel} 합계 순위`}
-            entries={authorRankingByTotal}
-            valueFormatter={(entry) => formatDays(entry.total)}
-            emptyText="생성자 데이터가 없습니다."
-          />
-          <RankingCard
-            title="생성자 건수 순위"
-            entries={authorRankingByCount}
-            valueFormatter={(entry) => formatCount(entry.count)}
-            emptyText="생성자 데이터가 없습니다."
-          />
-          <RankingCard
-            title={`리뷰어 ${metricLabel} 합계 순위`}
-            entries={reviewerRankingByTotal}
-            valueFormatter={(entry) => formatDays(entry.total)}
-            emptyText="리뷰어 데이터가 없습니다."
-          />
-          <RankingCard
-            title="리뷰어 건수 순위"
-            entries={reviewerRankingByCount}
-            valueFormatter={(entry) => formatCount(entry.count)}
-            emptyText="리뷰어 데이터가 없습니다."
-          />
-        </div>
-        <div className="flex flex-wrap gap-4">
-          <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-            생성자 필터
-            <select
-              className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              value={authorFilter}
-              onChange={(event) => setAuthorFilter(event.target.value)}
-            >
-              <option value="all">전체</option>
-              {authorOptions.map((option) => (
-                <option key={option.key} value={option.key}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {hasReviewerFilter ? (
-            <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-              리뷰어 필터
-              <select
-                className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                value={reviewerFilter}
-                onChange={(event) => setReviewerFilter(event.target.value)}
-              >
-                <option value="all">전체</option>
-                {reviewerOptions.map((option) => (
-                  <option key={option.key} value={option.key}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-        </div>
+        {rankingGrid}
+        {filterControls}
       </div>
-
-      {sortedItems.length ? (
-        <ul className="space-y-4">
-          {sortedItems.map((item) => {
-            const attentionFlags = showUpdated
-              ? { idlePr: true }
-              : { staleOpenPr: true };
-            const activityItem = createBaseActivityItem({
-              id: item.id,
-              type: "pull_request",
-              number: item.number,
-              title: item.title,
-              url: item.url,
-              repository: item.repository,
-              author: item.author,
-              createdAt: item.createdAt,
-              updatedAt: item.updatedAt,
-              attention: attentionFlags,
-            });
-            activityItem.reviewers = toActivityUsers(item.reviewers);
-            activityItem.businessDaysOpen = item.ageDays ?? null;
-            if (item.inactivityDays !== undefined) {
-              activityItem.businessDaysIdle = item.inactivityDays ?? null;
-            }
-            const reviewWaitDetails = reviewWaitMap.get(item.id) ?? [];
-            if (reviewWaitDetails.length) {
-              activityItem.reviewRequestWaits =
-                toActivityReviewWaits(reviewWaitDetails);
-            }
-            const mentionDetails = mentionWaitMap.get(item.id) ?? [];
-            if (mentionDetails.length) {
-              activityItem.mentionWaits =
-                toActivityMentionWaits(mentionDetails);
-            }
-
-            const iconInfo = resolveActivityIcon(activityItem);
-            const referenceLabel = buildReferenceLabel(
-              item.repository,
-              item.number,
-            );
-            const isSelected = openItemId === item.id;
-            const detail = detailMap[item.id] ?? undefined;
-            const isDetailLoading = loadingDetailIds.has(item.id);
-            const badges = [showUpdated ? "업데이트 없는 PR" : "오래된 PR"];
-            const metrics = buildActivityMetricEntries(activityItem);
-            const metadata = (
-              <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground/80">
-                <div className="flex flex-wrap items-center gap-3">
-                  {metrics.map((metric) => (
-                    <span key={metric.key}>{metric.content}</span>
-                  ))}
-                  {item.updatedAt && (
-                    <span>{formatRelative(item.updatedAt) ?? "-"}</span>
-                  )}
-                  {item.author && <span>작성자 {formatUser(item.author)}</span>}
-                  {item.reviewers.length > 0 && (
-                    <span>리뷰어 {formatUserList(item.reviewers)}</span>
-                  )}
-                </div>
-                <div className="flex flex-col items-end text-muted-foreground/80">
-                  <span>
-                    {item.updatedAt
-                      ? formatTimestamp(item.updatedAt, timezone)
-                      : "-"}
-                  </span>
-                </div>
-              </div>
-            );
-
-            return (
-              <li key={item.id}>
-                <div className="rounded-md border border-border bg-background p-3">
-                  <button
-                    type="button"
-                    aria-expanded={isSelected}
-                    className={cn(
-                      "block w-full cursor-pointer bg-transparent p-0 text-left transition-colors focus-visible:outline-none border-none",
-                      isSelected
-                        ? "text-foreground"
-                        : "text-foreground hover:text-primary",
-                    )}
-                    onClick={() => selectItem(item.id)}
-                  >
-                    <ActivityListItemSummary
-                      iconInfo={iconInfo}
-                      referenceLabel={referenceLabel}
-                      referenceUrl={item.url ?? undefined}
-                      title={item.title}
-                      metadata={metadata}
-                    />
-                  </button>
-                  {isSelected ? (
-                    <ActivityDetailOverlay
-                      item={activityItem}
-                      iconInfo={iconInfo}
-                      badges={badges}
-                      onClose={closeItem}
-                    >
-                      <FollowUpDetailContent
-                        detail={detail}
-                        isLoading={isDetailLoading}
-                      />
-                    </ActivityDetailOverlay>
-                  ) : null}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          선택한 조건에 해당하는 PR이 없습니다.
-        </p>
-      )}
+      {listContent}
     </div>
   );
 }
@@ -972,12 +997,14 @@ function ReviewRequestList({
   reviewWaitMap,
   mentionWaitMap,
   timezone,
+  segmented = false,
 }: {
   items: ReviewRequestAttentionItem[];
   emptyText: string;
   reviewWaitMap: Map<string, ReviewRequestAttentionItem[]>;
   mentionWaitMap: Map<string, MentionAttentionItem[]>;
   timezone: string;
+  segmented?: boolean;
 }) {
   const [authorFilter, setAuthorFilter] = useState("all");
   const [reviewerFilter, setReviewerFilter] = useState("all");
@@ -1072,192 +1099,206 @@ function ReviewRequestList({
   const { openItemId, detailMap, loadingDetailIds, selectItem, closeItem } =
     useActivityDetailState();
 
-  if (!items.length) {
+  if (!items.length && !segmented) {
     return <p className="text-sm text-muted-foreground">{emptyText}</p>;
+  }
+
+  const rankingGrid = (
+    <div className="grid gap-4 md:grid-cols-2">
+      <RankingCard
+        title={`생성자 ${metricLabel} 합계 순위`}
+        entries={authorRankingByTotal}
+        valueFormatter={(entry) => formatDays(entry.total)}
+        emptyText="생성자 데이터가 없습니다."
+      />
+      <RankingCard
+        title="생성자 건수 순위"
+        entries={authorRankingByCount}
+        valueFormatter={(entry) => formatCount(entry.count)}
+        emptyText="생성자 데이터가 없습니다."
+      />
+      <RankingCard
+        title={`리뷰어 ${metricLabel} 합계 순위`}
+        entries={reviewerRankingByTotal}
+        valueFormatter={(entry) => formatDays(entry.total)}
+        emptyText="리뷰어 데이터가 없습니다."
+      />
+      <RankingCard
+        title="리뷰어 건수 순위"
+        entries={reviewerRankingByCount}
+        valueFormatter={(entry) => formatCount(entry.count)}
+        emptyText="리뷰어 데이터가 없습니다."
+      />
+    </div>
+  );
+
+  const filterControls = (
+    <div className="flex flex-wrap gap-4">
+      <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+        생성자 필터
+        <select
+          className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          value={authorFilter}
+          onChange={(event) => setAuthorFilter(event.target.value)}
+        >
+          <option value="all">전체</option>
+          {authorOptions.map((option) => (
+            <option key={option.key} value={option.key}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {hasReviewerFilter ? (
+        <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+          리뷰어 필터
+          <select
+            className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            value={reviewerFilter}
+            onChange={(event) => setReviewerFilter(event.target.value)}
+          >
+            <option value="all">전체</option>
+            {reviewerOptions.map((option) => (
+              <option key={option.key} value={option.key}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+    </div>
+  );
+
+  const listContent = sortedItems.length ? (
+    <ul className="space-y-4">
+      {sortedItems.map((item) => {
+        const selectionId = item.pullRequest.id?.trim().length
+          ? item.pullRequest.id
+          : item.id;
+        const activityItem = createBaseActivityItem({
+          id: selectionId,
+          type: "pull_request",
+          number: item.pullRequest.number,
+          title: item.pullRequest.title,
+          url: item.pullRequest.url,
+          repository: item.pullRequest.repository,
+          author: item.pullRequest.author,
+          attention: { reviewRequestPending: true },
+        });
+        activityItem.reviewers = toActivityUsers(item.pullRequest.reviewers);
+        activityItem.businessDaysOpen = item.pullRequestAgeDays ?? null;
+        activityItem.businessDaysIdle =
+          item.pullRequestInactivityDays ?? item.waitingDays ?? null;
+        const reviewWaitDetails = reviewWaitMap.get(item.pullRequest.id) ?? [];
+        if (reviewWaitDetails.length) {
+          activityItem.reviewRequestWaits =
+            toActivityReviewWaits(reviewWaitDetails);
+        } else {
+          activityItem.reviewRequestWaits = toActivityReviewWaits([item]);
+        }
+        const mentionDetails = mentionWaitMap.get(item.pullRequest.id) ?? [];
+        if (mentionDetails.length) {
+          activityItem.mentionWaits = toActivityMentionWaits(mentionDetails);
+        }
+
+        const iconInfo = resolveActivityIcon(activityItem);
+        const referenceLabel = buildReferenceLabel(
+          item.pullRequest.repository,
+          item.pullRequest.number,
+        );
+        const isSelected = openItemId === selectionId;
+        const detail = detailMap[selectionId] ?? undefined;
+        const isDetailLoading = loadingDetailIds.has(selectionId);
+        const badges = ["응답 없는 리뷰 요청"];
+        const metrics = buildActivityMetricEntries(activityItem);
+        const metadata = (
+          <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground/80">
+            <div className="flex flex-wrap items-center gap-3">
+              {metrics.map((metric) => (
+                <span key={metric.key}>{metric.content}</span>
+              ))}
+              {item.pullRequestUpdatedAt && (
+                <span>{formatRelative(item.pullRequestUpdatedAt) ?? "-"}</span>
+              )}
+              {item.pullRequest.author && (
+                <span>생성자 {formatUser(item.pullRequest.author)}</span>
+              )}
+            </div>
+            <div className="flex flex-col items-end text-muted-foreground/80">
+              <span>
+                {item.pullRequestUpdatedAt
+                  ? formatTimestamp(item.pullRequestUpdatedAt, timezone)
+                  : "-"}
+              </span>
+            </div>
+          </div>
+        );
+
+        return (
+          <li key={item.id}>
+            <div className="rounded-md border border-border bg-background p-3">
+              <button
+                type="button"
+                aria-expanded={isSelected}
+                className={cn(
+                  "block w-full cursor-pointer bg-transparent p-0 text-left transition-colors focus-visible:outline-none border-none",
+                  isSelected
+                    ? "text-foreground"
+                    : "text-foreground hover:text-primary",
+                )}
+                onClick={() => selectItem(selectionId)}
+              >
+                <ActivityListItemSummary
+                  iconInfo={iconInfo}
+                  referenceLabel={referenceLabel}
+                  referenceUrl={item.pullRequest.url ?? undefined}
+                  title={item.pullRequest.title}
+                  metadata={metadata}
+                />
+              </button>
+              {isSelected ? (
+                <ActivityDetailOverlay
+                  item={activityItem}
+                  iconInfo={iconInfo}
+                  badges={badges}
+                  onClose={closeItem}
+                >
+                  <FollowUpDetailContent
+                    detail={detail}
+                    isLoading={isDetailLoading}
+                  />
+                </ActivityDetailOverlay>
+              ) : null}
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  ) : (
+    <p className="text-sm text-muted-foreground">{emptyText}</p>
+  );
+
+  if (segmented) {
+    return (
+      <div className="space-y-6">
+        <section className="rounded-lg border border-border/50 bg-background p-4 shadow-sm">
+          {rankingGrid}
+        </section>
+        <section className="space-y-4 rounded-lg border border-border/50 bg-background p-4 shadow-sm">
+          {filterControls}
+          {listContent}
+        </section>
+      </div>
+    );
   }
 
   return (
     <div className="space-y-6">
       <div className="space-y-4">
-        <div className="grid gap-4 md:grid-cols-2">
-          <RankingCard
-            title={`생성자 ${metricLabel} 합계 순위`}
-            entries={authorRankingByTotal}
-            valueFormatter={(entry) => formatDays(entry.total)}
-            emptyText="생성자 데이터가 없습니다."
-          />
-          <RankingCard
-            title="생성자 건수 순위"
-            entries={authorRankingByCount}
-            valueFormatter={(entry) => formatCount(entry.count)}
-            emptyText="생성자 데이터가 없습니다."
-          />
-          <RankingCard
-            title={`리뷰어 ${metricLabel} 합계 순위`}
-            entries={reviewerRankingByTotal}
-            valueFormatter={(entry) => formatDays(entry.total)}
-            emptyText="리뷰어 데이터가 없습니다."
-          />
-          <RankingCard
-            title="리뷰어 건수 순위"
-            entries={reviewerRankingByCount}
-            valueFormatter={(entry) => formatCount(entry.count)}
-            emptyText="리뷰어 데이터가 없습니다."
-          />
-        </div>
-        <div className="flex flex-wrap gap-4">
-          <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-            생성자 필터
-            <select
-              className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              value={authorFilter}
-              onChange={(event) => setAuthorFilter(event.target.value)}
-            >
-              <option value="all">전체</option>
-              {authorOptions.map((option) => (
-                <option key={option.key} value={option.key}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {hasReviewerFilter ? (
-            <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-              리뷰어 필터
-              <select
-                className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                value={reviewerFilter}
-                onChange={(event) => setReviewerFilter(event.target.value)}
-              >
-                <option value="all">전체</option>
-                {reviewerOptions.map((option) => (
-                  <option key={option.key} value={option.key}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-        </div>
+        {rankingGrid}
+        {filterControls}
       </div>
-
-      {sortedItems.length ? (
-        <ul className="space-y-4">
-          {sortedItems.map((item) => {
-            const selectionId = item.pullRequest.id?.trim().length
-              ? item.pullRequest.id
-              : item.id;
-            const activityItem = createBaseActivityItem({
-              id: selectionId,
-              type: "pull_request",
-              number: item.pullRequest.number,
-              title: item.pullRequest.title,
-              url: item.pullRequest.url,
-              repository: item.pullRequest.repository,
-              author: item.pullRequest.author,
-              attention: { reviewRequestPending: true },
-            });
-            activityItem.reviewers = toActivityUsers(
-              item.pullRequest.reviewers,
-            );
-            activityItem.businessDaysOpen = item.pullRequestAgeDays ?? null;
-            activityItem.businessDaysIdle =
-              item.pullRequestInactivityDays ?? item.waitingDays ?? null;
-            const reviewWaitDetails =
-              reviewWaitMap.get(item.pullRequest.id) ?? [];
-            if (reviewWaitDetails.length) {
-              activityItem.reviewRequestWaits =
-                toActivityReviewWaits(reviewWaitDetails);
-            } else {
-              activityItem.reviewRequestWaits = toActivityReviewWaits([item]);
-            }
-            const mentionDetails =
-              mentionWaitMap.get(item.pullRequest.id) ?? [];
-            if (mentionDetails.length) {
-              activityItem.mentionWaits =
-                toActivityMentionWaits(mentionDetails);
-            }
-
-            const iconInfo = resolveActivityIcon(activityItem);
-            const referenceLabel = buildReferenceLabel(
-              item.pullRequest.repository,
-              item.pullRequest.number,
-            );
-            const isSelected = openItemId === selectionId;
-            const detail = detailMap[selectionId] ?? undefined;
-            const isDetailLoading = loadingDetailIds.has(selectionId);
-            const badges = ["응답 없는 리뷰 요청"];
-            const metrics = buildActivityMetricEntries(activityItem);
-            const metadata = (
-              <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground/80">
-                <div className="flex flex-wrap items-center gap-3">
-                  {metrics.map((metric) => (
-                    <span key={metric.key}>{metric.content}</span>
-                  ))}
-                  {item.pullRequestUpdatedAt && (
-                    <span>
-                      {formatRelative(item.pullRequestUpdatedAt) ?? "-"}
-                    </span>
-                  )}
-                  {item.pullRequest.author && (
-                    <span>생성자 {formatUser(item.pullRequest.author)}</span>
-                  )}
-                </div>
-                <div className="flex flex-col items-end text-muted-foreground/80">
-                  <span>
-                    {item.pullRequestUpdatedAt
-                      ? formatTimestamp(item.pullRequestUpdatedAt, timezone)
-                      : "-"}
-                  </span>
-                </div>
-              </div>
-            );
-
-            return (
-              <li key={item.id}>
-                <div className="rounded-md border border-border bg-background p-3">
-                  <button
-                    type="button"
-                    aria-expanded={isSelected}
-                    className={cn(
-                      "block w-full cursor-pointer bg-transparent p-0 text-left transition-colors focus-visible:outline-none border-none",
-                      isSelected
-                        ? "text-foreground"
-                        : "text-foreground hover:text-primary",
-                    )}
-                    onClick={() => selectItem(selectionId)}
-                  >
-                    <ActivityListItemSummary
-                      iconInfo={iconInfo}
-                      referenceLabel={referenceLabel}
-                      referenceUrl={item.pullRequest.url ?? undefined}
-                      title={item.pullRequest.title}
-                      metadata={metadata}
-                    />
-                  </button>
-                  {isSelected ? (
-                    <ActivityDetailOverlay
-                      item={activityItem}
-                      iconInfo={iconInfo}
-                      badges={badges}
-                      onClose={closeItem}
-                    >
-                      <FollowUpDetailContent
-                        detail={detail}
-                        isLoading={isDetailLoading}
-                      />
-                    </ActivityDetailOverlay>
-                  ) : null}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          선택한 조건에 해당하는 리뷰 요청이 없습니다.
-        </p>
-      )}
+      {listContent}
     </div>
   );
 }
@@ -1560,9 +1601,7 @@ function IssueList({
       })}
     </ul>
   ) : (
-    <p className="text-sm text-muted-foreground">
-      선택한 조건에 해당하는 이슈가 없습니다.
-    </p>
+    <p className="text-sm text-muted-foreground">{emptyText}</p>
   );
 
   if (segmented) {
@@ -1594,10 +1633,12 @@ function MentionList({
   items,
   emptyText,
   timezone,
+  segmented = false,
 }: {
   items: MentionAttentionItem[];
   emptyText: string;
   timezone: string;
+  segmented?: boolean;
 }) {
   const [targetFilter, setTargetFilter] = useState("all");
   const [authorFilter, setAuthorFilter] = useState("all");
@@ -1689,185 +1730,202 @@ function MentionList({
   const { openItemId, detailMap, loadingDetailIds, selectItem, closeItem } =
     useActivityDetailState();
 
-  if (!items.length) {
+  if (!items.length && !segmented) {
     return <p className="text-sm text-muted-foreground">{emptyText}</p>;
+  }
+
+  const rankingGrid = (
+    <div className="grid gap-4 md:grid-cols-2">
+      <RankingCard
+        title={`멘션 대상 ${metricLabel} 합계 순위`}
+        entries={targetRankingByTotal}
+        valueFormatter={(entry) => formatDays(entry.total)}
+        emptyText="멘션 대상 데이터가 없습니다."
+      />
+      <RankingCard
+        title="멘션 대상 건수 순위"
+        entries={targetRankingByCount}
+        valueFormatter={(entry) => formatCount(entry.count)}
+        emptyText="멘션 대상 데이터가 없습니다."
+      />
+      <RankingCard
+        title={`요청자 ${metricLabel} 합계 순위`}
+        entries={authorRankingByTotal}
+        valueFormatter={(entry) => formatDays(entry.total)}
+        emptyText="요청자 데이터가 없습니다."
+      />
+      <RankingCard
+        title="요청자 건수 순위"
+        entries={authorRankingByCount}
+        valueFormatter={(entry) => formatCount(entry.count)}
+        emptyText="요청자 데이터가 없습니다."
+      />
+    </div>
+  );
+
+  const filterControls = (
+    <div className="flex flex-wrap gap-4">
+      <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+        멘션 대상 필터
+        <select
+          className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          value={targetFilter}
+          onChange={(event) => setTargetFilter(event.target.value)}
+        >
+          <option value="all">전체</option>
+          {targetOptions.map((option) => (
+            <option key={option.key} value={option.key}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+        요청자 필터
+        <select
+          className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          value={authorFilter}
+          onChange={(event) => setAuthorFilter(event.target.value)}
+        >
+          <option value="all">전체</option>
+          {authorOptions.map((option) => (
+            <option key={option.key} value={option.key}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+    </div>
+  );
+
+  const listContent = sortedItems.length ? (
+    <ul className="space-y-4">
+      {sortedItems.map((item, index) => {
+        const containerId = item.container.id?.trim();
+        const selectionId =
+          containerId && containerId.length > 0 ? containerId : item.commentId;
+        const activityType: ActivityItem["type"] =
+          item.container.type === "pull_request"
+            ? "pull_request"
+            : item.container.type === "discussion"
+              ? "discussion"
+              : "issue";
+        const activityItem = createBaseActivityItem({
+          id: selectionId,
+          type: activityType,
+          number: item.container.number ?? null,
+          title: item.container.title,
+          url: item.container.url,
+          repository: item.container.repository,
+          author: item.author,
+          attention: { unansweredMention: true },
+        });
+        activityItem.businessDaysOpen = item.waitingDays ?? null;
+        activityItem.businessDaysIdle = item.waitingDays ?? null;
+        activityItem.mentionWaits = toActivityMentionWaits([item]);
+
+        const iconInfo = resolveActivityIcon(activityItem);
+        const referenceLabel = `${buildReferenceLabel(
+          item.container.repository,
+          item.container.number ?? null,
+        )} 코멘트`;
+        const isSelected = openItemId === selectionId;
+        const detail = detailMap[selectionId] ?? undefined;
+        const isDetailLoading = loadingDetailIds.has(selectionId);
+        const badges = ["응답 없는 멘션"];
+        const metrics = buildActivityMetricEntries(activityItem);
+        const metadata = (
+          <div className="flex flex-col gap-2 text-xs text-muted-foreground/80">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                {metrics.map((metric) => (
+                  <span key={metric.key}>{metric.content}</span>
+                ))}
+                <span>{formatRelative(item.mentionedAt) ?? "-"}</span>
+                {item.target && (
+                  <span>멘션 대상 {formatUser(item.target)}</span>
+                )}
+                {item.author && <span>요청자 {formatUser(item.author)}</span>}
+              </div>
+              <div className="flex flex-col items-end text-muted-foreground/80">
+                <span>{formatTimestamp(item.mentionedAt, timezone)}</span>
+              </div>
+            </div>
+            {item.commentExcerpt ? (
+              <div className="text-muted-foreground/70">
+                “{item.commentExcerpt}”
+              </div>
+            ) : null}
+          </div>
+        );
+
+        return (
+          <li
+            key={`${item.commentId}:${item.target?.id ?? "unknown"}:${index}`}
+          >
+            <div className="rounded-md border border-border bg-background p-3">
+              <button
+                type="button"
+                aria-expanded={isSelected}
+                className={cn(
+                  "block w-full cursor-pointer bg-transparent p-0 text-left transition-colors focus-visible:outline-none border-none",
+                  isSelected
+                    ? "text-foreground"
+                    : "text-foreground hover:text-primary",
+                )}
+                onClick={() => selectItem(selectionId)}
+              >
+                <ActivityListItemSummary
+                  iconInfo={iconInfo}
+                  referenceLabel={referenceLabel}
+                  referenceUrl={item.url ?? undefined}
+                  title={item.container.title}
+                  metadata={metadata}
+                />
+              </button>
+              {isSelected ? (
+                <ActivityDetailOverlay
+                  item={activityItem}
+                  iconInfo={iconInfo}
+                  badges={badges}
+                  onClose={closeItem}
+                >
+                  <FollowUpDetailContent
+                    detail={detail}
+                    isLoading={isDetailLoading}
+                  />
+                </ActivityDetailOverlay>
+              ) : null}
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  ) : (
+    <p className="text-sm text-muted-foreground">{emptyText}</p>
+  );
+
+  if (segmented) {
+    return (
+      <div className="space-y-6">
+        <section className="rounded-lg border border-border/50 bg-background p-4 shadow-sm">
+          {rankingGrid}
+        </section>
+        <section className="space-y-4 rounded-lg border border-border/50 bg-background p-4 shadow-sm">
+          {filterControls}
+          {listContent}
+        </section>
+      </div>
+    );
   }
 
   return (
     <div className="space-y-6">
       <div className="space-y-4">
-        <div className="grid gap-4 md:grid-cols-2">
-          <RankingCard
-            title={`멘션 대상 ${metricLabel} 합계 순위`}
-            entries={targetRankingByTotal}
-            valueFormatter={(entry) => formatDays(entry.total)}
-            emptyText="멘션 대상 데이터가 없습니다."
-          />
-          <RankingCard
-            title="멘션 대상 건수 순위"
-            entries={targetRankingByCount}
-            valueFormatter={(entry) => formatCount(entry.count)}
-            emptyText="멘션 대상 데이터가 없습니다."
-          />
-          <RankingCard
-            title={`요청자 ${metricLabel} 합계 순위`}
-            entries={authorRankingByTotal}
-            valueFormatter={(entry) => formatDays(entry.total)}
-            emptyText="요청자 데이터가 없습니다."
-          />
-          <RankingCard
-            title="요청자 건수 순위"
-            entries={authorRankingByCount}
-            valueFormatter={(entry) => formatCount(entry.count)}
-            emptyText="요청자 데이터가 없습니다."
-          />
-        </div>
-        <div className="flex flex-wrap gap-4">
-          <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-            멘션 대상 필터
-            <select
-              className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              value={targetFilter}
-              onChange={(event) => setTargetFilter(event.target.value)}
-            >
-              <option value="all">전체</option>
-              {targetOptions.map((option) => (
-                <option key={option.key} value={option.key}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-            요청자 필터
-            <select
-              className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              value={authorFilter}
-              onChange={(event) => setAuthorFilter(event.target.value)}
-            >
-              <option value="all">전체</option>
-              {authorOptions.map((option) => (
-                <option key={option.key} value={option.key}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+        {rankingGrid}
+        {filterControls}
       </div>
-
-      {sortedItems.length ? (
-        <ul className="space-y-4">
-          {sortedItems.map((item, index) => {
-            const containerId = item.container.id?.trim();
-            const selectionId =
-              containerId && containerId.length > 0
-                ? containerId
-                : item.commentId;
-            const activityType: ActivityItem["type"] =
-              item.container.type === "pull_request"
-                ? "pull_request"
-                : item.container.type === "discussion"
-                  ? "discussion"
-                  : "issue";
-            const activityItem = createBaseActivityItem({
-              id: selectionId,
-              type: activityType,
-              number: item.container.number ?? null,
-              title: item.container.title,
-              url: item.container.url,
-              repository: item.container.repository,
-              author: item.author,
-              attention: { unansweredMention: true },
-            });
-            activityItem.businessDaysOpen = item.waitingDays ?? null;
-            activityItem.businessDaysIdle = item.waitingDays ?? null;
-            activityItem.mentionWaits = toActivityMentionWaits([item]);
-
-            const iconInfo = resolveActivityIcon(activityItem);
-            const referenceLabel = `${buildReferenceLabel(
-              item.container.repository,
-              item.container.number ?? null,
-            )} 코멘트`;
-            const isSelected = openItemId === selectionId;
-            const detail = detailMap[selectionId] ?? undefined;
-            const isDetailLoading = loadingDetailIds.has(selectionId);
-            const badges = ["응답 없는 멘션"];
-            const metrics = buildActivityMetricEntries(activityItem);
-            const metadata = (
-              <div className="flex flex-col gap-2 text-xs text-muted-foreground/80">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-3">
-                    {metrics.map((metric) => (
-                      <span key={metric.key}>{metric.content}</span>
-                    ))}
-                    <span>{formatRelative(item.mentionedAt) ?? "-"}</span>
-                    {item.target && (
-                      <span>멘션 대상 {formatUser(item.target)}</span>
-                    )}
-                    {item.author && (
-                      <span>요청자 {formatUser(item.author)}</span>
-                    )}
-                  </div>
-                  <div className="flex flex-col items-end text-muted-foreground/80">
-                    <span>{formatTimestamp(item.mentionedAt, timezone)}</span>
-                  </div>
-                </div>
-                {item.commentExcerpt ? (
-                  <div className="text-muted-foreground/70">
-                    “{item.commentExcerpt}”
-                  </div>
-                ) : null}
-              </div>
-            );
-
-            return (
-              <li
-                key={`${item.commentId}:${item.target?.id ?? "unknown"}:${index}`}
-              >
-                <div className="rounded-md border border-border bg-background p-3">
-                  <button
-                    type="button"
-                    aria-expanded={isSelected}
-                    className={cn(
-                      "block w-full cursor-pointer bg-transparent p-0 text-left transition-colors focus-visible:outline-none border-none",
-                      isSelected
-                        ? "text-foreground"
-                        : "text-foreground hover:text-primary",
-                    )}
-                    onClick={() => selectItem(selectionId)}
-                  >
-                    <ActivityListItemSummary
-                      iconInfo={iconInfo}
-                      referenceLabel={referenceLabel}
-                      referenceUrl={item.url ?? undefined}
-                      title={item.container.title}
-                      metadata={metadata}
-                    />
-                  </button>
-                  {isSelected ? (
-                    <ActivityDetailOverlay
-                      item={activityItem}
-                      iconInfo={iconInfo}
-                      badges={badges}
-                      onClose={closeItem}
-                    >
-                      <FollowUpDetailContent
-                        detail={detail}
-                        isLoading={isDetailLoading}
-                      />
-                    </ActivityDetailOverlay>
-                  ) : null}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          선택한 조건에 해당하는 멘션이 없습니다.
-        </p>
-      )}
+      {listContent}
     </div>
   );
 }
@@ -1958,6 +2016,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
           metricLabel="In Progress 경과일수"
           mentionWaitMap={mentionWaitMap}
           timezone={insights.timezone}
+          segmented
         />
       ),
     },
@@ -1975,6 +2034,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
           reviewWaitMap={reviewWaitMap}
           mentionWaitMap={mentionWaitMap}
           timezone={insights.timezone}
+          segmented
         />
       ),
     },
@@ -1995,6 +2055,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
           reviewWaitMap={reviewWaitMap}
           mentionWaitMap={mentionWaitMap}
           timezone={insights.timezone}
+          segmented
         />
       ),
     },
@@ -2013,6 +2074,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
           reviewWaitMap={reviewWaitMap}
           mentionWaitMap={mentionWaitMap}
           timezone={insights.timezone}
+          segmented
         />
       ),
     },
@@ -2029,6 +2091,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
           items={insights.unansweredMentions}
           emptyText="현재 조건을 만족하는 멘션이 없습니다."
           timezone={insights.timezone}
+          segmented
         />
       ),
     },
@@ -2048,6 +2111,8 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
     activeSectionId === null
       ? overviewMenuDescription
       : activeSection?.menuDescription;
+  const useFollowUpLayout =
+    activeSection && FOLLOW_UP_SECTION_SET.has(activeSection.id);
 
   return (
     <section className="flex flex-col gap-4">
@@ -2126,7 +2191,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
 
         <div className="flex-1">
           {activeSection ? (
-            activeSection.id === "backlog-issues" ? (
+            useFollowUpLayout ? (
               activeSection.content
             ) : (
               <Card>
