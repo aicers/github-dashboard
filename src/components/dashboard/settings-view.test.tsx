@@ -97,9 +97,6 @@ describe("SettingsView", () => {
   it("renders the current configuration values and summary counts", () => {
     renderSettings();
 
-    expect(
-      screen.getByRole("heading", { name: "Settings" }),
-    ).toBeInTheDocument();
     expect(screen.getByLabelText("Organization 이름")).toHaveValue("acme");
     expect(screen.getByLabelText("자동 동기화 주기 (분)")).toHaveValue(30);
     expect(screen.getByLabelText("표준 시간대")).toHaveValue("Asia/Seoul");

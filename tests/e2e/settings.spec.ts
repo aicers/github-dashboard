@@ -8,7 +8,11 @@ test.describe("SettingsView (Playwright)", () => {
   }) => {
     await page.goto(SETTINGS_PATH);
 
-    await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+    await expect(
+      page.getByText(
+        "동기화 대상과 시간대를 조정하여 통합 지표의 기준을 맞추세요.",
+      ),
+    ).toBeVisible();
     await expect(page.getByLabel("Organization 이름")).toHaveValue("acme");
     await expect(page.getByLabel("자동 동기화 주기 (분)")).toHaveValue("30");
     await expect(page.getByLabel("표준 시간대")).toHaveValue("Asia/Seoul");

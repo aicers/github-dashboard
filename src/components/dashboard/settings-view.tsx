@@ -252,7 +252,6 @@ export function SettingsView({
   return (
     <section className="flex flex-col gap-8">
       <header className="flex flex-col gap-2">
-        <h1 className="text-3xl font-semibold">Settings</h1>
         <p className="text-sm text-muted-foreground">
           동기화 대상과 시간대를 조정하여 통합 지표의 기준을 맞추세요.
         </p>

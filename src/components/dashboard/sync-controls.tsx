@@ -253,6 +253,7 @@ export function SyncControls({ status }: SyncControlsProps) {
   return (
     <section className="flex flex-col gap-3">
       <header className="flex flex-col gap-1">
+        <h2 className="text-2xl font-semibold">데이터 동기화 제어</h2>
         <p className="text-sm text-muted-foreground">
           조직({config?.org_name})의 GitHub 데이터 수집과 동기화를 관리합니다.
         </p>
