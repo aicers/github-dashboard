@@ -16,7 +16,7 @@ export default async function DashboardTabsLayout({
   }
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 px-6 py-10">
+    <div className="mx-auto flex min-h-screen w-full max-w-[1232px] flex-col gap-8 px-3 py-3">
       <DashboardHeader userId={session.userId} />
       <DashboardTabs />
       <div className="flex-1 pb-10">{children}</div>

@@ -104,7 +104,7 @@ export function ActivityDetailOverlay({
         className={cn(
           "relative z-10 flex h-full w-full flex-col border-l border-border bg-background shadow-2xl transition-transform duration-300 ease-out",
           "sm:mt-12 sm:mb-6 sm:mr-6 sm:h-auto sm:max-h-[85vh] sm:w-[90vw] sm:max-w-[90vw] sm:rounded-xl",
-          "md:mt-16 md:mb-8",
+          "md:mt-16 md:mb-8 md:w-[1232px] md:max-w-[98vw]",
           isVisible ? "translate-x-0" : "translate-x-full",
         )}
         onPointerDown={(event) => event.stopPropagation()}
