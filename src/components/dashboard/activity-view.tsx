@@ -860,8 +860,8 @@ function ProjectFieldEditor({
   const displayValue = formattedValue.trim().length ? formattedValue : "-";
 
   return (
-    <div className="flex items-center gap-2 text-xs text-muted-foreground/80">
-      <span className="text-muted-foreground/80">{label}:</span>
+    <div className="flex items-center gap-2 text-xs text-foreground">
+      <span className="font-semibold text-foreground">{label}:</span>
       {isEditing ? (
         <form
           onSubmit={handleSubmit}
@@ -914,7 +914,7 @@ function ProjectFieldEditor({
         </form>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-foreground">{displayValue}</span>
+          <span className="font-medium text-foreground">{displayValue}</span>
           {timestamp ? (
             <span className="text-muted-foreground/70">{timestamp}</span>
           ) : null}
@@ -3876,13 +3876,6 @@ export function ActivityView({
                   const todoPriorityLabel = formatProjectField(
                     item.issueTodoProjectPriority,
                   );
-                  const todoPriorityTimestamp =
-                    item.issueTodoProjectPriorityUpdatedAt
-                      ? formatDateTime(
-                          item.issueTodoProjectPriorityUpdatedAt,
-                          data.timezone,
-                        )
-                      : null;
                   const todoWeightLabel = formatProjectField(
                     item.issueTodoProjectWeight,
                   );
@@ -4133,7 +4126,7 @@ export function ActivityView({
                                         label="Priority"
                                         rawValue={item.issueTodoProjectPriority}
                                         formattedValue={todoPriorityLabel}
-                                        timestamp={todoPriorityTimestamp}
+                                        timestamp={null}
                                         disabled={
                                           item.issueProjectStatusLocked ||
                                           isUpdatingStatus

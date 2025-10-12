@@ -195,9 +195,7 @@ describe("AttentionView stuck review requests", () => {
     expect(
       within(cacheItem).getByText("생성자 Alice (@alice)"),
     ).toBeInTheDocument();
-    expect(
-      within(cacheItem).getByText("Review carol 7일"),
-    ).toBeInTheDocument();
+    expect(within(cacheItem).getByText("Review carol 7일")).toBeInTheDocument();
 
     await user.selectOptions(authorFilter, "user-bob");
     expect(

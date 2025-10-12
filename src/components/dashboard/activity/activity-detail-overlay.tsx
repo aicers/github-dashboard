@@ -103,8 +103,8 @@ export function ActivityDetailOverlay({
         aria-labelledby={headingId}
         className={cn(
           "relative z-10 flex h-full w-full flex-col border-l border-border bg-background shadow-2xl transition-transform duration-300 ease-out",
-          "sm:mt-12 sm:mb-6 sm:mr-6 sm:h-auto sm:max-h-[85vh] sm:w-[90vw] sm:max-w-[90vw] sm:rounded-xl",
-          "md:mt-16 md:mb-8 md:w-[1232px] md:max-w-[98vw]",
+          "sm:mt-8 sm:mb-4 sm:mr-6 sm:h-auto sm:max-h-[92vh] sm:w-[96vw] sm:max-w-[96vw] sm:rounded-xl",
+          "md:mt-10 md:mb-6 md:w-[96vw] md:max-w-[1400px]",
           isVisible ? "translate-x-0" : "translate-x-full",
         )}
         onPointerDown={(event) => event.stopPropagation()}
