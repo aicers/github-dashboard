@@ -3091,11 +3091,6 @@ export function ActivityView({
             >
               필터 관리
             </Button>
-            {savedFiltersLoading ? (
-              <span className="text-xs text-muted-foreground/80">
-                불러오는 중…
-              </span>
-            ) : null}
           </div>
         </div>
         {savedFiltersError || !canSaveMoreFilters ? (
