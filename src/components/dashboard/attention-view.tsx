@@ -1,6 +1,15 @@
 "use client";
 
-import { RefreshCcw } from "lucide-react";
+import {
+  AtSign,
+  CircleDot,
+  GitPullRequest,
+  GitPullRequestDraft,
+  LayoutGrid,
+  MessageSquare,
+  Play,
+  RefreshCcw,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
   type ReactNode,
@@ -2116,11 +2125,14 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
 
   return (
     <section className="flex flex-col gap-4">
-      <header className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <p className="text-sm text-muted-foreground">
-            오래 머물러 있는 작업과 응답이 필요한 항목을 한눈에 확인하세요.
-          </p>
+      <header className="flex flex-col gap-4">
+        <div className="flex items-end justify-between">
+          <div className="flex flex-col gap-1">
+            <h1 className="text-3xl font-bold text-foreground">Follow-ups</h1>
+            <p className="text-sm text-muted-foreground">
+              오래 머물러 있는 작업과 팀원이 완료한 작업을 한눈에 확인하세요.
+            </p>
+          </div>
           <div className="flex items-center gap-3 text-sm text-foreground">
             <span className="whitespace-nowrap">
               통계 생성 시각: {generatedAtLabel}
@@ -2145,47 +2157,70 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
 
       <div className="flex flex-col gap-6">
         <nav
-          className="flex w-full flex-col gap-3"
+          className="border-b border-slate-200"
           aria-label="Follow-ups 하위 메뉴"
         >
-          <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
+          <div className="flex gap-1 overflow-x-auto">
             <button
               type="button"
               onClick={() => setActiveSectionId(null)}
               className={cn(
-                "flex-shrink-0 whitespace-nowrap rounded-full border px-4 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                "flex items-center gap-2 px-4 py-3 text-sm font-medium transition border-b-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                 activeSectionId === null
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-border/60 bg-background hover:border-primary/60 hover:bg-primary/10",
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
               )}
               aria-current={activeSectionId === null ? "true" : undefined}
             >
+              <LayoutGrid className="h-4 w-4" />
               Follow-ups 개요
             </button>
             {sections.map((section) => {
               const selected = section.id === activeSectionId;
+
+              // 각 섹션별 아이콘 매핑
+              const getIcon = () => {
+                switch (section.id) {
+                  case "stale-open-prs":
+                    return <GitPullRequest className="h-4 w-4" />;
+                  case "idle-open-prs":
+                    return <GitPullRequestDraft className="h-4 w-4" />;
+                  case "stuck-review-requests":
+                    return <MessageSquare className="h-4 w-4" />;
+                  case "backlog-issues":
+                    return <CircleDot className="h-4 w-4" />;
+                  case "stalled-in-progress-issues":
+                    return <Play className="h-4 w-4" />;
+                  case "unanswered-mentions":
+                    return <AtSign className="h-4 w-4" />;
+                  default:
+                    return <CircleDot className="h-4 w-4" />;
+                }
+              };
+
               return (
                 <button
                   key={section.id}
                   type="button"
                   onClick={() => setActiveSectionId(section.id)}
                   className={cn(
-                    "flex-shrink-0 whitespace-nowrap rounded-full border px-4 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                    "flex items-center gap-2 px-4 py-3 text-sm font-medium transition border-b-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                     selected
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border/60 bg-background hover:border-primary/60 hover:bg-primary/10",
+                      ? "border-primary text-primary"
+                      : "border-transparent text-muted-foreground hover:text-foreground",
                   )}
                   aria-current={selected ? "true" : undefined}
                 >
+                  {getIcon()}
                   {section.menuLabel}
                 </button>
               );
             })}
           </div>
           {activeMenuDescription ? (
-            <p className="text-xs text-muted-foreground">
+            <div className="px-4 py-2 text-xs text-muted-foreground bg-muted/30">
               {activeMenuDescription}
-            </p>
+            </div>
           ) : null}
         </nav>
 
