@@ -3971,14 +3971,14 @@ export function ActivityView({
                         onClick={() => handleSelectItem(item.id)}
                         onKeyDown={(event) => handleItemKeyDown(event, item.id)}
                       >
-                        <ActivityListItemSummary
-                          iconInfo={iconInfo}
-                          referenceLabel={referenceLabel}
-                          referenceUrl={item.url ?? undefined}
-                          title={item.title}
-                          metadata={
-                            <div className="flex flex-col gap-2 text-xs text-muted-foreground/80 sm:flex-row sm:items-start sm:justify-between">
-                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:flex-1">
+                        <div className="sm:flex sm:items-start sm:justify-between sm:gap-4">
+                          <ActivityListItemSummary
+                            iconInfo={iconInfo}
+                            referenceLabel={referenceLabel}
+                            referenceUrl={item.url ?? undefined}
+                            title={item.title}
+                            metadata={
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground/80">
                                 {metrics.map((metric) => (
                                   <span key={metric.key}>{metric.content}</span>
                                 ))}
@@ -4039,19 +4039,19 @@ export function ActivityView({
                                   </span>
                                 ))}
                               </div>
-                              {item.updatedAt && (
-                                <div className="flex flex-col gap-1 text-muted-foreground/80 sm:w-[180px] sm:shrink-0 sm:text-right">
-                                  {updatedRelativeLabel ? (
-                                    <span className="text-xs uppercase text-muted-foreground/70">
-                                      {updatedRelativeLabel}
-                                    </span>
-                                  ) : null}
-                                  <span>{updatedAbsoluteLabel ?? "-"}</span>
-                                </div>
-                              )}
+                            }
+                          />
+                          {item.updatedAt ? (
+                            <div className="mt-2 flex flex-col gap-1 text-xs text-muted-foreground/80 sm:mt-0 sm:w-[180px] sm:shrink-0 sm:text-right">
+                              {updatedRelativeLabel ? (
+                                <span className="font-medium uppercase text-muted-foreground/70">
+                                  {updatedRelativeLabel}
+                                </span>
+                              ) : null}
+                              <span>{updatedAbsoluteLabel ?? "-"}</span>
                             </div>
-                          }
-                        />
+                          ) : null}
+                        </div>
                       </div>
                       {isSelected && (
                         <ActivityDetailOverlay
