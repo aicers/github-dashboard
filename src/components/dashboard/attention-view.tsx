@@ -929,24 +929,14 @@ function PullRequestList({
           ? formatTimestamp(item.updatedAt, timezone)
           : "-";
         const metadata = (
-          <div className="flex flex-col gap-2 text-xs text-muted-foreground/80 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:flex-1">
-              {metrics.map((metric) => (
-                <span key={metric.key}>{metric.content}</span>
-              ))}
-              {item.author && <span>작성자 {formatUser(item.author)}</span>}
-              {item.reviewers.length > 0 && (
-                <span>리뷰어 {formatUserList(item.reviewers)}</span>
-              )}
-            </div>
-            <div className="flex flex-col gap-1 text-muted-foreground/80 sm:w-[180px] sm:shrink-0 sm:text-right">
-              {updatedRelativeLabel ? (
-                <span className="text-xs uppercase text-muted-foreground/70">
-                  {updatedRelativeLabel}
-                </span>
-              ) : null}
-              <span>{updatedAbsoluteLabel}</span>
-            </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground/80">
+            {metrics.map((metric) => (
+              <span key={metric.key}>{metric.content}</span>
+            ))}
+            {item.author && <span>작성자 {formatUser(item.author)}</span>}
+            {item.reviewers.length > 0 && (
+              <span>리뷰어 {formatUserList(item.reviewers)}</span>
+            )}
           </div>
         );
 
@@ -964,13 +954,25 @@ function PullRequestList({
                 )}
                 onClick={() => selectItem(item.id)}
               >
-                <ActivityListItemSummary
-                  iconInfo={iconInfo}
-                  referenceLabel={referenceLabel}
-                  referenceUrl={item.url ?? undefined}
-                  title={item.title}
-                  metadata={metadata}
-                />
+                <div className="sm:flex sm:items-start sm:justify-between sm:gap-4">
+                  <ActivityListItemSummary
+                    iconInfo={iconInfo}
+                    referenceLabel={referenceLabel}
+                    referenceUrl={item.url ?? undefined}
+                    title={item.title}
+                    metadata={metadata}
+                  />
+                  {item.updatedAt ? (
+                    <div className="mt-2 flex flex-col gap-1 text-xs text-muted-foreground/80 sm:mt-0 sm:w-[180px] sm:shrink-0 sm:text-right">
+                      {updatedRelativeLabel ? (
+                        <span className="font-medium uppercase text-muted-foreground/70">
+                          {updatedRelativeLabel}
+                        </span>
+                      ) : null}
+                      <span>{updatedAbsoluteLabel}</span>
+                    </div>
+                  ) : null}
+                </div>
               </button>
               {isSelected ? (
                 <ActivityDetailOverlay
@@ -1246,23 +1248,13 @@ function ReviewRequestList({
           ? formatTimestamp(item.pullRequestUpdatedAt, timezone)
           : "-";
         const metadata = (
-          <div className="flex flex-col gap-2 text-xs text-muted-foreground/80 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:flex-1">
-              {metrics.map((metric) => (
-                <span key={metric.key}>{metric.content}</span>
-              ))}
-              {item.pullRequest.author && (
-                <span>생성자 {formatUser(item.pullRequest.author)}</span>
-              )}
-            </div>
-            <div className="flex flex-col gap-1 text-muted-foreground/80 sm:w-[180px] sm:shrink-0 sm:text-right">
-              {updatedRelativeLabel ? (
-                <span className="text-xs uppercase text-muted-foreground/70">
-                  {updatedRelativeLabel}
-                </span>
-              ) : null}
-              <span>{updatedAbsoluteLabel}</span>
-            </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground/80">
+            {metrics.map((metric) => (
+              <span key={metric.key}>{metric.content}</span>
+            ))}
+            {item.pullRequest.author && (
+              <span>생성자 {formatUser(item.pullRequest.author)}</span>
+            )}
           </div>
         );
 
@@ -1280,13 +1272,25 @@ function ReviewRequestList({
                 )}
                 onClick={() => selectItem(selectionId)}
               >
-                <ActivityListItemSummary
-                  iconInfo={iconInfo}
-                  referenceLabel={referenceLabel}
-                  referenceUrl={item.pullRequest.url ?? undefined}
-                  title={item.pullRequest.title}
-                  metadata={metadata}
-                />
+                <div className="sm:flex sm:items-start sm:justify-between sm:gap-4">
+                  <ActivityListItemSummary
+                    iconInfo={iconInfo}
+                    referenceLabel={referenceLabel}
+                    referenceUrl={item.pullRequest.url ?? undefined}
+                    title={item.pullRequest.title}
+                    metadata={metadata}
+                  />
+                  {item.pullRequestUpdatedAt ? (
+                    <div className="mt-2 flex flex-col gap-1 text-xs text-muted-foreground/80 sm:mt-0 sm:w-[180px] sm:shrink-0 sm:text-right">
+                      {updatedRelativeLabel ? (
+                        <span className="font-medium uppercase text-muted-foreground/70">
+                          {updatedRelativeLabel}
+                        </span>
+                      ) : null}
+                      <span>{updatedAbsoluteLabel}</span>
+                    </div>
+                  ) : null}
+                </div>
               </button>
               {isSelected ? (
                 <ActivityDetailOverlay
@@ -1575,24 +1579,14 @@ function IssueList({
           ? formatTimestamp(item.updatedAt, timezone)
           : "-";
         const metadata = (
-          <div className="flex flex-col gap-2 text-xs text-muted-foreground/80 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:flex-1">
-              {metrics.map((metric) => (
-                <span key={metric.key}>{metric.content}</span>
-              ))}
-              {item.author && <span>생성자 {formatUser(item.author)}</span>}
-              {item.assignees.length > 0 && (
-                <span>담당자 {formatUserList(item.assignees)}</span>
-              )}
-            </div>
-            <div className="flex flex-col gap-1 text-muted-foreground/80 sm:w-[180px] sm:shrink-0 sm:text-right">
-              {updatedRelativeLabel ? (
-                <span className="text-xs uppercase text-muted-foreground/70">
-                  {updatedRelativeLabel}
-                </span>
-              ) : null}
-              <span>{updatedAbsoluteLabel}</span>
-            </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground/80">
+            {metrics.map((metric) => (
+              <span key={metric.key}>{metric.content}</span>
+            ))}
+            {item.author && <span>생성자 {formatUser(item.author)}</span>}
+            {item.assignees.length > 0 && (
+              <span>담당자 {formatUserList(item.assignees)}</span>
+            )}
           </div>
         );
 
@@ -1610,13 +1604,25 @@ function IssueList({
                 )}
                 onClick={() => selectItem(item.id)}
               >
-                <ActivityListItemSummary
-                  iconInfo={iconInfo}
-                  referenceLabel={referenceLabel}
-                  referenceUrl={item.url ?? undefined}
-                  title={item.title}
-                  metadata={metadata}
-                />
+                <div className="sm:flex sm:items-start sm:justify-between sm:gap-4">
+                  <ActivityListItemSummary
+                    iconInfo={iconInfo}
+                    referenceLabel={referenceLabel}
+                    referenceUrl={item.url ?? undefined}
+                    title={item.title}
+                    metadata={metadata}
+                  />
+                  {item.updatedAt ? (
+                    <div className="mt-2 flex flex-col gap-1 text-xs text-muted-foreground/80 sm:mt-0 sm:w-[180px] sm:shrink-0 sm:text-right">
+                      {updatedRelativeLabel ? (
+                        <span className="font-medium uppercase text-muted-foreground/70">
+                          {updatedRelativeLabel}
+                        </span>
+                      ) : null}
+                      <span>{updatedAbsoluteLabel}</span>
+                    </div>
+                  ) : null}
+                </div>
               </button>
               {isSelected ? (
                 <ActivityDetailOverlay
@@ -1878,24 +1884,12 @@ function MentionList({
           : "-";
         const metadata = (
           <div className="flex flex-col gap-2 text-xs text-muted-foreground/80">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:flex-1">
-                {metrics.map((metric) => (
-                  <span key={metric.key}>{metric.content}</span>
-                ))}
-                {item.target && (
-                  <span>멘션 대상 {formatUser(item.target)}</span>
-                )}
-                {item.author && <span>요청자 {formatUser(item.author)}</span>}
-              </div>
-              <div className="flex flex-col gap-1 text-muted-foreground/80 sm:w-[180px] sm:shrink-0 sm:text-right">
-                {updatedRelativeLabel ? (
-                  <span className="text-xs uppercase text-muted-foreground/70">
-                    {updatedRelativeLabel}
-                  </span>
-                ) : null}
-                <span>{updatedAbsoluteLabel}</span>
-              </div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              {metrics.map((metric) => (
+                <span key={metric.key}>{metric.content}</span>
+              ))}
+              {item.target && <span>멘션 대상 {formatUser(item.target)}</span>}
+              {item.author && <span>요청자 {formatUser(item.author)}</span>}
             </div>
             {item.commentExcerpt ? (
               <div className="text-muted-foreground/70">
@@ -1921,13 +1915,23 @@ function MentionList({
                 )}
                 onClick={() => selectItem(selectionId)}
               >
-                <ActivityListItemSummary
-                  iconInfo={iconInfo}
-                  referenceLabel={referenceLabel}
-                  referenceUrl={item.url ?? undefined}
-                  title={item.container.title}
-                  metadata={metadata}
-                />
+                <div className="sm:flex sm:items-start sm:justify-between sm:gap-4">
+                  <ActivityListItemSummary
+                    iconInfo={iconInfo}
+                    referenceLabel={referenceLabel}
+                    referenceUrl={item.url ?? undefined}
+                    title={item.container.title}
+                    metadata={metadata}
+                  />
+                  <div className="mt-2 flex flex-col gap-1 text-xs text-muted-foreground/80 sm:mt-0 sm:w-[180px] sm:shrink-0 sm:text-right">
+                    {updatedRelativeLabel ? (
+                      <span className="font-medium uppercase text-muted-foreground/70">
+                        {updatedRelativeLabel}
+                      </span>
+                    ) : null}
+                    <span>{updatedAbsoluteLabel}</span>
+                  </div>
+                </div>
               </button>
               {isSelected ? (
                 <ActivityDetailOverlay
