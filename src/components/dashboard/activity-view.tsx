@@ -689,10 +689,10 @@ function QuickFilterButton({
   onClick: () => void;
 }) {
   const baseClass =
-    "inline-flex h-10 items-center gap-2 rounded-full px-4 text-sm font-medium transition-colors";
+    "inline-flex h-10 items-center gap-2 rounded-full px-4 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background";
   const stateClass = active
-    ? "bg-primary/15 text-primary shadow-sm"
-    : "bg-muted/40 text-muted-foreground hover:bg-muted/60";
+    ? "bg-primary/15 text-primary shadow-sm hover:bg-primary/20 hover:shadow-md hover:-translate-y-0.5"
+    : "bg-muted/40 text-muted-foreground hover:bg-muted/70 hover:text-foreground hover:shadow-md hover:-translate-y-0.5";
 
   return (
     <button
