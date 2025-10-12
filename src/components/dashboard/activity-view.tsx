@@ -1196,8 +1196,8 @@ function TogglePill({
     resolvedVariant === "active"
       ? "border-primary bg-primary/10 text-primary"
       : resolvedVariant === "muted"
-        ? "border-border/40 bg-muted/10 text-muted-foreground/60"
-        : "border-border text-muted-foreground hover:bg-muted";
+        ? "border-border/60 bg-muted/15 text-muted-foreground/80"
+        : "border-border text-foreground/80 hover:bg-muted";
 
   return (
     <button
