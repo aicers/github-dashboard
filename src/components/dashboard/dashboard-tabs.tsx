@@ -32,7 +32,7 @@ export function DashboardTabs({ currentPathname }: DashboardTabsProps = {}) {
   const pathname = currentPathname ?? pathnameFromRouter;
 
   return (
-    <nav className="flex flex-wrap items-center gap-2 border-b border-slate-200/70 pb-1">
+    <nav className="flex flex-wrap items-center gap-2 pb-0">
       {tabs.map((tab) => {
         const isActive = pathname === tab.href;
         const Icon = tab.icon;
