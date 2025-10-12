@@ -546,7 +546,7 @@ function RankingCard({
   emptyText: string;
 }) {
   return (
-    <div className="rounded-md border border-border/50 p-3">
+    <div className="rounded-md border border-border/50 bg-background p-3">
       <div className="text-sm font-semibold text-foreground">{title}</div>
       {entries.length ? (
         <ol className="mt-2 space-y-1 text-sm text-muted-foreground">
@@ -581,17 +581,33 @@ function FollowUpOverview({
   summaries: FollowUpSummary[];
   onSelect: (id: string) => void;
 }) {
+  const summaryOrder = [
+    "backlog-issues",
+    "stalled-in-progress-issues",
+    "stale-open-prs",
+    "idle-open-prs",
+    "stuck-review-requests",
+    "unanswered-mentions",
+  ];
+  const summaryMap = new Map(summaries.map((summary) => [summary.id, summary]));
+  const orderedSummaries = summaryOrder
+    .map((summaryId) => summaryMap.get(summaryId))
+    .filter((summary): summary is FollowUpSummary => Boolean(summary));
+  const remainingSummaries = summaries.filter(
+    (summary) => !summaryOrder.includes(summary.id),
+  );
+  const visibleSummaries =
+    remainingSummaries.length === 0
+      ? orderedSummaries
+      : [...orderedSummaries, ...remainingSummaries];
+
   return (
     <div className="space-y-6">
-      <p className="text-sm text-foreground/80">
-        각 하위 메뉴의 항목 수와 누적 경과일수를 요약했습니다. 자세한 내역은
-        상단 메뉴에서 원하는 항목을 선택해 확인하세요.
-      </p>
       <div className="grid gap-4 lg:grid-cols-2">
-        {summaries.map((summary) => (
+        {visibleSummaries.map((summary) => (
           <div
             key={summary.id}
-            className="flex flex-col gap-3 rounded-md border border-border/50 p-4"
+            className="flex flex-col gap-3 rounded-md border border-border/40 bg-background p-4"
             data-testid={`follow-up-summary-${summary.id}`}
           >
             <div className="flex items-start justify-between gap-2">
@@ -903,7 +919,7 @@ function PullRequestList({
 
             return (
               <li key={item.id}>
-                <div className="rounded-md border border-border bg-card/30 p-3">
+                <div className="rounded-md border border-border bg-background p-3">
                   <button
                     type="button"
                     aria-expanded={isSelected}
@@ -1199,7 +1215,7 @@ function ReviewRequestList({
 
             return (
               <li key={item.id}>
-                <div className="rounded-md border border-border bg-card/30 p-3">
+                <div className="rounded-md border border-border bg-background p-3">
                   <button
                     type="button"
                     aria-expanded={isSelected}
@@ -1254,6 +1270,7 @@ function IssueList({
   metricLabel = "경과일수",
   mentionWaitMap,
   timezone,
+  segmented = false,
 }: {
   items: IssueAttentionItem[];
   emptyText: string;
@@ -1262,6 +1279,7 @@ function IssueList({
   metricLabel?: string;
   mentionWaitMap: Map<string, MentionAttentionItem[]>;
   timezone: string;
+  segmented?: boolean;
 }) {
   const [authorFilter, setAuthorFilter] = useState("all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
@@ -1364,188 +1382,210 @@ function IssueList({
   const { openItemId, detailMap, loadingDetailIds, selectItem, closeItem } =
     useActivityDetailState();
 
-  if (!items.length) {
+  if (!items.length && !segmented) {
     return <p className="text-sm text-muted-foreground">{emptyText}</p>;
+  }
+
+  const rankingGrid = (
+    <div className="grid gap-4 md:grid-cols-2">
+      <RankingCard
+        title={`생성자 ${metricLabel} 합계 순위`}
+        entries={authorRankingByTotal}
+        valueFormatter={(entry) => formatDays(entry.total)}
+        emptyText="생성자 데이터가 없습니다."
+      />
+      <RankingCard
+        title="생성자 건수 순위"
+        entries={authorRankingByCount}
+        valueFormatter={(entry) => formatCount(entry.count)}
+        emptyText="생성자 데이터가 없습니다."
+      />
+      <RankingCard
+        title={`담당자 ${metricLabel} 합계 순위`}
+        entries={assigneeRankingByTotal}
+        valueFormatter={(entry) => formatDays(entry.total)}
+        emptyText="담당자 데이터가 없습니다."
+      />
+      <RankingCard
+        title="담당자 건수 순위"
+        entries={assigneeRankingByCount}
+        valueFormatter={(entry) => formatCount(entry.count)}
+        emptyText="담당자 데이터가 없습니다."
+      />
+    </div>
+  );
+
+  const filterControls = (
+    <div className="flex flex-wrap gap-4">
+      <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+        생성자 필터
+        <select
+          className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          value={authorFilter}
+          onChange={(event) => setAuthorFilter(event.target.value)}
+        >
+          <option value="all">전체</option>
+          {authorOptions.map((option) => (
+            <option key={option.key} value={option.key}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {hasAssigneeFilter ? (
+        <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+          담당자 필터
+          <select
+            className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            value={assigneeFilter}
+            onChange={(event) => setAssigneeFilter(event.target.value)}
+          >
+            <option value="all">전체</option>
+            {assigneeOptions.map((option) => (
+              <option key={option.key} value={option.key}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+    </div>
+  );
+
+  const listContent = sortedItems.length ? (
+    <ul className="space-y-4">
+      {sortedItems.map((item) => {
+        const attentionFlags = highlightInProgress
+          ? { stalledIssue: true }
+          : { backlogIssue: true };
+        const activityItem = createBaseActivityItem({
+          id: item.id,
+          type: "issue",
+          number: item.number,
+          title: item.title,
+          url: item.url,
+          repository: item.repository,
+          author: item.author,
+          attention: attentionFlags,
+        });
+        activityItem.assignees = toActivityUsers(item.assignees);
+        activityItem.businessDaysOpen = item.ageDays ?? null;
+        if (item.inProgressAgeDays !== undefined) {
+          activityItem.businessDaysSinceInProgress =
+            item.inProgressAgeDays ?? null;
+          activityItem.businessDaysInProgressOpen =
+            item.inProgressAgeDays ?? null;
+        }
+        const mentionDetails = mentionWaitMap.get(item.id) ?? [];
+        if (mentionDetails.length) {
+          activityItem.mentionWaits = toActivityMentionWaits(mentionDetails);
+        }
+
+        const iconInfo = resolveActivityIcon(activityItem);
+        const referenceLabel = buildReferenceLabel(
+          item.repository,
+          item.number,
+        );
+        const isSelected = openItemId === item.id;
+        const detail = detailMap[item.id] ?? undefined;
+        const isDetailLoading = loadingDetailIds.has(item.id);
+        const badges = [
+          highlightInProgress
+            ? "정체된 In Progress 이슈"
+            : "정체된 Backlog 이슈",
+        ];
+        const metrics = buildActivityMetricEntries(activityItem);
+        const metadata = (
+          <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground/80">
+            <div className="flex flex-wrap items-center gap-3">
+              {metrics.map((metric) => (
+                <span key={metric.key}>{metric.content}</span>
+              ))}
+              {item.updatedAt && (
+                <span>{formatRelative(item.updatedAt) ?? "-"}</span>
+              )}
+              {item.author && <span>생성자 {formatUser(item.author)}</span>}
+              {item.assignees.length > 0 && (
+                <span>담당자 {formatUserList(item.assignees)}</span>
+              )}
+            </div>
+            <div className="flex flex-col items-end text-muted-foreground/80">
+              <span>
+                {item.updatedAt
+                  ? formatTimestamp(item.updatedAt, timezone)
+                  : "-"}
+              </span>
+            </div>
+          </div>
+        );
+
+        return (
+          <li key={item.id}>
+            <div className="rounded-md border border-border bg-background p-3">
+              <button
+                type="button"
+                aria-expanded={isSelected}
+                className={cn(
+                  "block w-full cursor-pointer bg-transparent p-0 text-left transition-colors focus-visible:outline-none border-none",
+                  isSelected
+                    ? "text-foreground"
+                    : "text-foreground hover:text-primary",
+                )}
+                onClick={() => selectItem(item.id)}
+              >
+                <ActivityListItemSummary
+                  iconInfo={iconInfo}
+                  referenceLabel={referenceLabel}
+                  referenceUrl={item.url ?? undefined}
+                  title={item.title}
+                  metadata={metadata}
+                />
+              </button>
+              {isSelected ? (
+                <ActivityDetailOverlay
+                  item={activityItem}
+                  iconInfo={iconInfo}
+                  badges={badges}
+                  onClose={closeItem}
+                >
+                  <FollowUpDetailContent
+                    detail={detail}
+                    isLoading={isDetailLoading}
+                  />
+                </ActivityDetailOverlay>
+              ) : null}
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  ) : (
+    <p className="text-sm text-muted-foreground">
+      선택한 조건에 해당하는 이슈가 없습니다.
+    </p>
+  );
+
+  if (segmented) {
+    return (
+      <div className="space-y-6">
+        <section className="rounded-lg border border-border/50 bg-background p-4 shadow-sm">
+          {rankingGrid}
+        </section>
+        <section className="space-y-4 rounded-lg border border-border/50 bg-background p-4 shadow-sm">
+          {filterControls}
+          {listContent}
+        </section>
+      </div>
+    );
   }
 
   return (
     <div className="space-y-6">
       <div className="space-y-4">
-        <div className="grid gap-4 md:grid-cols-2">
-          <RankingCard
-            title={`생성자 ${metricLabel} 합계 순위`}
-            entries={authorRankingByTotal}
-            valueFormatter={(entry) => formatDays(entry.total)}
-            emptyText="생성자 데이터가 없습니다."
-          />
-          <RankingCard
-            title="생성자 건수 순위"
-            entries={authorRankingByCount}
-            valueFormatter={(entry) => formatCount(entry.count)}
-            emptyText="생성자 데이터가 없습니다."
-          />
-          <RankingCard
-            title={`담당자 ${metricLabel} 합계 순위`}
-            entries={assigneeRankingByTotal}
-            valueFormatter={(entry) => formatDays(entry.total)}
-            emptyText="담당자 데이터가 없습니다."
-          />
-          <RankingCard
-            title="담당자 건수 순위"
-            entries={assigneeRankingByCount}
-            valueFormatter={(entry) => formatCount(entry.count)}
-            emptyText="담당자 데이터가 없습니다."
-          />
-        </div>
-        <div className="flex flex-wrap gap-4">
-          <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-            생성자 필터
-            <select
-              className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              value={authorFilter}
-              onChange={(event) => setAuthorFilter(event.target.value)}
-            >
-              <option value="all">전체</option>
-              {authorOptions.map((option) => (
-                <option key={option.key} value={option.key}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {hasAssigneeFilter ? (
-            <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-              담당자 필터
-              <select
-                className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                value={assigneeFilter}
-                onChange={(event) => setAssigneeFilter(event.target.value)}
-              >
-                <option value="all">전체</option>
-                {assigneeOptions.map((option) => (
-                  <option key={option.key} value={option.key}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-        </div>
+        {rankingGrid}
+        {filterControls}
       </div>
-
-      {sortedItems.length ? (
-        <ul className="space-y-4">
-          {sortedItems.map((item) => {
-            const attentionFlags = highlightInProgress
-              ? { stalledIssue: true }
-              : { backlogIssue: true };
-            const activityItem = createBaseActivityItem({
-              id: item.id,
-              type: "issue",
-              number: item.number,
-              title: item.title,
-              url: item.url,
-              repository: item.repository,
-              author: item.author,
-              attention: attentionFlags,
-            });
-            activityItem.assignees = toActivityUsers(item.assignees);
-            activityItem.businessDaysOpen = item.ageDays ?? null;
-            if (item.inProgressAgeDays !== undefined) {
-              activityItem.businessDaysSinceInProgress =
-                item.inProgressAgeDays ?? null;
-              activityItem.businessDaysInProgressOpen =
-                item.inProgressAgeDays ?? null;
-            }
-            const mentionDetails = mentionWaitMap.get(item.id) ?? [];
-            if (mentionDetails.length) {
-              activityItem.mentionWaits =
-                toActivityMentionWaits(mentionDetails);
-            }
-
-            const iconInfo = resolveActivityIcon(activityItem);
-            const referenceLabel = buildReferenceLabel(
-              item.repository,
-              item.number,
-            );
-            const isSelected = openItemId === item.id;
-            const detail = detailMap[item.id] ?? undefined;
-            const isDetailLoading = loadingDetailIds.has(item.id);
-            const badges = [
-              highlightInProgress
-                ? "정체된 In Progress 이슈"
-                : "정체된 Backlog 이슈",
-            ];
-            const metrics = buildActivityMetricEntries(activityItem);
-            const metadata = (
-              <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground/80">
-                <div className="flex flex-wrap items-center gap-3">
-                  {metrics.map((metric) => (
-                    <span key={metric.key}>{metric.content}</span>
-                  ))}
-                  {item.updatedAt && (
-                    <span>{formatRelative(item.updatedAt) ?? "-"}</span>
-                  )}
-                  {item.author && <span>생성자 {formatUser(item.author)}</span>}
-                  {item.assignees.length > 0 && (
-                    <span>담당자 {formatUserList(item.assignees)}</span>
-                  )}
-                </div>
-                <div className="flex flex-col items-end text-muted-foreground/80">
-                  <span>
-                    {item.updatedAt
-                      ? formatTimestamp(item.updatedAt, timezone)
-                      : "-"}
-                  </span>
-                </div>
-              </div>
-            );
-
-            return (
-              <li key={item.id}>
-                <div className="rounded-md border border-border bg-card/30 p-3">
-                  <button
-                    type="button"
-                    aria-expanded={isSelected}
-                    className={cn(
-                      "block w-full cursor-pointer bg-transparent p-0 text-left transition-colors focus-visible:outline-none border-none",
-                      isSelected
-                        ? "text-foreground"
-                        : "text-foreground hover:text-primary",
-                    )}
-                    onClick={() => selectItem(item.id)}
-                  >
-                    <ActivityListItemSummary
-                      iconInfo={iconInfo}
-                      referenceLabel={referenceLabel}
-                      referenceUrl={item.url ?? undefined}
-                      title={item.title}
-                      metadata={metadata}
-                    />
-                  </button>
-                  {isSelected ? (
-                    <ActivityDetailOverlay
-                      item={activityItem}
-                      iconInfo={iconInfo}
-                      badges={badges}
-                      onClose={closeItem}
-                    >
-                      <FollowUpDetailContent
-                        detail={detail}
-                        isLoading={isDetailLoading}
-                      />
-                    </ActivityDetailOverlay>
-                  ) : null}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          선택한 조건에 해당하는 이슈가 없습니다.
-        </p>
-      )}
+      {listContent}
     </div>
   );
 }
@@ -1785,7 +1825,7 @@ function MentionList({
               <li
                 key={`${item.commentId}:${item.target?.id ?? "unknown"}:${index}`}
               >
-                <div className="rounded-md border border-border bg-card/30 p-3">
+                <div className="rounded-md border border-border bg-background p-3">
                   <button
                     type="button"
                     aria-expanded={isSelected}
@@ -1898,6 +1938,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
           metricLabel="경과일수"
           mentionWaitMap={mentionWaitMap}
           timezone={insights.timezone}
+          segmented
         />
       ),
     },
@@ -2009,39 +2050,39 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
       : activeSection?.menuDescription;
 
   return (
-    <section className="flex flex-col gap-8">
-      <header className="flex flex-col gap-2">
-        <p className="text-sm text-muted-foreground">
-          오래 머물러 있는 작업과 응답이 필요한 항목을 한눈에 확인하세요.
-        </p>
+    <section className="flex flex-col gap-4">
+      <header className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            오래 머물러 있는 작업과 응답이 필요한 항목을 한눈에 확인하세요.
+          </p>
+          <div className="flex items-center gap-3 text-sm text-foreground">
+            <span className="whitespace-nowrap">
+              통계 생성 시각: {generatedAtLabel}
+            </span>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className={cn(
+                "inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background text-foreground transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70",
+              )}
+              aria-label="Follow-ups 통계 새로 고침"
+            >
+              <RefreshCcw
+                className={cn("h-4 w-4", isRefreshing ? "animate-spin" : "")}
+                aria-hidden="true"
+              />
+            </button>
+          </div>
+        </div>
       </header>
-
-      <div className="flex items-center gap-3 text-sm text-foreground">
-        <span>통계 생성 시각: {generatedAtLabel}</span>
-        <button
-          type="button"
-          onClick={handleRefresh}
-          disabled={isRefreshing}
-          className={cn(
-            "inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background text-foreground transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70",
-          )}
-          aria-label="Follow-ups 통계 새로 고침"
-        >
-          <RefreshCcw
-            className={cn("h-4 w-4", isRefreshing ? "animate-spin" : "")}
-            aria-hidden="true"
-          />
-        </button>
-      </div>
 
       <div className="flex flex-col gap-6">
         <nav
           className="flex w-full flex-col gap-3"
           aria-label="Follow-ups 하위 메뉴"
         >
-          <span className="text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-primary/80">
-            Overview
-          </span>
           <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
             <button
               type="button"
@@ -2084,33 +2125,24 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
         </nav>
 
         <div className="flex-1">
-          <Card>
-            {activeSection ? (
-              <>
+          {activeSection ? (
+            activeSection.id === "backlog-issues" ? (
+              activeSection.content
+            ) : (
+              <Card>
                 <CardHeader>
                   <CardTitle>{activeSection.title}</CardTitle>
                   <CardDescription>{activeSection.description}</CardDescription>
                 </CardHeader>
                 <CardContent>{activeSection.content}</CardContent>
-              </>
-            ) : (
-              <>
-                <CardHeader>
-                  <CardTitle>Follow-ups 개요</CardTitle>
-                  <CardDescription>
-                    전체 현황을 확인하거나 자세한 내용을 보려면 상단 메뉴에서
-                    항목을 선택하세요.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <FollowUpOverview
-                    summaries={summaries}
-                    onSelect={(id) => setActiveSectionId(id)}
-                  />
-                </CardContent>
-              </>
-            )}
-          </Card>
+              </Card>
+            )
+          ) : (
+            <FollowUpOverview
+              summaries={summaries}
+              onSelect={(id) => setActiveSectionId(id)}
+            />
+          )}
         </div>
       </div>
     </section>

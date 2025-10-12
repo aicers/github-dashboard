@@ -157,9 +157,7 @@ describe("AttentionView backlog issues", () => {
     await user.click(menuButton);
 
     expect(
-      screen.getByText(
-        "40일 이상 (주말과 공휴일 제외) In Progress로 이동하지 않은 이슈",
-      ),
+      screen.getByText("40일 이상 In Progress로 이동하지 않은 이슈"),
     ).toBeInTheDocument();
     expect(screen.getByText("Refactor backlog workflows")).toBeInTheDocument();
     expect(
