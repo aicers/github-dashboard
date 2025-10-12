@@ -922,26 +922,30 @@ function PullRequestList({
         const isDetailLoading = loadingDetailIds.has(item.id);
         const badges = [showUpdated ? "업데이트 없는 PR" : "오래된 PR"];
         const metrics = buildActivityMetricEntries(activityItem);
+        const updatedRelativeLabel = item.updatedAt
+          ? formatRelative(item.updatedAt)
+          : null;
+        const updatedAbsoluteLabel = item.updatedAt
+          ? formatTimestamp(item.updatedAt, timezone)
+          : "-";
         const metadata = (
-          <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground/80">
-            <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-col gap-2 text-xs text-muted-foreground/80 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:flex-1">
               {metrics.map((metric) => (
                 <span key={metric.key}>{metric.content}</span>
               ))}
-              {item.updatedAt && (
-                <span>{formatRelative(item.updatedAt) ?? "-"}</span>
-              )}
               {item.author && <span>작성자 {formatUser(item.author)}</span>}
               {item.reviewers.length > 0 && (
                 <span>리뷰어 {formatUserList(item.reviewers)}</span>
               )}
             </div>
-            <div className="flex flex-col items-end text-muted-foreground/80">
-              <span>
-                {item.updatedAt
-                  ? formatTimestamp(item.updatedAt, timezone)
-                  : "-"}
-              </span>
+            <div className="flex flex-col gap-1 text-muted-foreground/80 sm:w-[180px] sm:shrink-0 sm:text-right">
+              {updatedRelativeLabel ? (
+                <span className="text-xs uppercase text-muted-foreground/70">
+                  {updatedRelativeLabel}
+                </span>
+              ) : null}
+              <span>{updatedAbsoluteLabel}</span>
             </div>
           </div>
         );
@@ -1235,25 +1239,29 @@ function ReviewRequestList({
         const isDetailLoading = loadingDetailIds.has(selectionId);
         const badges = ["응답 없는 리뷰 요청"];
         const metrics = buildActivityMetricEntries(activityItem);
+        const updatedRelativeLabel = item.pullRequestUpdatedAt
+          ? formatRelative(item.pullRequestUpdatedAt)
+          : null;
+        const updatedAbsoluteLabel = item.pullRequestUpdatedAt
+          ? formatTimestamp(item.pullRequestUpdatedAt, timezone)
+          : "-";
         const metadata = (
-          <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground/80">
-            <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-col gap-2 text-xs text-muted-foreground/80 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:flex-1">
               {metrics.map((metric) => (
                 <span key={metric.key}>{metric.content}</span>
               ))}
-              {item.pullRequestUpdatedAt && (
-                <span>{formatRelative(item.pullRequestUpdatedAt) ?? "-"}</span>
-              )}
               {item.pullRequest.author && (
                 <span>생성자 {formatUser(item.pullRequest.author)}</span>
               )}
             </div>
-            <div className="flex flex-col items-end text-muted-foreground/80">
-              <span>
-                {item.pullRequestUpdatedAt
-                  ? formatTimestamp(item.pullRequestUpdatedAt, timezone)
-                  : "-"}
-              </span>
+            <div className="flex flex-col gap-1 text-muted-foreground/80 sm:w-[180px] sm:shrink-0 sm:text-right">
+              {updatedRelativeLabel ? (
+                <span className="text-xs uppercase text-muted-foreground/70">
+                  {updatedRelativeLabel}
+                </span>
+              ) : null}
+              <span>{updatedAbsoluteLabel}</span>
             </div>
           </div>
         );
@@ -1560,26 +1568,30 @@ function IssueList({
             : "정체된 Backlog 이슈",
         ];
         const metrics = buildActivityMetricEntries(activityItem);
+        const updatedRelativeLabel = item.updatedAt
+          ? formatRelative(item.updatedAt)
+          : null;
+        const updatedAbsoluteLabel = item.updatedAt
+          ? formatTimestamp(item.updatedAt, timezone)
+          : "-";
         const metadata = (
-          <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground/80">
-            <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-col gap-2 text-xs text-muted-foreground/80 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:flex-1">
               {metrics.map((metric) => (
                 <span key={metric.key}>{metric.content}</span>
               ))}
-              {item.updatedAt && (
-                <span>{formatRelative(item.updatedAt) ?? "-"}</span>
-              )}
               {item.author && <span>생성자 {formatUser(item.author)}</span>}
               {item.assignees.length > 0 && (
                 <span>담당자 {formatUserList(item.assignees)}</span>
               )}
             </div>
-            <div className="flex flex-col items-end text-muted-foreground/80">
-              <span>
-                {item.updatedAt
-                  ? formatTimestamp(item.updatedAt, timezone)
-                  : "-"}
-              </span>
+            <div className="flex flex-col gap-1 text-muted-foreground/80 sm:w-[180px] sm:shrink-0 sm:text-right">
+              {updatedRelativeLabel ? (
+                <span className="text-xs uppercase text-muted-foreground/70">
+                  {updatedRelativeLabel}
+                </span>
+              ) : null}
+              <span>{updatedAbsoluteLabel}</span>
             </div>
           </div>
         );
@@ -1858,21 +1870,31 @@ function MentionList({
         const isDetailLoading = loadingDetailIds.has(selectionId);
         const badges = ["응답 없는 멘션"];
         const metrics = buildActivityMetricEntries(activityItem);
+        const updatedRelativeLabel = item.mentionedAt
+          ? formatRelative(item.mentionedAt)
+          : null;
+        const updatedAbsoluteLabel = item.mentionedAt
+          ? formatTimestamp(item.mentionedAt, timezone)
+          : "-";
         const metadata = (
           <div className="flex flex-col gap-2 text-xs text-muted-foreground/80">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:flex-1">
                 {metrics.map((metric) => (
                   <span key={metric.key}>{metric.content}</span>
                 ))}
-                <span>{formatRelative(item.mentionedAt) ?? "-"}</span>
                 {item.target && (
                   <span>멘션 대상 {formatUser(item.target)}</span>
                 )}
                 {item.author && <span>요청자 {formatUser(item.author)}</span>}
               </div>
-              <div className="flex flex-col items-end text-muted-foreground/80">
-                <span>{formatTimestamp(item.mentionedAt, timezone)}</span>
+              <div className="flex flex-col gap-1 text-muted-foreground/80 sm:w-[180px] sm:shrink-0 sm:text-right">
+                {updatedRelativeLabel ? (
+                  <span className="text-xs uppercase text-muted-foreground/70">
+                    {updatedRelativeLabel}
+                  </span>
+                ) : null}
+                <span>{updatedAbsoluteLabel}</span>
               </div>
             </div>
             {item.commentExcerpt ? (
