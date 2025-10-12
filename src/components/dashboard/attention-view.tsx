@@ -851,7 +851,7 @@ function PullRequestList({
           value={authorFilter}
           onChange={(event) => setAuthorFilter(event.target.value)}
         >
-          <option value="all">전체</option>
+          <option value="all">미적용</option>
           {authorOptions.map((option) => (
             <option key={option.key} value={option.key}>
               {option.label}
@@ -867,7 +867,7 @@ function PullRequestList({
             value={reviewerFilter}
             onChange={(event) => setReviewerFilter(event.target.value)}
           >
-            <option value="all">전체</option>
+            <option value="all">미적용</option>
             {reviewerOptions.map((option) => (
               <option key={option.key} value={option.key}>
                 {option.label}
@@ -1171,7 +1171,7 @@ function ReviewRequestList({
           value={authorFilter}
           onChange={(event) => setAuthorFilter(event.target.value)}
         >
-          <option value="all">전체</option>
+          <option value="all">미적용</option>
           {authorOptions.map((option) => (
             <option key={option.key} value={option.key}>
               {option.label}
@@ -1187,7 +1187,7 @@ function ReviewRequestList({
             value={reviewerFilter}
             onChange={(event) => setReviewerFilter(event.target.value)}
           >
-            <option value="all">전체</option>
+            <option value="all">미적용</option>
             {reviewerOptions.map((option) => (
               <option key={option.key} value={option.key}>
                 {option.label}
@@ -1501,7 +1501,7 @@ function IssueList({
           value={authorFilter}
           onChange={(event) => setAuthorFilter(event.target.value)}
         >
-          <option value="all">전체</option>
+          <option value="all">미적용</option>
           {authorOptions.map((option) => (
             <option key={option.key} value={option.key}>
               {option.label}
@@ -1517,7 +1517,7 @@ function IssueList({
             value={assigneeFilter}
             onChange={(event) => setAssigneeFilter(event.target.value)}
           >
-            <option value="all">전체</option>
+            <option value="all">미적용</option>
             {assigneeOptions.map((option) => (
               <option key={option.key} value={option.key}>
                 {option.label}
@@ -1814,7 +1814,7 @@ function MentionList({
           value={targetFilter}
           onChange={(event) => setTargetFilter(event.target.value)}
         >
-          <option value="all">전체</option>
+          <option value="all">미적용</option>
           {targetOptions.map((option) => (
             <option key={option.key} value={option.key}>
               {option.label}
@@ -1829,7 +1829,7 @@ function MentionList({
           value={authorFilter}
           onChange={(event) => setAuthorFilter(event.target.value)}
         >
-          <option value="all">전체</option>
+          <option value="all">미적용</option>
           {authorOptions.map((option) => (
             <option key={option.key} value={option.key}>
               {option.label}
