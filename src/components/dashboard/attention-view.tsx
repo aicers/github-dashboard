@@ -2126,13 +2126,10 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
   return (
     <section className="flex flex-col gap-4">
       <header className="flex flex-col gap-4">
-        <div className="flex items-end justify-between">
-          <div className="flex flex-col gap-1">
-            <h1 className="text-3xl font-bold text-foreground">Follow-ups</h1>
-            <p className="text-sm text-muted-foreground">
-              오래 머물러 있는 작업과 팀원이 완료한 작업을 한눈에 확인하세요.
-            </p>
-          </div>
+        <div className="flex items-start justify-between">
+          <p className="text-sm text-muted-foreground">
+            오래 머물러 있는 작업과 팀원이 완료한 작업을 한눈에 확인하세요.
+          </p>
           <div className="flex items-center gap-3 text-sm text-foreground">
             <span className="whitespace-nowrap">
               통계 생성 시각: {generatedAtLabel}
