@@ -2962,8 +2962,7 @@ export function ActivityView({
     }
   }, [detailMap, loadDetail, loadingDetailIds, openItemId]);
 
-  const savedFiltersCount = savedFilters.length;
-  const canSaveMoreFilters = savedFiltersCount < savedFiltersLimit;
+  const canSaveMoreFilters = savedFilters.length < savedFiltersLimit;
 
   return (
     <div className="flex flex-col gap-6">
@@ -3063,9 +3062,6 @@ export function ActivityView({
               불러오는 중…
             </span>
           ) : null}
-          <span className="text-[10px] text-muted-foreground/70">
-            {savedFiltersCount} / {savedFiltersLimit}
-          </span>
         </div>
         {savedFiltersError || !canSaveMoreFilters ? (
           <div className="flex flex-wrap items-center gap-2 text-[11px]">
@@ -3800,29 +3796,6 @@ export function ActivityView({
             >
               초기화
             </Button>
-            <div className="flex items-center gap-2 md:ml-4">
-              <Label className="text-xs font-medium uppercase text-muted-foreground/90">
-                날짜 이동
-              </Label>
-              <Input
-                type="date"
-                value={jumpDate}
-                onChange={(event) => setJumpDate(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    jumpToDate();
-                  }
-                }}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={jumpToDate}
-                disabled={isLoading}
-              >
-                이동
-              </Button>
-            </div>
           </div>
           {error && (
             <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
@@ -3833,10 +3806,35 @@ export function ActivityView({
       </Card>
 
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-muted-foreground/80">
-            페이지 {data.pageInfo.page} / {data.pageInfo.totalPages} (총{" "}
-            {data.pageInfo.totalCount}건)
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground/80">
+            <span>
+              페이지 {data.pageInfo.page} / {data.pageInfo.totalPages} (총{" "}
+              {data.pageInfo.totalCount}건)
+            </span>
+            <div className="flex items-center gap-2 text-xs uppercase text-muted-foreground/80">
+              <Label className="font-medium">날짜 이동</Label>
+              <Input
+                type="date"
+                value={jumpDate}
+                onChange={(event) => setJumpDate(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    jumpToDate();
+                  }
+                }}
+                className="h-8 w-auto"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={jumpToDate}
+                disabled={isLoading}
+                className="h-8 px-3 text-xs"
+              >
+                이동
+              </Button>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs uppercase text-muted-foreground/80">
