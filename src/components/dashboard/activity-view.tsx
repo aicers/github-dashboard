@@ -1232,10 +1232,10 @@ function QuickFilterButton({
   onClick: () => void;
 }) {
   const baseClass =
-    "inline-flex h-10 items-center gap-2 rounded-full border px-4 text-sm font-medium transition-colors";
+    "inline-flex h-10 items-center gap-2 rounded-full px-4 text-sm font-medium transition-colors";
   const stateClass = active
-    ? "border-primary bg-primary/10 text-primary shadow-sm"
-    : "border-border/70 bg-background/80 text-muted-foreground hover:bg-muted/50";
+    ? "bg-primary/15 text-primary shadow-sm"
+    : "bg-muted/40 text-muted-foreground hover:bg-muted/60";
 
   return (
     <button
@@ -2994,7 +2994,7 @@ export function ActivityView({
           </p>
         </div>
         <div className="flex flex-col items-end gap-1 text-xs text-muted-foreground">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/70 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/80">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-background/70 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/80">
             Last sync:
             <span className="font-semibold text-foreground/80">
               {formatDateTime(data.lastSyncCompletedAt, data.timezone) ??
@@ -3006,121 +3006,119 @@ export function ActivityView({
           ) : null}
         </div>
       </div>
-      <div className="rounded-2xl border border-border/60 bg-card/60 px-4 py-3 shadow-sm backdrop-blur">
-        <div className="flex flex-col gap-2">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              {quickFilterDefinitions.length > 0 ? (
-                quickFilterDefinitions.map((definition) => {
-                  const active = definition.id === activeQuickFilterId;
-                  return (
-                    <QuickFilterButton
-                      key={definition.id}
-                      active={active}
-                      label={definition.label}
-                      description={definition.description}
-                      icon={definition.icon}
-                      onClick={() => handleApplyQuickFilter(definition)}
-                    />
-                  );
-                })
-              ) : (
-                <span className="text-xs text-muted-foreground/80">
-                  사용할 수 있는 빠른 필터가 없습니다.
-                </span>
-              )}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative">
-                <Label htmlFor={savedFilterSelectId} className="sr-only">
-                  저장된 필터 선택
-                </Label>
-                <select
-                  id={savedFilterSelectId}
-                  value={selectedSavedFilterId}
-                  onChange={(event) => {
-                    const nextId = event.target.value;
-                    if (!nextId) {
-                      setSelectedSavedFilterId("");
-                      return;
-                    }
-                    const target = savedFilters.find(
-                      (filter) => filter.id === nextId,
-                    );
-                    if (target) {
-                      applySavedFilter(target);
-                    }
-                  }}
-                  disabled={savedFiltersLoading || savedFilters.length === 0}
-                  className={cn(
-                    "h-10 min-w-[168px] appearance-none rounded-full border border-border/70 bg-background/80 px-4 pr-10 text-sm font-medium text-foreground shadow-sm transition",
-                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60",
-                  )}
-                >
-                  <option value="">필터 선택</option>
-                  {savedFilters.map((filter) => (
-                    <option key={filter.id} value={filter.id}>
-                      {filter.name}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setFiltersManagerMode("save");
-                  setFiltersManagerOpen(true);
-                  setFiltersManagerMessage(null);
-                  setFiltersManagerError(null);
-                  setFiltersManagerBusyId(null);
-                  setSaveFilterError(null);
-                  const selected = savedFilters.find(
-                    (filter) => filter.id === selectedSavedFilterId,
-                  );
-                  setSaveFilterName(selected ? selected.name : "");
-                }}
-                disabled={!canSaveMoreFilters}
-                className="h-10 rounded-full px-4 text-sm font-medium"
-              >
-                현재 필터 저장
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setFiltersManagerMode("manage");
-                  setFiltersManagerOpen(true);
-                  setFiltersManagerMessage(null);
-                  setFiltersManagerError(null);
-                  setSaveFilterError(null);
-                }}
-                className="h-10 rounded-full px-4 text-sm font-medium text-muted-foreground hover:text-foreground"
-              >
-                필터 관리
-              </Button>
-              {savedFiltersLoading ? (
-                <span className="text-xs text-muted-foreground/80">
-                  불러오는 중…
-                </span>
-              ) : null}
-            </div>
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {quickFilterDefinitions.length > 0 ? (
+              quickFilterDefinitions.map((definition) => {
+                const active = definition.id === activeQuickFilterId;
+                return (
+                  <QuickFilterButton
+                    key={definition.id}
+                    active={active}
+                    label={definition.label}
+                    description={definition.description}
+                    icon={definition.icon}
+                    onClick={() => handleApplyQuickFilter(definition)}
+                  />
+                );
+              })
+            ) : (
+              <span className="text-xs text-muted-foreground/80">
+                사용할 수 있는 빠른 필터가 없습니다.
+              </span>
+            )}
           </div>
-          {savedFiltersError || !canSaveMoreFilters ? (
-            <div className="flex flex-wrap items-center gap-2 rounded-full bg-muted/40 px-3 py-1 text-[11px] text-muted-foreground/90">
-              {savedFiltersError ? (
-                <span className="text-rose-600">{savedFiltersError}</span>
-              ) : null}
-              {!canSaveMoreFilters ? (
-                <span className="text-amber-700">
-                  최대 {savedFiltersLimit}개의 필터를 저장할 수 있어요. 사용하지
-                  않는 필터를 삭제해 주세요.
-                </span>
-              ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <Label htmlFor={savedFilterSelectId} className="sr-only">
+                저장된 필터 선택
+              </Label>
+              <select
+                id={savedFilterSelectId}
+                value={selectedSavedFilterId}
+                onChange={(event) => {
+                  const nextId = event.target.value;
+                  if (!nextId) {
+                    setSelectedSavedFilterId("");
+                    return;
+                  }
+                  const target = savedFilters.find(
+                    (filter) => filter.id === nextId,
+                  );
+                  if (target) {
+                    applySavedFilter(target);
+                  }
+                }}
+                disabled={savedFiltersLoading || savedFilters.length === 0}
+                className={cn(
+                  "h-10 min-w-[168px] appearance-none rounded-full border border-border/70 bg-background/80 px-4 pr-10 text-sm font-medium text-foreground shadow-sm transition",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60",
+                )}
+              >
+                <option value="">필터 선택</option>
+                {savedFilters.map((filter) => (
+                  <option key={filter.id} value={filter.id}>
+                    {filter.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             </div>
-          ) : null}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setFiltersManagerMode("save");
+                setFiltersManagerOpen(true);
+                setFiltersManagerMessage(null);
+                setFiltersManagerError(null);
+                setFiltersManagerBusyId(null);
+                setSaveFilterError(null);
+                const selected = savedFilters.find(
+                  (filter) => filter.id === selectedSavedFilterId,
+                );
+                setSaveFilterName(selected ? selected.name : "");
+              }}
+              disabled={!canSaveMoreFilters}
+              className="h-10 rounded-full px-4 text-sm font-medium"
+            >
+              현재 필터 저장
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setFiltersManagerMode("manage");
+                setFiltersManagerOpen(true);
+                setFiltersManagerMessage(null);
+                setFiltersManagerError(null);
+                setSaveFilterError(null);
+              }}
+              className="h-10 rounded-full px-4 text-sm font-medium text-muted-foreground hover:text-foreground"
+            >
+              필터 관리
+            </Button>
+            {savedFiltersLoading ? (
+              <span className="text-xs text-muted-foreground/80">
+                불러오는 중…
+              </span>
+            ) : null}
+          </div>
         </div>
+        {savedFiltersError || !canSaveMoreFilters ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-full bg-muted/40 px-3 py-1 text-[11px] text-muted-foreground/90">
+            {savedFiltersError ? (
+              <span className="text-rose-600">{savedFiltersError}</span>
+            ) : null}
+            {!canSaveMoreFilters ? (
+              <span className="text-amber-700">
+                최대 {savedFiltersLimit}개의 필터를 저장할 수 있어요. 사용하지
+                않는 필터를 삭제해 주세요.
+              </span>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       <Card>
         <CardContent className="space-y-4">
