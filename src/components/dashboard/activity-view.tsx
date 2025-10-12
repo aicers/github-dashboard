@@ -3945,6 +3945,12 @@ export function ActivityView({
                     },
                   );
                   const metrics = buildActivityMetricEntries(item);
+                  const updatedRelativeLabel = item.updatedAt
+                    ? formatRelative(item.updatedAt)
+                    : null;
+                  const updatedAbsoluteLabel = item.updatedAt
+                    ? (formatDateTime(item.updatedAt, data.timezone) ?? "-")
+                    : null;
 
                   return (
                     <div
@@ -3971,16 +3977,11 @@ export function ActivityView({
                           referenceUrl={item.url ?? undefined}
                           title={item.title}
                           metadata={
-                            <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground/80">
-                              <div className="flex flex-wrap items-center gap-3">
+                            <div className="flex flex-col gap-2 text-xs text-muted-foreground/80 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:flex-1">
                                 {metrics.map((metric) => (
                                   <span key={metric.key}>{metric.content}</span>
                                 ))}
-                                {item.updatedAt && (
-                                  <span>
-                                    {formatRelative(item.updatedAt) ?? "-"}
-                                  </span>
-                                )}
                                 {item.author && (
                                   <span>
                                     작성자 {avatarFallback(item.author) ?? "-"}
@@ -4039,10 +4040,13 @@ export function ActivityView({
                                 ))}
                               </div>
                               {item.updatedAt && (
-                                <div className="flex flex-col items-end text-muted-foreground/80">
-                                  <span>
-                                    {formatDateTime(item.updatedAt) ?? "-"}
-                                  </span>
+                                <div className="flex flex-col gap-1 text-muted-foreground/80 sm:w-[180px] sm:shrink-0 sm:text-right">
+                                  {updatedRelativeLabel ? (
+                                    <span className="text-xs uppercase text-muted-foreground/70">
+                                      {updatedRelativeLabel}
+                                    </span>
+                                  ) : null}
+                                  <span>{updatedAbsoluteLabel ?? "-"}</span>
                                 </div>
                               )}
                             </div>
