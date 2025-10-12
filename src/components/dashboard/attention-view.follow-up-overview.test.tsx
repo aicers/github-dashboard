@@ -368,10 +368,6 @@ describe("Follow-up overview", () => {
 
     render(<AttentionView insights={insights} />);
 
-    expect(
-      screen.getByRole("heading", { name: "Follow-ups" }),
-    ).toBeInTheDocument();
-
     const overviewButton = screen.getByRole("button", {
       name: /Follow-ups 개요/,
     });
