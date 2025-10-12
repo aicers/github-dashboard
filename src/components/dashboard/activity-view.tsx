@@ -2986,9 +2986,6 @@ export function ActivityView({
     <div className="flex flex-col gap-6">
       <div className="flex items-start justify-between gap-6">
         <div className="flex flex-col gap-2">
-          <h2 className="text-2xl font-semibold tracking-tight text-foreground">
-            Activity
-          </h2>
           <p className="text-sm text-muted-foreground">
             팀의 모든 활동을 상세히 검색합니다.
           </p>
