@@ -132,6 +132,7 @@ describe("AttentionView backlog issues", () => {
     const insights: AttentionInsights = {
       generatedAt: "2024-02-20T00:00:00.000Z",
       timezone: "Asia/Seoul",
+      dateTimeFormat: "auto",
       staleOpenPrs: [],
       idleOpenPrs: [],
       stuckReviewRequests: [],

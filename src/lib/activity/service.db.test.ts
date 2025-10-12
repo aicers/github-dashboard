@@ -52,6 +52,7 @@ const BASE_TIME = "2024-01-01T00:00:00.000Z";
 const emptyInsights = (): AttentionInsights => ({
   generatedAt: BASE_TIME,
   timezone: "UTC",
+  dateTimeFormat: "auto",
   staleOpenPrs: [],
   idleOpenPrs: [],
   stuckReviewRequests: [],

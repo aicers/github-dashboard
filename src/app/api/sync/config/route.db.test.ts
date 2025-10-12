@@ -41,6 +41,7 @@ async function resetDatabaseState() {
          week_start = 'monday',
          excluded_repository_ids = '{}',
          excluded_user_ids = '{}',
+         date_time_format = 'auto',
          last_sync_started_at = NULL,
          last_sync_completed_at = NULL,
          last_successful_sync_at = NULL,
@@ -120,6 +121,7 @@ describe("sync config API routes", () => {
           syncIntervalMinutes: 24,
           timezone: "Asia/Seoul",
           weekStart: "sunday",
+          dateTimeFormat: "en-gb-24h",
           excludedRepositories: [" repo-1 ", "repo-2", "repo-1"],
           excludedPeople: [" user-1 ", "user-2", "user-1"],
         }),
@@ -142,6 +144,7 @@ describe("sync config API routes", () => {
     expect(config?.sync_interval_minutes).toBe(24);
     expect(config?.timezone).toBe("Asia/Seoul");
     expect(config?.week_start).toBe("sunday");
+    expect(config?.date_time_format).toBe("en-gb-24h");
     expect(config?.excluded_repository_ids).toEqual(["repo-1", "repo-2"]);
     expect(config?.excluded_user_ids).toEqual(["user-1", "user-2"]);
 
@@ -209,6 +212,7 @@ describe("sync config API routes", () => {
         body: JSON.stringify({
           timezone: "Europe/London",
           weekStart: "sunday",
+          dateTimeFormat: "dot-24h",
         }),
       }),
     );
@@ -220,6 +224,7 @@ describe("sync config API routes", () => {
     const config = await getSyncConfig();
     expect(config?.timezone).toBe("Europe/London");
     expect(config?.week_start).toBe("sunday");
+    expect(config?.date_time_format).toBe("dot-24h");
     expect(config?.org_name).toBe("seed-org");
   });
 
@@ -323,6 +328,7 @@ describe("sync config API routes", () => {
       weekStart: "sunday",
       excludedRepositories: ["repo-1"],
       excludedUsers: ["user-1"],
+      dateTimeFormat: "en-us-12h",
     });
 
     const response = await handlers.GET();
@@ -336,5 +342,6 @@ describe("sync config API routes", () => {
     expect(body.status.config?.week_start).toBe("sunday");
     expect(body.status.config?.excluded_repository_ids).toEqual(["repo-1"]);
     expect(body.status.config?.excluded_user_ids).toEqual(["user-1"]);
+    expect(body.status.config?.date_time_format).toBe("en-us-12h");
   });
 });

@@ -19,6 +19,10 @@ import type {
   ActivityStatusFilter,
   IssueProjectStatus,
 } from "@/lib/activity/types";
+import {
+  type DateTimeDisplayFormat,
+  formatDateTimeDisplay,
+} from "@/lib/date-time-format";
 
 export type ProjectFieldKey =
   | "priority"
@@ -234,37 +238,26 @@ export function renderMarkdownHtml(html: string | null): ReactNode {
   return createElement(Fragment, null, ...nodes);
 }
 
-export function formatDateTime(value: string | null, timeZone?: string | null) {
+export function formatDateTime(
+  value: string | null,
+  timeZone?: string | null,
+  displayFormat?: DateTimeDisplayFormat | null,
+) {
   if (!value) {
     return "-";
   }
 
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
+  const trimmedZone = timeZone?.trim();
+  const formatted = formatDateTimeDisplay(value, {
+    timeZone: trimmedZone,
+    format: displayFormat ?? undefined,
+  });
+
+  if (formatted) {
+    return formatted;
   }
 
-  const baseOptions: Intl.DateTimeFormatOptions = {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  };
-
-  const trimmedTimeZone = timeZone?.trim();
-  const options = trimmedTimeZone?.length
-    ? { ...baseOptions, timeZone: trimmedTimeZone }
-    : baseOptions;
-
-  try {
-    const formatted = new Intl.DateTimeFormat("en-US", options).format(date);
-    return trimmedTimeZone?.length
-      ? `${formatted} (${trimmedTimeZone})`
-      : formatted;
-  } catch {
-    return new Intl.DateTimeFormat("en-US", baseOptions).format(date);
-  }
+  return value;
 }
 
 export function formatDateOnly(value: string | null, timeZone?: string | null) {

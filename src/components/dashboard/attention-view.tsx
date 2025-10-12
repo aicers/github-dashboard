@@ -55,6 +55,7 @@ import {
   sortRankingByCount,
   sortRankingByTotal,
 } from "@/lib/dashboard/attention-summaries";
+import type { DateTimeDisplayFormat } from "@/lib/date-time-format";
 import { cn } from "@/lib/utils";
 import { ActivityDetailOverlay } from "./activity/activity-detail-overlay";
 import { ActivityListItemSummary } from "./activity/activity-list-item-summary";
@@ -102,35 +103,12 @@ function formatDays(value: number | null | undefined) {
   return `${value.toLocaleString()}일`;
 }
 
-function formatTimestamp(iso: string, timeZone: string) {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) {
-    return iso;
-  }
-
-  try {
-    const formatter = new Intl.DateTimeFormat("sv-SE", {
-      timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-    const formatted = formatter.format(date);
-    return `${formatted} (${timeZone})`;
-  } catch (error) {
-    if (process.env.NODE_ENV !== "production") {
-      console.error("Failed to format timestamp", error);
-    }
-    const year = date.getUTCFullYear();
-    const month = `${date.getUTCMonth() + 1}`.padStart(2, "0");
-    const day = `${date.getUTCDate()}`.padStart(2, "0");
-    const hours = `${date.getUTCHours()}`.padStart(2, "0");
-    const minutes = `${date.getUTCMinutes()}`.padStart(2, "0");
-    return `${year}-${month}-${day} ${hours}:${minutes} UTC`;
-  }
+function formatTimestamp(
+  iso: string,
+  timeZone: string,
+  displayFormat: DateTimeDisplayFormat,
+) {
+  return formatDateTime(iso, timeZone, displayFormat);
 }
 
 function formatCount(value: number) {
@@ -456,6 +434,7 @@ function FollowUpDetailContent({
   detail,
   isLoading,
   timezone,
+  dateTimeFormat,
   isUpdatingStatus,
   isUpdatingProjectFields,
   onUpdateStatus,
@@ -465,6 +444,7 @@ function FollowUpDetailContent({
   detail: ActivityItemDetail | undefined;
   isLoading: boolean;
   timezone: string;
+  dateTimeFormat: DateTimeDisplayFormat;
   isUpdatingStatus: boolean;
   isUpdatingProjectFields: boolean;
   onUpdateStatus: (item: ActivityItem, status: IssueProjectStatus) => void;
@@ -500,6 +480,15 @@ function FollowUpDetailContent({
 
   const detailItem = detail.item ?? item;
   const currentIssueStatus = detailItem.issueProjectStatus ?? "no_status";
+  const formatOptionalDateTime = (
+    value: string | null | undefined,
+  ): string | null => {
+    if (!value) {
+      return null;
+    }
+
+    return formatDateTime(value, timezone, dateTimeFormat);
+  };
   const statusSourceLabel =
     detailItem.issueProjectStatusSource === "todo_project"
       ? "To-do 프로젝트"
@@ -514,26 +503,22 @@ function FollowUpDetailContent({
     detailItem.issueTodoProjectPriority,
   );
   const todoWeightLabel = formatProjectField(detailItem.issueTodoProjectWeight);
-  const todoWeightTimestamp = detailItem.issueTodoProjectWeightUpdatedAt
-    ? formatDateTime(detailItem.issueTodoProjectWeightUpdatedAt, timezone)
-    : null;
+  const todoWeightTimestamp = formatOptionalDateTime(
+    detailItem.issueTodoProjectWeightUpdatedAt,
+  );
   const todoInitiationLabel = formatProjectField(
     detailItem.issueTodoProjectInitiationOptions,
   );
-  const todoInitiationTimestamp =
-    detailItem.issueTodoProjectInitiationOptionsUpdatedAt
-      ? formatDateTime(
-          detailItem.issueTodoProjectInitiationOptionsUpdatedAt,
-          timezone,
-        )
-      : null;
+  const todoInitiationTimestamp = formatOptionalDateTime(
+    detailItem.issueTodoProjectInitiationOptionsUpdatedAt,
+  );
   const todoStartDateLabel = formatDateOnly(
     detailItem.issueTodoProjectStartDate,
     timezone,
   );
-  const todoStartDateTimestamp = detailItem.issueTodoProjectStartDateUpdatedAt
-    ? formatDateTime(detailItem.issueTodoProjectStartDateUpdatedAt, timezone)
-    : null;
+  const todoStartDateTimestamp = formatOptionalDateTime(
+    detailItem.issueTodoProjectStartDateUpdatedAt,
+  );
   const canEditStatus =
     detailItem.type === "issue" && !detailItem.issueProjectStatusLocked;
   const sourceStatusTimes =
@@ -545,7 +530,7 @@ function FollowUpDetailContent({
   const sourceStatusEntries = SOURCE_STATUS_KEYS.map((statusKey) => {
     const label = ISSUE_STATUS_LABEL_MAP.get(statusKey) ?? statusKey;
     const value = sourceStatusTimes?.[statusKey] ?? null;
-    const formatted = value ? formatDateTime(value, timezone) : "-";
+    const formatted = formatOptionalDateTime(value) ?? "-";
     return { key: statusKey, label, value: formatted };
   });
 
@@ -916,6 +901,7 @@ function PullRequestList({
   reviewWaitMap,
   mentionWaitMap,
   timezone,
+  dateTimeFormat,
   segmented = false,
 }: {
   items: PullRequestAttentionItem[];
@@ -926,10 +912,13 @@ function PullRequestList({
   reviewWaitMap: Map<string, ReviewRequestAttentionItem[]>;
   mentionWaitMap: Map<string, MentionAttentionItem[]>;
   timezone: string;
+  dateTimeFormat: DateTimeDisplayFormat;
   segmented?: boolean;
 }) {
   const [authorFilter, setAuthorFilter] = useState("all");
   const [reviewerFilter, setReviewerFilter] = useState("all");
+  const trimmedTimezone = timezone.trim();
+  const timezoneTitle = trimmedTimezone.length ? trimmedTimezone : undefined;
 
   const aggregation = useMemo(() => {
     const authorMap = new Map<string, RankingEntry>();
@@ -1154,7 +1143,7 @@ function PullRequestList({
           ? formatRelative(item.updatedAt)
           : null;
         const updatedAbsoluteLabel = item.updatedAt
-          ? formatTimestamp(item.updatedAt, timezone)
+          ? formatTimestamp(item.updatedAt, timezone, dateTimeFormat)
           : "-";
         const metadata = (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-foreground/90">
@@ -1197,7 +1186,7 @@ function PullRequestList({
                           {updatedRelativeLabel}
                         </span>
                       ) : null}
-                      <span>{updatedAbsoluteLabel}</span>
+                      <span title={timezoneTitle}>{updatedAbsoluteLabel}</span>
                     </div>
                   ) : null}
                 </div>
@@ -1214,6 +1203,7 @@ function PullRequestList({
                     detail={detail}
                     isLoading={isDetailLoading}
                     timezone={timezone}
+                    dateTimeFormat={dateTimeFormat}
                     isUpdatingStatus={false}
                     isUpdatingProjectFields={false}
                     onUpdateStatus={() => {
@@ -1263,6 +1253,7 @@ function ReviewRequestList({
   reviewWaitMap,
   mentionWaitMap,
   timezone,
+  dateTimeFormat,
   segmented = false,
 }: {
   items: ReviewRequestAttentionItem[];
@@ -1270,10 +1261,13 @@ function ReviewRequestList({
   reviewWaitMap: Map<string, ReviewRequestAttentionItem[]>;
   mentionWaitMap: Map<string, MentionAttentionItem[]>;
   timezone: string;
+  dateTimeFormat: DateTimeDisplayFormat;
   segmented?: boolean;
 }) {
   const [authorFilter, setAuthorFilter] = useState("all");
   const [reviewerFilter, setReviewerFilter] = useState("all");
+  const trimmedTimezone = timezone.trim();
+  const timezoneTitle = trimmedTimezone.length ? trimmedTimezone : undefined;
 
   const aggregation = useMemo(() => {
     const authorMap = new Map<string, RankingEntry>();
@@ -1482,7 +1476,7 @@ function ReviewRequestList({
           ? formatRelative(item.pullRequestUpdatedAt)
           : null;
         const updatedAbsoluteLabel = item.pullRequestUpdatedAt
-          ? formatTimestamp(item.pullRequestUpdatedAt, timezone)
+          ? formatTimestamp(item.pullRequestUpdatedAt, timezone, dateTimeFormat)
           : "-";
         const metadata = (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-foreground/90">
@@ -1524,7 +1518,7 @@ function ReviewRequestList({
                           {updatedRelativeLabel}
                         </span>
                       ) : null}
-                      <span>{updatedAbsoluteLabel}</span>
+                      <span title={timezoneTitle}>{updatedAbsoluteLabel}</span>
                     </div>
                   ) : null}
                 </div>
@@ -1541,6 +1535,7 @@ function ReviewRequestList({
                     detail={detail}
                     isLoading={isDetailLoading}
                     timezone={timezone}
+                    dateTimeFormat={dateTimeFormat}
                     isUpdatingStatus={false}
                     isUpdatingProjectFields={false}
                     onUpdateStatus={() => {
@@ -1592,6 +1587,7 @@ function IssueList({
   metricLabel = "경과일수",
   mentionWaitMap,
   timezone,
+  dateTimeFormat,
   segmented = false,
 }: {
   items: IssueAttentionItem[];
@@ -1601,6 +1597,7 @@ function IssueList({
   metricLabel?: string;
   mentionWaitMap: Map<string, MentionAttentionItem[]>;
   timezone: string;
+  dateTimeFormat: DateTimeDisplayFormat;
   segmented?: boolean;
 }) {
   const [authorFilter, setAuthorFilter] = useState("all");
@@ -1611,6 +1608,8 @@ function IssueList({
   const [updatingProjectFieldIds, setUpdatingProjectFieldIds] = useState<
     Set<string>
   >(() => new Set<string>());
+  const trimmedTimezone = timezone.trim();
+  const timezoneTitle = trimmedTimezone.length ? trimmedTimezone : undefined;
 
   const aggregation = useMemo(() => {
     const authorMap = new Map<string, RankingEntry>();
@@ -2044,7 +2043,7 @@ function IssueList({
           ? formatRelative(item.updatedAt)
           : null;
         const updatedAbsoluteLabel = item.updatedAt
-          ? formatTimestamp(item.updatedAt, timezone)
+          ? formatTimestamp(item.updatedAt, timezone, dateTimeFormat)
           : "-";
         const metadata = (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-foreground/90">
@@ -2087,7 +2086,7 @@ function IssueList({
                           {updatedRelativeLabel}
                         </span>
                       ) : null}
-                      <span>{updatedAbsoluteLabel}</span>
+                      <span title={timezoneTitle}>{updatedAbsoluteLabel}</span>
                     </div>
                   ) : null}
                 </div>
@@ -2104,6 +2103,7 @@ function IssueList({
                     detail={detail}
                     isLoading={isDetailLoading}
                     timezone={timezone}
+                    dateTimeFormat={dateTimeFormat}
                     isUpdatingStatus={updatingStatusIds.has(item.id)}
                     isUpdatingProjectFields={updatingProjectFieldIds.has(
                       item.id,
@@ -2151,15 +2151,19 @@ function MentionList({
   items,
   emptyText,
   timezone,
+  dateTimeFormat,
   segmented = false,
 }: {
   items: MentionAttentionItem[];
   emptyText: string;
   timezone: string;
+  dateTimeFormat: DateTimeDisplayFormat;
   segmented?: boolean;
 }) {
   const [targetFilter, setTargetFilter] = useState("all");
   const [authorFilter, setAuthorFilter] = useState("all");
+  const trimmedTimezone = timezone.trim();
+  const timezoneTitle = trimmedTimezone.length ? trimmedTimezone : undefined;
 
   const aggregation = useMemo(() => {
     const targetMap = new Map<string, RankingEntry>();
@@ -2357,7 +2361,7 @@ function MentionList({
           ? formatRelative(item.mentionedAt)
           : null;
         const updatedAbsoluteLabel = item.mentionedAt
-          ? formatTimestamp(item.mentionedAt, timezone)
+          ? formatTimestamp(item.mentionedAt, timezone, dateTimeFormat)
           : "-";
         const metadata = (
           <div className="flex flex-col gap-2 text-xs text-foreground/90">
@@ -2406,7 +2410,7 @@ function MentionList({
                         {updatedRelativeLabel}
                       </span>
                     ) : null}
-                    <span>{updatedAbsoluteLabel}</span>
+                    <span title={timezoneTitle}>{updatedAbsoluteLabel}</span>
                   </div>
                 </div>
               </button>
@@ -2422,6 +2426,7 @@ function MentionList({
                     detail={detail}
                     isLoading={isDetailLoading}
                     timezone={timezone}
+                    dateTimeFormat={dateTimeFormat}
                     isUpdatingStatus={false}
                     isUpdatingProjectFields={false}
                     onUpdateStatus={() => {
@@ -2475,9 +2480,12 @@ type FollowUpSection = {
 };
 
 export function AttentionView({ insights }: { insights: AttentionInsights }) {
+  const trimmedTimezone = insights.timezone.trim();
+  const timezoneTitle = trimmedTimezone.length ? trimmedTimezone : undefined;
   const generatedAtLabel = formatTimestamp(
     insights.generatedAt,
     insights.timezone,
+    insights.dateTimeFormat,
   );
   const router = useRouter();
   const [isRefreshing, startTransition] = useTransition();
@@ -2531,6 +2539,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
           metricLabel="경과일수"
           mentionWaitMap={mentionWaitMap}
           timezone={insights.timezone}
+          dateTimeFormat={insights.dateTimeFormat}
           segmented
         />
       ),
@@ -2551,6 +2560,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
           metricLabel="In Progress 경과일수"
           mentionWaitMap={mentionWaitMap}
           timezone={insights.timezone}
+          dateTimeFormat={insights.dateTimeFormat}
           segmented
         />
       ),
@@ -2569,6 +2579,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
           reviewWaitMap={reviewWaitMap}
           mentionWaitMap={mentionWaitMap}
           timezone={insights.timezone}
+          dateTimeFormat={insights.dateTimeFormat}
           segmented
         />
       ),
@@ -2590,6 +2601,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
           reviewWaitMap={reviewWaitMap}
           mentionWaitMap={mentionWaitMap}
           timezone={insights.timezone}
+          dateTimeFormat={insights.dateTimeFormat}
           segmented
         />
       ),
@@ -2609,6 +2621,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
           reviewWaitMap={reviewWaitMap}
           mentionWaitMap={mentionWaitMap}
           timezone={insights.timezone}
+          dateTimeFormat={insights.dateTimeFormat}
           segmented
         />
       ),
@@ -2626,6 +2639,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
           items={insights.unansweredMentions}
           emptyText="현재 조건을 만족하는 멘션이 없습니다."
           timezone={insights.timezone}
+          dateTimeFormat={insights.dateTimeFormat}
           segmented
         />
       ),
@@ -2659,7 +2673,10 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100/80 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/80">
               통계 생성 시각:
-              <span className="font-semibold text-foreground/80">
+              <span
+                className="font-semibold text-foreground/80"
+                title={timezoneTitle}
+              >
                 {generatedAtLabel}
               </span>
             </span>

@@ -14,6 +14,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  DATE_TIME_FORMAT_OPTIONS,
+  type DateTimeDisplayFormat,
+  normalizeDateTimeDisplayFormat,
+} from "@/lib/date-time-format";
 import type { RepositoryProfile, UserProfile } from "@/lib/db/operations";
 import { cn } from "@/lib/utils";
 
@@ -52,6 +57,7 @@ type SettingsViewProps = {
   syncIntervalMinutes: number;
   timeZone: string;
   weekStart: "sunday" | "monday";
+  dateTimeFormat: string;
   repositories: RepositoryProfile[];
   excludedRepositoryIds: string[];
   members: UserProfile[];
@@ -70,6 +76,7 @@ export function SettingsView({
   syncIntervalMinutes,
   timeZone,
   weekStart,
+  dateTimeFormat,
   repositories,
   excludedRepositoryIds,
   members,
@@ -83,6 +90,10 @@ export function SettingsView({
   const [weekStartValue, setWeekStartValue] = useState<"sunday" | "monday">(
     weekStart,
   );
+  const [dateTimeFormatValue, setDateTimeFormatValue] =
+    useState<DateTimeDisplayFormat>(
+      normalizeDateTimeDisplayFormat(dateTimeFormat),
+    );
   const [personalFeedback, setPersonalFeedback] = useState<string | null>(null);
   const [orgFeedback, setOrgFeedback] = useState<string | null>(null);
   const normalizedExcludedRepositories = useMemo(() => {
@@ -127,6 +138,10 @@ export function SettingsView({
   useEffect(() => {
     setExcludedPeople(normalizedExcludedMembers);
   }, [normalizedExcludedMembers]);
+
+  useEffect(() => {
+    setDateTimeFormatValue(normalizeDateTimeDisplayFormat(dateTimeFormat));
+  }, [dateTimeFormat]);
 
   const sortedRepositories = useMemo(() => {
     return [...repositories].sort((a, b) => {
@@ -184,6 +199,7 @@ export function SettingsView({
           body: JSON.stringify({
             timezone,
             weekStart: weekStartValue,
+            dateTimeFormat: dateTimeFormatValue,
           }),
         });
         const data = (await response.json()) as ApiResponse<unknown>;
@@ -232,6 +248,7 @@ export function SettingsView({
             syncIntervalMinutes: parsedInterval,
             timezone,
             weekStart: weekStartValue,
+            dateTimeFormat: dateTimeFormatValue,
             excludedRepositories: excludedRepos,
             excludedPeople,
           }),
@@ -348,15 +365,41 @@ export function SettingsView({
                   </select>
                 </label>
               </CardContent>
-              <CardFooter className="flex justify-end">
-                <Button
-                  onClick={handleSavePersonal}
-                  disabled={isSavingPersonal}
-                >
-                  {isSavingPersonal ? "저장 중..." : "개인 설정 저장"}
-                </Button>
-              </CardFooter>
             </Card>
+            <Card className="border-border/70">
+              <CardHeader>
+                <CardTitle>화면 표시</CardTitle>
+                <CardDescription>
+                  대시보드에 노출되는 날짜와 시간 형식을 선택하세요.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4 text-sm">
+                <label className="flex flex-col gap-2">
+                  <span className="text-muted-foreground">날짜와 시간</span>
+                  <select
+                    value={dateTimeFormatValue}
+                    onChange={(event) =>
+                      setDateTimeFormatValue(
+                        normalizeDateTimeDisplayFormat(event.target.value),
+                      )
+                    }
+                    className="rounded-md border border-border/60 bg-background p-2 text-sm"
+                  >
+                    {DATE_TIME_FORMAT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                        {option.example ? ` · ${option.example}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </CardContent>
+            </Card>
+            <div className="flex justify-end">
+              <Button onClick={handleSavePersonal} disabled={isSavingPersonal}>
+                {isSavingPersonal ? "저장 중..." : "개인 설정 저장"}
+              </Button>
+            </div>
           </section>
         ) : null}
 
@@ -457,6 +500,29 @@ export function SettingsView({
                     </select>
                   </label>
                 </div>
+                <label className="flex flex-col gap-2 text-sm">
+                  <span className="text-muted-foreground">날짜와 시간</span>
+                  <select
+                    value={dateTimeFormatValue}
+                    onChange={(event) =>
+                      setDateTimeFormatValue(
+                        normalizeDateTimeDisplayFormat(event.target.value),
+                      )
+                    }
+                    className="rounded-md border border-border/60 bg-background p-2 text-sm"
+                    disabled={!canEditOrganization}
+                    title={
+                      !canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined
+                    }
+                  >
+                    {DATE_TIME_FORMAT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                        {option.example ? ` · ${option.example}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </CardContent>
             </Card>
 

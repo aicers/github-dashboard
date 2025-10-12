@@ -45,6 +45,7 @@ import type {
   ActivitySavedFilter,
   IssueProjectStatus,
 } from "@/lib/activity/types";
+import type { DateTimeDisplayFormat } from "@/lib/date-time-format";
 import { cn } from "@/lib/utils";
 import { ActivityDetailOverlay } from "./activity/activity-detail-overlay";
 import { ActivityListItemSummary } from "./activity/activity-list-item-summary";
@@ -728,6 +729,8 @@ type SavedFiltersManagerProps = {
   onRename: (filter: ActivitySavedFilter, name: string) => Promise<void>;
   onReplace: (filter: ActivitySavedFilter) => Promise<void>;
   onDelete: (filter: ActivitySavedFilter) => Promise<void>;
+  timezone: string | null;
+  dateTimeFormat: DateTimeDisplayFormat;
 };
 
 const SavedFiltersManager = ({
@@ -750,9 +753,13 @@ const SavedFiltersManager = ({
   onRename,
   onReplace,
   onDelete,
+  timezone,
+  dateTimeFormat,
 }: SavedFiltersManagerProps) => {
   const [draftNames, setDraftNames] = useState<Record<string, string>>({});
   const createInputRef = useRef<HTMLInputElement | null>(null);
+  const trimmedTimezone = timezone?.trim() ?? "";
+  const timezoneTitle = trimmedTimezone.length ? trimmedTimezone : undefined;
 
   useEffect(() => {
     if (!open) {
@@ -916,6 +923,11 @@ const SavedFiltersManager = ({
                   trimmed.length > 0 &&
                   trimmed !== filter.name &&
                   !isFilterBusy;
+                const formattedUpdatedAt = formatDateTime(
+                  filter.updatedAt,
+                  timezone ?? undefined,
+                  dateTimeFormat,
+                );
 
                 return (
                   <div
@@ -933,8 +945,8 @@ const SavedFiltersManager = ({
                           className="h-9 text-sm"
                         />
                         <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground/70">
-                          <span>
-                            마지막 수정: {formatDateTime(filter.updatedAt)}
+                          <span title={timezoneTitle}>
+                            마지막 수정: {formattedUpdatedAt}
                           </span>
                         </div>
                       </div>
@@ -1053,6 +1065,22 @@ export function ActivityView({
     string | null
   >(null);
   const savedFilterSelectId = useId();
+  const trimmedTimezone = data.timezone?.trim() ?? "";
+  const timezoneTitle = trimmedTimezone.length ? trimmedTimezone : undefined;
+  const formatDateTimeWithSettings = useCallback(
+    (value: string | null | undefined) => {
+      if (!value) {
+        return null;
+      }
+
+      return formatDateTime(
+        value,
+        data.timezone ?? undefined,
+        data.dateTimeFormat,
+      );
+    },
+    [data.timezone, data.dateTimeFormat],
+  );
 
   const fetchControllerRef = useRef<AbortController | null>(null);
   const detailControllersRef = useRef(new Map<string, AbortController>());
@@ -2472,8 +2500,11 @@ export function ActivityView({
         <div className="flex flex-col items-end gap-1 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100/80 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/80">
             Last sync:
-            <span className="font-semibold text-foreground/80">
-              {formatDateTime(data.lastSyncCompletedAt, data.timezone) ??
+            <span
+              className="font-semibold text-foreground/80"
+              title={timezoneTitle}
+            >
+              {formatDateTimeWithSettings(data.lastSyncCompletedAt) ??
                 "Not available"}
             </span>
           </span>
@@ -3363,34 +3394,22 @@ export function ActivityView({
                   const todoWeightLabel = formatProjectField(
                     item.issueTodoProjectWeight,
                   );
-                  const todoWeightTimestamp =
-                    item.issueTodoProjectWeightUpdatedAt
-                      ? formatDateTime(
-                          item.issueTodoProjectWeightUpdatedAt,
-                          data.timezone,
-                        )
-                      : null;
+                  const todoWeightTimestamp = formatDateTimeWithSettings(
+                    item.issueTodoProjectWeightUpdatedAt,
+                  );
                   const todoInitiationLabel = formatProjectField(
                     item.issueTodoProjectInitiationOptions,
                   );
-                  const todoInitiationTimestamp =
-                    item.issueTodoProjectInitiationOptionsUpdatedAt
-                      ? formatDateTime(
-                          item.issueTodoProjectInitiationOptionsUpdatedAt,
-                          data.timezone,
-                        )
-                      : null;
+                  const todoInitiationTimestamp = formatDateTimeWithSettings(
+                    item.issueTodoProjectInitiationOptionsUpdatedAt,
+                  );
                   const todoStartDateLabel = formatDateOnly(
                     item.issueTodoProjectStartDate,
                     data.timezone,
                   );
-                  const todoStartDateTimestamp =
-                    item.issueTodoProjectStartDateUpdatedAt
-                      ? formatDateTime(
-                          item.issueTodoProjectStartDateUpdatedAt,
-                          data.timezone,
-                        )
-                      : null;
+                  const todoStartDateTimestamp = formatDateTimeWithSettings(
+                    item.issueTodoProjectStartDateUpdatedAt,
+                  );
                   const canEditStatus =
                     item.type === "issue" && !item.issueProjectStatusLocked;
                   const sourceStatusTimes =
@@ -3404,9 +3423,8 @@ export function ActivityView({
                       const label =
                         ISSUE_STATUS_LABEL_MAP.get(statusKey) ?? statusKey;
                       const value = sourceStatusTimes?.[statusKey] ?? null;
-                      const formatted = value
-                        ? formatDateTime(value, data.timezone)
-                        : "-";
+                      const formatted =
+                        formatDateTimeWithSettings(value) ?? "-";
                       return { key: statusKey, label, value: formatted };
                     },
                   );
@@ -3414,9 +3432,8 @@ export function ActivityView({
                   const updatedRelativeLabel = item.updatedAt
                     ? formatRelative(item.updatedAt)
                     : null;
-                  const updatedAbsoluteLabel = item.updatedAt
-                    ? (formatDateTime(item.updatedAt, data.timezone) ?? "-")
-                    : null;
+                  const updatedAbsoluteLabel =
+                    formatDateTimeWithSettings(item.updatedAt) ?? "-";
 
                   return (
                     <div
@@ -3514,7 +3531,9 @@ export function ActivityView({
                                   {updatedRelativeLabel}
                                 </span>
                               ) : null}
-                              <span>{updatedAbsoluteLabel ?? "-"}</span>
+                              <span title={timezoneTitle}>
+                                {updatedAbsoluteLabel ?? "-"}
+                              </span>
                             </div>
                           ) : null}
                         </div>
@@ -3879,6 +3898,8 @@ export function ActivityView({
           onRename={renameSavedFilter}
           onReplace={replaceSavedFilter}
           onDelete={deleteSavedFilter}
+          timezone={data.timezone ?? null}
+          dateTimeFormat={data.dateTimeFormat}
         />
       ) : null}
     </div>

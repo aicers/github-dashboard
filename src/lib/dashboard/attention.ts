@@ -3,6 +3,10 @@ import {
   differenceInBusinessDaysOrNull,
   HOLIDAY_SET,
 } from "@/lib/dashboard/business-days";
+import {
+  type DateTimeDisplayFormat,
+  normalizeDateTimeDisplayFormat,
+} from "@/lib/date-time-format";
 import { ensureSchema } from "@/lib/db";
 import { query } from "@/lib/db/client";
 import {
@@ -91,6 +95,7 @@ export type MentionAttentionItem = {
 export type AttentionInsights = {
   generatedAt: string;
   timezone: string;
+  dateTimeFormat: DateTimeDisplayFormat;
   staleOpenPrs: PullRequestAttentionItem[];
   idleOpenPrs: PullRequestAttentionItem[];
   stuckReviewRequests: ReviewRequestAttentionItem[];
@@ -1152,6 +1157,11 @@ export async function getAttentionInsights(): Promise<AttentionInsights> {
       : [],
   );
   const timezone = config?.timezone ?? "UTC";
+  const dateTimeFormat = normalizeDateTimeDisplayFormat(
+    typeof config?.date_time_format === "string"
+      ? config.date_time_format
+      : null,
+  );
   const excludedUsersArray = Array.from(excludedUserIds);
   const excludedReposArray = Array.from(excludedRepositoryIds);
   const now = new Date();
@@ -1282,6 +1292,7 @@ export async function getAttentionInsights(): Promise<AttentionInsights> {
   return {
     generatedAt: now.toISOString(),
     timezone,
+    dateTimeFormat,
     staleOpenPrs,
     idleOpenPrs,
     stuckReviewRequests,
