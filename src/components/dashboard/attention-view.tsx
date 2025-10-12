@@ -2165,15 +2165,18 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
     activeSection && FOLLOW_UP_SECTION_SET.has(activeSection.id);
 
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-2">
       <header className="flex flex-col gap-4">
-        <div className="flex items-start justify-between">
+        <div className="flex flex-wrap items-start justify-between gap-6">
           <p className="text-sm text-muted-foreground">
             오래 머물러 있는 작업과 팀원이 완료한 작업을 한눈에 확인하세요.
           </p>
-          <div className="flex items-center gap-3 text-sm text-foreground">
-            <span className="whitespace-nowrap">
-              통계 생성 시각: {generatedAtLabel}
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100/80 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/80">
+              통계 생성 시각:
+              <span className="font-semibold text-foreground/80">
+                {generatedAtLabel}
+              </span>
             </span>
             <button
               type="button"
