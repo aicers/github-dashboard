@@ -37,7 +37,7 @@ export function DashboardHeader({
   const initials = buildInitials(userId);
 
   return (
-    <header className="flex flex-col gap-4 rounded-2xl bg-white/80 p-6 shadow-[0px_12px_30px_-12px_rgba(88,28,135,0.35)] ring-1 ring-black/5 backdrop-blur">
+    <header className="flex flex-col gap-4 pb-2">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <div className="flex size-12 items-center justify-center rounded-[1.25rem] bg-gradient-to-br from-[#ad46ff] to-[#7047ff] text-white shadow-[0px_10px_25px_rgba(138,43,226,0.25)]">
@@ -79,12 +79,5 @@ export function DashboardHeaderPlaceholder({
 }: {
   className?: string;
 }) {
-  return (
-    <div
-      className={cn(
-        "h-28 rounded-2xl bg-white/60 ring-1 ring-black/5 backdrop-blur",
-        className,
-      )}
-    />
-  );
+  return <div className={cn("h-28", className)} />;
 }

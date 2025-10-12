@@ -16,10 +16,20 @@ export default async function DashboardTabsLayout({
   }
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-[1232px] flex-col gap-8 px-3 py-3">
-      <DashboardHeader userId={session.userId} />
-      <DashboardTabs />
-      <div className="flex-1 pb-10">{children}</div>
+    <div className="flex min-h-screen flex-col bg-slate-100/80">
+      <div className="bg-white">
+        <div className="mx-auto w-full max-w-[1232px] px-3 pt-4">
+          <DashboardHeader userId={session.userId} />
+          <div className="mt-2">
+            <DashboardTabs />
+          </div>
+        </div>
+      </div>
+      <div className="flex-1">
+        <div className="mx-auto w-full max-w-[1232px] px-3 pt-8 pb-10">
+          {children}
+        </div>
+      </div>
     </div>
   );
 }
