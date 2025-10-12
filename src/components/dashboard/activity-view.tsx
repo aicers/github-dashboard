@@ -2982,7 +2982,7 @@ export function ActivityView({
       <div className="flex items-start justify-between gap-6">
         <div className="flex flex-col gap-2">
           <p className="text-sm text-muted-foreground">
-            팀의 모든 활동을 상세히 검색합니다.
+            모든 활동을 상세히 검색합니다.
           </p>
         </div>
         <div className="flex flex-col items-end gap-1 text-xs text-muted-foreground">

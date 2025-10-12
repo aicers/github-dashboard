@@ -223,7 +223,7 @@ export function PeopleView({
       <header className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">
-            팀 구성원의 이슈 처리와 리뷰 활동을 자세히 살펴보세요.
+            구성원의 활동을 살펴보세요.
           </p>
         </div>
 
