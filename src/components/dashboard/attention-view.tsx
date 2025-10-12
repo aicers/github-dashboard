@@ -2,6 +2,7 @@
 
 import {
   AtSign,
+  ChevronRight,
   CircleDot,
   GitPullRequest,
   GitPullRequestDraft,
@@ -619,44 +620,58 @@ function FollowUpOverview({
         {visibleSummaries.map((summary) => (
           <div
             key={summary.id}
-            className="flex flex-col gap-3 rounded-md border border-border/40 bg-background p-4"
+            className="bg-white border border-slate-200 rounded-[14px] p-6"
             data-testid={`follow-up-summary-${summary.id}`}
           >
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <div className="text-sm font-semibold text-foreground">
+            <div className="flex items-start justify-between gap-2 mb-4">
+              <div className="flex-1">
+                <h3 className="text-base font-semibold text-foreground mb-1">
                   {summary.title}
-                </div>
-                <p className="mt-1 text-xs text-foreground/80">
+                </h3>
+                <p className="text-xs text-muted-foreground">
                   {summary.description}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => onSelect(summary.id)}
-                className="text-xs font-medium text-primary underline-offset-2 hover:underline"
+                className="flex items-center gap-2 text-sm font-medium text-primary hover:underline underline-offset-2 shrink-0"
               >
                 바로 보기
+                <ChevronRight className="h-4 w-4" />
               </button>
             </div>
-            <dl className="grid gap-2 text-sm text-foreground">
+
+            <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <dt className="text-foreground/70">항목 수</dt>
-                <dd className="font-semibold">{formatCount(summary.count)}</dd>
+                <span className="text-sm text-muted-foreground">항목 수</span>
+                <span className="text-2xl font-bold text-foreground">
+                  {formatCount(summary.count)}
+                </span>
               </div>
               <div className="flex items-center justify-between">
-                <dt className="text-foreground/70">누적 경과일수</dt>
-                <dd className="font-semibold">
+                <span className="text-sm text-muted-foreground">
+                  누적 경과일수
+                </span>
+                <span className="text-2xl font-bold text-foreground">
                   {formatDays(summary.totalMetric)}
-                </dd>
+                </span>
               </div>
-            </dl>
+            </div>
+
             {summary.highlights.length ? (
-              <ul className="space-y-1 text-sm text-foreground">
-                {summary.highlights.map((line) => (
-                  <li key={`${summary.id}-${line}`}>{line}</li>
-                ))}
-              </ul>
+              <div className="border-t border-slate-200 pt-3 mt-3">
+                <div className="space-y-1">
+                  {summary.highlights.map((line) => (
+                    <p
+                      key={`${summary.id}-${line}`}
+                      className="text-xs text-muted-foreground"
+                    >
+                      {line}
+                    </p>
+                  ))}
+                </div>
+              </div>
             ) : null}
           </div>
         ))}
