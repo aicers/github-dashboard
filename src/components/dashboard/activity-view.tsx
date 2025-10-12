@@ -2991,7 +2991,7 @@ export function ActivityView({
           </p>
         </div>
         <div className="flex flex-col items-end gap-1 text-xs text-muted-foreground">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-background/70 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/80">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100/80 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/80">
             Last sync:
             <span className="font-semibold text-foreground/80">
               {formatDateTime(data.lastSyncCompletedAt, data.timezone) ??
