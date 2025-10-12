@@ -9,15 +9,21 @@ test.describe("SettingsView (Playwright)", () => {
     await page.goto(SETTINGS_PATH);
 
     await expect(
-      page.getByText(
-        "동기화 대상과 시간대를 조정하여 통합 지표의 기준을 맞추세요.",
-      ),
+      page.getByText("각 구성원과 전체 조직 관련 사항을 설정합니다."),
     ).toBeVisible();
-    await expect(page.getByLabel("Organization 이름")).toHaveValue("acme");
-    await expect(page.getByLabel("자동 동기화 주기 (분)")).toHaveValue("30");
+    await expect(
+      page.getByRole("button", { name: "Personal" }),
+    ).toHaveAttribute("aria-current", "true");
     await expect(page.getByLabel("표준 시간대")).toHaveValue("Asia/Seoul");
     await expect(page.getByLabel("주의 시작 요일")).toHaveValue("monday");
 
+    await page.getByRole("button", { name: "Organization" }).click();
+
+    await expect(
+      page.getByRole("button", { name: "Organization" }),
+    ).toHaveAttribute("aria-current", "true");
+    await expect(page.getByLabel("Organization 이름")).toHaveValue("acme");
+    await expect(page.getByLabel("자동 동기화 주기 (분)")).toHaveValue("30");
     await expect(
       page.getByRole("option", { name: "acme/repo-two" }),
     ).toBeAttached();
@@ -48,6 +54,8 @@ test.describe("SettingsView (Playwright)", () => {
         body: JSON.stringify({ success: true }),
       });
     });
+
+    await page.getByRole("button", { name: "Organization" }).click();
 
     await page.getByLabel("Organization 이름").fill("  new-org  ");
     await page.getByLabel("자동 동기화 주기 (분)").fill("");
@@ -95,6 +103,8 @@ test.describe("SettingsView (Playwright)", () => {
       });
     });
 
+    await page.getByRole("button", { name: "Organization" }).click();
+
     await page.getByLabel("자동 동기화 주기 (분)").fill("");
     await page.getByLabel("자동 동기화 주기 (분)").fill("0");
     await page.getByRole("button", { name: "조직 설정 저장" }).click();
@@ -109,6 +119,8 @@ test.describe("SettingsView (Playwright)", () => {
     page,
   }) => {
     await page.goto(SETTINGS_PATH);
+
+    await page.getByRole("button", { name: "Organization" }).click();
 
     const clearButtons = await page
       .getByRole("button", { name: "제외 목록 비우기" })
