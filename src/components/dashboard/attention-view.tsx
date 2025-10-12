@@ -22,6 +22,7 @@ import {
   useTransition,
 } from "react";
 
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -35,6 +36,7 @@ import type {
   ActivityItemDetail,
   ActivityRepository,
   ActivityUser,
+  IssueProjectStatus,
 } from "@/lib/activity/types";
 import type {
   AttentionInsights,
@@ -56,6 +58,20 @@ import {
 import { cn } from "@/lib/utils";
 import { ActivityDetailOverlay } from "./activity/activity-detail-overlay";
 import { ActivityListItemSummary } from "./activity/activity-list-item-summary";
+import {
+  formatDateOnly,
+  formatDateTime,
+  formatProjectField,
+  ISSUE_STATUS_LABEL_MAP,
+  ISSUE_STATUS_OPTIONS,
+  normalizeProjectFieldForComparison,
+  PROJECT_FIELD_LABELS,
+  ProjectFieldEditor,
+  type ProjectFieldKey,
+  renderMarkdownHtml,
+  resolveDetailBodyHtml,
+  SOURCE_STATUS_KEYS,
+} from "./activity/detail-shared";
 import {
   buildActivityMetricEntries,
   formatRelative,
@@ -412,21 +428,51 @@ function useActivityDetailState() {
     });
   }, []);
 
+  const updateDetailItem = useCallback((nextItem: ActivityItem) => {
+    setDetailMap((current) => {
+      const existing = current[nextItem.id];
+      if (!existing) {
+        return current;
+      }
+      return {
+        ...current,
+        [nextItem.id]: { ...existing, item: nextItem },
+      };
+    });
+  }, []);
+
   return {
     openItemId,
     detailMap,
     loadingDetailIds,
     selectItem,
     closeItem,
+    updateDetailItem,
   };
 }
 
 function FollowUpDetailContent({
+  item,
   detail,
   isLoading,
+  timezone,
+  isUpdatingStatus,
+  isUpdatingProjectFields,
+  onUpdateStatus,
+  onUpdateProjectField,
 }: {
+  item: ActivityItem;
   detail: ActivityItemDetail | undefined;
   isLoading: boolean;
+  timezone: string;
+  isUpdatingStatus: boolean;
+  isUpdatingProjectFields: boolean;
+  onUpdateStatus: (item: ActivityItem, status: IssueProjectStatus) => void;
+  onUpdateProjectField: (
+    item: ActivityItem,
+    field: ProjectFieldKey,
+    value: string | null,
+  ) => Promise<boolean>;
 }) {
   if (isLoading) {
     return (
@@ -452,105 +498,286 @@ function FollowUpDetailContent({
     );
   }
 
-  const body = detail.body?.trim()?.length
-    ? detail.body
-    : (detail.bodyHtml?.trim() ?? "");
+  const detailItem = detail.item ?? item;
+  const currentIssueStatus = detailItem.issueProjectStatus ?? "no_status";
+  const statusSourceLabel =
+    detailItem.issueProjectStatusSource === "todo_project"
+      ? "To-do 프로젝트"
+      : detailItem.issueProjectStatusSource === "activity"
+        ? "Activity"
+        : "없음";
+  const todoStatusLabel = detailItem.issueTodoProjectStatus
+    ? (ISSUE_STATUS_LABEL_MAP.get(detailItem.issueTodoProjectStatus) ??
+      detailItem.issueTodoProjectStatus)
+    : "-";
+  const todoPriorityLabel = formatProjectField(
+    detailItem.issueTodoProjectPriority,
+  );
+  const todoWeightLabel = formatProjectField(detailItem.issueTodoProjectWeight);
+  const todoWeightTimestamp = detailItem.issueTodoProjectWeightUpdatedAt
+    ? formatDateTime(detailItem.issueTodoProjectWeightUpdatedAt, timezone)
+    : null;
+  const todoInitiationLabel = formatProjectField(
+    detailItem.issueTodoProjectInitiationOptions,
+  );
+  const todoInitiationTimestamp =
+    detailItem.issueTodoProjectInitiationOptionsUpdatedAt
+      ? formatDateTime(
+          detailItem.issueTodoProjectInitiationOptionsUpdatedAt,
+          timezone,
+        )
+      : null;
+  const todoStartDateLabel = formatDateOnly(
+    detailItem.issueTodoProjectStartDate,
+    timezone,
+  );
+  const todoStartDateTimestamp = detailItem.issueTodoProjectStartDateUpdatedAt
+    ? formatDateTime(detailItem.issueTodoProjectStartDateUpdatedAt, timezone)
+    : null;
+  const canEditStatus =
+    detailItem.type === "issue" && !detailItem.issueProjectStatusLocked;
+  const sourceStatusTimes =
+    detailItem.issueProjectStatusSource === "todo_project"
+      ? (detail.todoStatusTimes ?? null)
+      : detailItem.issueProjectStatusSource === "activity"
+        ? (detail.activityStatusTimes ?? null)
+        : null;
+  const sourceStatusEntries = SOURCE_STATUS_KEYS.map((statusKey) => {
+    const label = ISSUE_STATUS_LABEL_MAP.get(statusKey) ?? statusKey;
+    const value = sourceStatusTimes?.[statusKey] ?? null;
+    const formatted = value ? formatDateTime(value, timezone) : "-";
+    return { key: statusKey, label, value: formatted };
+  });
+
+  const renderedBody = resolveDetailBodyHtml(detail);
+  const renderedContent = renderedBody
+    ? renderMarkdownHtml(renderedBody)
+    : null;
 
   return (
-    <div className="space-y-6 text-sm">
-      <div className="rounded-md border border-border bg-background px-4 py-3">
-        {body.length ? (
-          <pre className="whitespace-pre-wrap break-words text-foreground/90">
-            {body}
-          </pre>
-        ) : (
-          <div className="text-muted-foreground/80">내용이 없습니다.</div>
+    <div className="rounded-md border border-border bg-background p-4 text-sm">
+      <div className="space-y-3">
+        {detailItem.type === "issue" && (
+          <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground/70">
+                <span className="flex items-center gap-1">
+                  <span className="text-muted-foreground/60">Source:</span>
+                  <span className="text-foreground">{statusSourceLabel}</span>
+                </span>
+                {sourceStatusEntries.map(({ key, label, value }) => (
+                  <span
+                    key={`${detailItem.id}-source-${key}`}
+                    className="flex items-center gap-1"
+                  >
+                    {label}:<span className="text-foreground">{value}</span>
+                  </span>
+                ))}
+                {detailItem.issueProjectStatusLocked && (
+                  <span className="text-amber-600">
+                    To-do 프로젝트 상태({todoStatusLabel})로 잠겨 있어요.
+                  </span>
+                )}
+              </div>
+              {(isUpdatingStatus || isUpdatingProjectFields) && (
+                <span className="text-muted-foreground/70">업데이트 중...</span>
+              )}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {ISSUE_STATUS_OPTIONS.map((option) => {
+                const optionStatus = option.value as IssueProjectStatus;
+                const active = currentIssueStatus === optionStatus;
+                return (
+                  <Button
+                    key={`status-action-${option.value}`}
+                    type="button"
+                    size="sm"
+                    variant={active ? "default" : "outline"}
+                    disabled={
+                      isUpdatingStatus ||
+                      isUpdatingProjectFields ||
+                      !canEditStatus
+                    }
+                    onClick={() => onUpdateStatus(detailItem, optionStatus)}
+                  >
+                    {option.label}
+                  </Button>
+                );
+              })}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-muted-foreground/80">
+              <ProjectFieldEditor
+                item={detailItem}
+                field="priority"
+                label="Priority"
+                rawValue={detailItem.issueTodoProjectPriority}
+                formattedValue={todoPriorityLabel}
+                timestamp={null}
+                disabled={
+                  detailItem.issueProjectStatusLocked || isUpdatingStatus
+                }
+                isUpdating={isUpdatingProjectFields}
+                onSubmit={onUpdateProjectField}
+              />
+              <ProjectFieldEditor
+                item={detailItem}
+                field="weight"
+                label="Weight"
+                rawValue={detailItem.issueTodoProjectWeight}
+                formattedValue={todoWeightLabel}
+                timestamp={todoWeightTimestamp}
+                disabled={isUpdatingStatus}
+                isUpdating={isUpdatingProjectFields}
+                onSubmit={onUpdateProjectField}
+              />
+              <ProjectFieldEditor
+                item={detailItem}
+                field="initiationOptions"
+                label="Initiation"
+                rawValue={detailItem.issueTodoProjectInitiationOptions}
+                formattedValue={todoInitiationLabel}
+                timestamp={todoInitiationTimestamp}
+                disabled={
+                  detailItem.issueProjectStatusLocked || isUpdatingStatus
+                }
+                isUpdating={isUpdatingProjectFields}
+                onSubmit={onUpdateProjectField}
+              />
+              <ProjectFieldEditor
+                item={detailItem}
+                field="startDate"
+                label="Start"
+                rawValue={detailItem.issueTodoProjectStartDate}
+                formattedValue={todoStartDateLabel}
+                timestamp={todoStartDateTimestamp}
+                disabled={
+                  detailItem.issueProjectStatusLocked || isUpdatingStatus
+                }
+                isUpdating={isUpdatingProjectFields}
+                onSubmit={onUpdateProjectField}
+              />
+            </div>
+            {!detailItem.issueProjectStatusLocked &&
+              detailItem.issueProjectStatusSource !== "activity" && (
+                <p className="mt-2 text-muted-foreground/80">
+                  Activity 상태는 To-do 프로젝트가 No Status 또는 Todo일 때만
+                  적용돼요.
+                </p>
+              )}
+          </div>
+        )}
+        <div className="rounded-md border border-border bg-background px-4 py-3 text-sm">
+          {(() => {
+            if (!renderedBody) {
+              return (
+                <div className="text-muted-foreground/80">내용이 없습니다.</div>
+              );
+            }
+            if (!renderedContent) {
+              return (
+                <div className="text-muted-foreground/80">
+                  내용을 표시할 수 없습니다.
+                </div>
+              );
+            }
+            return (
+              <div className="space-y-4 leading-relaxed [&_a]:text-primary [&_a]:underline-offset-2 [&_a:hover]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5">
+                {renderedContent}
+              </div>
+            );
+          })()}
+        </div>
+        {(detail.parentIssues.length > 0 || detail.subIssues.length > 0) && (
+          <div className="space-y-4 text-xs">
+            {detail.parentIssues.length > 0 && (
+              <div>
+                <h4 className="font-semibold text-muted-foreground/85">
+                  상위 이슈
+                </h4>
+                <ul className="mt-1 space-y-1">
+                  {detail.parentIssues.map((linked) => {
+                    const referenceParts: string[] = [];
+                    if (linked.repositoryNameWithOwner) {
+                      referenceParts.push(linked.repositoryNameWithOwner);
+                    }
+                    if (typeof linked.number === "number") {
+                      referenceParts.push(`#${linked.number}`);
+                    }
+                    const referenceLabel =
+                      referenceParts.length > 0
+                        ? referenceParts.join("")
+                        : null;
+                    const titleLabel =
+                      linked.title ?? linked.state ?? linked.id;
+                    const displayLabel = referenceLabel
+                      ? `${referenceLabel}${titleLabel ? ` — ${titleLabel}` : ""}`
+                      : titleLabel;
+                    return (
+                      <li key={`parent-${linked.id}`}>
+                        {linked.url ? (
+                          <a
+                            href={linked.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-primary hover:underline"
+                          >
+                            {displayLabel ?? linked.id}
+                          </a>
+                        ) : (
+                          <span>{displayLabel ?? linked.id}</span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+            {detail.subIssues.length > 0 && (
+              <div>
+                <h4 className="font-semibold text-muted-foreground/85">
+                  하위 이슈
+                </h4>
+                <ul className="mt-1 space-y-1">
+                  {detail.subIssues.map((linked) => {
+                    const referenceParts: string[] = [];
+                    if (linked.repositoryNameWithOwner) {
+                      referenceParts.push(linked.repositoryNameWithOwner);
+                    }
+                    if (typeof linked.number === "number") {
+                      referenceParts.push(`#${linked.number}`);
+                    }
+                    const referenceLabel =
+                      referenceParts.length > 0
+                        ? referenceParts.join("")
+                        : null;
+                    const titleLabel =
+                      linked.title ?? linked.state ?? linked.id;
+                    const displayLabel = referenceLabel
+                      ? `${referenceLabel}${titleLabel ? ` — ${titleLabel}` : ""}`
+                      : titleLabel;
+                    return (
+                      <li key={`sub-${linked.id}`}>
+                        {linked.url ? (
+                          <a
+                            href={linked.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-primary hover:underline"
+                          >
+                            {displayLabel ?? linked.id}
+                          </a>
+                        ) : (
+                          <span>{displayLabel ?? linked.id}</span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+          </div>
         )}
       </div>
-      {(detail.parentIssues.length > 0 || detail.subIssues.length > 0) && (
-        <div className="space-y-4 text-xs">
-          {detail.parentIssues.length > 0 && (
-            <div>
-              <h4 className="font-semibold text-muted-foreground/85">
-                상위 이슈
-              </h4>
-              <ul className="mt-1 space-y-1">
-                {detail.parentIssues.map((linked) => {
-                  const referenceParts: string[] = [];
-                  if (linked.repositoryNameWithOwner) {
-                    referenceParts.push(linked.repositoryNameWithOwner);
-                  }
-                  if (typeof linked.number === "number") {
-                    referenceParts.push(`#${linked.number}`);
-                  }
-                  const referenceLabel =
-                    referenceParts.length > 0 ? referenceParts.join("") : null;
-                  const titleLabel = linked.title ?? linked.state ?? linked.id;
-                  const displayLabel = referenceLabel
-                    ? `${referenceLabel}${titleLabel ? ` — ${titleLabel}` : ""}`
-                    : titleLabel;
-                  return (
-                    <li key={`parent-${linked.id}`}>
-                      {linked.url ? (
-                        <a
-                          href={linked.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-primary hover:underline"
-                        >
-                          {displayLabel ?? linked.id}
-                        </a>
-                      ) : (
-                        <span>{displayLabel ?? linked.id}</span>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          )}
-          {detail.subIssues.length > 0 && (
-            <div>
-              <h4 className="font-semibold text-muted-foreground/85">
-                하위 이슈
-              </h4>
-              <ul className="mt-1 space-y-1">
-                {detail.subIssues.map((linked) => {
-                  const referenceParts: string[] = [];
-                  if (linked.repositoryNameWithOwner) {
-                    referenceParts.push(linked.repositoryNameWithOwner);
-                  }
-                  if (typeof linked.number === "number") {
-                    referenceParts.push(`#${linked.number}`);
-                  }
-                  const referenceLabel =
-                    referenceParts.length > 0 ? referenceParts.join("") : null;
-                  const titleLabel = linked.title ?? linked.state ?? linked.id;
-                  const displayLabel = referenceLabel
-                    ? `${referenceLabel}${titleLabel ? ` — ${titleLabel}` : ""}`
-                    : titleLabel;
-                  return (
-                    <li key={`sub-${linked.id}`}>
-                      {linked.url ? (
-                        <a
-                          href={linked.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-primary hover:underline"
-                        >
-                          {displayLabel ?? linked.id}
-                        </a>
-                      ) : (
-                        <span>{displayLabel ?? linked.id}</span>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -912,13 +1139,14 @@ function PullRequestList({
           activityItem.mentionWaits = toActivityMentionWaits(mentionDetails);
         }
 
-        const iconInfo = resolveActivityIcon(activityItem);
+        const detail = detailMap[item.id] ?? undefined;
+        const overlayItem = detail?.item ?? activityItem;
+        const iconInfo = resolveActivityIcon(overlayItem);
         const referenceLabel = buildReferenceLabel(
           item.repository,
           item.number,
         );
         const isSelected = openItemId === item.id;
-        const detail = detailMap[item.id] ?? undefined;
         const isDetailLoading = loadingDetailIds.has(item.id);
         const badges = [showUpdated ? "업데이트 없는 PR" : "오래된 PR"];
         const metrics = buildActivityMetricEntries(activityItem);
@@ -976,14 +1204,22 @@ function PullRequestList({
               </button>
               {isSelected ? (
                 <ActivityDetailOverlay
-                  item={activityItem}
+                  item={overlayItem}
                   iconInfo={iconInfo}
                   badges={badges}
                   onClose={closeItem}
                 >
                   <FollowUpDetailContent
+                    item={overlayItem}
                     detail={detail}
                     isLoading={isDetailLoading}
+                    timezone={timezone}
+                    isUpdatingStatus={false}
+                    isUpdatingProjectFields={false}
+                    onUpdateStatus={() => {
+                      /* no-op for pull requests */
+                    }}
+                    onUpdateProjectField={async () => false}
                   />
                 </ActivityDetailOverlay>
               ) : null}
@@ -1231,13 +1467,14 @@ function ReviewRequestList({
           activityItem.mentionWaits = toActivityMentionWaits(mentionDetails);
         }
 
-        const iconInfo = resolveActivityIcon(activityItem);
+        const detail = detailMap[selectionId] ?? undefined;
+        const overlayItem = detail?.item ?? activityItem;
+        const iconInfo = resolveActivityIcon(overlayItem);
         const referenceLabel = buildReferenceLabel(
           item.pullRequest.repository,
           item.pullRequest.number,
         );
         const isSelected = openItemId === selectionId;
-        const detail = detailMap[selectionId] ?? undefined;
         const isDetailLoading = loadingDetailIds.has(selectionId);
         const badges = ["응답 없는 리뷰 요청"];
         const metrics = buildActivityMetricEntries(activityItem);
@@ -1294,14 +1531,22 @@ function ReviewRequestList({
               </button>
               {isSelected ? (
                 <ActivityDetailOverlay
-                  item={activityItem}
+                  item={overlayItem}
                   iconInfo={iconInfo}
                   badges={badges}
                   onClose={closeItem}
                 >
                   <FollowUpDetailContent
+                    item={overlayItem}
                     detail={detail}
                     isLoading={isDetailLoading}
+                    timezone={timezone}
+                    isUpdatingStatus={false}
+                    isUpdatingProjectFields={false}
+                    onUpdateStatus={() => {
+                      /* no-op for review requests */
+                    }}
+                    onUpdateProjectField={async () => false}
                   />
                 </ActivityDetailOverlay>
               ) : null}
@@ -1360,6 +1605,12 @@ function IssueList({
 }) {
   const [authorFilter, setAuthorFilter] = useState("all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
+  const [updatingStatusIds, setUpdatingStatusIds] = useState<Set<string>>(
+    () => new Set<string>(),
+  );
+  const [updatingProjectFieldIds, setUpdatingProjectFieldIds] = useState<
+    Set<string>
+  >(() => new Set<string>());
 
   const aggregation = useMemo(() => {
     const authorMap = new Map<string, RankingEntry>();
@@ -1456,8 +1707,224 @@ function IssueList({
 
   const hasAssigneeFilter = assigneeOptions.length > 0;
 
-  const { openItemId, detailMap, loadingDetailIds, selectItem, closeItem } =
-    useActivityDetailState();
+  const {
+    openItemId,
+    detailMap,
+    loadingDetailIds,
+    selectItem,
+    closeItem,
+    updateDetailItem,
+  } = useActivityDetailState();
+
+  const handleUpdateIssueStatus = useCallback(
+    async (activityItem: ActivityItem, nextStatus: IssueProjectStatus) => {
+      if (activityItem.type !== "issue") {
+        return;
+      }
+
+      const currentStatus = activityItem.issueProjectStatus ?? "no_status";
+      if (currentStatus === nextStatus && nextStatus !== "no_status") {
+        return;
+      }
+
+      setUpdatingStatusIds((current) => {
+        if (current.has(activityItem.id)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.add(activityItem.id);
+        return next;
+      });
+
+      try {
+        const response = await fetch(
+          `/api/activity/${encodeURIComponent(activityItem.id)}/status`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              status: nextStatus,
+              expectedStatus: currentStatus,
+            }),
+          },
+        );
+
+        let payload:
+          | {
+              item?: ActivityItem;
+              error?: string;
+              todoStatus?: IssueProjectStatus;
+            }
+          | undefined;
+
+        try {
+          payload = (await response.json()) as typeof payload;
+        } catch {
+          payload = undefined;
+        }
+
+        if (!response.ok) {
+          if (payload?.item) {
+            updateDetailItem(payload.item);
+          }
+          if (payload?.error) {
+            console.warn(payload.error);
+          }
+          return;
+        }
+
+        const updatedItem = payload?.item ?? activityItem;
+        updateDetailItem(updatedItem);
+        const label =
+          ISSUE_STATUS_LABEL_MAP.get(
+            updatedItem.issueProjectStatus ?? "no_status",
+          ) ?? "No Status";
+        console.info(`상태를 ${label}로 업데이트했어요.`);
+      } catch (error) {
+        console.error("Failed to update issue status", error);
+      } finally {
+        setUpdatingStatusIds((current) => {
+          if (!current.has(activityItem.id)) {
+            return current;
+          }
+          const next = new Set(current);
+          next.delete(activityItem.id);
+          return next;
+        });
+      }
+    },
+    [updateDetailItem],
+  );
+
+  const handleUpdateProjectField = useCallback(
+    async (
+      activityItem: ActivityItem,
+      field: ProjectFieldKey,
+      nextValue: string | null,
+    ) => {
+      if (activityItem.type !== "issue") {
+        return false;
+      }
+
+      const currentValue = (() => {
+        switch (field) {
+          case "priority":
+            return activityItem.issueTodoProjectPriority;
+          case "weight":
+            return activityItem.issueTodoProjectWeight;
+          case "initiationOptions":
+            return activityItem.issueTodoProjectInitiationOptions;
+          case "startDate":
+            return activityItem.issueTodoProjectStartDate;
+          default:
+            return null;
+        }
+      })();
+      const currentUpdatedAt = (() => {
+        switch (field) {
+          case "priority":
+            return activityItem.issueTodoProjectPriorityUpdatedAt;
+          case "weight":
+            return activityItem.issueTodoProjectWeightUpdatedAt;
+          case "initiationOptions":
+            return activityItem.issueTodoProjectInitiationOptionsUpdatedAt;
+          case "startDate":
+            return activityItem.issueTodoProjectStartDateUpdatedAt;
+          default:
+            return null;
+        }
+      })();
+
+      const normalizedCurrent = normalizeProjectFieldForComparison(
+        field,
+        currentValue,
+      );
+      const normalizedNext = normalizeProjectFieldForComparison(
+        field,
+        nextValue,
+      );
+
+      if (normalizedCurrent === normalizedNext) {
+        return true;
+      }
+
+      setUpdatingProjectFieldIds((current) => {
+        if (current.has(activityItem.id)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.add(activityItem.id);
+        return next;
+      });
+
+      try {
+        const payload = {
+          [field]: nextValue,
+          expected: {
+            [field]: {
+              value: currentValue,
+              updatedAt: currentUpdatedAt,
+            },
+          },
+        } as Record<string, unknown>;
+
+        const response = await fetch(
+          `/api/activity/${encodeURIComponent(activityItem.id)}/project-fields`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+          },
+        );
+
+        let payloadResponse:
+          | {
+              item?: ActivityItem;
+              error?: string;
+              todoStatus?: IssueProjectStatus;
+            }
+          | undefined;
+        try {
+          payloadResponse = (await response.json()) as typeof payloadResponse;
+        } catch {
+          payloadResponse = undefined;
+        }
+
+        if (!response.ok) {
+          if (payloadResponse?.item) {
+            updateDetailItem(payloadResponse.item);
+          }
+          if (payloadResponse?.error) {
+            console.warn(payloadResponse.error);
+          }
+          return false;
+        }
+
+        const updatedItem = payloadResponse?.item ?? activityItem;
+        updateDetailItem(updatedItem);
+        const label = PROJECT_FIELD_LABELS[field];
+        console.info(`${label} 값을 업데이트했어요.`);
+        return true;
+      } catch (error) {
+        console.error("Failed to update project field", error);
+        return false;
+      } finally {
+        setUpdatingProjectFieldIds((current) => {
+          if (!current.has(activityItem.id)) {
+            return current;
+          }
+          const next = new Set(current);
+          next.delete(activityItem.id);
+          return next;
+        });
+      }
+    },
+    [updateDetailItem],
+  );
 
   if (!items.length && !segmented) {
     return <p className="text-sm text-muted-foreground">{emptyText}</p>;
@@ -1558,13 +2025,14 @@ function IssueList({
           activityItem.mentionWaits = toActivityMentionWaits(mentionDetails);
         }
 
-        const iconInfo = resolveActivityIcon(activityItem);
+        const detail = detailMap[item.id] ?? undefined;
+        const overlayItem = detail?.item ?? activityItem;
+        const iconInfo = resolveActivityIcon(overlayItem);
         const referenceLabel = buildReferenceLabel(
           item.repository,
           item.number,
         );
         const isSelected = openItemId === item.id;
-        const detail = detailMap[item.id] ?? undefined;
         const isDetailLoading = loadingDetailIds.has(item.id);
         const badges = [
           highlightInProgress
@@ -1626,14 +2094,22 @@ function IssueList({
               </button>
               {isSelected ? (
                 <ActivityDetailOverlay
-                  item={activityItem}
+                  item={overlayItem}
                   iconInfo={iconInfo}
                   badges={badges}
                   onClose={closeItem}
                 >
                   <FollowUpDetailContent
+                    item={overlayItem}
                     detail={detail}
                     isLoading={isDetailLoading}
+                    timezone={timezone}
+                    isUpdatingStatus={updatingStatusIds.has(item.id)}
+                    isUpdatingProjectFields={updatingProjectFieldIds.has(
+                      item.id,
+                    )}
+                    onUpdateStatus={handleUpdateIssueStatus}
+                    onUpdateProjectField={handleUpdateProjectField}
                   />
                 </ActivityDetailOverlay>
               ) : null}
@@ -1866,13 +2342,14 @@ function MentionList({
         activityItem.businessDaysIdle = item.waitingDays ?? null;
         activityItem.mentionWaits = toActivityMentionWaits([item]);
 
-        const iconInfo = resolveActivityIcon(activityItem);
+        const detail = detailMap[selectionId] ?? undefined;
+        const overlayItem = detail?.item ?? activityItem;
+        const iconInfo = resolveActivityIcon(overlayItem);
         const referenceLabel = `${buildReferenceLabel(
           item.container.repository,
           item.container.number ?? null,
         )} 코멘트`;
         const isSelected = openItemId === selectionId;
-        const detail = detailMap[selectionId] ?? undefined;
         const isDetailLoading = loadingDetailIds.has(selectionId);
         const badges = ["응답 없는 멘션"];
         const metrics = buildActivityMetricEntries(activityItem);
@@ -1935,14 +2412,22 @@ function MentionList({
               </button>
               {isSelected ? (
                 <ActivityDetailOverlay
-                  item={activityItem}
+                  item={overlayItem}
                   iconInfo={iconInfo}
                   badges={badges}
                   onClose={closeItem}
                 >
                   <FollowUpDetailContent
+                    item={overlayItem}
                     detail={detail}
                     isLoading={isDetailLoading}
+                    timezone={timezone}
+                    isUpdatingStatus={false}
+                    isUpdatingProjectFields={false}
+                    onUpdateStatus={() => {
+                      /* no-op for mentions */
+                    }}
+                    onUpdateProjectField={async () => false}
                   />
                 </ActivityDetailOverlay>
               ) : null}
