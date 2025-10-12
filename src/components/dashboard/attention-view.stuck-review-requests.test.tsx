@@ -144,9 +144,6 @@ describe("AttentionView stuck review requests", () => {
     render(<AttentionView insights={insights} />);
 
     expect(
-      screen.getByRole("heading", { name: "Follow-ups" }),
-    ).toBeInTheDocument();
-    expect(
       screen.getByText("최다 생성자: 1위 Bob, 2위 Alice"),
     ).toBeInTheDocument();
     expect(

@@ -147,10 +147,6 @@ describe("AttentionView stalled in-progress issues", () => {
     render(<AttentionView insights={insights} />);
 
     expect(
-      screen.getByRole("heading", { name: "Follow-ups" }),
-    ).toBeInTheDocument();
-
-    expect(
       screen.getByText("최다 생성자: 1위 Alice, 2위 Carol"),
     ).toBeInTheDocument();
     expect(

@@ -189,10 +189,6 @@ describe("AttentionView unanswered mentions", () => {
     render(<AttentionView insights={insights} />);
 
     expect(
-      screen.getByRole("heading", { name: "Follow-ups" }),
-    ).toBeInTheDocument();
-
-    expect(
       screen.getByText("최다 멘션 대상: 1위 Bob, 2위 Carol"),
     ).toBeInTheDocument();
     expect(

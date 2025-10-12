@@ -294,12 +294,9 @@ function AnalyticsHeaderSection({
   return (
     <header className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-semibold">GitHub 활동 분석</h1>
-          <p className="text-sm text-muted-foreground">
-            {orgName ? `${orgName} 조직의 활동 지표` : "조직 활동 지표"}
-          </p>
-        </div>
+        <p className="text-sm text-muted-foreground">
+          {orgName ? `${orgName} 조직의 활동 지표` : "조직 활동 지표"}
+        </p>
       </div>
 
       <DashboardFilterPanel

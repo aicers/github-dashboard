@@ -645,7 +645,6 @@ describe("AnalyticsView UI", () => {
       expect(screen.getByText(title)).toBeInTheDocument();
     });
 
-    expect(screen.getByText(/GitHub 활동 분석/)).toBeInTheDocument();
     expect(
       screen.getByText("테스트 조직 조직의 활동 지표"),
     ).toBeInTheDocument();

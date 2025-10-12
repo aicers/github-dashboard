@@ -2011,7 +2011,6 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
   return (
     <section className="flex flex-col gap-8">
       <header className="flex flex-col gap-2">
-        <h1 className="text-3xl font-semibold">Follow-ups</h1>
         <p className="text-sm text-muted-foreground">
           오래 머물러 있는 작업과 응답이 필요한 항목을 한눈에 확인하세요.
         </p>
