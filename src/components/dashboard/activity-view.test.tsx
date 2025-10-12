@@ -239,6 +239,79 @@ describe("ActivityView", () => {
     consoleError.mockRestore();
   });
 
+  it("keeps the saved filter selector in sync with the current draft filters", async () => {
+    const props = createDefaultProps();
+
+    const basePayload = {
+      types: ["issue"] as ActivityListParams["types"],
+      perPage: 10,
+      statuses: ["open"] as ActivityListParams["statuses"],
+    };
+
+    const savedFilter: ActivitySavedFilter = {
+      id: "filter-issue",
+      name: "Issues only",
+      payload: buildActivityListParams(basePayload),
+      createdAt: "2024-02-01T00:00:00.000Z",
+      updatedAt: "2024-02-01T00:00:00.000Z",
+    };
+
+    const secondarySearch = "review follow-up";
+
+    const secondaryFilter: ActivitySavedFilter = {
+      id: "filter-issue-search",
+      name: "Issues with search",
+      payload: buildActivityListParams({
+        ...basePayload,
+        search: secondarySearch,
+      }),
+      createdAt: "2024-02-02T00:00:00.000Z",
+      updatedAt: "2024-02-02T00:00:00.000Z",
+    };
+
+    mockFetchJsonOnce({
+      filters: [savedFilter, secondaryFilter],
+      limit: 20,
+    });
+
+    const filteredResult = buildActivityListResult({
+      items: [
+        buildActivityItem({
+          id: "activity-filtered",
+          title: "필터 적용 이슈",
+        }),
+      ],
+      pageInfo: { page: 1, perPage: 10, totalCount: 1, totalPages: 1 },
+    });
+    mockFetchJsonOnce(filteredResult);
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    const select = screen.getByRole("option", { name: "필터 선택" })
+      .parentElement as HTMLSelectElement;
+
+    fireEvent.change(select, { target: { value: savedFilter.id } });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(select.value).toBe(savedFilter.id));
+
+    fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
+
+    const searchInput = screen.getByPlaceholderText("제목, 본문, 코멘트 검색");
+
+    fireEvent.change(searchInput, {
+      target: { value: "non matching search" },
+    });
+
+    await waitFor(() => expect(select.value).toBe(""));
+
+    fireEvent.change(searchInput, { target: { value: secondarySearch } });
+
+    await waitFor(() => expect(select.value).toBe(secondaryFilter.id));
+  });
+
   it("opens the detail drawer, loads item details, and restores scroll locking on close", async () => {
     const consoleError = vi
       .spyOn(console, "error")
