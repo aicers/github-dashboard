@@ -156,9 +156,7 @@ describe("AttentionView idle pull requests", () => {
     await user.click(idleButton);
 
     expect(
-      screen.getByText(
-        "10일 이상 (주말과 공휴일 제외) 업데이트가 없는 열린 PR",
-      ),
+      screen.getByText("10일 이상 업데이트가 없는 열린 PR"),
     ).toBeInTheDocument();
 
     const firstItem = screen
@@ -238,9 +236,12 @@ describe("AttentionView idle pull requests", () => {
       screen.getByText("현재 조건을 만족하는 PR이 없습니다."),
     ).toBeInTheDocument();
     expect(
-      screen.queryByText("생성자 미업데이트 경과일수 합계 순위"),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("생성자 필터")).not.toBeInTheDocument();
+      screen.getByText("생성자 미업데이트 경과일수 합계 순위"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText("생성자 데이터가 없습니다.").length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByLabelText("생성자 필터")).toBeInTheDocument();
     expect(screen.queryByLabelText("리뷰어 필터")).not.toBeInTheDocument();
   });
 });

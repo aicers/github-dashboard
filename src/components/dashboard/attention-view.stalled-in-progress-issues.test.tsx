@@ -161,9 +161,7 @@ describe("AttentionView stalled in-progress issues", () => {
     await user.click(menuButton);
 
     expect(
-      screen.getByText(
-        "In Progress에서 20일 이상 (주말과 공휴일 제외) 정체된 이슈",
-      ),
+      screen.getByText("In Progress에서 20일 이상 머문 이슈"),
     ).toBeInTheDocument();
 
     expect(screen.getByText("Stabilize rollout scripts")).toBeInTheDocument();

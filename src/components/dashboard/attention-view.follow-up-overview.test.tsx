@@ -415,7 +415,9 @@ describe("Follow-up overview", () => {
     await user.click(quickView);
 
     expect(
-      screen.getByText("5일 이상 (주말과 공휴일 제외) 응답이 없는 리뷰 요청"),
+      screen.getByText(
+        "5일 이상 (리뷰 제출·댓글·리액션 모두 없는) 응답 없는 리뷰 요청",
+      ),
     ).toBeInTheDocument();
 
     const stuckNavButton = screen.getByRole("button", {
