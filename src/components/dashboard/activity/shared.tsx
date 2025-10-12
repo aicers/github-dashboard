@@ -137,7 +137,11 @@ export function formatUserHandle(user: ActivityItem["author"]) {
     return null;
   }
 
-  return trimmed.startsWith("@") ? trimmed : `@${trimmed}`;
+  const withoutPrefix = trimmed.startsWith("@")
+    ? trimmed.slice(1).trim()
+    : trimmed;
+
+  return withoutPrefix.length ? withoutPrefix : trimmed;
 }
 
 function sortByBusinessDays<
