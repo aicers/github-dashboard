@@ -1,3 +1,5 @@
+import type { DateTimeDisplayFormat } from "@/lib/date-time-format";
+
 export type ActivityItemType = "issue" | "pull_request" | "discussion";
 
 export type IssueProjectStatus =
@@ -194,6 +196,7 @@ export type ActivityListResult = {
   pageInfo: ActivityPageInfo;
   lastSyncCompletedAt: string | null;
   timezone: string | null;
+  dateTimeFormat: DateTimeDisplayFormat;
 };
 
 export type ActivityItemDetail = {

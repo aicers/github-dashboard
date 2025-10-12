@@ -25,6 +25,7 @@ export default async function SettingsPage() {
       syncIntervalMinutes={config?.sync_interval_minutes ?? 60}
       timeZone={timeZone}
       weekStart={(config?.week_start as "sunday" | "monday") ?? "monday"}
+      dateTimeFormat={config?.date_time_format ?? "auto"}
       repositories={repositories}
       excludedRepositoryIds={excludedRepositoryIds}
       members={members}

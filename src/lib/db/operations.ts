@@ -542,7 +542,7 @@ export async function getSyncState(resource: string) {
 
 export async function getSyncConfig() {
   const result = await query(
-    `SELECT id, org_name, auto_sync_enabled, sync_interval_minutes, timezone, week_start, excluded_repository_ids, excluded_user_ids, last_sync_started_at, last_sync_completed_at, last_successful_sync_at
+    `SELECT id, org_name, auto_sync_enabled, sync_interval_minutes, timezone, week_start, excluded_repository_ids, excluded_user_ids, date_time_format, last_sync_started_at, last_sync_completed_at, last_successful_sync_at
      FROM sync_config
      WHERE id = 'default'`,
   );
@@ -558,6 +558,7 @@ export async function updateSyncConfig(params: {
   weekStart?: "sunday" | "monday";
   excludedRepositories?: string[];
   excludedUsers?: string[];
+  dateTimeFormat?: string;
   lastSyncStartedAt?: string | null;
   lastSyncCompletedAt?: string | null;
   lastSuccessfulSyncAt?: string | null;
@@ -598,6 +599,11 @@ export async function updateSyncConfig(params: {
   if (Array.isArray(params.excludedUsers)) {
     fields.push(`excluded_user_ids = $${fields.length + 1}`);
     values.push(params.excludedUsers);
+  }
+
+  if (typeof params.dateTimeFormat === "string") {
+    fields.push(`date_time_format = $${fields.length + 1}`);
+    values.push(params.dateTimeFormat);
   }
 
   if (params.lastSyncStartedAt !== undefined) {

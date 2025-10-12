@@ -179,6 +179,7 @@ export function buildActivityListResultFixture(
     },
     lastSyncCompletedAt: overrides.lastSyncCompletedAt ?? NOW,
     timezone: overrides.timezone ?? "UTC",
+    dateTimeFormat: overrides.dateTimeFormat ?? "auto",
   };
 }
 

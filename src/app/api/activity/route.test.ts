@@ -45,6 +45,7 @@ describe("GET /api/activity", () => {
       },
       lastSyncCompletedAt: null,
       timezone: null,
+      dateTimeFormat: "auto",
     };
 
     parseActivityListParams.mockReturnValue(parsedParams);

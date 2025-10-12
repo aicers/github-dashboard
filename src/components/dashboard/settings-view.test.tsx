@@ -70,6 +70,7 @@ function renderSettings(
       syncIntervalMinutes={30}
       timeZone="Asia/Seoul"
       weekStart="monday"
+      dateTimeFormat="auto"
       repositories={repositories}
       excludedRepositoryIds={["repo-2"]}
       members={members}
@@ -111,6 +112,9 @@ describe("SettingsView", () => {
       within(personalSection as HTMLElement).getByLabelText("주의 시작 요일"),
     ).toHaveValue("monday");
     expect(
+      within(personalSection as HTMLElement).getByLabelText("날짜와 시간"),
+    ).toHaveValue("auto");
+    expect(
       within(personalSection as HTMLElement).getByRole("button", {
         name: "개인 설정 저장",
       }),
@@ -141,6 +145,9 @@ describe("SettingsView", () => {
         "주의 시작 요일",
       ),
     ).toHaveValue("monday");
+    expect(
+      within(organizationSection as HTMLElement).getByLabelText("날짜와 시간"),
+    ).toHaveValue("auto");
     expect(
       within(organizationSection as HTMLElement).getByRole("option", {
         name: "acme/repo-two",
@@ -228,6 +235,7 @@ describe("SettingsView", () => {
       syncIntervalMinutes: 15,
       timezone: "America/Los_Angeles",
       weekStart: "sunday",
+      dateTimeFormat: "auto",
     });
     expect([...payload.excludedRepositories].sort()).toEqual([
       "repo-1",
@@ -322,6 +330,9 @@ describe("SettingsView", () => {
     const timezoneSelect = screen.getByLabelText("표준 시간대");
     await user.selectOptions(timezoneSelect, "America/Los_Angeles");
 
+    const formatSelect = screen.getByLabelText("날짜와 시간");
+    await user.selectOptions(formatSelect, "en-us-12h");
+
     await user.click(screen.getByRole("button", { name: "개인 설정 저장" }));
 
     await waitFor(() => {
@@ -334,6 +345,7 @@ describe("SettingsView", () => {
     expect(await request.clone().json()).toEqual({
       timezone: "America/Los_Angeles",
       weekStart: "monday",
+      dateTimeFormat: "en-us-12h",
     });
 
     await waitFor(() => {
@@ -393,6 +405,9 @@ describe("SettingsView", () => {
     const timezoneSelect = screen.getByLabelText("표준 시간대");
     await user.selectOptions(timezoneSelect, "America/Los_Angeles");
 
+    const formatSelect = screen.getByLabelText("날짜와 시간");
+    await user.selectOptions(formatSelect, "dot-24h");
+
     await user.click(screen.getByRole("button", { name: "개인 설정 저장" }));
 
     await waitFor(() => {
@@ -404,6 +419,7 @@ describe("SettingsView", () => {
     expect(payload).toEqual({
       timezone: "America/Los_Angeles",
       weekStart: "monday",
+      dateTimeFormat: "dot-24h",
     });
 
     await waitFor(() => {

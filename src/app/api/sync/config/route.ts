@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { readActiveSession } from "@/lib/auth/session";
+import { DATE_TIME_FORMAT_VALUES } from "@/lib/date-time-format";
 import { fetchSyncStatus, updateSyncSettings } from "@/lib/sync/service";
 
 const patchSchema = z.object({
@@ -9,6 +10,17 @@ const patchSchema = z.object({
   syncIntervalMinutes: z.number().int().positive().optional(),
   timezone: z.string().min(1).optional(),
   weekStart: z.enum(["sunday", "monday"]).optional(),
+  dateTimeFormat: z
+    .string()
+    .min(1)
+    .refine(
+      (value) =>
+        DATE_TIME_FORMAT_VALUES.includes(
+          value as (typeof DATE_TIME_FORMAT_VALUES)[number],
+        ),
+      { message: "Unsupported date-time display format." },
+    )
+    .optional(),
   excludedRepositories: z
     .array(z.string().min(1))
     .optional()
@@ -67,6 +79,7 @@ export async function PATCH(request: Request) {
       excludedPeople,
       timezone,
       weekStart,
+      dateTimeFormat,
     } = payload;
 
     if (!session.isAdmin) {
@@ -87,7 +100,7 @@ export async function PATCH(request: Request) {
         );
       }
 
-      await updateSyncSettings({ timezone, weekStart });
+      await updateSyncSettings({ timezone, weekStart, dateTimeFormat });
     } else {
       await updateSyncSettings({
         orgName,
@@ -96,6 +109,7 @@ export async function PATCH(request: Request) {
         weekStart,
         excludedRepositories,
         excludedPeople,
+        dateTimeFormat,
       });
     }
 

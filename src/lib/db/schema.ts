@@ -148,6 +148,7 @@ const SCHEMA_STATEMENTS = [
     week_start TEXT NOT NULL DEFAULT 'monday',
     excluded_repository_ids TEXT[] NOT NULL DEFAULT '{}',
     excluded_user_ids TEXT[] NOT NULL DEFAULT '{}',
+    date_time_format TEXT NOT NULL DEFAULT 'auto',
     last_sync_started_at TIMESTAMPTZ,
     last_sync_completed_at TIMESTAMPTZ,
     last_successful_sync_at TIMESTAMPTZ,
@@ -158,6 +159,7 @@ const SCHEMA_STATEMENTS = [
   `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS week_start TEXT NOT NULL DEFAULT 'monday'`,
   `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS excluded_repository_ids TEXT[] NOT NULL DEFAULT '{}'`,
   `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS excluded_user_ids TEXT[] NOT NULL DEFAULT '{}'`,
+  `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS date_time_format TEXT NOT NULL DEFAULT 'auto'`,
   `ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE`,
   `CREATE TABLE IF NOT EXISTS sync_state (
     resource TEXT PRIMARY KEY,

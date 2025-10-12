@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { isValidDateTimeDisplayFormat } from "@/lib/date-time-format";
 import { ensureSchema } from "@/lib/db";
 import {
   getDashboardStats,
@@ -381,6 +382,7 @@ export async function updateSyncSettings(params: {
   weekStart?: "sunday" | "monday";
   excludedRepositories?: string[];
   excludedPeople?: string[];
+  dateTimeFormat?: string;
 }) {
   await ensureSchema();
 
@@ -447,6 +449,15 @@ export async function updateSyncSettings(params: {
     );
 
     await updateSyncConfig({ excludedUsers: normalized });
+  }
+
+  if (params.dateTimeFormat !== undefined) {
+    const format = params.dateTimeFormat.trim();
+    if (!isValidDateTimeDisplayFormat(format)) {
+      throw new Error("Unsupported date-time display format.");
+    }
+
+    await updateSyncConfig({ dateTimeFormat: format });
   }
 }
 

@@ -64,6 +64,7 @@ export default async function SettingsHarnessPage({
         syncIntervalMinutes={30}
         timeZone="Asia/Seoul"
         weekStart="monday"
+        dateTimeFormat="auto"
         repositories={repositories}
         excludedRepositoryIds={["repo-2"]}
         members={members}

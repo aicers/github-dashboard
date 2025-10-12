@@ -33,6 +33,7 @@ import {
   differenceInBusinessDaysOrNull,
   HOLIDAY_SET,
 } from "@/lib/dashboard/business-days";
+import { normalizeDateTimeDisplayFormat } from "@/lib/date-time-format";
 import { ensureSchema } from "@/lib/db";
 import { query } from "@/lib/db/client";
 import { getSyncConfig, getUserProfiles } from "@/lib/db/operations";
@@ -2237,6 +2238,11 @@ export async function getActivityItems(
     attentionSelection.includeIds.length === 0
   ) {
     const config = await getSyncConfig();
+    const dateTimeFormat = normalizeDateTimeDisplayFormat(
+      typeof config?.date_time_format === "string"
+        ? config.date_time_format
+        : null,
+    );
     return {
       items: [],
       pageInfo: {
@@ -2250,6 +2256,7 @@ export async function getActivityItems(
         typeof config?.timezone === "string" && config.timezone.trim().length
           ? config.timezone
           : null,
+      dateTimeFormat,
     };
   }
 
@@ -2346,6 +2353,11 @@ export async function getActivityItems(
   );
 
   const config = await getSyncConfig();
+  const dateTimeFormat = normalizeDateTimeDisplayFormat(
+    typeof config?.date_time_format === "string"
+      ? config.date_time_format
+      : null,
+  );
 
   return {
     items,
@@ -2360,6 +2372,7 @@ export async function getActivityItems(
       typeof config?.timezone === "string" && config.timezone.trim().length
         ? config.timezone
         : null,
+    dateTimeFormat,
   };
 }
 
