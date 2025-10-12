@@ -139,7 +139,7 @@ describe("ActivityView", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
     const attentionButton = screen.getByRole("button", {
-      name: "주의 필요한 업데이트",
+      name: "확인 필요",
     });
     fireEvent.click(attentionButton);
 
@@ -424,9 +424,7 @@ describe("ActivityView", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "주의 필요한 업데이트" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "확인 필요" }));
 
     await screen.findByText("활동 데이터를 불러오지 못했습니다.");
 
