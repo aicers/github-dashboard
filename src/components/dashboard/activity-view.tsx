@@ -3378,7 +3378,7 @@ export function ActivityView({
             options={userOptions}
             synced={peopleSynced}
           />
-          <div className="flex justify-end">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <Button
               type="button"
               variant="ghost"
@@ -3388,6 +3388,19 @@ export function ActivityView({
             >
               {showAdvancedFilters ? "숨기기" : "고급 필터 보기"}
             </Button>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button onClick={applyDraftFilters} disabled={isLoading}>
+                필터 적용
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={resetFilters}
+                disabled={isLoading}
+              >
+                초기화
+              </Button>
+            </div>
           </div>
           {showAdvancedFilters && (
             <div className="space-y-6 rounded-md border border-border/60 bg-muted/10 p-4">
@@ -3824,19 +3837,6 @@ export function ActivityView({
               </div>
             </div>
           )}
-          <div className="flex flex-wrap items-center gap-3">
-            <Button onClick={applyDraftFilters} disabled={isLoading}>
-              필터 적용
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={resetFilters}
-              disabled={isLoading}
-            >
-              초기화
-            </Button>
-          </div>
           {error && (
             <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
               {error}
