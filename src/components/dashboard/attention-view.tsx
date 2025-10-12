@@ -929,7 +929,7 @@ function PullRequestList({
           ? formatTimestamp(item.updatedAt, timezone)
           : "-";
         const metadata = (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground/80">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-foreground/90">
             {metrics.map((metric) => (
               <span key={metric.key}>{metric.content}</span>
             ))}
@@ -963,9 +963,9 @@ function PullRequestList({
                     metadata={metadata}
                   />
                   {item.updatedAt ? (
-                    <div className="mt-2 flex flex-col gap-1 text-xs text-muted-foreground/80 sm:mt-0 sm:w-[180px] sm:shrink-0 sm:text-right">
+                    <div className="mt-2 flex flex-col gap-1 text-xs text-foreground/90 sm:mt-0 sm:w-[180px] sm:shrink-0 sm:text-right">
                       {updatedRelativeLabel ? (
-                        <span className="font-medium uppercase text-muted-foreground/70">
+                        <span className="font-medium uppercase text-foreground">
                           {updatedRelativeLabel}
                         </span>
                       ) : null}
@@ -1248,7 +1248,7 @@ function ReviewRequestList({
           ? formatTimestamp(item.pullRequestUpdatedAt, timezone)
           : "-";
         const metadata = (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground/80">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-foreground/90">
             {metrics.map((metric) => (
               <span key={metric.key}>{metric.content}</span>
             ))}
@@ -1281,9 +1281,9 @@ function ReviewRequestList({
                     metadata={metadata}
                   />
                   {item.pullRequestUpdatedAt ? (
-                    <div className="mt-2 flex flex-col gap-1 text-xs text-muted-foreground/80 sm:mt-0 sm:w-[180px] sm:shrink-0 sm:text-right">
+                    <div className="mt-2 flex flex-col gap-1 text-xs text-foreground/90 sm:mt-0 sm:w-[180px] sm:shrink-0 sm:text-right">
                       {updatedRelativeLabel ? (
-                        <span className="font-medium uppercase text-muted-foreground/70">
+                        <span className="font-medium uppercase text-foreground">
                           {updatedRelativeLabel}
                         </span>
                       ) : null}
@@ -1579,7 +1579,7 @@ function IssueList({
           ? formatTimestamp(item.updatedAt, timezone)
           : "-";
         const metadata = (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground/80">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-foreground/90">
             {metrics.map((metric) => (
               <span key={metric.key}>{metric.content}</span>
             ))}
@@ -1613,9 +1613,9 @@ function IssueList({
                     metadata={metadata}
                   />
                   {item.updatedAt ? (
-                    <div className="mt-2 flex flex-col gap-1 text-xs text-muted-foreground/80 sm:mt-0 sm:w-[180px] sm:shrink-0 sm:text-right">
+                    <div className="mt-2 flex flex-col gap-1 text-xs text-foreground/90 sm:mt-0 sm:w-[180px] sm:shrink-0 sm:text-right">
                       {updatedRelativeLabel ? (
-                        <span className="font-medium uppercase text-muted-foreground/70">
+                        <span className="font-medium uppercase text-foreground">
                           {updatedRelativeLabel}
                         </span>
                       ) : null}
@@ -1883,7 +1883,7 @@ function MentionList({
           ? formatTimestamp(item.mentionedAt, timezone)
           : "-";
         const metadata = (
-          <div className="flex flex-col gap-2 text-xs text-muted-foreground/80">
+          <div className="flex flex-col gap-2 text-xs text-foreground/90">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               {metrics.map((metric) => (
                 <span key={metric.key}>{metric.content}</span>
@@ -1923,9 +1923,9 @@ function MentionList({
                     title={item.container.title}
                     metadata={metadata}
                   />
-                  <div className="mt-2 flex flex-col gap-1 text-xs text-muted-foreground/80 sm:mt-0 sm:w-[180px] sm:shrink-0 sm:text-right">
+                  <div className="mt-2 flex flex-col gap-1 text-xs text-foreground/90 sm:mt-0 sm:w-[180px] sm:shrink-0 sm:text-right">
                     {updatedRelativeLabel ? (
-                      <span className="font-medium uppercase text-muted-foreground/70">
+                      <span className="font-medium uppercase text-foreground">
                         {updatedRelativeLabel}
                       </span>
                     ) : null}

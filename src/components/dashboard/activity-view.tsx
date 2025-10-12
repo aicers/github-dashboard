@@ -1129,9 +1129,7 @@ function PeopleToggleList({
   if (!options.length) {
     return (
       <div className="space-y-2">
-        <Label className="text-xs font-medium text-muted-foreground/90">
-          {label}
-        </Label>
+        <Label className="text-xs font-semibold text-foreground">{label}</Label>
         <div className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground/80">
           연결된 사용자가 없습니다.
         </div>
@@ -1142,9 +1140,7 @@ function PeopleToggleList({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <Label className="text-xs font-medium text-muted-foreground/90">
-          {label}
-        </Label>
+        <Label className="text-xs font-semibold text-foreground">{label}</Label>
         {!synced && (
           <span className="text-[11px] text-muted-foreground/70">
             고급 필터와 동기화되지 않음
@@ -3091,7 +3087,7 @@ export function ActivityView({
                 setFiltersManagerError(null);
                 setSaveFilterError(null);
               }}
-              className="h-10 rounded-full px-4 text-sm font-medium text-muted-foreground hover:text-foreground"
+              className="h-10 rounded-full px-4 text-sm font-medium text-foreground"
             >
               필터 관리
             </Button>
@@ -3119,7 +3115,7 @@ export function ActivityView({
       <Card>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
-            <Label className="text-xs font-medium uppercase text-muted-foreground/90">
+            <Label className="text-xs font-semibold uppercase text-foreground">
               카테고리
             </Label>
             {(() => {
@@ -3199,7 +3195,7 @@ export function ActivityView({
                         aria-hidden="true"
                         className="mx-2 h-4 border-l border-border/50"
                       />
-                      <Label className="text-xs font-medium text-muted-foreground/90">
+                      <Label className="text-xs font-semibold text-foreground">
                         진행 상태
                       </Label>
                       <TogglePill
@@ -3256,7 +3252,7 @@ export function ActivityView({
             })()}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Label className="text-xs font-medium uppercase text-muted-foreground/90">
+            <Label className="text-xs font-semibold uppercase text-foreground">
               주의
             </Label>
             {(() => {
@@ -3786,12 +3782,12 @@ export function ActivityView({
 
       <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground/80">
-            <span>
+          <div className="flex flex-wrap items-center gap-3 text-sm text-foreground">
+            <span className="font-semibold">
               페이지 {data.pageInfo.page} / {data.pageInfo.totalPages} (총{" "}
               {data.pageInfo.totalCount}건)
             </span>
-            <div className="flex items-center gap-2 text-xs uppercase text-muted-foreground/80">
+            <div className="flex items-center gap-2 text-xs uppercase text-foreground">
               <Label className="font-medium">날짜 이동</Label>
               <Input
                 type="date"
@@ -3816,9 +3812,7 @@ export function ActivityView({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-xs uppercase text-muted-foreground/80">
-              Rows
-            </span>
+            <span className="text-xs uppercase text-foreground">Rows</span>
             <select
               className="rounded-md border border-border bg-background px-2 py-1 text-sm"
               value={draft.perPage}
@@ -3978,7 +3972,7 @@ export function ActivityView({
                             referenceUrl={item.url ?? undefined}
                             title={item.title}
                             metadata={
-                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground/80">
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-foreground/90">
                                 {metrics.map((metric) => (
                                   <span key={metric.key}>{metric.content}</span>
                                 ))}
@@ -4042,9 +4036,9 @@ export function ActivityView({
                             }
                           />
                           {item.updatedAt ? (
-                            <div className="mt-2 flex flex-col gap-1 text-xs text-muted-foreground/80 sm:mt-0 sm:w-[180px] sm:shrink-0 sm:text-right">
+                            <div className="mt-2 flex flex-col gap-1 text-xs text-foreground/90 sm:mt-0 sm:w-[180px] sm:shrink-0 sm:text-right">
                               {updatedRelativeLabel ? (
-                                <span className="font-medium uppercase text-muted-foreground/70">
+                                <span className="font-medium uppercase text-foreground">
                                   {updatedRelativeLabel}
                                 </span>
                               ) : null}
@@ -4369,7 +4363,7 @@ export function ActivityView({
           )}
         </div>
         <div className="flex flex-col items-center gap-3 border-t border-border pt-3">
-          <span className="text-sm text-muted-foreground/80">
+          <span className="text-sm font-semibold text-foreground">
             페이지 {data.pageInfo.page} / {data.pageInfo.totalPages}
           </span>
           <div className="flex items-center gap-2">
