@@ -150,7 +150,7 @@ test.describe("ActivityView (Playwright)", () => {
         response.url().includes("attention=") &&
         response.request().method() === "GET",
     );
-    await page.getByRole("button", { name: "주의 필요한 업데이트" }).click();
+    await page.getByRole("button", { name: /^확인 필요$/ }).click();
     await feedResponse;
     await expect(
       page.getByRole("button", { name: /Filtered critical issue/ }),
