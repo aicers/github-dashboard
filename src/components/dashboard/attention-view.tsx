@@ -628,7 +628,7 @@ function FollowUpOverview({
                 <h3 className="text-base font-semibold text-foreground mb-1">
                   {summary.title}
                 </h3>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-foreground/75">
                   {summary.description}
                 </p>
               </div>
@@ -644,13 +644,13 @@ function FollowUpOverview({
 
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">항목 수</span>
+                <span className="text-sm text-foreground/70">항목 수</span>
                 <span className="text-2xl font-bold text-foreground">
                   {formatCount(summary.count)}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">
+                <span className="text-sm text-foreground/70">
                   누적 경과일수
                 </span>
                 <span className="text-2xl font-bold text-foreground">
@@ -665,7 +665,7 @@ function FollowUpOverview({
                   {summary.highlights.map((line) => (
                     <p
                       key={`${summary.id}-${line}`}
-                      className="text-xs text-muted-foreground"
+                      className="text-xs text-foreground/80"
                     >
                       {line}
                     </p>
@@ -2169,7 +2169,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
       <header className="flex flex-col gap-4">
         <div className="flex flex-wrap items-start justify-between gap-6">
           <p className="text-sm text-muted-foreground">
-            오래 머물러 있는 작업과 팀원이 완료한 작업을 한눈에 확인하세요.
+            정체된 작업이나 요청을 확인하세요.
           </p>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100/80 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/80">
@@ -2214,7 +2214,7 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
               aria-current={activeSectionId === null ? "true" : undefined}
             >
               <LayoutGrid className="h-4 w-4" />
-              Follow-ups 개요
+              Overview
             </button>
             {sections.map((section) => {
               const selected = section.id === activeSectionId;

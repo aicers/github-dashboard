@@ -369,7 +369,7 @@ describe("Follow-up overview", () => {
     render(<AttentionView insights={insights} />);
 
     const overviewButton = screen.getByRole("button", {
-      name: /Follow-ups 개요/,
+      name: /Overview/,
     });
     expect(overviewButton).toHaveAttribute("aria-current", "true");
 
