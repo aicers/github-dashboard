@@ -3943,7 +3943,7 @@ export function ActivityView({
               return (
                 <div
                   key={item.id}
-                  className="rounded-md border border-border bg-card/30 p-3"
+                  className="rounded-md border border-border/60 bg-card p-3"
                 >
                   {/* biome-ignore lint/a11y/useSemanticElements: Nested project field editors render buttons, so this container cannot be a <button>. */}
                   <div
