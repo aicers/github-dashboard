@@ -1038,7 +1038,7 @@ function MultiSelectInput({
         <div className="flex flex-wrap items-center gap-1">
           {value.length === 0 && (
             <span className="text-xs text-muted-foreground/70">
-              {emptyLabel ?? "전체"}
+              {emptyLabel ?? "미적용"}
             </span>
           )}
           {value.map((entry) => {
@@ -1158,7 +1158,7 @@ function PeopleToggleList({
             variant={allSelected ? "active" : "inactive"}
             onClick={handleSelectAll}
           >
-            전체
+            미적용
           </TogglePill>
           {options.map((option) => {
             const active = selectedSet.has(option.value);
@@ -3148,7 +3148,7 @@ export function ActivityView({
                       });
                     }}
                   >
-                    전체
+                    미적용
                   </TogglePill>
                   {CATEGORY_OPTIONS.map((option) => {
                     const active = draft.categories.includes(option.value);
@@ -3216,7 +3216,7 @@ export function ActivityView({
                           }));
                         }}
                       >
-                        전체
+                        미적용
                       </TogglePill>
                       {ISSUE_STATUS_OPTIONS.map((option) => {
                         const active = draft.statuses.includes(option.value);
@@ -3273,7 +3273,7 @@ export function ActivityView({
                       }));
                     }}
                   >
-                    전체
+                    미적용
                   </TogglePill>
                   {ATTENTION_OPTIONS.map((option) => {
                     const active = draft.attention.includes(option.value);
@@ -3484,7 +3484,7 @@ export function ActivityView({
                         setDraft((current) => ({ ...current, prStatuses: [] }))
                       }
                     >
-                      전체
+                      미적용
                     </TogglePill>
                     {PR_STATUS_OPTIONS.map((option) => {
                       const active = draft.prStatuses.includes(option.value);
@@ -3540,7 +3540,7 @@ export function ActivityView({
                         }))
                       }
                     >
-                      전체
+                      미적용
                     </TogglePill>
                     {ISSUE_BASE_STATUS_OPTIONS.map((option) => {
                       const active = draft.issueBaseStatuses.includes(
@@ -3596,7 +3596,7 @@ export function ActivityView({
                     }))
                   }
                 >
-                  전체
+                  미적용
                 </TogglePill>
                 {(
                   [
