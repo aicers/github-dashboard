@@ -1159,15 +1159,22 @@ function PullRequestList({
 
         return (
           <li key={item.id}>
-            <div className="rounded-md border border-border bg-background p-3">
+            <div
+              className={cn(
+                "group rounded-md border bg-background p-3 transition focus-within:border-primary/60 focus-within:shadow-md focus-within:shadow-primary/10",
+                isSelected
+                  ? "border-primary/60 shadow-md shadow-primary/10"
+                  : "border-border hover:border-primary/50 hover:bg-muted/20 hover:shadow-md hover:shadow-primary/10",
+              )}
+            >
               <button
                 type="button"
                 aria-expanded={isSelected}
                 className={cn(
-                  "block w-full cursor-pointer bg-transparent p-0 text-left transition-colors focus-visible:outline-none border-none",
+                  "block w-full cursor-pointer bg-transparent p-0 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                   isSelected
-                    ? "text-foreground"
-                    : "text-foreground hover:text-primary",
+                    ? "text-primary"
+                    : "text-foreground group-hover:text-primary",
                 )}
                 onClick={() => selectItem(item.id)}
               >
@@ -1491,15 +1498,22 @@ function ReviewRequestList({
 
         return (
           <li key={item.id}>
-            <div className="rounded-md border border-border bg-background p-3">
+            <div
+              className={cn(
+                "group rounded-md border bg-background p-3 transition focus-within:border-primary/60 focus-within:shadow-md focus-within:shadow-primary/10",
+                isSelected
+                  ? "border-primary/60 shadow-md shadow-primary/10"
+                  : "border-border hover:border-primary/50 hover:bg-muted/20 hover:shadow-md hover:shadow-primary/10",
+              )}
+            >
               <button
                 type="button"
                 aria-expanded={isSelected}
                 className={cn(
-                  "block w-full cursor-pointer bg-transparent p-0 text-left transition-colors focus-visible:outline-none border-none",
+                  "block w-full cursor-pointer bg-transparent p-0 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                   isSelected
-                    ? "text-foreground"
-                    : "text-foreground hover:text-primary",
+                    ? "text-primary"
+                    : "text-foreground group-hover:text-primary",
                 )}
                 onClick={() => selectItem(selectionId)}
               >
@@ -2059,15 +2073,22 @@ function IssueList({
 
         return (
           <li key={item.id}>
-            <div className="rounded-md border border-border bg-background p-3">
+            <div
+              className={cn(
+                "group rounded-md border bg-background p-3 transition focus-within:border-primary/60 focus-within:shadow-md focus-within:shadow-primary/10",
+                isSelected
+                  ? "border-primary/60 shadow-md shadow-primary/10"
+                  : "border-border hover:border-primary/50 hover:bg-muted/20 hover:shadow-md hover:shadow-primary/10",
+              )}
+            >
               <button
                 type="button"
                 aria-expanded={isSelected}
                 className={cn(
-                  "block w-full cursor-pointer bg-transparent p-0 text-left transition-colors focus-visible:outline-none border-none",
+                  "block w-full cursor-pointer bg-transparent p-0 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                   isSelected
-                    ? "text-foreground"
-                    : "text-foreground hover:text-primary",
+                    ? "text-primary"
+                    : "text-foreground group-hover:text-primary",
                 )}
                 onClick={() => selectItem(item.id)}
               >
@@ -2384,15 +2405,22 @@ function MentionList({
           <li
             key={`${item.commentId}:${item.target?.id ?? "unknown"}:${index}`}
           >
-            <div className="rounded-md border border-border bg-background p-3">
+            <div
+              className={cn(
+                "group rounded-md border bg-background p-3 transition focus-within:border-primary/60 focus-within:shadow-md focus-within:shadow-primary/10",
+                isSelected
+                  ? "border-primary/60 shadow-md shadow-primary/10"
+                  : "border-border hover:border-primary/50 hover:bg-muted/20 hover:shadow-md hover:shadow-primary/10",
+              )}
+            >
               <button
                 type="button"
                 aria-expanded={isSelected}
                 className={cn(
-                  "block w-full cursor-pointer bg-transparent p-0 text-left transition-colors focus-visible:outline-none border-none",
+                  "block w-full cursor-pointer bg-transparent p-0 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                   isSelected
-                    ? "text-foreground"
-                    : "text-foreground hover:text-primary",
+                    ? "text-primary"
+                    : "text-foreground group-hover:text-primary",
                 )}
                 onClick={() => selectItem(selectionId)}
               >
