@@ -80,7 +80,7 @@ export function ActivityDetailOverlay({
     referenceParts.push(`#${item.number}`);
   }
   const referenceLabel =
-    referenceParts.length > 0 ? referenceParts.join("") : null;
+    referenceParts.length > 0 ? referenceParts.join("").toLowerCase() : null;
   const titleLabel = item.title?.trim().length
     ? item.title
     : `${CATEGORY_LABELS[item.type]} 상세`;
@@ -122,7 +122,7 @@ export function ActivityDetailOverlay({
             </span>
             <div className="space-y-2">
               {referenceLabel ? (
-                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">
+                <div className="text-xs font-semibold tracking-wide text-muted-foreground/70">
                   {referenceLabel}
                 </div>
               ) : null}
