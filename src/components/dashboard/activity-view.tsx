@@ -488,7 +488,7 @@ function MultiSelectInput({
 
   return (
     <div ref={containerRef} className="space-y-2">
-      <Label className="text-xs font-medium text-muted-foreground/90">
+      <Label className="text-xs font-semibold uppercase text-foreground">
         {label}
       </Label>
       <div
@@ -658,7 +658,7 @@ function TogglePill({
     resolvedVariant === "active"
       ? "border-primary bg-primary/10 text-primary"
       : resolvedVariant === "muted"
-        ? "border-border/60 bg-muted/15 text-muted-foreground/80"
+        ? "border-border/60 bg-muted/15 text-muted-foreground/80 hover:border-border hover:bg-muted/25 hover:text-foreground"
         : "border-border text-foreground/80 hover:bg-muted";
 
   return (
@@ -2861,7 +2861,7 @@ export function ActivityView({
                     }))
                   }
                   options={repositoryOptions}
-                  emptyLabel="모든 저장소"
+                  emptyLabel="미적용"
                 />
                 <MultiSelectInput
                   label="라벨"
@@ -2871,7 +2871,7 @@ export function ActivityView({
                     setDraft((current) => ({ ...current, labelKeys: next }))
                   }
                   options={labelOptions}
-                  emptyLabel="모든 라벨"
+                  emptyLabel="미적용"
                 />
                 <MultiSelectInput
                   label="이슈 타입"
@@ -2881,7 +2881,7 @@ export function ActivityView({
                     setDraft((current) => ({ ...current, issueTypeIds: next }))
                   }
                   options={issueTypeOptions}
-                  emptyLabel="모든 이슈 타입"
+                  emptyLabel="미적용"
                 />
                 <MultiSelectInput
                   label="마일스톤"
@@ -2891,7 +2891,7 @@ export function ActivityView({
                     setDraft((current) => ({ ...current, milestoneIds: next }))
                   }
                   options={milestoneOptions}
-                  emptyLabel="모든 마일스톤"
+                  emptyLabel="미적용"
                 />
                 <MultiSelectInput
                   label="작성자"
@@ -2901,7 +2901,7 @@ export function ActivityView({
                     setDraft((current) => ({ ...current, authorIds: next }))
                   }
                   options={userOptions}
-                  emptyLabel="모든 작성자"
+                  emptyLabel="미적용"
                 />
                 <MultiSelectInput
                   label="담당자"
@@ -2911,7 +2911,7 @@ export function ActivityView({
                     setDraft((current) => ({ ...current, assigneeIds: next }))
                   }
                   options={userOptions}
-                  emptyLabel="모든 담당자"
+                  emptyLabel="미적용"
                 />
                 <MultiSelectInput
                   label="리뷰어"
@@ -2921,7 +2921,7 @@ export function ActivityView({
                     setDraft((current) => ({ ...current, reviewerIds: next }))
                   }
                   options={userOptions}
-                  emptyLabel="모든 리뷰어"
+                  emptyLabel="미적용"
                 />
                 <MultiSelectInput
                   label="멘션된 구성원"
@@ -2934,7 +2934,7 @@ export function ActivityView({
                     }))
                   }
                   options={userOptions}
-                  emptyLabel="모든 사용자"
+                  emptyLabel="미적용"
                 />
                 <MultiSelectInput
                   label="코멘터"
@@ -2944,7 +2944,7 @@ export function ActivityView({
                     setDraft((current) => ({ ...current, commenterIds: next }))
                   }
                   options={userOptions}
-                  emptyLabel="모든 사용자"
+                  emptyLabel="미적용"
                 />
                 <MultiSelectInput
                   label="리액션 남긴 구성원"
@@ -2954,10 +2954,10 @@ export function ActivityView({
                     setDraft((current) => ({ ...current, reactorIds: next }))
                   }
                   options={userOptions}
-                  emptyLabel="모든 사용자"
+                  emptyLabel="미적용"
                 />
                 <div className="space-y-2 md:col-span-2 lg:col-span-2">
-                  <Label className="text-xs font-medium text-muted-foreground/90">
+                  <Label className="text-xs font-semibold uppercase text-foreground">
                     검색
                   </Label>
                   <Input
@@ -2980,7 +2980,7 @@ export function ActivityView({
               <div className="flex flex-wrap items-center gap-2">
                 {allowPullRequestStatuses && (
                   <>
-                    <Label className="text-xs font-medium text-muted-foreground/90">
+                    <Label className="text-xs font-semibold uppercase text-foreground">
                       PR 상태
                     </Label>
                     <TogglePill
@@ -3031,7 +3031,7 @@ export function ActivityView({
                       aria-hidden="true"
                       className="mx-2 h-4 border-l border-border/50"
                     />
-                    <Label className="text-xs font-medium text-muted-foreground">
+                    <Label className="text-xs font-semibold uppercase text-foreground">
                       이슈 상태
                     </Label>
                     <TogglePill
@@ -3089,7 +3089,7 @@ export function ActivityView({
                   aria-hidden="true"
                   className="mx-2 h-4 border-l border-border/50"
                 />
-                <Label className="text-xs font-medium uppercase text-muted-foreground/90">
+                <Label className="text-xs font-semibold uppercase text-foreground">
                   이슈 연결
                 </Label>
                 <TogglePill
@@ -3149,7 +3149,7 @@ export function ActivityView({
               </div>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 <div className="space-y-2">
-                  <Label className="text-xs font-medium uppercase text-muted-foreground/90">
+                  <Label className="text-xs font-semibold uppercase text-foreground">
                     이슈 임계값 (영업일) ·{" "}
                     <span className="normal-case">Backlog 정체</span>,{" "}
                     <span className="normal-case">In Progress 정체</span>
@@ -3194,7 +3194,7 @@ export function ActivityView({
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-xs font-medium uppercase text-muted-foreground/90">
+                  <Label className="text-xs font-semibold uppercase text-foreground">
                     PR 임계값 (영업일) · PR 생성, PR 정체
                   </Label>
                   <div className="grid grid-cols-2 gap-2">
@@ -3237,7 +3237,7 @@ export function ActivityView({
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-xs font-medium uppercase text-muted-foreground">
+                  <Label className="text-xs font-semibold uppercase text-foreground">
                     리뷰/멘션 임계값 (영업일) · 리뷰 무응답, 멘션 무응답
                   </Label>
                   <div className="grid grid-cols-2 gap-2">
@@ -3438,7 +3438,12 @@ export function ActivityView({
                   return (
                     <div
                       key={item.id}
-                      className="rounded-md border border-border/60 bg-card p-3"
+                      className={cn(
+                        "group rounded-md border bg-card p-3 transition focus-within:border-primary/60 focus-within:shadow-md focus-within:shadow-primary/10",
+                        isSelected
+                          ? "border-primary/60 shadow-md shadow-primary/10"
+                          : "border-border/60 hover:border-primary/50 hover:bg-muted/20 hover:shadow-md hover:shadow-primary/10",
+                      )}
                     >
                       {/* biome-ignore lint/a11y/useSemanticElements: Nested project field editors render buttons, so this container cannot be a <button>. */}
                       <div
@@ -3446,10 +3451,10 @@ export function ActivityView({
                         tabIndex={0}
                         aria-expanded={isSelected}
                         className={cn(
-                          "w-full cursor-pointer text-left transition-colors focus-visible:outline-none",
+                          "w-full cursor-pointer text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                           isSelected
-                            ? "text-foreground"
-                            : "text-foreground hover:text-primary",
+                            ? "text-primary"
+                            : "text-foreground group-hover:text-primary",
                         )}
                         onClick={() => handleSelectItem(item.id)}
                         onKeyDown={(event) => handleItemKeyDown(event, item.id)}
