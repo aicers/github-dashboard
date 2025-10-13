@@ -272,6 +272,9 @@ test.describe("ActivityView (Playwright)", () => {
 
     await page.getByRole("button", { name: "고급 필터 보기" }).click();
 
+    const applyButton = page.getByRole("button", { name: "필터 적용" });
+    await expect(applyButton).toBeDisabled();
+
     const repoInput = page.getByPlaceholder("저장소 선택");
     await repoInput.fill("acme");
     await repoInput.press("Enter");
@@ -286,7 +289,8 @@ test.describe("ActivityView (Playwright)", () => {
         response.request().method() === "GET" &&
         response.url().includes("repositoryId=repo-alpha"),
     );
-    await page.getByRole("button", { name: "필터 적용" }).click();
+    await expect(applyButton).toBeEnabled();
+    await applyButton.click();
     await applyResponse;
 
     await expect(
