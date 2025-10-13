@@ -37,6 +37,9 @@ export const PROJECT_FIELD_LABELS: Record<ProjectFieldKey, string> = {
   startDate: "Start date",
 };
 
+export const PROJECT_FIELD_BADGE_CLASS =
+  "inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary";
+
 const PRIORITY_OPTIONS = ["P0", "P1", "P2"] as const;
 const WEIGHT_OPTIONS = ["Heavy", "Medium", "Light"] as const;
 const INITIATION_OPTIONS = ["Open to Start", "Requires Approval"] as const;

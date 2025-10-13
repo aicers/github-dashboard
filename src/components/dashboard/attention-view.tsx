@@ -66,6 +66,7 @@ import {
   ISSUE_STATUS_LABEL_MAP,
   ISSUE_STATUS_OPTIONS,
   normalizeProjectFieldForComparison,
+  PROJECT_FIELD_BADGE_CLASS,
   PROJECT_FIELD_LABELS,
   ProjectFieldEditor,
   type ProjectFieldKey,
@@ -2059,6 +2060,14 @@ function IssueList({
         const updatedAbsoluteLabel = item.updatedAt
           ? formatTimestamp(item.updatedAt, timezone, dateTimeFormat)
           : "-";
+        const detailItem = detail?.item;
+        const todoStatusLabel = detailItem?.issueTodoProjectStatus
+          ? (ISSUE_STATUS_LABEL_MAP.get(detailItem.issueTodoProjectStatus) ??
+            detailItem.issueTodoProjectStatus)
+          : null;
+        const todoPriorityLabel = detailItem
+          ? formatProjectField(detailItem.issueTodoProjectPriority)
+          : "-";
         const metadata = (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-foreground/90">
             {metrics.map((metric) => (
@@ -2068,6 +2077,16 @@ function IssueList({
             {item.assignees.length > 0 && (
               <span>담당자 {formatUserList(item.assignees)}</span>
             )}
+            {detailItem?.type === "issue" && todoStatusLabel ? (
+              <span className={PROJECT_FIELD_BADGE_CLASS}>
+                {todoStatusLabel}
+              </span>
+            ) : null}
+            {detailItem?.type === "issue" && todoPriorityLabel !== "-" ? (
+              <span className={PROJECT_FIELD_BADGE_CLASS}>
+                {todoPriorityLabel}
+              </span>
+            ) : null}
           </div>
         );
 
