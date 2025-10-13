@@ -60,6 +60,7 @@ import {
   ISSUE_STATUS_OPTIONS,
   ISSUE_STATUS_VALUE_SET,
   normalizeProjectFieldForComparison,
+  PROJECT_FIELD_BADGE_CLASS,
   PROJECT_FIELD_LABELS,
   ProjectFieldEditor,
   type ProjectFieldKey,
@@ -3566,13 +3567,13 @@ export function ActivityView({
                                 )}
                                 {item.type === "issue" &&
                                   todoStatusLabel !== "-" && (
-                                    <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-foreground">
+                                    <span className={PROJECT_FIELD_BADGE_CLASS}>
                                       {todoStatusLabel}
                                     </span>
                                   )}
                                 {item.type === "issue" &&
                                   todoPriorityLabel !== "-" && (
-                                    <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-foreground">
+                                    <span className={PROJECT_FIELD_BADGE_CLASS}>
                                       {todoPriorityLabel}
                                     </span>
                                   )}
