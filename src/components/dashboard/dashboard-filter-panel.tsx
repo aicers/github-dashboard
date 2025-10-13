@@ -99,6 +99,10 @@ export function DashboardFilterPanel({
     "flex h-full flex-col gap-4 rounded-xl border border-border/50 bg-card p-4 text-sm shadow-sm";
   const sectionLabelClass =
     "text-xs font-semibold uppercase tracking-wide text-muted-foreground";
+  const emphasizedSectionLabelClass = sectionLabelClass.replace(
+    "text-muted-foreground",
+    "text-foreground",
+  );
   const helperTextClass = "text-xs text-muted-foreground";
   const gridClassName = hasPersonSelector
     ? "grid gap-4 md:grid-cols-2 xl:grid-cols-4 xl:gap-5"
@@ -187,7 +191,7 @@ export function DashboardFilterPanel({
       <div className={gridClassName}>
         <div className={panelSectionClass}>
           <div className="flex flex-col gap-1">
-            <span className={sectionLabelClass}>기간 선택</span>
+            <span className={emphasizedSectionLabelClass}>기간</span>
             <p className={helperTextClass}>
               사전 설정으로 빠르게 기간을 전환하세요.
             </p>
@@ -329,7 +333,7 @@ export function DashboardFilterPanel({
         <div className={panelSectionClass}>
           <div className="flex items-start justify-between gap-3">
             <div className="flex flex-col gap-1">
-              <span className={sectionLabelClass}>리포지토리 필터</span>
+              <span className={emphasizedSectionLabelClass}>저장소</span>
               <p className={helperTextClass}>
                 관심 있는 리포지토리를 선택해서 집중해 보세요.
               </p>
