@@ -1369,6 +1369,19 @@ export function ActivityView({
     [draft],
   );
 
+  const canonicalAppliedKey = useMemo(
+    () =>
+      canonicalizeActivityParams(
+        buildSavedFilterPayload({ ...applied, page: 1 }),
+      ),
+    [applied],
+  );
+
+  const hasPendingChanges = useMemo(
+    () => canonicalDraftKey !== canonicalAppliedKey,
+    [canonicalAppliedKey, canonicalDraftKey],
+  );
+
   const savedFilterCanonicalEntries = useMemo(
     () =>
       savedFilters.map((filter) => ({
@@ -2062,9 +2075,12 @@ export function ActivityView({
   }, [perPageDefault]);
 
   const applyDraftFilters = useCallback(() => {
+    if (!hasPendingChanges) {
+      return;
+    }
     const nextState = { ...draft, page: 1 };
     fetchFeed(nextState);
-  }, [draft, fetchFeed]);
+  }, [draft, fetchFeed, hasPendingChanges]);
 
   const changePage = useCallback(
     (page: number) => {
@@ -2881,7 +2897,10 @@ export function ActivityView({
               {showAdvancedFilters ? "숨기기" : "고급 필터 보기"}
             </Button>
             <div className="flex flex-wrap items-center gap-3">
-              <Button onClick={applyDraftFilters} disabled={isLoading}>
+              <Button
+                onClick={applyDraftFilters}
+                disabled={isLoading || !hasPendingChanges}
+              >
                 필터 적용
               </Button>
               <Button

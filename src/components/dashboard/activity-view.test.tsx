@@ -233,9 +233,7 @@ describe("ActivityView", () => {
 
     const issueToggle = screen.getByRole("button", { name: "Issue" });
     expect(issueToggle).toHaveAttribute("aria-pressed", "true");
-    expect(
-      screen.getByRole("button", { name: "필터 적용" }),
-    ).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "필터 적용" })).toBeDisabled();
     expect(screen.getByText("필터 적용 이슈")).toBeInTheDocument();
 
     expect(consoleError).not.toHaveBeenCalled();
