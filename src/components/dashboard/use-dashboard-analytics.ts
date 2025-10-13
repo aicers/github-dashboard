@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PRESETS, type TimePresetKey } from "@/lib/dashboard/date-range";
 import type { DashboardAnalytics, WeekStart } from "@/lib/dashboard/types";
 
@@ -15,8 +15,10 @@ export type FilterState = {
 export type DashboardAnalyticsState = {
   analytics: DashboardAnalytics;
   filters: FilterState;
+  appliedFilters: FilterState;
   setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
   applyFilters: (nextFilters?: FilterState) => Promise<void>;
+  hasPendingChanges: boolean;
   isLoading: boolean;
   error: string | null;
   presets: typeof PRESETS;
@@ -56,6 +58,9 @@ export function useDashboardAnalytics({
     initialAnalytics.weekStart,
   );
   const [filters, setFilters] = useState<FilterState>(() =>
+    resolveInitialFilters(defaultRange, initialAnalytics),
+  );
+  const [appliedFilters, setAppliedFilters] = useState<FilterState>(() =>
     resolveInitialFilters(defaultRange, initialAnalytics),
   );
   const [isLoading, setIsLoading] = useState(false);
@@ -129,13 +134,20 @@ export function useDashboardAnalytics({
       );
       const nextRepoIds =
         sanitizedRepoIds.length === targetFilters.repositoryIds.length
-          ? targetFilters.repositoryIds
+          ? [...targetFilters.repositoryIds]
           : sanitizedRepoIds;
       const nextPersonId =
         targetFilters.personId &&
         availableContributorIds.has(targetFilters.personId)
           ? targetFilters.personId
           : null;
+      const sanitizedTarget: FilterState = {
+        start: nextAnalytics.range.start,
+        end: nextAnalytics.range.end,
+        preset: targetFilters.preset,
+        repositoryIds: nextRepoIds,
+        personId: nextPersonId,
+      };
 
       setFilters((current) => {
         if (!isLatestRequest(requestId)) {
@@ -166,13 +178,13 @@ export function useDashboardAnalytics({
           };
         }
 
-        return {
-          ...targetFilters,
-          start: nextAnalytics.range.start,
-          end: nextAnalytics.range.end,
-          repositoryIds: nextRepoIds,
-          personId: nextPersonId,
-        };
+        return sanitizedTarget;
+      });
+      setAppliedFilters((current) => {
+        if (!isLatestRequest(requestId)) {
+          return current;
+        }
+        return sanitizedTarget;
       });
     } catch (fetchError) {
       if (!isLatestRequest(requestId)) {
@@ -210,17 +222,38 @@ export function useDashboardAnalytics({
     [filters, load],
   );
 
+  const hasPendingChanges = useMemo(() => {
+    return !areFiltersEqual(filters, appliedFilters);
+  }, [filters, appliedFilters]);
+
   const presets = PRESETS;
 
   return {
     analytics,
     filters,
+    appliedFilters,
     setFilters,
     applyFilters,
+    hasPendingChanges,
     isLoading,
     error,
     presets,
     timeZone,
     weekStart,
   };
+}
+
+function areFiltersEqual(a: FilterState, b: FilterState) {
+  if (
+    a.start !== b.start ||
+    a.end !== b.end ||
+    a.preset !== b.preset ||
+    a.personId !== b.personId
+  ) {
+    return false;
+  }
+  if (a.repositoryIds.length !== b.repositoryIds.length) {
+    return false;
+  }
+  return a.repositoryIds.every((id, index) => id === b.repositoryIds[index]);
 }

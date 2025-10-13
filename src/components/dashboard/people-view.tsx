@@ -113,8 +113,10 @@ export function PeopleView({
   const {
     analytics,
     filters,
+    appliedFilters,
     setFilters,
     applyFilters,
+    hasPendingChanges,
     isLoading,
     error,
     timeZone,
@@ -229,10 +231,12 @@ export function PeopleView({
 
         <DashboardFilterPanel
           filters={filters}
+          appliedFilters={appliedFilters}
           setFilters={setFilters}
           onApply={() => {
             void applyFilters();
           }}
+          hasPendingChanges={hasPendingChanges}
           isLoading={isLoading}
           error={error}
           repositories={repositories}
