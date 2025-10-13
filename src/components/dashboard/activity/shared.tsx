@@ -203,6 +203,15 @@ export function buildActivityMetricEntries(
   return metrics;
 }
 
+function toSentenceCase(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed.length) {
+    return trimmed;
+  }
+
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+}
+
 export function formatRelative(value: string | null) {
   if (!value) {
     return null;
@@ -227,9 +236,9 @@ export function formatRelative(value: string | null) {
   for (const [unit, unitMs] of units) {
     const valueInUnit = diffMs / unitMs;
     if (Math.abs(valueInUnit) >= 1) {
-      return formatter.format(Math.round(valueInUnit), unit);
+      return toSentenceCase(formatter.format(Math.round(valueInUnit), unit));
     }
   }
 
-  return "just now";
+  return toSentenceCase("just now");
 }
