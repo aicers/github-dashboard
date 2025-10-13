@@ -126,4 +126,10 @@ body {
   body {
     @apply bg-background text-foreground;
   }
+  input[type="date"],
+  input[type="datetime-local"],
+  input[type="month"],
+  input[type="time"] {
+    color-scheme: light;
+  }
 }
