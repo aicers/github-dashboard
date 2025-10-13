@@ -70,6 +70,12 @@ export default async function SettingsHarnessPage({
         members={members}
         excludedMemberIds={["user-3"]}
         isAdmin={isAdmin}
+        currentUserId="user-1"
+        currentUserName="Octo Cat"
+        currentUserLogin="octocat"
+        currentUserAvatarUrl={null}
+        currentUserOriginalAvatarUrl={"https://github.com/images/octocat.png"}
+        currentUserCustomAvatarUrl={null}
       />
       <p className="text-sm text-muted-foreground">
         Query with <code>?admin=false</code> to preview the non-admin read-only

@@ -1,6 +1,10 @@
 import { SettingsView } from "@/components/dashboard/settings-view";
 import { readActiveSession } from "@/lib/auth/session";
-import { listAllRepositories, listAllUsers } from "@/lib/db/operations";
+import {
+  getUserAvatarState,
+  listAllRepositories,
+  listAllUsers,
+} from "@/lib/db/operations";
 import { fetchSyncStatus } from "@/lib/sync/service";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +22,12 @@ export default async function SettingsPage() {
   const excludedMemberIds = Array.isArray(config?.excluded_user_ids)
     ? (config?.excluded_user_ids as string[])
     : [];
+  const currentUserProfile = session?.userId
+    ? (members.find((member) => member.id === session.userId) ?? null)
+    : null;
+  const avatarState = session?.userId
+    ? await getUserAvatarState(session.userId)
+    : { avatarUrl: null, originalAvatarUrl: null, customAvatarUrl: null };
 
   return (
     <SettingsView
@@ -31,6 +41,12 @@ export default async function SettingsPage() {
       members={members}
       excludedMemberIds={excludedMemberIds}
       isAdmin={Boolean(session?.isAdmin)}
+      currentUserId={session?.userId ?? null}
+      currentUserName={currentUserProfile?.name ?? null}
+      currentUserLogin={currentUserProfile?.login ?? null}
+      currentUserAvatarUrl={avatarState.avatarUrl}
+      currentUserOriginalAvatarUrl={avatarState.originalAvatarUrl}
+      currentUserCustomAvatarUrl={avatarState.customAvatarUrl}
     />
   );
 }

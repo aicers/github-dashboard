@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { DashboardTabs } from "@/components/dashboard/dashboard-tabs";
 import { readActiveSession } from "@/lib/auth/session";
+import { getUserProfiles } from "@/lib/db/operations";
 
 export default async function DashboardTabsLayout({
   children,
@@ -15,11 +16,22 @@ export default async function DashboardTabsLayout({
     redirect("/auth/github?next=/dashboard/activity");
   }
 
+  const profile = session
+    ? ((await getUserProfiles([session.userId])).find(
+        (user) => user.id === session.userId,
+      ) ?? null)
+    : null;
+
   return (
     <div className="flex min-h-screen flex-col bg-slate-100/80">
       <div className="bg-white">
         <div className="mx-auto w-full max-w-[1232px] px-3 pt-4">
-          <DashboardHeader userId={session.userId} />
+          <DashboardHeader
+            userId={session.userId}
+            userName={profile?.name ?? null}
+            userLogin={profile?.login ?? null}
+            userAvatarUrl={profile?.avatarUrl ?? null}
+          />
           <div className="mt-2">
             <DashboardTabs />
           </div>

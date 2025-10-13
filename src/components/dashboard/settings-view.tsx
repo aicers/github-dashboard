@@ -1,8 +1,16 @@
 "use client";
 
-import { Building2, User } from "lucide-react";
+import { Building2, Camera, ImageOff, Loader2, User } from "lucide-react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useMemo, useState, useTransition } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -20,6 +28,7 @@ import {
   normalizeDateTimeDisplayFormat,
 } from "@/lib/date-time-format";
 import type { RepositoryProfile, UserProfile } from "@/lib/db/operations";
+import { buildUserInitials } from "@/lib/user/initials";
 import { cn } from "@/lib/utils";
 
 const FALLBACK_TIMEZONES = [
@@ -34,6 +43,9 @@ const FALLBACK_TIMEZONES = [
 ];
 
 const ADMIN_ONLY_MESSAGE = "관리자 권한이 있는 사용자만 수정할 수 있습니다.";
+
+const MAX_AVATAR_FILE_SIZE = 4 * 1024 * 1024; // 4MB
+const ACCEPTED_AVATAR_MIME_TYPES = ["image/png", "image/jpeg", "image/webp"];
 
 function getTimezoneOptions() {
   try {
@@ -63,6 +75,12 @@ type SettingsViewProps = {
   members: UserProfile[];
   excludedMemberIds: string[];
   isAdmin: boolean;
+  currentUserId: string | null;
+  currentUserName: string | null;
+  currentUserLogin: string | null;
+  currentUserAvatarUrl: string | null;
+  currentUserOriginalAvatarUrl: string | null;
+  currentUserCustomAvatarUrl: string | null;
 };
 
 type ApiResponse<T> = {
@@ -82,6 +100,12 @@ export function SettingsView({
   members,
   excludedMemberIds,
   isAdmin,
+  currentUserId,
+  currentUserName,
+  currentUserLogin,
+  currentUserAvatarUrl,
+  currentUserOriginalAvatarUrl,
+  currentUserCustomAvatarUrl,
 }: SettingsViewProps) {
   const router = useRouter();
   const [name, setName] = useState(orgName);
@@ -96,6 +120,32 @@ export function SettingsView({
     );
   const [personalFeedback, setPersonalFeedback] = useState<string | null>(null);
   const [orgFeedback, setOrgFeedback] = useState<string | null>(null);
+  const [persistedAvatarUrl, setPersistedAvatarUrl] = useState<string | null>(
+    currentUserAvatarUrl,
+  );
+  const [persistedOriginalAvatarUrl, setPersistedOriginalAvatarUrl] = useState<
+    string | null
+  >(currentUserOriginalAvatarUrl);
+  const [persistedCustomAvatarUrl, setPersistedCustomAvatarUrl] = useState<
+    string | null
+  >(currentUserCustomAvatarUrl);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(
+    currentUserAvatarUrl,
+  );
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const [avatarFeedback, setAvatarFeedback] = useState<string | null>(null);
+  const tempAvatarUrlRef = useRef<string | null>(null);
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const avatarInitials = useMemo(
+    () =>
+      buildUserInitials({
+        name: currentUserName,
+        login: currentUserLogin,
+        fallback: currentUserId,
+      }),
+    [currentUserId, currentUserLogin, currentUserName],
+  );
   const normalizedExcludedRepositories = useMemo(() => {
     const allowed = new Set(repositories.map((repo) => repo.id));
     return excludedRepositoryIds.filter((id) => allowed.has(id));
@@ -112,9 +162,12 @@ export function SettingsView({
   );
   const [isSavingPersonal, startSavingPersonal] = useTransition();
   const [isSavingOrganization, startSavingOrganization] = useTransition();
+  const [isUploadingAvatar, startUploadingAvatar] = useTransition();
+  const [isRemovingAvatar, startRemovingAvatar] = useTransition();
   const [activeTab, setActiveTab] = useState<"personal" | "organization">(
     "personal",
   );
+  const avatarInputId = useId();
   const orgInputId = useId();
   const intervalInputId = useId();
   const excludeSelectId = useId();
@@ -130,6 +183,28 @@ export function SettingsView({
 
     return [timezone, ...options];
   }, [timezone]);
+
+  useEffect(() => {
+    setPersistedAvatarUrl(currentUserAvatarUrl);
+    setPersistedOriginalAvatarUrl(currentUserOriginalAvatarUrl);
+    setPersistedCustomAvatarUrl(currentUserCustomAvatarUrl);
+    if (!avatarFile) {
+      setAvatarPreview(currentUserAvatarUrl);
+    }
+  }, [
+    avatarFile,
+    currentUserAvatarUrl,
+    currentUserCustomAvatarUrl,
+    currentUserOriginalAvatarUrl,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      if (tempAvatarUrlRef.current) {
+        URL.revokeObjectURL(tempAvatarUrlRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     setExcludedRepos(normalizedExcludedRepositories);
@@ -161,6 +236,11 @@ export function SettingsView({
     );
   }, [members]);
 
+  const hasPersistedAvatar = Boolean(persistedAvatarUrl);
+  const hasCustomAvatar = Boolean(persistedCustomAvatarUrl);
+  const hasSelectedAvatar = Boolean(avatarFile);
+  const isAvatarMutating = isUploadingAvatar || isRemovingAvatar;
+
   const handleExcludedChange = (
     event: React.ChangeEvent<HTMLSelectElement>,
   ) => {
@@ -172,6 +252,180 @@ export function SettingsView({
 
   const handleClearExcluded = () => {
     setExcludedRepos([]);
+  };
+
+  const releaseTempAvatarPreview = () => {
+    if (tempAvatarUrlRef.current) {
+      URL.revokeObjectURL(tempAvatarUrlRef.current);
+      tempAvatarUrlRef.current = null;
+    }
+  };
+
+  const resetAvatarInput = () => {
+    if (avatarInputRef.current) {
+      avatarInputRef.current.value = "";
+    }
+  };
+
+  const handleAvatarFileChange = (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    if (file.size > MAX_AVATAR_FILE_SIZE) {
+      setAvatarError("최대 4MB 이하의 이미지만 업로드할 수 있습니다.");
+      setAvatarFeedback(null);
+      return;
+    }
+
+    const normalizedType = (file.type || "").toLowerCase();
+    const extension = file.name.split(".").pop()?.toLowerCase();
+    const isAllowedType =
+      (normalizedType.length > 0 &&
+        ACCEPTED_AVATAR_MIME_TYPES.includes(normalizedType)) ||
+      (extension ? ["png", "jpg", "jpeg", "webp"].includes(extension) : false);
+
+    if (!isAllowedType) {
+      setAvatarError("PNG, JPG, WebP 형식의 이미지만 업로드할 수 있습니다.");
+      setAvatarFeedback(null);
+      return;
+    }
+
+    releaseTempAvatarPreview();
+
+    const previewUrl = URL.createObjectURL(file);
+    tempAvatarUrlRef.current = previewUrl;
+    setAvatarFile(file);
+    setAvatarPreview(previewUrl);
+    setAvatarError(null);
+    setAvatarFeedback(null);
+  };
+
+  const handleUploadAvatar = () => {
+    if (!avatarFile) {
+      setAvatarError("업로드할 이미지를 먼저 선택해 주세요.");
+      return;
+    }
+
+    setAvatarError(null);
+    setAvatarFeedback(null);
+
+    startUploadingAvatar(async () => {
+      try {
+        const formData = new FormData();
+        formData.append("avatar", avatarFile);
+
+        const response = await fetch("/api/profile/avatar", {
+          method: "POST",
+          body: formData,
+        });
+
+        const payload = (await response.json()) as ApiResponse<{
+          avatarUrl?: string | null;
+          originalAvatarUrl?: string | null;
+          customAvatarUrl?: string | null;
+        }>;
+
+        if (!response.ok || !payload.success) {
+          throw new Error(
+            payload.message ?? "프로필 사진을 업데이트하지 못했습니다.",
+          );
+        }
+
+        const nextUrl = payload.result?.avatarUrl ?? null;
+        if (!nextUrl) {
+          throw new Error("업로드한 이미지 경로를 확인할 수 없습니다.");
+        }
+
+        releaseTempAvatarPreview();
+        setAvatarFile(null);
+        setPersistedAvatarUrl(nextUrl);
+        setPersistedOriginalAvatarUrl(
+          payload.result?.originalAvatarUrl ?? persistedOriginalAvatarUrl,
+        );
+        setPersistedCustomAvatarUrl(payload.result?.customAvatarUrl ?? nextUrl);
+        setAvatarPreview(nextUrl);
+        setAvatarFeedback("프로필 사진을 업데이트했어요.");
+        resetAvatarInput();
+        router.refresh();
+      } catch (error) {
+        console.error(error);
+        setAvatarError(
+          error instanceof Error
+            ? error.message
+            : "프로필 사진 업로드에 실패했습니다.",
+        );
+      }
+    });
+  };
+
+  const handleRemoveAvatar = () => {
+    if (avatarFile) {
+      releaseTempAvatarPreview();
+      setAvatarFile(null);
+      setAvatarPreview(persistedAvatarUrl);
+      setAvatarError(null);
+      setAvatarFeedback(null);
+      resetAvatarInput();
+      return;
+    }
+
+    if (!persistedAvatarUrl) {
+      setAvatarError("제거할 프로필 사진이 없습니다.");
+      return;
+    }
+
+    setAvatarError(null);
+    setAvatarFeedback(null);
+
+    startRemovingAvatar(async () => {
+      try {
+        const response = await fetch("/api/profile/avatar", {
+          method: "DELETE",
+        });
+
+        const payload = (await response.json()) as ApiResponse<{
+          avatarUrl?: string | null;
+          originalAvatarUrl?: string | null;
+          customAvatarUrl?: string | null;
+        }>;
+
+        if (!response.ok || !payload.success) {
+          throw new Error(
+            payload.message ?? "프로필 사진을 제거하지 못했습니다.",
+          );
+        }
+
+        const nextAvatarUrl = payload.result?.avatarUrl ?? null;
+        releaseTempAvatarPreview();
+        setAvatarFile(null);
+        setPersistedAvatarUrl(nextAvatarUrl);
+        setPersistedOriginalAvatarUrl(
+          payload.result?.originalAvatarUrl ?? persistedOriginalAvatarUrl,
+        );
+        setPersistedCustomAvatarUrl(payload.result?.customAvatarUrl ?? null);
+        setAvatarPreview(nextAvatarUrl);
+        setAvatarFeedback(
+          nextAvatarUrl
+            ? "GitHub 프로필 사진으로 되돌렸어요."
+            : "프로필 사진을 제거했어요.",
+        );
+        resetAvatarInput();
+        router.refresh();
+      } catch (error) {
+        console.error(error);
+        setAvatarError(
+          error instanceof Error
+            ? error.message
+            : "프로필 사진을 제거하지 못했습니다.",
+        );
+      }
+    });
   };
 
   const handleExcludedPeopleChange = (
@@ -326,6 +580,127 @@ export function SettingsView({
             {personalFeedback && (
               <p className="text-sm text-primary">{personalFeedback}</p>
             )}
+
+            <Card className="border-border/70">
+              <CardHeader>
+                <CardTitle>프로필 이미지</CardTitle>
+                <CardDescription>
+                  대시보드 상단에 표시될 사진을 업로드하세요.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                  <div className="flex items-center justify-center">
+                    {avatarPreview ? (
+                      <div className="relative size-20 overflow-hidden rounded-full border border-border/70 bg-white shadow-sm">
+                        <Image
+                          src={avatarPreview}
+                          alt={
+                            currentUserName ??
+                            currentUserLogin ??
+                            avatarInitials
+                          }
+                          fill
+                          sizes="80px"
+                          className="object-cover"
+                          referrerPolicy="no-referrer"
+                          unoptimized
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex size-20 items-center justify-center rounded-full border border-dashed border-border/70 bg-muted/40 text-lg font-semibold uppercase text-muted-foreground">
+                        {avatarInitials}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex w-full max-w-sm flex-col gap-3 text-sm">
+                    <div className="flex flex-col gap-2">
+                      <label
+                        htmlFor={avatarInputId}
+                        className="text-muted-foreground"
+                      >
+                        프로필 사진 선택
+                      </label>
+                      <input
+                        ref={avatarInputRef}
+                        id={avatarInputId}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        onChange={handleAvatarFileChange}
+                        className="text-sm"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        PNG, JPG, WebP 형식 · 최대 4MB
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={handleUploadAvatar}
+                        disabled={isAvatarMutating || !hasSelectedAvatar}
+                        className="h-9"
+                      >
+                        {isUploadingAvatar ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            업로드 중...
+                          </>
+                        ) : (
+                          <>
+                            <Camera className="mr-2 h-4 w-4" />
+                            사진 업로드
+                          </>
+                        )}
+                      </Button>
+                      {(hasSelectedAvatar || hasPersistedAvatar) && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={handleRemoveAvatar}
+                          disabled={
+                            isAvatarMutating ||
+                            (!hasSelectedAvatar && !hasPersistedAvatar)
+                          }
+                          className="h-9"
+                        >
+                          {isRemovingAvatar ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              처리 중...
+                            </>
+                          ) : hasSelectedAvatar ? (
+                            <>
+                              <ImageOff className="mr-2 h-4 w-4" />
+                              선택 취소
+                            </>
+                          ) : hasCustomAvatar ? (
+                            <>
+                              <ImageOff className="mr-2 h-4 w-4" />
+                              사진 제거
+                            </>
+                          ) : (
+                            <>
+                              <ImageOff className="mr-2 h-4 w-4" />
+                              기본 이미지 사용
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    </div>
+                    {avatarError ? (
+                      <p className="text-xs text-rose-600">{avatarError}</p>
+                    ) : null}
+                    {avatarFeedback ? (
+                      <p className="text-xs text-emerald-600">
+                        {avatarFeedback}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
             <Card className="border-border/70">
               <CardHeader>

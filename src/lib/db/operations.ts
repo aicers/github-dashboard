@@ -140,10 +140,113 @@ function toJsonb(value: unknown) {
   return JSON.stringify(value ?? null);
 }
 
+type StoredUserProfile = {
+  originalAvatarUrl: string | null;
+  customAvatarUrl: string | null;
+};
+
+type ParsedUserData = {
+  actor: DbActor | null;
+  profile: StoredUserProfile;
+  raw: Record<string, unknown>;
+};
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function parseStoredUserData(raw: unknown): ParsedUserData {
+  const rawObject = isPlainObject(raw) ? { ...raw } : {};
+
+  let actor: DbActor | null = null;
+  if (rawObject.actor && isPlainObject(rawObject.actor)) {
+    actor = rawObject.actor as DbActor;
+  } else if ("avatarUrl" in rawObject) {
+    const candidate = rawObject as Record<string, unknown>;
+    if (
+      typeof candidate.avatarUrl === "string" ||
+      candidate.avatarUrl === null
+    ) {
+      actor = candidate as unknown as DbActor;
+    }
+  }
+
+  const profileSource =
+    rawObject.profile && isPlainObject(rawObject.profile)
+      ? (rawObject.profile as Record<string, unknown>)
+      : {};
+
+  let originalAvatarUrl: string | null = null;
+  if (typeof profileSource.originalAvatarUrl === "string") {
+    originalAvatarUrl = profileSource.originalAvatarUrl;
+  } else if (profileSource.originalAvatarUrl === null) {
+    originalAvatarUrl = null;
+  }
+
+  if (!originalAvatarUrl && actor?.avatarUrl) {
+    originalAvatarUrl = actor.avatarUrl;
+  }
+
+  const customAvatarUrl =
+    typeof profileSource.customAvatarUrl === "string"
+      ? profileSource.customAvatarUrl
+      : null;
+
+  return {
+    actor,
+    profile: {
+      originalAvatarUrl: originalAvatarUrl ?? null,
+      customAvatarUrl,
+    },
+    raw: rawObject,
+  };
+}
+
+function buildStoredUserData(
+  actor: DbActor | null,
+  profile: StoredUserProfile,
+  base: Record<string, unknown>,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...base };
+  delete next.profile;
+
+  if (actor) {
+    Object.assign(next, actor as Record<string, unknown>);
+    next.actor = actor;
+  } else {
+    delete next.actor;
+  }
+
+  next.profile = {
+    originalAvatarUrl: profile.originalAvatarUrl ?? null,
+    customAvatarUrl: profile.customAvatarUrl ?? null,
+  };
+
+  return next;
+}
+
 export async function upsertUser(actor: DbActor | null) {
   if (!actor?.id) {
     return;
   }
+
+  const existing = await query<{
+    avatar_url: string | null;
+    data: unknown;
+  }>(`SELECT avatar_url, data FROM users WHERE id = $1`, [actor.id]);
+
+  const parsed = parseStoredUserData(existing.rows[0]?.data);
+  const existingProfile = parsed.profile;
+
+  const nextProfile: StoredUserProfile = {
+    originalAvatarUrl:
+      actor.avatarUrl ?? existingProfile.originalAvatarUrl ?? null,
+    customAvatarUrl: existingProfile.customAvatarUrl,
+  };
+
+  const nextData = buildStoredUserData(actor, nextProfile, parsed.raw);
+
+  const nextAvatarUrl = nextProfile.customAvatarUrl ?? actor.avatarUrl ?? null;
 
   await query(
     `INSERT INTO users (id, login, name, avatar_url, github_created_at, github_updated_at, data, inserted_at, updated_at)
@@ -160,10 +263,10 @@ export async function upsertUser(actor: DbActor | null) {
       actor.id,
       actor.login ?? actor.name ?? null,
       actor.name ?? actor.login ?? null,
-      actor.avatarUrl ?? null,
+      nextAvatarUrl,
       actor.createdAt ?? null,
       actor.updatedAt ?? null,
-      toJsonb(actor),
+      JSON.stringify(nextData),
     ],
   );
 }
@@ -800,6 +903,96 @@ export async function listAllUsers(): Promise<UserProfile[]> {
     name: row.name,
     avatarUrl: row.avatar_url,
   }));
+}
+
+export async function updateUserAvatarUrl(
+  userId: string,
+  avatarUrl: string | null,
+): Promise<{
+  avatarUrl: string | null;
+  originalAvatarUrl: string | null;
+  customAvatarUrl: string | null;
+}> {
+  const existing = await query<{
+    avatar_url: string | null;
+    data: unknown;
+  }>(`SELECT avatar_url, data FROM users WHERE id = $1`, [userId]);
+
+  if (existing.rowCount === 0) {
+    return { avatarUrl: null, originalAvatarUrl: null, customAvatarUrl: null };
+  }
+
+  const row = existing.rows[0];
+  const parsed = parseStoredUserData(row.data);
+  const actor = parsed.actor;
+  const existingProfile = parsed.profile;
+  const base = parsed.raw;
+
+  let nextProfile: StoredUserProfile;
+
+  if (avatarUrl) {
+    let original = existingProfile.originalAvatarUrl;
+    if (!original) {
+      if (row.avatar_url && row.avatar_url !== avatarUrl) {
+        original = row.avatar_url;
+      } else if (actor?.avatarUrl) {
+        original = actor.avatarUrl;
+      }
+    }
+
+    nextProfile = {
+      originalAvatarUrl: original ?? null,
+      customAvatarUrl: avatarUrl,
+    };
+  } else {
+    const original =
+      existingProfile.originalAvatarUrl ?? actor?.avatarUrl ?? null;
+
+    nextProfile = {
+      originalAvatarUrl: original,
+      customAvatarUrl: null,
+    };
+  }
+
+  const nextData = buildStoredUserData(actor, nextProfile, base);
+  const nextAvatarUrl =
+    nextProfile.customAvatarUrl ?? nextProfile.originalAvatarUrl ?? null;
+
+  await query(
+    `UPDATE users SET avatar_url = $2, data = $3::jsonb, updated_at = NOW() WHERE id = $1`,
+    [userId, nextAvatarUrl, JSON.stringify(nextData)],
+  );
+
+  return {
+    avatarUrl: nextAvatarUrl,
+    originalAvatarUrl: nextProfile.originalAvatarUrl ?? null,
+    customAvatarUrl: nextProfile.customAvatarUrl ?? null,
+  };
+}
+
+export async function getUserAvatarState(userId: string): Promise<{
+  avatarUrl: string | null;
+  originalAvatarUrl: string | null;
+  customAvatarUrl: string | null;
+}> {
+  const result = await query<{
+    avatar_url: string | null;
+    data: unknown;
+  }>(`SELECT avatar_url, data FROM users WHERE id = $1`, [userId]);
+
+  if (result.rowCount === 0) {
+    return { avatarUrl: null, originalAvatarUrl: null, customAvatarUrl: null };
+  }
+
+  const row = result.rows[0];
+  const parsed = parseStoredUserData(row.data);
+
+  return {
+    avatarUrl: row.avatar_url ?? null,
+    originalAvatarUrl:
+      parsed.profile.originalAvatarUrl ?? parsed.actor?.avatarUrl ?? null,
+    customAvatarUrl: parsed.profile.customAvatarUrl,
+  };
 }
 
 type RepositoryProfileRow = {

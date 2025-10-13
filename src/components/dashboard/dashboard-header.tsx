@@ -1,37 +1,19 @@
 "use client";
 
 import { Bell, LayoutGrid } from "lucide-react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { ATTENTION_REQUIRED_VALUES } from "@/lib/activity/attention-options";
+import { buildUserInitials } from "@/lib/user/initials";
 import { cn } from "@/lib/utils";
-
-function buildInitials(userId: string | null | undefined) {
-  if (!userId) {
-    return "JD";
-  }
-
-  const parts = userId
-    .replace(/[^a-zA-Z0-9]+/g, " ")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-
-  if (parts.length === 0) {
-    return userId.slice(0, 2).toUpperCase() || "JD";
-  }
-
-  const initials = parts
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("");
-
-  return initials.toUpperCase();
-}
 
 type DashboardHeaderProps = {
   userId?: string | null;
+  userName?: string | null;
+  userLogin?: string | null;
+  userAvatarUrl?: string | null;
 };
 
 const PEOPLE_QUERY_KEYS = [
@@ -43,8 +25,17 @@ const PEOPLE_QUERY_KEYS = [
   "reactorId",
 ] as const;
 
-export function DashboardHeader({ userId }: DashboardHeaderProps) {
-  const initials = buildInitials(userId);
+export function DashboardHeader({
+  userId,
+  userName,
+  userLogin,
+  userAvatarUrl,
+}: DashboardHeaderProps) {
+  const initials = buildUserInitials({
+    name: userName,
+    login: userLogin,
+    fallback: userId,
+  });
   const router = useRouter();
   const [notificationCount, setNotificationCount] = useState<number>(0);
 
@@ -159,9 +150,28 @@ export function DashboardHeader({ userId }: DashboardHeaderProps) {
               </span>
             ) : null}
           </button>
-          <div className="flex size-10 items-center justify-center rounded-full bg-gradient-to-br from-[#5f3bff] to-[#8e52ff] text-sm font-semibold uppercase tracking-wide text-white shadow-[0px_10px_20px_rgba(88,28,135,0.2)]">
-            {initials}
-          </div>
+          <button
+            type="button"
+            onClick={() => router.push("/dashboard/settings")}
+            className="group relative flex size-10 items-center justify-center rounded-full text-sm font-semibold uppercase tracking-wide text-white shadow-[0px_10px_20px_rgba(88,28,135,0.2)] ring-1 ring-black/5 transition hover:translate-y-[-1px] hover:shadow-[0px_12px_28px_rgba(88,28,135,0.25)]"
+            aria-label="프로필 설정 열기"
+          >
+            {userAvatarUrl ? (
+              <Image
+                src={userAvatarUrl}
+                alt={userName ?? userLogin ?? initials}
+                width={40}
+                height={40}
+                className="h-10 w-10 rounded-full object-cover"
+                referrerPolicy="no-referrer"
+                unoptimized
+              />
+            ) : (
+              <span className="flex h-full w-full items-center justify-center rounded-full bg-gradient-to-br from-[#5f3bff] to-[#8e52ff]">
+                {initials}
+              </span>
+            )}
+          </button>
         </div>
       </div>
     </header>
