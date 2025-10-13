@@ -3598,7 +3598,7 @@ export function ActivityView({
                           {item.updatedAt ? (
                             <div className="mt-2 flex flex-col gap-1 text-xs text-foreground/90 sm:mt-0 sm:w-[180px] sm:shrink-0 sm:text-right">
                               {updatedRelativeLabel ? (
-                                <span className="font-medium uppercase text-foreground">
+                                <span className="font-medium text-foreground">
                                   {updatedRelativeLabel}
                                 </span>
                               ) : null}
