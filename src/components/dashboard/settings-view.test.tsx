@@ -76,6 +76,12 @@ function renderSettings(
       members={members}
       excludedMemberIds={["user-3"]}
       isAdmin
+      currentUserId="user-1"
+      currentUserName="Octo Cat"
+      currentUserLogin="octocat"
+      currentUserAvatarUrl={null}
+      currentUserOriginalAvatarUrl="https://example.com/original.png"
+      currentUserCustomAvatarUrl={null}
       {...overrides}
     />,
   );
