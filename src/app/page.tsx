@@ -1,3 +1,4 @@
+import { Github, LayoutGrid } from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
@@ -6,84 +7,54 @@ export const dynamic = "force-dynamic";
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-slate-950 px-6 py-20 text-slate-100">
-      <section className="mx-auto flex w-full max-w-4xl flex-col gap-6 mb-16 sm:mb-20">
-        <span className="w-fit rounded-full border border-slate-700/70 bg-slate-900/80 px-4 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">
-          GitHub Control Room
-        </span>
-        <h1 className="text-balance text-4xl font-bold leading-tight sm:text-5xl">
-          Keep every repository and team workflow moving from one hub.
-        </h1>
-        <p className="max-w-xl text-base leading-relaxed text-slate-300 sm:text-lg">
-          이 대시보드는 GitHub 계정으로 인증한 뒤 접근할 수 있으며, 사전에
-          허용된 GitHub 조직의 구성원만 이용할 수 있습니다.
-        </p>
-        <p className="max-w-xl text-base leading-relaxed text-slate-300 sm:text-lg">
-          조직 외부 사용자는 안내 페이지로 이동합니다.
-        </p>
-        <div className="rounded-lg border border-slate-800/70 bg-slate-900/70 p-4 text-left text-sm text-slate-300">
-          <p className="font-semibold text-slate-200">이용 전 확인하세요:</p>
-          <ul className="mt-2 list-disc space-y-2 pl-5">
-            <li>
-              처음 로그인할 때 GitHub 승인 화면에서{" "}
-              <span className="font-semibold">Authorize</span>를 누르고, 아래에
-              표시되는{" "}
-              <span className="font-semibold">Organization access</span>{" "}
-              섹션에서도 <span className="font-semibold">Grant access</span>를
-              눌러 주세요.
-            </li>
-            <li>
-              승인 화면을 놓쳤다면{" "}
-              <span className="font-semibold">
-                GitHub {"→"} Settings → Applications → Authorized OAuth Apps
-              </span>
-              에서 해당 앱을 선택해 Grant 버튼을 눌러주세요.
-            </li>
-            <li>
-              허용된 조직 구성원이 아니라면 대시보드에 접근할 수 없습니다.
-            </li>
-          </ul>
+    <main
+      className="flex items-center justify-center min-h-screen"
+      style={{
+        background:
+          "linear-gradient(148.304deg, rgb(248, 250, 252) 0%, rgb(255, 255, 255) 50%, rgb(241, 245, 249) 100%)",
+      }}
+    >
+      <div className="relative w-[672px] h-[317px]">
+        {/* Icon Container */}
+        <div className="absolute left-[304px] top-0 w-16 h-16 flex items-center justify-center bg-white rounded-2xl shadow-[0px_10px_15px_-3px_rgba(173,70,255,0.2),0px_4px_6px_-4px_rgba(173,70,255,0.2)]">
+          <div className="w-8 h-8 bg-gradient-to-br from-[#ad46ff] to-[#7047ff] rounded-lg flex items-center justify-center">
+            <LayoutGrid className="w-5 h-5 text-white" strokeWidth={1.8} />
+          </div>
         </div>
-        <div className="mt-2">
+
+        {/* Content Container */}
+        <div className="absolute left-0 top-[88px] w-[672px] h-[105px]">
+          {/* Main Title */}
+          <div className="absolute left-0 top-0 w-[672px] h-[61px]">
+            <h1 className="absolute left-1/2 top-0 transform -translate-x-1/2 font-bold text-[42px] leading-[46px] text-[#0f172b] text-center whitespace-nowrap tracking-[0.3px]">
+              GitHub Dashboard
+            </h1>
+          </div>
+
+          {/* Subtitle */}
+          <div className="absolute left-12 top-[77px] w-[576px] h-7">
+            <p className="absolute left-1/2 top-0 transform -translate-x-1/2 font-normal text-lg leading-7 text-[#62748e] text-center whitespace-nowrap tracking-[-0.44px]">
+              Keep every repository and team workflow moving from one hub.
+            </p>
+          </div>
+        </div>
+
+        {/* Sign In Button */}
+        <div className="absolute left-[225px] top-[248px] w-[221px] h-[56px]">
           <Button
             asChild
-            size="lg"
-            className="bg-blue-500 text-white shadow-lg shadow-blue-900/40 hover:bg-blue-400"
+            className="w-full h-full bg-gradient-to-r from-[#9810fa] to-[#155dfc] hover:from-[#8a0ee8] hover:to-[#1350e8] text-white text-base font-medium shadow-[0px_10px_15px_-3px_rgba(173,70,255,0.25),0px_4px_6px_-4px_rgba(173,70,255,0.25)] rounded-lg border-0"
           >
-            <Link href="/auth/github?next=/dashboard/activity">
-              GitHub으로 로그인
+            <Link
+              href="/auth/github?next=/dashboard/activity"
+              className="flex items-center gap-4"
+            >
+              <Github className="w-4 h-4" />
+              Sign in with GitHub
             </Link>
           </Button>
         </div>
-      </section>
-
-      <section className="mx-auto grid w-full max-w-5xl gap-6 md:grid-cols-3">
-        {[
-          {
-            title: "Repository pulse",
-            description:
-              "Spot activity spikes, review progress, and recent contributions in seconds.",
-          },
-          {
-            title: "Team workload",
-            description:
-              "Balance reviews and assignments so no pull request waits longer than it should.",
-          },
-          {
-            title: "Delivery rhythm",
-            description:
-              "Track project momentum, celebrate wins, and keep outcomes visible for everyone.",
-          },
-        ].map(({ title, description }) => (
-          <article
-            key={title}
-            className="flex flex-col gap-3 rounded-xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-xl shadow-slate-950/40"
-          >
-            <h2 className="text-lg font-semibold text-slate-100">{title}</h2>
-            <p className="text-sm text-slate-300">{description}</p>
-          </article>
-        ))}
-      </section>
+      </div>
     </main>
   );
 }
