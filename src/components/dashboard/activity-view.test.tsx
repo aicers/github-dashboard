@@ -40,8 +40,11 @@ const mockRouter = {
   refresh: vi.fn(),
 };
 
+const mockSearchParams = new URLSearchParams();
+
 vi.mock("next/navigation", () => ({
   useRouter: () => mockRouter,
+  useSearchParams: () => mockSearchParams,
 }));
 
 function createDefaultProps(overrides?: {

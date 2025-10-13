@@ -9,7 +9,7 @@ import {
   UserCheck,
 } from "lucide-react";
 import { DateTime } from "luxon";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   type KeyboardEvent,
   useCallback,
@@ -23,6 +23,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  ATTENTION_OPTIONS,
+  ATTENTION_REQUIRED_VALUES,
+} from "@/lib/activity/attention-options";
 import { fetchActivityDetail } from "@/lib/activity/client";
 import type { ActivityFilterState as FilterState } from "@/lib/activity/filter-state";
 import {
@@ -32,7 +36,6 @@ import {
   normalizeSearchParams,
 } from "@/lib/activity/filter-state";
 import type {
-  ActivityAttentionFilter,
   ActivityFilterOptions,
   ActivityIssueBaseStatusFilter,
   ActivityItem,
@@ -98,24 +101,6 @@ type QuickFilterDefinition = {
   buildState: (perPage: number) => FilterState;
   icon: LucideIcon;
 };
-
-const ATTENTION_OPTIONS: Array<{
-  value: ActivityAttentionFilter;
-  label: string;
-}> = [
-  { value: "no_attention", label: "주의 없음" },
-  { value: "issue_backlog", label: "정체된 Backlog 이슈" },
-  { value: "issue_stalled", label: "정체된 In Progress 이슈" },
-  { value: "pr_open_too_long", label: "오래된 PR" },
-  { value: "pr_inactive", label: "업데이트 없는 PR" },
-  { value: "review_requests_pending", label: "응답 없는 리뷰 요청" },
-  { value: "unanswered_mentions", label: "응답 없는 멘션" },
-];
-
-const ATTENTION_REQUIRED_VALUES: ActivityAttentionFilter[] =
-  ATTENTION_OPTIONS.filter((option) => option.value !== "no_attention").map(
-    (option) => option.value,
-  );
 
 const CATEGORY_OPTIONS: Array<{ value: ActivityItemCategory; label: string }> =
   [
@@ -1005,6 +990,7 @@ export function ActivityView({
   currentUserId,
 }: ActivityViewProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const perPageDefault =
     initialData.pageInfo.perPage ?? PER_PAGE_CHOICES[1] ?? 25;
   const initialState = useMemo(
@@ -1086,6 +1072,7 @@ export function ActivityView({
   const detailControllersRef = useRef(new Map<string, AbortController>());
   const requestCounterRef = useRef(0);
   const notificationTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const appliedQuickParamRef = useRef<string | null>(null);
 
   useEffect(() => {
     return () => {
@@ -1662,6 +1649,66 @@ export function ActivityView({
     },
     [canonicalDraftKey, draft.perPage, fetchFeed],
   );
+
+  useEffect(() => {
+    if (!searchParams) {
+      return;
+    }
+
+    const quickParam = searchParams.get("quick");
+    if (!quickParam) {
+      appliedQuickParamRef.current = null;
+      return;
+    }
+
+    if (appliedQuickParamRef.current === quickParam) {
+      return;
+    }
+
+    const definition = quickFilterDefinitions.find(
+      (entry) => entry.id === quickParam,
+    );
+
+    const removeQuickParam = () => {
+      const nextParams = new URLSearchParams(searchParams.toString());
+      nextParams.delete("quick");
+      appliedQuickParamRef.current = quickParam;
+      router.replace(
+        nextParams.toString().length
+          ? `/dashboard/activity?${nextParams.toString()}`
+          : "/dashboard/activity",
+        { scroll: false },
+      );
+    };
+
+    if (!definition) {
+      removeQuickParam();
+      return;
+    }
+
+    const nextState = {
+      ...definition.buildState(draft.perPage),
+      page: 1,
+    };
+    const nextKey = canonicalizeActivityParams(
+      buildSavedFilterPayload(nextState),
+    );
+
+    if (nextKey === canonicalDraftKey) {
+      removeQuickParam();
+      return;
+    }
+
+    appliedQuickParamRef.current = quickParam;
+    handleApplyQuickFilter(definition);
+  }, [
+    canonicalDraftKey,
+    draft.perPage,
+    handleApplyQuickFilter,
+    quickFilterDefinitions,
+    router,
+    searchParams,
+  ]);
 
   const applySavedFilter = useCallback(
     (filter: ActivitySavedFilter) => {
