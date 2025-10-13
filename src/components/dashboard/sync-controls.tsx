@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useState, useTransition } from "react";
+import { useEffect, useId, useMemo, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +14,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  formatDateTime as formatDateTimeDisplay,
+  normalizeDateTimeDisplayFormat,
+} from "@/lib/date-time-format";
 import type { BackfillResult, SyncStatus } from "@/lib/sync/service";
 
 type SyncControlsProps = {
@@ -56,41 +60,6 @@ async function parseApiResponse<T>(
   }
 }
 
-function formatDateTime(value?: string | null, timeZone?: string | null) {
-  if (!value) {
-    return "–";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  const baseOptions: Intl.DateTimeFormatOptions = {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  };
-
-  try {
-    if (timeZone) {
-      return date.toLocaleString(undefined, {
-        ...baseOptions,
-        timeZone,
-        timeZoneName: "short",
-      });
-    }
-
-    return date.toLocaleString(undefined, baseOptions);
-  } catch (error) {
-    console.error("Failed to format date", { value, timeZone, error });
-    return date.toLocaleString();
-  }
-}
-
 function capitalize(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
@@ -104,7 +73,19 @@ const statusColors: Record<string, string> = {
 export function SyncControls({ status }: SyncControlsProps) {
   const router = useRouter();
   const config = status.config;
-  const timeZone = config?.timezone ?? null;
+  const timeZone =
+    typeof config?.timezone === "string" && config.timezone.trim().length
+      ? config.timezone
+      : null;
+  const dateTimeFormat = useMemo(
+    () =>
+      normalizeDateTimeDisplayFormat(
+        typeof config?.date_time_format === "string"
+          ? config.date_time_format
+          : null,
+      ),
+    [config?.date_time_format],
+  );
   const backfillInputId = useId();
   const [autoEnabled, setAutoEnabled] = useState(
     config?.auto_sync_enabled ?? false,
@@ -125,8 +106,13 @@ export function SyncControls({ status }: SyncControlsProps) {
     setAutoEnabled(config?.auto_sync_enabled ?? false);
   }, [config?.auto_sync_enabled]);
 
+  const formatDateTime = useMemo(() => {
+    return (value?: string | null) =>
+      formatDateTimeDisplay(value, timeZone ?? undefined, dateTimeFormat);
+  }, [dateTimeFormat, timeZone]);
+
   function formatRange(startIso: string | null, endIso: string | null) {
-    return `${formatDateTime(startIso, timeZone)} → ${formatDateTime(endIso, timeZone)}`;
+    return `${formatDateTime(startIso)} → ${formatDateTime(endIso)}`;
   }
 
   async function handleBackfill() {
@@ -306,15 +292,11 @@ export function SyncControls({ status }: SyncControlsProps) {
           <CardContent className="space-y-3 text-sm text-muted-foreground">
             <p>
               최근 동기화:{" "}
-              <span>
-                {formatDateTime(config?.last_sync_completed_at, timeZone)}
-              </span>
+              <span>{formatDateTime(config?.last_sync_completed_at)}</span>
             </p>
             <p>
               마지막 성공:{" "}
-              <span>
-                {formatDateTime(config?.last_successful_sync_at, timeZone)}
-              </span>
+              <span>{formatDateTime(config?.last_successful_sync_at)}</span>
             </p>
             <p>
               주기: {(config?.sync_interval_minutes ?? 60).toLocaleString()}분
@@ -448,8 +430,8 @@ export function SyncControls({ status }: SyncControlsProps) {
                 </span>
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
-                {formatDateTime(log.started_at, timeZone)} →{" "}
-                {formatDateTime(log.finished_at, timeZone)}
+                {formatDateTime(log.started_at)} →{" "}
+                {formatDateTime(log.finished_at)}
               </p>
               {log.message && <p className="mt-1 text-sm">{log.message}</p>}
             </div>
