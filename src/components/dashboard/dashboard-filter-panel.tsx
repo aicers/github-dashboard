@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useId } from "react";
+import { DateTime } from "luxon";
+import { useCallback, useId, useMemo } from "react";
 import type { FilterState } from "@/components/dashboard/use-dashboard-analytics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,8 +17,10 @@ import type { RepositoryProfile, UserProfile } from "@/lib/db/operations";
 
 type DashboardFilterPanelProps = {
   filters: FilterState;
+  appliedFilters: FilterState;
   setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
   onApply: () => void;
+  hasPendingChanges: boolean;
   isLoading: boolean;
   error: string | null;
   repositories: RepositoryProfile[];
@@ -30,8 +33,10 @@ type DashboardFilterPanelProps = {
 
 export function DashboardFilterPanel({
   filters,
+  appliedFilters,
   setFilters,
   onApply,
+  hasPendingChanges,
   isLoading,
   error,
   repositories,
@@ -95,12 +100,64 @@ export function DashboardFilterPanel({
   const sectionLabelClass =
     "text-xs font-semibold uppercase tracking-wide text-muted-foreground";
   const helperTextClass = "text-xs text-muted-foreground";
-  const actionPanelSpanClass = hasPersonSelector
-    ? "md:col-span-2 xl:col-span-2"
-    : "";
   const gridClassName = hasPersonSelector
     ? "grid gap-4 md:grid-cols-2 xl:grid-cols-4 xl:gap-5"
     : "grid gap-4 md:grid-cols-3 xl:grid-cols-3 xl:gap-5";
+
+  const presetLabel =
+    PRESETS.find((preset) => preset.key === appliedFilters.preset)?.label ??
+    "사용자 지정";
+  const hasPendingRangeChange =
+    filters.preset !== appliedFilters.preset ||
+    filters.start !== appliedFilters.start ||
+    filters.end !== appliedFilters.end;
+  const pendingStatusMessage = hasPendingChanges
+    ? hasPendingRangeChange
+      ? "기간 변경 사항이 아직 적용되지 않았습니다."
+      : "필터 변경 사항이 아직 적용되지 않았습니다."
+    : "";
+
+  const previewRange = useMemo(() => {
+    if (!hasPendingRangeChange) {
+      return null;
+    }
+
+    const startDate = DateTime.fromISO(filters.start, {
+      zone: "utc",
+    }).startOf("day");
+    const endDate = DateTime.fromISO(filters.end, {
+      zone: "utc",
+    }).endOf("day");
+
+    if (!startDate.isValid || !endDate.isValid || endDate < startDate) {
+      return null;
+    }
+
+    const intervalDays = Math.max(
+      1,
+      Math.floor(endDate.diff(startDate, "days").days) + 1,
+    );
+
+    const buildShiftedRange = (offset: number) => {
+      const offsetDays = intervalDays * offset;
+      const shiftedStart = startDate.minus({ days: offsetDays });
+      const shiftedEnd = endDate.minus({ days: offsetDays });
+      return {
+        start: shiftedStart.toUTC().toISO(),
+        end: shiftedEnd.toUTC().toISO(),
+      };
+    };
+
+    return {
+      current: buildShiftedRange(0),
+      previous: [
+        { label: "이전 기간", ...buildShiftedRange(1) },
+        { label: "2회 전 기간", ...buildShiftedRange(2) },
+        { label: "3회 전 기간", ...buildShiftedRange(3) },
+        { label: "4회 전 기간", ...buildShiftedRange(4) },
+      ],
+    };
+  }, [filters.end, filters.start, hasPendingRangeChange]);
 
   const previousRanges = [
     {
@@ -134,6 +191,14 @@ export function DashboardFilterPanel({
             <p className={helperTextClass}>
               사전 설정으로 빠르게 기간을 전환하세요.
             </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 rounded-full border border-border/60 bg-background/80 px-3 py-1 text-xs font-medium text-muted-foreground shadow-inner">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-foreground/70">
+              현재 적용 중
+            </span>
+            <span className="text-xs font-medium text-foreground">
+              {presetLabel}
+            </span>
           </div>
           <div className="grid w-full grid-cols-2 gap-2 md:grid-cols-3">
             {PRESETS.map((preset) => (
@@ -195,6 +260,73 @@ export function DashboardFilterPanel({
         </div>
 
         <div className={panelSectionClass}>
+          <div className="flex flex-col gap-1">
+            <span className={sectionLabelClass}>기간 요약</span>
+            <p className={helperTextClass}>
+              현재 적용된 기간과 선택한 기간의 차이를 비교해 보세요.
+            </p>
+          </div>
+          <div className="flex flex-col gap-4 pt-1">
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground">
+                현재 적용됨
+              </p>
+              <dl className="space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <dt className={helperTextClass}>현재 기간</dt>
+                  <dd className="font-medium">
+                    {toDateInputValue(range.start, timeZone)} ~{" "}
+                    {toDateInputValue(range.end, timeZone)}
+                  </dd>
+                </div>
+                {previousRanges.map((period) => (
+                  <div
+                    key={period.label}
+                    className="flex items-center justify-between gap-3"
+                  >
+                    <dt className={helperTextClass}>{period.label}</dt>
+                    <dd className="text-sm text-muted-foreground">
+                      {toDateInputValue(period.start, timeZone)} ~{" "}
+                      {toDateInputValue(period.end, timeZone)}
+                    </dd>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between gap-3">
+                  <dt className={helperTextClass}>시간대</dt>
+                  <dd className="text-sm text-muted-foreground">{timeZone}</dd>
+                </div>
+              </dl>
+            </div>
+            {previewRange && (
+              <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm shadow-inner">
+                <p className="text-xs font-semibold text-primary">미리보기</p>
+                <dl className="mt-2 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className={helperTextClass}>선택된 기간</dt>
+                    <dd className="font-medium">
+                      {toDateInputValue(previewRange.current.start, timeZone)} ~{" "}
+                      {toDateInputValue(previewRange.current.end, timeZone)}
+                    </dd>
+                  </div>
+                  {previewRange.previous.map((period) => (
+                    <div
+                      key={period.label}
+                      className="flex items-center justify-between gap-3"
+                    >
+                      <dt className={helperTextClass}>{period.label}</dt>
+                      <dd className="text-sm text-muted-foreground">
+                        {toDateInputValue(period.start, timeZone)} ~{" "}
+                        {toDateInputValue(period.end, timeZone)}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className={panelSectionClass}>
           <div className="flex items-start justify-between gap-3">
             <div className="flex flex-col gap-1">
               <span className={sectionLabelClass}>리포지토리 필터</span>
@@ -250,38 +382,22 @@ export function DashboardFilterPanel({
             </select>
           </div>
         )}
+      </div>
 
-        <div className={`${panelSectionClass} ${actionPanelSpanClass}`}>
-          <div className="flex flex-col gap-3">
-            <span className={sectionLabelClass}>선택된 기간</span>
-            <dl className="space-y-2">
-              <div className="flex items-center justify-between gap-3">
-                <dt className={helperTextClass}>현재 기간</dt>
-                <dd className="font-medium">
-                  {toDateInputValue(range.start, timeZone)} ~{" "}
-                  {toDateInputValue(range.end, timeZone)}
-                </dd>
-              </div>
-              {previousRanges.map((period) => (
-                <div
-                  key={period.label}
-                  className="flex items-center justify-between gap-3"
-                >
-                  <dt className={helperTextClass}>{period.label}</dt>
-                  <dd className="text-sm text-muted-foreground">
-                    {toDateInputValue(period.start, timeZone)} ~{" "}
-                    {toDateInputValue(period.end, timeZone)}
-                  </dd>
-                </div>
-              ))}
-              <div className="flex items-center justify-between gap-3">
-                <dt className={helperTextClass}>시간대</dt>
-                <dd className="text-sm text-muted-foreground">{timeZone}</dd>
-              </div>
-            </dl>
-          </div>
-          <div className="flex flex-col gap-2 pt-1">
-            <Button onClick={onApply} disabled={isLoading} className="w-full">
+      <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
+        <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-3">
+          {pendingStatusMessage && (
+            <p className="text-xs text-muted-foreground sm:text-right">
+              {pendingStatusMessage}
+            </p>
+          )}
+          <div className="flex items-center gap-3 sm:justify-end">
+            <Button
+              type="button"
+              onClick={onApply}
+              disabled={isLoading || !hasPendingChanges}
+              className="w-full sm:w-auto"
+            >
               {isLoading ? "갱신 중..." : "필터 적용"}
             </Button>
             {error && <p className="text-xs text-destructive">{error}</p>}

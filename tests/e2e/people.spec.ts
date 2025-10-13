@@ -59,6 +59,6 @@ test.describe("PeopleView (Playwright)", () => {
     await page.getByRole("button", { name: "codecov" }).click();
     await expect(applyButton).toBeDisabled();
     await expect(page.getByText("활동 요약 · codecov")).toBeVisible();
-    await expect(applyButton).toBeEnabled();
+    await expect(applyButton).toBeDisabled();
   });
 });

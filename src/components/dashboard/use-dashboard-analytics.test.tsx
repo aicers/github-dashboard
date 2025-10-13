@@ -80,8 +80,11 @@ describe("useDashboardAnalytics", () => {
     expect(result.current.weekStart).toBe("sunday");
     expect(result.current.filters.repositoryIds).toEqual([firstRepo.id]);
     expect(result.current.filters.personId).toBeNull();
+    expect(result.current.appliedFilters.repositoryIds).toEqual([firstRepo.id]);
+    expect(result.current.appliedFilters.personId).toBeNull();
     expect(result.current.isLoading).toBe(false);
     expect(result.current.error).toBeNull();
+    expect(result.current.hasPendingChanges).toBe(false);
   });
 
   it("surfaces errors when the API call fails", async () => {
@@ -108,6 +111,7 @@ describe("useDashboardAnalytics", () => {
     expect(result.current.error).toBe("대시보드 오류");
     expect(result.current.isLoading).toBe(false);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.current.hasPendingChanges).toBe(true);
   });
 
   it("keeps the latest filters when requests overlap and sanitizes missing data", async () => {
@@ -205,10 +209,13 @@ describe("useDashboardAnalytics", () => {
     expect(result.current.analytics).toEqual(betaOnly);
     expect(result.current.filters.repositoryIds).toEqual([repoBeta.id]);
     expect(result.current.filters.personId).toBeNull();
+    expect(result.current.appliedFilters.repositoryIds).toEqual([repoBeta.id]);
+    expect(result.current.appliedFilters.personId).toBeNull();
     expect(result.current.timeZone).toBe("Asia/Tokyo");
     expect(result.current.weekStart).toBe("monday");
     expect(result.current.isLoading).toBe(false);
     expect(result.current.error).toBeNull();
+    expect(result.current.hasPendingChanges).toBe(false);
   });
 
   it("preserves the selected person when the API response still includes it", async () => {
@@ -249,6 +256,9 @@ describe("useDashboardAnalytics", () => {
 
     expect(result.current.filters.repositoryIds).toEqual([repoAlpha.id]);
     expect(result.current.filters.personId).toBe(personBeta.id);
+    expect(result.current.appliedFilters.repositoryIds).toEqual([repoAlpha.id]);
+    expect(result.current.appliedFilters.personId).toBe(personBeta.id);
     expect(result.current.analytics).toEqual(nextAnalytics);
+    expect(result.current.hasPendingChanges).toBe(false);
   });
 });

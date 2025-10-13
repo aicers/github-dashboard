@@ -176,8 +176,10 @@ export function AnalyticsView({
   const {
     analytics,
     filters,
+    appliedFilters,
     setFilters,
     applyFilters,
+    hasPendingChanges,
     isLoading,
     error,
     timeZone,
@@ -213,8 +215,10 @@ export function AnalyticsView({
       <AnalyticsHeaderSection
         orgName={orgName}
         filters={filters}
+        appliedFilters={appliedFilters}
         setFilters={setFilters}
         applyFilters={applyFilters}
+        hasPendingChanges={hasPendingChanges}
         isLoading={isLoading}
         error={error}
         repositories={analytics.repositories}
@@ -267,8 +271,10 @@ export function AnalyticsView({
 type AnalyticsHeaderSectionProps = {
   orgName?: string | null;
   filters: FilterState;
+  appliedFilters: FilterState;
   setFilters: Dispatch<SetStateAction<FilterState>>;
   applyFilters: (nextFilters?: FilterState) => Promise<void>;
+  hasPendingChanges: boolean;
   isLoading: boolean;
   error: string | null;
   repositories: DashboardAnalytics["repositories"];
@@ -281,8 +287,10 @@ type AnalyticsHeaderSectionProps = {
 function AnalyticsHeaderSection({
   orgName,
   filters,
+  appliedFilters,
   setFilters,
   applyFilters,
+  hasPendingChanges,
   isLoading,
   error,
   repositories,
@@ -301,10 +309,12 @@ function AnalyticsHeaderSection({
 
       <DashboardFilterPanel
         filters={filters}
+        appliedFilters={appliedFilters}
         setFilters={setFilters}
         onApply={() => {
           void applyFilters();
         }}
+        hasPendingChanges={hasPendingChanges}
         isLoading={isLoading}
         error={error}
         repositories={repositories}

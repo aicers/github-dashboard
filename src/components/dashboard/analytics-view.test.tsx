@@ -381,17 +381,21 @@ function buildDashboardAnalytics(): DashboardAnalytics {
 
 function createDashboardAnalyticsState(): DashboardAnalyticsState {
   const analytics = buildDashboardAnalytics();
+  const filters: DashboardAnalyticsState["filters"] = {
+    start: analytics.range.start,
+    end: analytics.range.end,
+    preset: "last_14_days",
+    repositoryIds: analytics.repositories.map((repo) => repo.id),
+    personId: null,
+  };
+
   return {
     analytics,
-    filters: {
-      start: analytics.range.start,
-      end: analytics.range.end,
-      preset: "last_14_days",
-      repositoryIds: analytics.repositories.map((repo) => repo.id),
-      personId: null,
-    },
+    filters,
+    appliedFilters: { ...filters },
     setFilters: vi.fn(),
     applyFilters: vi.fn().mockResolvedValue(undefined),
+    hasPendingChanges: false,
     isLoading: false,
     error: null,
     presets: PRESETS,

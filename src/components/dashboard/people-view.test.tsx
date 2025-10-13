@@ -333,8 +333,10 @@ function createMockState(): DashboardAnalyticsState {
   return {
     analytics,
     filters,
+    appliedFilters: { ...filters },
     setFilters,
     applyFilters,
+    hasPendingChanges: false,
     isLoading: false,
     error: null,
     presets: PRESETS,
@@ -377,6 +379,7 @@ function buildStateWithContributors({
     ...base,
     analytics,
     filters,
+    appliedFilters: { ...filters },
     applyFilters,
   };
 }
