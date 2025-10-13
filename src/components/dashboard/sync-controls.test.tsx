@@ -29,6 +29,7 @@ function buildStatus(overrides: Partial<SyncStatus> = {}): SyncStatus {
       week_start: "monday",
       excluded_repository_ids: [],
       excluded_user_ids: [],
+      date_time_format: "auto",
       last_sync_started_at: null,
       last_sync_completed_at: null,
       last_successful_sync_at: null,
@@ -80,6 +81,7 @@ describe("SyncControls", () => {
         auto_sync_enabled: true,
         sync_interval_minutes: 30,
         timezone: "Asia/Seoul",
+        date_time_format: "iso-24h",
         last_sync_completed_at: "2024-04-02T10:00:00.000Z",
         last_successful_sync_at: "2024-04-02T10:00:00.000Z",
       },
@@ -117,6 +119,35 @@ describe("SyncControls", () => {
     expect(screen.getByText("Timeout")).toBeInTheDocument();
     expect(screen.getByText("Success")).toBeInTheDocument();
     expect(screen.getByText("Failed")).toBeInTheDocument();
+  });
+
+  it("formats timestamps using the configured timezone and display format", () => {
+    const status = buildStatus({
+      config: {
+        timezone: "Asia/Seoul",
+        date_time_format: "iso-24h",
+        last_sync_completed_at: "2024-04-02T00:00:00.000Z",
+        last_successful_sync_at: "2024-04-02T03:15:00.000Z",
+      },
+      logs: [
+        {
+          id: 1,
+          resource: "issues",
+          status: "success",
+          message: null,
+          started_at: "2024-04-01T15:00:00.000Z",
+          finished_at: "2024-04-01T16:45:00.000Z",
+        },
+      ],
+    });
+
+    render(<SyncControls status={status} />);
+
+    expect(screen.getByText("2024-04-02 09:00")).toBeInTheDocument();
+    expect(screen.getByText("2024-04-02 12:15")).toBeInTheDocument();
+    expect(
+      screen.getByText("2024-04-02 00:00 → 2024-04-02 01:45"),
+    ).toBeInTheDocument();
   });
 
   it("runs a manual backfill, shows success feedback, stores history, and refreshes the router", async () => {
