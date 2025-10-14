@@ -19,6 +19,7 @@ import {
   upsertReviewRequest,
   upsertUser,
 } from "@/lib/db/operations";
+import { env } from "@/lib/env";
 import {
   buildActor,
   buildPullRequest,
@@ -120,10 +121,13 @@ function buildMentionComment(params: {
 }
 
 describe("follow-up overview summaries (db)", () => {
+  const originalTodoProjectName = env.TODO_PROJECT_NAME;
+
   beforeEach(async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(FIXED_NOW));
 
+    env.TODO_PROJECT_NAME = "to-do list";
     await ensureSchema();
     await resetDashboardTables();
     await updateSyncConfig({
@@ -134,6 +138,7 @@ describe("follow-up overview summaries (db)", () => {
   });
 
   afterEach(() => {
+    env.TODO_PROJECT_NAME = originalTodoProjectName;
     vi.useRealTimers();
   });
 

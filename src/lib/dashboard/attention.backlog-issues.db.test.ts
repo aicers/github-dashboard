@@ -14,6 +14,7 @@ import {
   upsertRepository,
   upsertUser,
 } from "@/lib/db/operations";
+import { env } from "@/lib/env";
 import {
   buildActor,
   buildRepository,
@@ -84,10 +85,13 @@ function buildIssue(params: {
 }
 
 describe("attention insights for backlog issues", () => {
+  const originalTodoProjectName = env.TODO_PROJECT_NAME;
+
   beforeEach(async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(FIXED_NOW));
 
+    env.TODO_PROJECT_NAME = "to-do list";
     await ensureSchema();
     await resetDashboardTables();
     await updateSyncConfig({
@@ -98,6 +102,7 @@ describe("attention insights for backlog issues", () => {
   });
 
   afterEach(() => {
+    env.TODO_PROJECT_NAME = originalTodoProjectName;
     vi.useRealTimers();
   });
 

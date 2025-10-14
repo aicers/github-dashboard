@@ -1015,6 +1015,10 @@ function resolveStatusTimestamp(item: ProjectV2ItemNode): string | null {
 function collectProjectStatusSnapshots(
   issue: IssueNode,
 ): ProjectStatusHistoryEntry[] {
+  if (!TARGET_TODO_PROJECT) {
+    return [];
+  }
+
   const nodes = Array.isArray(issue.projectItems?.nodes)
     ? (issue.projectItems?.nodes as ProjectV2ItemNode[])
     : [];
@@ -1036,6 +1040,10 @@ function collectProjectStatusSnapshots(
           ? node.project.title
           : null
         : null;
+
+    if (!isTargetProject(projectTitle)) {
+      return;
+    }
 
     const statusLabel = extractProjectFieldValueLabel(node.status ?? null);
     const occurredAt = resolveStatusTimestamp(node);

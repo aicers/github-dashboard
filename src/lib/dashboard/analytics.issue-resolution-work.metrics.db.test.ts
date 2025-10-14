@@ -2,7 +2,7 @@
 
 import "../../../tests/helpers/postgres-container";
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import {
@@ -13,6 +13,7 @@ import {
   upsertRepository,
   upsertUser,
 } from "@/lib/db/operations";
+import { env } from "@/lib/env";
 import {
   CURRENT_RANGE_END,
   CURRENT_RANGE_START,
@@ -84,8 +85,15 @@ function calculateAverage(values: number[]): number {
 }
 
 describe("analytics issue resolution and work metrics", () => {
+  const originalTodoProjectName = env.TODO_PROJECT_NAME;
+
   beforeEach(async () => {
+    env.TODO_PROJECT_NAME = "to-do list";
     await resetDashboardTables();
+  });
+
+  afterEach(() => {
+    env.TODO_PROJECT_NAME = originalTodoProjectName;
   });
 
   it("builds resolution and work metrics with historical breakdown", async () => {

@@ -1073,8 +1073,13 @@ function buildQueryFilters(
   const clauses: string[] = [];
   const values: unknown[] = [];
   const issueProjectStatuses: IssueProjectStatus[] = [];
+  const todoProjectEnabled = Boolean(normalizeText(env.TODO_PROJECT_NAME));
 
   const buildNormalizedStatusExpr = (alias: string) => {
+    if (!todoProjectEnabled) {
+      return "'no_status'";
+    }
+
     const valueExpr = `LOWER(TRIM(${alias}.issue_project_status))`;
     return `(CASE
       WHEN ${alias}.item_type <> 'issue' THEN NULL

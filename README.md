@@ -41,6 +41,7 @@ configuration, sync controls, and analytics through a Next.js dashboard.
    export SESSION_SECRET=$(openssl rand -hex 32)
    export DATABASE_URL=postgres://<user>:<password>@localhost:5432/<database>
    export SYNC_INTERVAL_MINUTES=60
+   export TODO_PROJECT_NAME="to-do list"   # optional; see below for details
    ```
 
 1. Start the dev server:
@@ -90,6 +91,24 @@ list of GitHub logins or node IDs. Admin users can modify organization-wide
 settings (org name, sync cadence, excluded repositories/members), while all
 authenticated users can adjust their personal timezone and week-start
 preferences.
+
+### Optional GitHub to-do project integration
+
+If you want issue status, priority, start date, or other metadata to mirror a
+specific GitHub Projects (beta) board, set `TODO_PROJECT_NAME` to the project’s
+name (case-insensitive match). When provided, the sync pipeline will:
+
+- import project status history so dashboard filters (for example `Todo`,
+  `In Progress`) reflect the project board
+- lock issue statuses that are managed by the project and surface project field
+  values (priority, start date, etc.) in the UI
+
+Leaving `TODO_PROJECT_NAME` unset (or blank) is also valid. In that case the
+dashboard relies solely on statuses stored in the local database—manual updates
+made from the dashboard continue to work, while project-driven fields and locks
+are simply disabled. This is useful if you track issue progress entirely inside
+the dashboard or maintain multiple GitHub projects and only want dashboard-side
+state.
 
 ## Quality Tooling
 
