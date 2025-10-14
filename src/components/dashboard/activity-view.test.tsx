@@ -331,6 +331,8 @@ describe("ActivityView", () => {
         raw: {},
         parentIssues: [],
         subIssues: [],
+        comments: [],
+        commentCount: 0,
       },
       delayMs: 10,
     });

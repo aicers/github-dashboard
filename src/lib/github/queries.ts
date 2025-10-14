@@ -621,6 +621,8 @@ export const issueCommentsQuery = gql`
             updatedAt
             url
             body
+            bodyText
+            bodyHTML
             reactions(first: 25, orderBy: { field: CREATED_AT, direction: ASC }) {
               nodes {
                 id
@@ -680,6 +682,8 @@ export const pullRequestCommentsQuery = gql`
             updatedAt
             url
             body
+            bodyText
+            bodyHTML
             reactions(first: 25, orderBy: { field: CREATED_AT, direction: ASC }) {
               nodes {
                 id
@@ -738,6 +742,9 @@ export const discussionCommentsQuery = gql`
             createdAt
             updatedAt
             url
+            body
+            bodyText
+            bodyHTML
             replyTo {
               id
             }
@@ -803,6 +810,8 @@ export const pullRequestReviewCommentsQuery = gql`
                 updatedAt
                 url
                 body
+                bodyText
+                bodyHTML
                 pullRequestReview {
                   id
                 }

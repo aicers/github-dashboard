@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import type {
   ActivityItem,
+  ActivityItemComment,
   ActivityItemDetail,
   ActivityStatusFilter,
   IssueProjectStatus,
@@ -95,7 +96,12 @@ function formatPlaintextAsHtml(value: string) {
     return "";
   }
   const escaped = escapeHtml(trimmed);
-  const paragraphs = escaped
+  const highlighted = escaped.replace(
+    /(^|[\s(])(@[A-Za-z0-9][A-Za-z0-9-]*)/g,
+    (_, prefix: string, mention: string) =>
+      `${prefix}<span class="user-mention">${mention}</span>`,
+  );
+  const paragraphs = highlighted
     .split(/\n{2,}/)
     .map((paragraph) => paragraph.replace(/\n/g, "<br />"));
   return paragraphs.map((paragraph) => `<p>${paragraph}</p>`).join("");
@@ -109,8 +115,26 @@ export function resolveDetailBodyHtml(detail?: ActivityItemDetail | null) {
     return sanitizeMarkdownHtml(detail.bodyHtml);
   }
   if (detail.body?.trim()) {
+    if (/<\s*img\b/i.test(detail.body)) {
+      return sanitizeMarkdownHtml(detail.body);
+    }
     return formatPlaintextAsHtml(detail.body);
   }
+  return null;
+}
+
+function resolveCommentBodyHtml(comment: ActivityItemComment) {
+  if (comment.bodyHtml?.trim()) {
+    return sanitizeMarkdownHtml(comment.bodyHtml);
+  }
+
+  if (comment.body?.trim()) {
+    if (/<\s*img\b/i.test(comment.body)) {
+      return sanitizeMarkdownHtml(comment.body);
+    }
+    return formatPlaintextAsHtml(comment.body);
+  }
+
   return null;
 }
 
@@ -134,6 +158,7 @@ const ALLOWED_HTML_TAGS = new Set([
   "h5",
   "h6",
   "img",
+  "span",
 ]);
 
 const SELF_CLOSING_HTML_TAGS = new Set(["br", "hr", "img"]);
@@ -145,9 +170,111 @@ const ALLOWED_HTML_ATTRS = new Map<string, Set<string>>([
 
 const GLOBAL_ALLOWED_HTML_ATTRS = new Set(["title"]);
 
+const MEDIA_TOKEN_REGEX =
+  /\b([A-Za-z0-9][\w.-]*\.(?:mov|mp4|m4v|avi|wmv|mkv|webm))\b/gi;
+
+const MEDIA_PLACEHOLDER_CLASS =
+  "inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground/90";
+
+function isImageLink(href: string) {
+  try {
+    const url = new URL(href);
+    const path = url.pathname.toLowerCase();
+    return (
+      path.endsWith(".png") ||
+      path.endsWith(".jpg") ||
+      path.endsWith(".jpeg") ||
+      path.endsWith(".gif") ||
+      path.endsWith(".webp") ||
+      path.endsWith(".avif") ||
+      path.endsWith(".svg")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function shouldShortenLinkLabel(element: HTMLElement, href: string | null) {
+  if (!href) {
+    return false;
+  }
+
+  const text = element.textContent?.trim();
+  if (!text) {
+    return false;
+  }
+
+  const normalize = (value: string) =>
+    value
+      .trim()
+      .replace(/^https?:\/\//i, "")
+      .replace(/\/$/, "");
+
+  return normalize(text) === normalize(href);
+}
+
+function formatLinkLabel(href: string) {
+  try {
+    const url = new URL(href);
+    let label = url.host;
+    const path = url.pathname.replace(/\/$/, "");
+    if (path && path !== "/") {
+      const condensed = path.length > 20 ? `${path.slice(0, 20)}…` : path;
+      label += condensed;
+    }
+    if (url.search) {
+      label += "…";
+    }
+    return label;
+  } catch {
+    return href;
+  }
+}
+
+function renderMediaTokenReact(text: string, key: string): ReactNode {
+  MEDIA_TOKEN_REGEX.lastIndex = 0;
+  const matches = Array.from(text.matchAll(MEDIA_TOKEN_REGEX));
+  if (!matches.length) {
+    return text;
+  }
+
+  const nodes: ReactNode[] = [];
+  let lastIndex = 0;
+
+  matches.forEach((match, index) => {
+    const fullMatch = match[0];
+    const token = match[1] ?? fullMatch;
+    const start = match.index ?? 0;
+    if (start > lastIndex) {
+      nodes.push(text.slice(lastIndex, start));
+    }
+    nodes.push(
+      createElement(
+        "span",
+        {
+          key: `${key}-media-${index}`,
+          className: MEDIA_PLACEHOLDER_CLASS,
+        },
+        `🎥 ${token}`,
+      ),
+    );
+    lastIndex = start + fullMatch.length;
+  });
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+
+  if (nodes.length === 1) {
+    return nodes[0];
+  }
+
+  return createElement(Fragment, { key: `${key}-media-fragment` }, ...nodes);
+}
+
 function convertDomNodeToReact(node: ChildNode, key: string): ReactNode {
   if (node.nodeType === Node.TEXT_NODE) {
-    return node.textContent;
+    return renderMediaTokenReact(node.textContent ?? "", key);
   }
 
   if (node.nodeType !== Node.ELEMENT_NODE) {
@@ -213,9 +340,34 @@ function convertDomNodeToReact(node: ChildNode, key: string): ReactNode {
     props[attrName] = value;
   });
 
-  const children = Array.from(element.childNodes).map((child, index) =>
+  let children = Array.from(element.childNodes).map((child, index) =>
     convertDomNodeToReact(child, `${key}-${index}`),
   );
+
+  if (tagName === "a") {
+    const href = element.getAttribute("href");
+    if (href) {
+      props.title ??= href;
+      if (shouldShortenLinkLabel(element, href)) {
+        if (isImageLink(href)) {
+          children = [
+            createElement("img", {
+              key: `${key}-img`,
+              src: href,
+              alt:
+                element.getAttribute("title") ??
+                element.textContent?.trim() ??
+                "Linked image",
+              loading: "lazy",
+              className: "max-h-64 w-auto rounded-md border border-border/50",
+            }),
+          ];
+        } else {
+          children = [formatLinkLabel(href)];
+        }
+      }
+    }
+  }
 
   if (SELF_CLOSING_HTML_TAGS.has(tagName)) {
     return createElement(tagName, props);
@@ -297,6 +449,128 @@ export function formatProjectField(value: string | null) {
 
   const trimmed = value.trim();
   return trimmed.length ? trimmed : "-";
+}
+
+export function ActivityCommentSection({
+  comments,
+  timezone,
+  dateTimeFormat,
+}: {
+  comments?: ActivityItemComment[] | null;
+  timezone?: string | null;
+  dateTimeFormat?: DateTimeDisplayFormat | null;
+}) {
+  const list = comments ?? [];
+  const hasComments = list.length > 0;
+
+  return (
+    <div className="space-y-2">
+      <h4 className="text-xs font-semibold text-muted-foreground/85">
+        댓글 ({list.length})
+      </h4>
+      {hasComments ? (
+        <div className="space-y-3">
+          {list.map((comment) => {
+            const createdLabel = formatDateTime(
+              comment.createdAt,
+              timezone,
+              dateTimeFormat,
+            );
+            const updatedLabel = formatDateTime(
+              comment.updatedAt,
+              timezone,
+              dateTimeFormat,
+            );
+            const isEdited = Boolean(
+              comment.updatedAt &&
+                comment.createdAt &&
+                comment.updatedAt !== comment.createdAt,
+            );
+            const displayTimestamp = updatedLabel ?? createdLabel ?? "-";
+            const timestampTitle = isEdited
+              ? `작성: ${createdLabel ?? "-"}
+수정: ${updatedLabel ?? "-"}`
+              : (createdLabel ?? updatedLabel ?? "-");
+
+            const authorLabel =
+              comment.author?.login ??
+              comment.author?.name ??
+              comment.author?.id ??
+              "알 수 없음";
+
+            const badges: string[] = [];
+            if (comment.reviewId) {
+              badges.push("리뷰 댓글");
+            }
+            if (comment.replyToId) {
+              badges.push("답글");
+            }
+
+            const renderedBody = resolveCommentBodyHtml(comment);
+            const content = renderedBody
+              ? renderMarkdownHtml(renderedBody)
+              : null;
+
+            return (
+              <article
+                key={comment.id}
+                className="rounded-md border border-border bg-background px-4 py-3"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground/70">
+                  <span className="font-semibold text-foreground">
+                    {authorLabel}
+                  </span>
+                  <span title={timestampTitle} className="text-right">
+                    {displayTimestamp}
+                    {isEdited ? (
+                      <span className="ml-1 text-[0.7rem] text-muted-foreground/70">
+                        (수정됨)
+                      </span>
+                    ) : null}
+                  </span>
+                </div>
+                {badges.length > 0 ? (
+                  <div className="mt-2 flex flex-wrap gap-2 text-[0.7rem] text-amber-600">
+                    {badges.map((badge) => (
+                      <span
+                        key={`${comment.id}-${badge}`}
+                        className="rounded-full bg-amber-100 px-2 py-0.5"
+                      >
+                        {badge}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {content ? (
+                  <div className="mt-2 space-y-4 text-sm leading-relaxed [&_a]:text-primary [&_a]:underline-offset-2 [&_a:hover]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_.user-mention]:font-semibold">
+                    {content}
+                  </div>
+                ) : (
+                  <div className="mt-2 text-sm text-muted-foreground/80">
+                    내용을 표시할 수 없습니다.
+                  </div>
+                )}
+                {comment.url ? (
+                  <a
+                    href={comment.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-3 inline-flex text-xs font-medium text-primary hover:underline"
+                  >
+                    GitHub에서 보기
+                  </a>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="rounded-md border border-border bg-background px-4 py-3 text-sm text-muted-foreground/80">
+          댓글이 없습니다.
+        </div>
+      )}
+    </div>
+  );
 }
 
 function normalizeProjectFieldValue(value: string | null | undefined) {

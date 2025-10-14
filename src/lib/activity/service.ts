@@ -12,6 +12,7 @@ import type {
   ActivityFilterOptions,
   ActivityIssueBaseStatusFilter,
   ActivityItem,
+  ActivityItemComment,
   ActivityItemDetail,
   ActivityLabel,
   ActivityLinkedIssue,
@@ -184,6 +185,15 @@ type TodoProjectFieldValues = {
   initiationOptionsUpdatedAt: string | null;
   startDate: string | null;
   startDateUpdatedAt: string | null;
+};
+
+type CommentRow = {
+  id: string;
+  author_id: string | null;
+  review_id: string | null;
+  github_created_at: Date | string | null;
+  github_updated_at: Date | string | null;
+  data: unknown;
 };
 
 function coerceArray(value: string[] | null | undefined) {
@@ -1028,6 +1038,18 @@ function toIsoWithFallback(value: string | null | undefined) {
   }
 
   return toIso(value) ?? value;
+}
+
+function toIsoDate(value: Date | string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  return toIso(value);
 }
 
 function coerceSearch(value: string | null | undefined) {
@@ -2483,6 +2505,117 @@ export async function getActivityItemDetail(
   }
 
   const rawObject = toRawObject(row.raw_data);
+  const commentTargetColumn =
+    row.item_type === "pull_request" ? "pull_request_id" : "issue_id";
+  const commentsResult = await query<CommentRow>(
+    `SELECT id, author_id, review_id, github_created_at, github_updated_at, data
+       FROM comments
+       WHERE ${commentTargetColumn} = $1
+       ORDER BY github_created_at ASC, id ASC`,
+    [row.id],
+  );
+  const comments: ActivityItemComment[] = commentsResult.rows.map(
+    (commentRow) => {
+      const rawComment = toRawObject(commentRow.data);
+      const rawAuthor =
+        rawComment &&
+        typeof (rawComment as { author?: unknown }).author === "object"
+          ? ((rawComment as { author?: Record<string, unknown> }).author ??
+            null)
+          : null;
+      const rawAuthorId =
+        rawAuthor && typeof rawAuthor.id === "string" ? rawAuthor.id : null;
+      const resolvedAuthorId = commentRow.author_id ?? rawAuthorId ?? null;
+
+      let author: ActivityUser | null = null;
+      if (resolvedAuthorId) {
+        const mapped = mapUser(resolvedAuthorId, users);
+        if (mapped) {
+          author = {
+            id: mapped.id,
+            login:
+              mapped.login ??
+              (rawAuthor && typeof rawAuthor.login === "string"
+                ? rawAuthor.login
+                : null),
+            name:
+              mapped.name ??
+              (rawAuthor && typeof rawAuthor.name === "string"
+                ? rawAuthor.name
+                : null),
+            avatarUrl:
+              mapped.avatarUrl ??
+              (rawAuthor && typeof rawAuthor.avatarUrl === "string"
+                ? rawAuthor.avatarUrl
+                : null),
+          };
+        }
+      } else if (rawAuthor) {
+        author = {
+          id:
+            typeof rawAuthor.id === "string"
+              ? rawAuthor.id
+              : `anon-${commentRow.id}`,
+          login: typeof rawAuthor.login === "string" ? rawAuthor.login : null,
+          name: typeof rawAuthor.name === "string" ? rawAuthor.name : null,
+          avatarUrl:
+            typeof rawAuthor.avatarUrl === "string"
+              ? rawAuthor.avatarUrl
+              : null,
+        };
+      }
+
+      const body =
+        rawComment &&
+        typeof (rawComment as { body?: unknown }).body === "string"
+          ? ((rawComment as { body: string }).body ?? null)
+          : rawComment &&
+              typeof (rawComment as { bodyText?: unknown }).bodyText ===
+                "string"
+            ? ((rawComment as { bodyText: string }).bodyText ?? null)
+            : null;
+
+      const bodyHtml =
+        rawComment &&
+        typeof (rawComment as { bodyHTML?: unknown }).bodyHTML === "string"
+          ? ((rawComment as { bodyHTML: string }).bodyHTML ?? null)
+          : rawComment &&
+              typeof (rawComment as { bodyHtml?: unknown }).bodyHtml ===
+                "string"
+            ? ((rawComment as { bodyHtml: string }).bodyHtml ?? null)
+            : null;
+
+      const replyTo =
+        rawComment &&
+        typeof (rawComment as { replyTo?: unknown }).replyTo === "object"
+          ? ((rawComment as { replyTo?: { id?: string | null } }).replyTo ??
+            null)
+          : null;
+      const replyToId =
+        replyTo && typeof replyTo.id === "string" ? replyTo.id : null;
+
+      const url =
+        rawComment && typeof (rawComment as { url?: unknown }).url === "string"
+          ? ((rawComment as { url: string }).url ?? null)
+          : null;
+
+      return {
+        id: commentRow.id,
+        author,
+        body,
+        bodyHtml,
+        createdAt: toIsoDate(commentRow.github_created_at),
+        updatedAt: toIsoDate(commentRow.github_updated_at),
+        url,
+        reviewId:
+          typeof commentRow.review_id === "string"
+            ? commentRow.review_id
+            : null,
+        replyToId,
+      } satisfies ActivityItemComment;
+    },
+  );
+
   const bodyCandidates: Array<string | null> = [];
 
   if (rawObject && typeof rawObject.body === "string") {
@@ -2543,6 +2676,8 @@ export async function getActivityItemDetail(
     raw: rawObject ?? row.raw_data ?? null,
     parentIssues,
     subIssues,
+    comments,
+    commentCount: comments.length,
     todoStatusTimes: todoStatusTimes ?? undefined,
     activityStatusTimes: activityStatusTimes ?? undefined,
   };

@@ -207,6 +207,8 @@ describe("GET /api/activity/[id]", () => {
       raw: null,
       parentIssues: [],
       subIssues: [],
+      comments: [],
+      commentCount: 0,
     };
 
     getActivityItemDetail.mockResolvedValue(detail);

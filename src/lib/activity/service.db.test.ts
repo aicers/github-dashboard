@@ -483,5 +483,14 @@ describe("activity service integration", () => {
     });
     expect(detail.body).toBe("Issue body content");
     expect(detail.item.businessDaysOpen).toBeGreaterThan(0);
+    expect(detail.commentCount).toBe(1);
+    expect(detail.comments).toHaveLength(1);
+    expect(detail.comments[0]).toMatchObject({
+      id: "comment-1",
+      body: "Looks good to me",
+      author: {
+        id: "user-bob",
+      },
+    });
   });
 });

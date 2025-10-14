@@ -156,8 +156,13 @@ export function buildActivityItem(
 export function buildActivityItemDetail(
   overrides: ActivityItemDetailOverrides = {},
 ): ActivityItemDetail {
-  return {
-    item: overrides.item ?? buildActivityItem(),
+  const baseItem = overrides.item ?? buildActivityItem();
+  const baseComments = overrides.comments ?? [];
+  const resolvedCommentCount =
+    overrides.commentCount ?? baseComments.length ?? 0;
+
+  const base: ActivityItemDetail = {
+    item: baseItem,
     body: overrides.body ?? null,
     bodyHtml: overrides.bodyHtml ?? null,
     raw: overrides.raw ?? {},
@@ -165,7 +170,16 @@ export function buildActivityItemDetail(
     subIssues: overrides.subIssues ?? [],
     todoStatusTimes: overrides.todoStatusTimes ?? {},
     activityStatusTimes: overrides.activityStatusTimes ?? {},
+    comments: baseComments,
+    commentCount: resolvedCommentCount,
+  };
+
+  return {
+    ...base,
     ...overrides,
+    item: baseItem,
+    comments: baseComments,
+    commentCount: resolvedCommentCount,
   };
 }
 
