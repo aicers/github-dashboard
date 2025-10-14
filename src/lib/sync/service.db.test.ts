@@ -185,6 +185,7 @@ describe("sync service database integration", () => {
           repositoriesProcessed: 1,
           counts: {
             issues: 5,
+            discussions: 2,
             pullRequests: 3,
             reviews: 2,
             comments: 4,
@@ -192,6 +193,7 @@ describe("sync service database integration", () => {
           timestamps: {
             repositories: null,
             issues: null,
+            discussions: null,
             pullRequests: null,
             reviews: null,
             comments: null,
@@ -201,6 +203,7 @@ describe("sync service database integration", () => {
           repositoriesProcessed: 2,
           counts: {
             issues: 2,
+            discussions: 1,
             pullRequests: 4,
             reviews: 1,
             comments: 3,
@@ -208,6 +211,7 @@ describe("sync service database integration", () => {
           timestamps: {
             repositories: null,
             issues: null,
+            discussions: null,
             pullRequests: null,
             reviews: null,
             comments: null,
@@ -231,6 +235,7 @@ describe("sync service database integration", () => {
       expect(result.endDate).toBe("2024-04-05T00:00:00.000Z");
       expect(result.totals).toEqual({
         issues: 7,
+        discussions: 3,
         pullRequests: 7,
         reviews: 3,
         comments: 7,
@@ -262,6 +267,7 @@ describe("sync service database integration", () => {
           repositoriesProcessed: 1,
           counts: {
             issues: 3,
+            discussions: 1,
             pullRequests: 2,
             reviews: 1,
             comments: 2,
@@ -269,6 +275,7 @@ describe("sync service database integration", () => {
           timestamps: {
             repositories: null,
             issues: null,
+            discussions: null,
             pullRequests: null,
             reviews: null,
             comments: null,

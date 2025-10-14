@@ -361,6 +361,7 @@ export function SyncControls({ status }: SyncControlsProps) {
                   </span>
                   <span>일수 {report.chunkCount}</span>
                   <span>이슈 {report.totals.issues.toLocaleString()}</span>
+                  <span>토론 {report.totals.discussions.toLocaleString()}</span>
                   <span>PR {report.totals.pullRequests.toLocaleString()}</span>
                   <span>리뷰 {report.totals.reviews.toLocaleString()}</span>
                   <span>댓글 {report.totals.comments.toLocaleString()}</span>
@@ -378,6 +379,8 @@ export function SyncControls({ status }: SyncControlsProps) {
                         </span>
                         <span className="text-muted-foreground">
                           이슈 {chunk.summary.counts.issues.toLocaleString()} /
+                          토론{" "}
+                          {chunk.summary.counts.discussions.toLocaleString()} /
                           PR{" "}
                           {chunk.summary.counts.pullRequests.toLocaleString()} /
                           리뷰 {chunk.summary.counts.reviews.toLocaleString()} /

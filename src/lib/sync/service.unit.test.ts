@@ -39,6 +39,7 @@ const runCollectionMock = vi.fn(async () => ({
   repositoriesProcessed: 0,
   counts: {
     issues: 0,
+    discussions: 0,
     pullRequests: 0,
     reviews: 0,
     comments: 0,
@@ -46,6 +47,7 @@ const runCollectionMock = vi.fn(async () => ({
   timestamps: {
     repositories: null,
     issues: null,
+    discussions: null,
     pullRequests: null,
     reviews: null,
     comments: null,
@@ -70,6 +72,7 @@ vi.mock("@/lib/github/collectors", () => ({
   RESOURCE_KEYS: [
     "repositories",
     "issues",
+    "discussions",
     "pull_requests",
     "reviews",
     "comments",
@@ -119,6 +122,7 @@ describe("sync service (unit)", () => {
       repositoriesProcessed: 1,
       counts: {
         issues: 1,
+        discussions: 1,
         pullRequests: 1,
         reviews: 1,
         comments: 1,
@@ -126,6 +130,7 @@ describe("sync service (unit)", () => {
       timestamps: {
         repositories: null,
         issues: null,
+        discussions: null,
         pullRequests: null,
         reviews: null,
         comments: null,
@@ -150,6 +155,7 @@ describe("sync service (unit)", () => {
         repositoriesProcessed: 1,
         counts: {
           issues: 1,
+          discussions: 1,
           pullRequests: 1,
           reviews: 1,
           comments: 1,
@@ -157,6 +163,7 @@ describe("sync service (unit)", () => {
         timestamps: {
           repositories: null,
           issues: null,
+          discussions: null,
           pullRequests: null,
           reviews: null,
           comments: null,
@@ -184,6 +191,7 @@ describe("sync service (unit)", () => {
     > = {
       repositories: { last_item_timestamp: "2024-04-05T10:00:00.000Z" },
       issues: { last_item_timestamp: "invalid-date" },
+      discussions: null,
       pull_requests: null,
       reviews: { last_item_timestamp: "2024-03-20T12:00:00.000Z" },
       comments: { last_item_timestamp: "2024-04-10T00:00:00.000Z" },
@@ -221,6 +229,7 @@ describe("sync service (unit)", () => {
     expect(callArgs?.sinceByResource).toEqual({
       repositories: "2024-04-05T10:00:00.000Z",
       issues: "2024-04-01T00:00:00.000Z",
+      discussions: "2024-04-01T00:00:00.000Z",
       pull_requests: "2024-04-01T00:00:00.000Z",
       reviews: "2024-04-01T00:00:00.000Z",
       comments: "2024-04-10T00:00:00.000Z",
@@ -249,6 +258,7 @@ describe("sync service (unit)", () => {
         repositoriesProcessed: 1,
         counts: {
           issues: 1,
+          discussions: 1,
           pullRequests: 1,
           reviews: 1,
           comments: 1,
@@ -256,6 +266,7 @@ describe("sync service (unit)", () => {
         timestamps: {
           repositories: null,
           issues: null,
+          discussions: null,
           pullRequests: null,
           reviews: null,
           comments: null,
@@ -266,6 +277,7 @@ describe("sync service (unit)", () => {
         repositoriesProcessed: 1,
         counts: {
           issues: 2,
+          discussions: 2,
           pullRequests: 2,
           reviews: 2,
           comments: 2,
@@ -273,6 +285,7 @@ describe("sync service (unit)", () => {
         timestamps: {
           repositories: null,
           issues: null,
+          discussions: null,
           pullRequests: null,
           reviews: null,
           comments: null,
@@ -317,6 +330,7 @@ describe("sync service (unit)", () => {
         repositoriesProcessed: 1,
         counts: {
           issues: 1,
+          discussions: 1,
           pullRequests: 1,
           reviews: 1,
           comments: 1,
@@ -324,6 +338,7 @@ describe("sync service (unit)", () => {
         timestamps: {
           repositories: null,
           issues: null,
+          discussions: null,
           pullRequests: null,
           reviews: null,
           comments: null,

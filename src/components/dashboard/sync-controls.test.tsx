@@ -53,6 +53,7 @@ function createChunk(
       repositoriesProcessed: 1,
       counts: {
         issues: 1,
+        discussions: 1,
         pullRequests: 2,
         reviews: 3,
         comments: 4,
@@ -60,6 +61,7 @@ function createChunk(
       timestamps: {
         repositories: null,
         issues: null,
+        discussions: null,
         pullRequests: null,
         reviews: null,
         comments: null,
@@ -158,6 +160,7 @@ describe("SyncControls", () => {
       chunkCount: 1,
       totals: {
         issues: 1,
+        discussions: 1,
         pullRequests: 2,
         reviews: 3,
         comments: 4,
@@ -194,7 +197,7 @@ describe("SyncControls", () => {
     ).toBeInTheDocument();
     expect(
       within(historyCard as HTMLElement).getByText(
-        /이슈 1\s+\/ PR\s+2\s+\/ 리뷰\s+3\s+\/ 댓글\s+4/,
+        /이슈 1\s+\/ 토론\s+1\s+\/ PR\s+2\s+\/ 리뷰\s+3\s+\/ 댓글\s+4/,
       ),
     ).toBeInTheDocument();
     expect(routerRefreshMock).toHaveBeenCalledTimes(1);
@@ -215,7 +218,13 @@ describe("SyncControls", () => {
         startDate: "2024-04-01T00:00:00.000Z",
         endDate: "2024-04-03T00:00:00.000Z",
         chunkCount: 2,
-        totals: { issues: 0, pullRequests: 0, reviews: 0, comments: 0 },
+        totals: {
+          issues: 0,
+          discussions: 0,
+          pullRequests: 0,
+          reviews: 0,
+          comments: 0,
+        },
         chunks: [createChunk(), failedChunk],
       },
     });
@@ -261,7 +270,13 @@ describe("SyncControls", () => {
       startDate: "2024-04-01T00:00:00.000Z",
       endDate: "2024-04-02T00:00:00.000Z",
       chunkCount: 1,
-      totals: { issues: 1, pullRequests: 2, reviews: 3, comments: 4 },
+      totals: {
+        issues: 1,
+        discussions: 1,
+        pullRequests: 2,
+        reviews: 3,
+        comments: 4,
+      },
       chunks: [createChunk()],
     };
 

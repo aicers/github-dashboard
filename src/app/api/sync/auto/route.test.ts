@@ -23,6 +23,7 @@ describe("POST /api/sync/auto", () => {
         repositoriesProcessed: 1,
         counts: {
           issues: 0,
+          discussions: 0,
           pullRequests: 0,
           reviews: 0,
           comments: 0,
@@ -30,6 +31,7 @@ describe("POST /api/sync/auto", () => {
         timestamps: {
           repositories: null,
           issues: null,
+          discussions: null,
           pullRequests: null,
           reviews: null,
           comments: null,
