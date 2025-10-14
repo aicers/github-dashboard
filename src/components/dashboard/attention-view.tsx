@@ -541,229 +541,215 @@ function FollowUpDetailContent({
     : null;
 
   return (
-    <div className="rounded-md border border-border bg-background p-4 text-sm">
-      <div className="space-y-3">
-        {detailItem.type === "issue" && (
-          <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-xs">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground/70">
-                <span className="flex items-center gap-1">
-                  <span className="text-muted-foreground/60">Source:</span>
-                  <span className="text-foreground">{statusSourceLabel}</span>
+    <div className="space-y-3 text-sm">
+      {detailItem.type === "issue" && (
+        <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground/70">
+              <span className="flex items-center gap-1">
+                <span className="text-muted-foreground/60">Source:</span>
+                <span className="text-foreground">{statusSourceLabel}</span>
+              </span>
+              {sourceStatusEntries.map(({ key, label, value }) => (
+                <span
+                  key={`${detailItem.id}-source-${key}`}
+                  className="flex items-center gap-1"
+                >
+                  {label}:<span className="text-foreground">{value}</span>
                 </span>
-                {sourceStatusEntries.map(({ key, label, value }) => (
-                  <span
-                    key={`${detailItem.id}-source-${key}`}
-                    className="flex items-center gap-1"
-                  >
-                    {label}:<span className="text-foreground">{value}</span>
-                  </span>
-                ))}
-                {detailItem.issueProjectStatusLocked && (
-                  <span className="text-amber-600">
-                    To-do 프로젝트 상태({todoStatusLabel})로 잠겨 있어요.
-                  </span>
-                )}
-              </div>
-              {(isUpdatingStatus || isUpdatingProjectFields) && (
-                <span className="text-muted-foreground/70">업데이트 중...</span>
+              ))}
+              {detailItem.issueProjectStatusLocked && (
+                <span className="text-amber-600">
+                  To-do 프로젝트 상태({todoStatusLabel})로 잠겨 있어요.
+                </span>
               )}
             </div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {ISSUE_STATUS_OPTIONS.map((option) => {
-                const optionStatus = option.value as IssueProjectStatus;
-                const active = currentIssueStatus === optionStatus;
-                return (
-                  <Button
-                    key={`status-action-${option.value}`}
-                    type="button"
-                    size="sm"
-                    variant={active ? "default" : "outline"}
-                    disabled={
-                      isUpdatingStatus ||
-                      isUpdatingProjectFields ||
-                      !canEditStatus
-                    }
-                    onClick={() => onUpdateStatus(detailItem, optionStatus)}
-                  >
-                    {option.label}
-                  </Button>
-                );
-              })}
-            </div>
-            <div className="mt-3 flex flex-wrap items-center gap-3 text-muted-foreground/80">
-              <ProjectFieldEditor
-                item={detailItem}
-                field="priority"
-                label="Priority"
-                rawValue={detailItem.issueTodoProjectPriority}
-                formattedValue={todoPriorityLabel}
-                timestamp={null}
-                disabled={
-                  detailItem.issueProjectStatusLocked || isUpdatingStatus
-                }
-                isUpdating={isUpdatingProjectFields}
-                onSubmit={onUpdateProjectField}
-              />
-              <ProjectFieldEditor
-                item={detailItem}
-                field="weight"
-                label="Weight"
-                rawValue={detailItem.issueTodoProjectWeight}
-                formattedValue={todoWeightLabel}
-                timestamp={todoWeightTimestamp}
-                disabled={isUpdatingStatus}
-                isUpdating={isUpdatingProjectFields}
-                onSubmit={onUpdateProjectField}
-              />
-              <ProjectFieldEditor
-                item={detailItem}
-                field="initiationOptions"
-                label="Initiation"
-                rawValue={detailItem.issueTodoProjectInitiationOptions}
-                formattedValue={todoInitiationLabel}
-                timestamp={todoInitiationTimestamp}
-                disabled={
-                  detailItem.issueProjectStatusLocked || isUpdatingStatus
-                }
-                isUpdating={isUpdatingProjectFields}
-                onSubmit={onUpdateProjectField}
-              />
-              <ProjectFieldEditor
-                item={detailItem}
-                field="startDate"
-                label="Start"
-                rawValue={detailItem.issueTodoProjectStartDate}
-                formattedValue={todoStartDateLabel}
-                timestamp={todoStartDateTimestamp}
-                disabled={
-                  detailItem.issueProjectStatusLocked || isUpdatingStatus
-                }
-                isUpdating={isUpdatingProjectFields}
-                onSubmit={onUpdateProjectField}
-              />
-            </div>
-            {!detailItem.issueProjectStatusLocked &&
-              detailItem.issueProjectStatusSource !== "activity" && (
-                <p className="mt-2 text-muted-foreground/80">
-                  Activity 상태는 To-do 프로젝트가 No Status 또는 Todo일 때만
-                  적용돼요.
-                </p>
-              )}
+            {(isUpdatingStatus || isUpdatingProjectFields) && (
+              <span className="text-muted-foreground/70">업데이트 중...</span>
+            )}
           </div>
-        )}
-        <div className="rounded-md border border-border bg-background px-4 py-3 text-sm">
-          {(() => {
-            if (!renderedBody) {
+          <div className="mt-2 flex flex-wrap gap-2">
+            {ISSUE_STATUS_OPTIONS.map((option) => {
+              const optionStatus = option.value as IssueProjectStatus;
+              const active = currentIssueStatus === optionStatus;
               return (
-                <div className="text-muted-foreground/80">내용이 없습니다.</div>
+                <Button
+                  key={`status-action-${option.value}`}
+                  type="button"
+                  size="sm"
+                  variant={active ? "default" : "outline"}
+                  disabled={
+                    isUpdatingStatus ||
+                    isUpdatingProjectFields ||
+                    !canEditStatus
+                  }
+                  onClick={() => onUpdateStatus(detailItem, optionStatus)}
+                >
+                  {option.label}
+                </Button>
               );
-            }
-            if (!renderedContent) {
-              return (
-                <div className="text-muted-foreground/80">
-                  내용을 표시할 수 없습니다.
-                </div>
-              );
-            }
+            })}
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-muted-foreground/80">
+            <ProjectFieldEditor
+              item={detailItem}
+              field="priority"
+              label="Priority"
+              rawValue={detailItem.issueTodoProjectPriority}
+              formattedValue={todoPriorityLabel}
+              timestamp={null}
+              disabled={detailItem.issueProjectStatusLocked || isUpdatingStatus}
+              isUpdating={isUpdatingProjectFields}
+              onSubmit={onUpdateProjectField}
+            />
+            <ProjectFieldEditor
+              item={detailItem}
+              field="weight"
+              label="Weight"
+              rawValue={detailItem.issueTodoProjectWeight}
+              formattedValue={todoWeightLabel}
+              timestamp={todoWeightTimestamp}
+              disabled={isUpdatingStatus}
+              isUpdating={isUpdatingProjectFields}
+              onSubmit={onUpdateProjectField}
+            />
+            <ProjectFieldEditor
+              item={detailItem}
+              field="initiationOptions"
+              label="Initiation"
+              rawValue={detailItem.issueTodoProjectInitiationOptions}
+              formattedValue={todoInitiationLabel}
+              timestamp={todoInitiationTimestamp}
+              disabled={detailItem.issueProjectStatusLocked || isUpdatingStatus}
+              isUpdating={isUpdatingProjectFields}
+              onSubmit={onUpdateProjectField}
+            />
+            <ProjectFieldEditor
+              item={detailItem}
+              field="startDate"
+              label="Start"
+              rawValue={detailItem.issueTodoProjectStartDate}
+              formattedValue={todoStartDateLabel}
+              timestamp={todoStartDateTimestamp}
+              disabled={detailItem.issueProjectStatusLocked || isUpdatingStatus}
+              isUpdating={isUpdatingProjectFields}
+              onSubmit={onUpdateProjectField}
+            />
+          </div>
+          {!detailItem.issueProjectStatusLocked &&
+            detailItem.issueProjectStatusSource !== "activity" && (
+              <p className="mt-2 text-muted-foreground/80">
+                Activity 상태는 To-do 프로젝트가 No Status 또는 Todo일 때만
+                적용돼요.
+              </p>
+            )}
+        </div>
+      )}
+      <div className="rounded-md border border-border bg-background px-4 py-3 text-sm">
+        {(() => {
+          if (!renderedBody) {
             return (
-              <div className="space-y-4 leading-relaxed [&_a]:text-primary [&_a]:underline-offset-2 [&_a:hover]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5">
-                {renderedContent}
+              <div className="text-muted-foreground/80">내용이 없습니다.</div>
+            );
+          }
+          if (!renderedContent) {
+            return (
+              <div className="text-muted-foreground/80">
+                내용을 표시할 수 없습니다.
               </div>
             );
-          })()}
-        </div>
-        {(detail.parentIssues.length > 0 || detail.subIssues.length > 0) && (
-          <div className="space-y-4 text-xs">
-            {detail.parentIssues.length > 0 && (
-              <div>
-                <h4 className="font-semibold text-muted-foreground/85">
-                  상위 이슈
-                </h4>
-                <ul className="mt-1 space-y-1">
-                  {detail.parentIssues.map((linked) => {
-                    const referenceParts: string[] = [];
-                    if (linked.repositoryNameWithOwner) {
-                      referenceParts.push(linked.repositoryNameWithOwner);
-                    }
-                    if (typeof linked.number === "number") {
-                      referenceParts.push(`#${linked.number}`);
-                    }
-                    const referenceLabel =
-                      referenceParts.length > 0
-                        ? referenceParts.join("")
-                        : null;
-                    const titleLabel =
-                      linked.title ?? linked.state ?? linked.id;
-                    const displayLabel = referenceLabel
-                      ? `${referenceLabel}${titleLabel ? ` — ${titleLabel}` : ""}`
-                      : titleLabel;
-                    return (
-                      <li key={`parent-${linked.id}`}>
-                        {linked.url ? (
-                          <a
-                            href={linked.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-primary hover:underline"
-                          >
-                            {displayLabel ?? linked.id}
-                          </a>
-                        ) : (
-                          <span>{displayLabel ?? linked.id}</span>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            )}
-            {detail.subIssues.length > 0 && (
-              <div>
-                <h4 className="font-semibold text-muted-foreground/85">
-                  하위 이슈
-                </h4>
-                <ul className="mt-1 space-y-1">
-                  {detail.subIssues.map((linked) => {
-                    const referenceParts: string[] = [];
-                    if (linked.repositoryNameWithOwner) {
-                      referenceParts.push(linked.repositoryNameWithOwner);
-                    }
-                    if (typeof linked.number === "number") {
-                      referenceParts.push(`#${linked.number}`);
-                    }
-                    const referenceLabel =
-                      referenceParts.length > 0
-                        ? referenceParts.join("")
-                        : null;
-                    const titleLabel =
-                      linked.title ?? linked.state ?? linked.id;
-                    const displayLabel = referenceLabel
-                      ? `${referenceLabel}${titleLabel ? ` — ${titleLabel}` : ""}`
-                      : titleLabel;
-                    return (
-                      <li key={`sub-${linked.id}`}>
-                        {linked.url ? (
-                          <a
-                            href={linked.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-primary hover:underline"
-                          >
-                            {displayLabel ?? linked.id}
-                          </a>
-                        ) : (
-                          <span>{displayLabel ?? linked.id}</span>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            )}
-          </div>
-        )}
+          }
+          return (
+            <div className="space-y-4 leading-relaxed [&_a]:text-primary [&_a]:underline-offset-2 [&_a:hover]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5">
+              {renderedContent}
+            </div>
+          );
+        })()}
       </div>
+      {(detail.parentIssues.length > 0 || detail.subIssues.length > 0) && (
+        <div className="space-y-4 text-xs">
+          {detail.parentIssues.length > 0 && (
+            <div>
+              <h4 className="font-semibold text-muted-foreground/85">
+                상위 이슈
+              </h4>
+              <ul className="mt-1 space-y-1">
+                {detail.parentIssues.map((linked) => {
+                  const referenceParts: string[] = [];
+                  if (linked.repositoryNameWithOwner) {
+                    referenceParts.push(linked.repositoryNameWithOwner);
+                  }
+                  if (typeof linked.number === "number") {
+                    referenceParts.push(`#${linked.number}`);
+                  }
+                  const referenceLabel =
+                    referenceParts.length > 0 ? referenceParts.join("") : null;
+                  const titleLabel = linked.title ?? linked.state ?? linked.id;
+                  const displayLabel = referenceLabel
+                    ? `${referenceLabel}${titleLabel ? ` — ${titleLabel}` : ""}`
+                    : titleLabel;
+                  return (
+                    <li key={`parent-${linked.id}`}>
+                      {linked.url ? (
+                        <a
+                          href={linked.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-primary hover:underline"
+                        >
+                          {displayLabel ?? linked.id}
+                        </a>
+                      ) : (
+                        <span>{displayLabel ?? linked.id}</span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+          {detail.subIssues.length > 0 && (
+            <div>
+              <h4 className="font-semibold text-muted-foreground/85">
+                하위 이슈
+              </h4>
+              <ul className="mt-1 space-y-1">
+                {detail.subIssues.map((linked) => {
+                  const referenceParts: string[] = [];
+                  if (linked.repositoryNameWithOwner) {
+                    referenceParts.push(linked.repositoryNameWithOwner);
+                  }
+                  if (typeof linked.number === "number") {
+                    referenceParts.push(`#${linked.number}`);
+                  }
+                  const referenceLabel =
+                    referenceParts.length > 0 ? referenceParts.join("") : null;
+                  const titleLabel = linked.title ?? linked.state ?? linked.id;
+                  const displayLabel = referenceLabel
+                    ? `${referenceLabel}${titleLabel ? ` — ${titleLabel}` : ""}`
+                    : titleLabel;
+                  return (
+                    <li key={`sub-${linked.id}`}>
+                      {linked.url ? (
+                        <a
+                          href={linked.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-primary hover:underline"
+                        >
+                          {displayLabel ?? linked.id}
+                        </a>
+                      ) : (
+                        <span>{displayLabel ?? linked.id}</span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
