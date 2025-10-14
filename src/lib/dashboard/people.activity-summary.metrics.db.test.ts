@@ -2,7 +2,7 @@
 
 import "../../../tests/helpers/postgres-container";
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import {
@@ -19,6 +19,7 @@ import {
   upsertReviewRequest,
   upsertUser,
 } from "@/lib/db/operations";
+import { env } from "@/lib/env";
 import {
   CURRENT_RANGE_END,
   CURRENT_RANGE_START,
@@ -28,8 +29,15 @@ import {
 } from "../../../tests/helpers/dashboard-metrics";
 
 describe("people activity summary metrics", () => {
+  const originalTodoProjectName = env.TODO_PROJECT_NAME;
+
   beforeEach(async () => {
+    env.TODO_PROJECT_NAME = "to-do list";
     await resetDashboardTables();
+  });
+
+  afterEach(() => {
+    env.TODO_PROJECT_NAME = originalTodoProjectName;
   });
 
   it("aggregates individual metrics used by the activity summary", async () => {

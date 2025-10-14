@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+function coerceOptionalString(value: string | null | undefined) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 const envSchema = z.object({
   GITHUB_TOKEN: z
     .string()
@@ -66,7 +75,7 @@ const parsed = envSchema.parse({
 export const env = {
   ...parsed,
   SYNC_INTERVAL_MINUTES: parsed.SYNC_INTERVAL_MINUTES ?? 60,
-  TODO_PROJECT_NAME: parsed.TODO_PROJECT_NAME ?? "to-do list",
+  TODO_PROJECT_NAME: coerceOptionalString(parsed.TODO_PROJECT_NAME),
   HOLIDAYS: parsed.HOLIDAYS
     ? parsed.HOLIDAYS.split(",")
         .map((value) => value.trim())

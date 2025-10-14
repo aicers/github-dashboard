@@ -2,10 +2,11 @@
 
 import "../../../tests/helpers/postgres-container";
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import { type DbIssue, upsertIssue } from "@/lib/db/operations";
+import { env } from "@/lib/env";
 import {
   buildPeriodRanges,
   CURRENT_RANGE_END,
@@ -80,8 +81,15 @@ function createDurationIssue(
 }
 
 describe("people resolution and work duration metrics", () => {
+  const originalTodoProjectName = env.TODO_PROJECT_NAME;
+
   beforeEach(async () => {
+    env.TODO_PROJECT_NAME = "to-do list";
     await resetDashboardTables();
+  });
+
+  afterEach(() => {
+    env.TODO_PROJECT_NAME = originalTodoProjectName;
   });
 
   it("aggregates resolution and work durations with per-period averages", async () => {
