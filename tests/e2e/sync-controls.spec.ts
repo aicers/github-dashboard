@@ -14,6 +14,7 @@ test.describe("SyncControls (Playwright)", () => {
       chunkCount: 1,
       totals: {
         issues: 5,
+        discussions: 2,
         pullRequests: 3,
         reviews: 2,
         comments: 7,
@@ -29,6 +30,7 @@ test.describe("SyncControls (Playwright)", () => {
             repositoriesProcessed: 1,
             counts: {
               issues: 5,
+              discussions: 2,
               pullRequests: 3,
               reviews: 2,
               comments: 7,
@@ -36,6 +38,7 @@ test.describe("SyncControls (Playwright)", () => {
             timestamps: {
               repositories: null,
               issues: null,
+              discussions: null,
               pullRequests: null,
               reviews: null,
               comments: null,
@@ -67,7 +70,7 @@ test.describe("SyncControls (Playwright)", () => {
     await expect(page.getByText("백필 결과 히스토리")).toBeVisible();
     await expect(page.getByText(/실행 #1\s+•/)).toBeVisible();
     await expect(
-      page.getByText(/이슈 5\s+\/ PR 3\s+\/ 리뷰 2\s+\/ 댓글 7/),
+      page.getByText(/이슈 5\s+\/ 토론 2\s+\/ PR 3\s+\/ 리뷰 2\s+\/ 댓글 7/),
     ).toBeVisible();
   });
 
@@ -88,6 +91,7 @@ test.describe("SyncControls (Playwright)", () => {
             chunkCount: 2,
             totals: {
               issues: 5,
+              discussions: 1,
               pullRequests: 4,
               reviews: 3,
               comments: 2,
@@ -101,6 +105,7 @@ test.describe("SyncControls (Playwright)", () => {
                   repositoriesProcessed: 1,
                   counts: {
                     issues: 3,
+                    discussions: 1,
                     pullRequests: 2,
                     reviews: 2,
                     comments: 1,
@@ -108,6 +113,7 @@ test.describe("SyncControls (Playwright)", () => {
                   timestamps: {
                     repositories: null,
                     issues: null,
+                    discussions: null,
                     pullRequests: null,
                     reviews: null,
                     comments: null,

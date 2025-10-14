@@ -22,11 +22,13 @@ import {
 import { env } from "@/lib/env";
 import { createGithubClient } from "@/lib/github/client";
 import {
+  discussionCommentsQuery,
   issueCommentsQuery,
   organizationRepositoriesQuery,
   pullRequestCommentsQuery,
   pullRequestReviewCommentsQuery,
   pullRequestReviewsQuery,
+  repositoryDiscussionsQuery,
   repositoryIssuesQuery,
   repositoryPullRequestsQuery,
 } from "@/lib/github/queries";
@@ -123,6 +125,38 @@ type IssueNode = {
   } | null;
 };
 
+type DiscussionCategoryNode = {
+  id: string;
+  name?: string | null;
+  description?: string | null;
+  isAnswerable?: boolean | null;
+};
+
+type DiscussionNode = {
+  __typename?: string;
+  id: string;
+  number: number;
+  title: string;
+  url: string;
+  body?: string | null;
+  bodyText?: string | null;
+  bodyHTML?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  answerChosenAt?: string | null;
+  answerable?: boolean | null;
+  locked?: boolean | null;
+  author?: GithubActor | null;
+  answerChosenBy?: GithubActor | null;
+  category?: DiscussionCategoryNode | null;
+  comments?: {
+    totalCount?: number | null;
+  } | null;
+  reactions?: {
+    nodes: ReactionNode[] | null;
+  } | null;
+};
+
 type PullRequestNode = IssueNode & {
   mergedAt?: string | null;
   merged?: boolean | null;
@@ -156,6 +190,13 @@ type CommentNode = {
 type CommentCollectionResult = {
   latest: string | null;
   count: number;
+};
+
+type DiscussionCollectionResult = {
+  latestDiscussionUpdated: string | null;
+  latestCommentUpdated: string | null;
+  discussionCount: number;
+  commentCount: number;
 };
 
 type IssueTimelineItem =
@@ -308,6 +349,12 @@ type RepositoryIssuesQueryResponse = {
   } | null;
 };
 
+type RepositoryDiscussionsQueryResponse = {
+  repository: {
+    discussions: GraphQLConnection<DiscussionNode> | null;
+  } | null;
+};
+
 type RepositoryPullRequestsQueryResponse = {
   repository: {
     pullRequests: GraphQLConnection<PullRequestNode> | null;
@@ -351,9 +398,18 @@ type PullRequestCommentsQueryResponse = {
   } | null;
 };
 
+type DiscussionCommentsQueryResponse = {
+  repository: {
+    discussion: {
+      comments: GraphQLConnection<CommentNode> | null;
+    } | null;
+  } | null;
+};
+
 export const RESOURCE_KEYS = [
   "repositories",
   "issues",
+  "discussions",
   "pull_requests",
   "reviews",
   "comments",
@@ -1097,12 +1153,12 @@ function createRemovalEntries(
   return removals;
 }
 
-type CommentTarget = "issue" | "pull_request";
+type CommentTarget = "issue" | "pull_request" | "discussion";
 
 async function collectIssueComments(
   client: GraphQLClient,
   repository: RepositoryNode,
-  issue: IssueNode,
+  issue: { id: string; number?: number | null },
   options: SyncOptions,
   target: CommentTarget = "issue",
 ): Promise<CommentCollectionResult> {
@@ -1121,9 +1177,14 @@ async function collectIssueComments(
   const [owner, name] = repository.nameWithOwner.split("/");
 
   while (hasNextPage) {
-    const logLabel = target === "issue" ? "issue" : "pull request";
+    const logLabel =
+      target === "pull_request"
+        ? "pull request"
+        : target === "discussion"
+          ? "discussion"
+          : "issue";
     logger?.(
-      `Fetching ${logLabel} comments for ${repository.nameWithOwner} #${issue.number}${cursor ? ` (cursor ${cursor})` : ""}`,
+      `Fetching ${logLabel} comments for ${repository.nameWithOwner} #${issue.number ?? "unknown"}${cursor ? ` (cursor ${cursor})` : ""}`,
     );
 
     let connection: {
@@ -1147,6 +1208,22 @@ async function collectIssueComments(
           },
         );
         connection = data.repository?.pullRequest?.comments ?? null;
+      } else if (target === "discussion") {
+        const data: DiscussionCommentsQueryResponse = await requestWithRetry(
+          client,
+          discussionCommentsQuery,
+          {
+            owner,
+            name,
+            number: issue.number,
+            cursor,
+          },
+          {
+            logger,
+            context: `${logLabel} comments ${repository.nameWithOwner}#${issue.number}`,
+          },
+        );
+        connection = data.repository?.discussion?.comments ?? null;
       } else {
         const data: IssueCommentsQueryResponse = await requestWithRetry(
           client,
@@ -1167,7 +1244,7 @@ async function collectIssueComments(
     } catch (error) {
       if (isNotFoundError(error)) {
         logger?.(
-          `${logLabel === "issue" ? "Issue" : "Pull request"} ${repository.nameWithOwner} #${issue.number} no longer exists. Skipping comment collection.`,
+          `${logLabel.charAt(0).toUpperCase() + logLabel.slice(1)} ${repository.nameWithOwner} #${issue.number} no longer exists. Skipping comment collection.`,
         );
         break;
       }
@@ -1177,7 +1254,7 @@ async function collectIssueComments(
 
     if (!connection) {
       logger?.(
-        `${logLabel === "issue" ? "Issue" : "Pull request"} ${repository.nameWithOwner} #${issue.number} was not found. Skipping comment collection.`,
+        `${logLabel.charAt(0).toUpperCase() + logLabel.slice(1)} ${repository.nameWithOwner} #${issue.number} was not found. Skipping comment collection.`,
       );
       break;
     }
@@ -1197,7 +1274,7 @@ async function collectIssueComments(
       }
 
       const authorId = await processActor(comment.author);
-      const isIssueTarget = target === "issue";
+      const isIssueTarget = target === "issue" || target === "discussion";
       await upsertComment({
         id: comment.id,
         issueId: isIssueTarget ? issue.id : null,
@@ -1229,6 +1306,120 @@ async function collectIssueComments(
   }
 
   return { latest, count };
+}
+
+async function collectDiscussionsForRepository(
+  client: GraphQLClient,
+  repository: RepositoryNode,
+  options: SyncOptions,
+): Promise<DiscussionCollectionResult> {
+  const { logger } = options;
+  const effectiveSince = resolveSince(options, "discussions");
+  const effectiveUntil = resolveUntil(options);
+  const bounds = createBounds(effectiveSince, effectiveUntil);
+  let cursor: string | null = null;
+  let hasNextPage = true;
+  const [owner, name] = repository.nameWithOwner.split("/");
+  let latestDiscussionUpdated: string | null = null;
+  let latestCommentUpdated: string | null = null;
+  let discussionCount = 0;
+  let commentCount = 0;
+
+  while (hasNextPage) {
+    logger?.(
+      `Fetching discussions for ${repository.nameWithOwner}${cursor ? ` (cursor ${cursor})` : ""}`,
+    );
+
+    const data: RepositoryDiscussionsQueryResponse =
+      await requestWithRetry<RepositoryDiscussionsQueryResponse>(
+        client,
+        repositoryDiscussionsQuery,
+        {
+          owner,
+          name,
+          cursor,
+        },
+        {
+          logger,
+          context: `discussions ${repository.nameWithOwner}`,
+        },
+      );
+
+    const discussionsConnection = data.repository?.discussions;
+    const discussionNodes: DiscussionNode[] =
+      discussionsConnection?.nodes ?? [];
+    let reachedUpperBound = false;
+
+    for (const discussion of discussionNodes) {
+      const decision = evaluateTimestamp(discussion.updatedAt, bounds);
+      if (!decision.include) {
+        if (decision.afterUpperBound) {
+          reachedUpperBound = true;
+          break;
+        }
+        continue;
+      }
+
+      const authorId = await processActor(discussion.author);
+      await processActor(discussion.answerChosenBy);
+
+      const rawDiscussion =
+        typeof discussion.__typename === "string" &&
+        discussion.__typename.length > 0
+          ? discussion
+          : { ...discussion, __typename: "Discussion" };
+
+      await upsertIssue({
+        id: discussion.id,
+        number: discussion.number,
+        repositoryId: repository.id,
+        authorId: authorId ?? null,
+        title: discussion.title,
+        state: null,
+        createdAt: discussion.createdAt,
+        updatedAt: discussion.updatedAt,
+        closedAt: null,
+        raw: rawDiscussion,
+      });
+
+      await processReactions(discussion.reactions, "discussion", discussion.id);
+
+      latestDiscussionUpdated = maxTimestamp(
+        latestDiscussionUpdated,
+        discussion.updatedAt,
+      );
+      discussionCount += 1;
+
+      const commentsResult = await collectIssueComments(
+        client,
+        repository,
+        discussion,
+        options,
+        "discussion",
+      );
+      latestCommentUpdated = maxTimestamp(
+        latestCommentUpdated,
+        commentsResult.latest,
+      );
+      commentCount += commentsResult.count;
+    }
+
+    if (reachedUpperBound) {
+      hasNextPage = false;
+      cursor = null;
+      break;
+    }
+
+    hasNextPage = discussionsConnection?.pageInfo?.hasNextPage ?? false;
+    cursor = discussionsConnection?.pageInfo?.endCursor ?? null;
+  }
+
+  return {
+    latestDiscussionUpdated,
+    latestCommentUpdated,
+    discussionCount,
+    commentCount,
+  };
 }
 
 async function collectReviewComments(
@@ -1819,10 +2010,12 @@ export async function runCollection(options: SyncOptions) {
   }
 
   let latestIssueUpdated: string | null = null;
+  let latestDiscussionUpdated: string | null = null;
   let latestPullRequestUpdated: string | null = null;
   let latestReviewSubmitted: string | null = null;
   let latestCommentUpdated: string | null = null;
   let totalIssues = 0;
+  let totalDiscussions = 0;
   let totalPullRequests = 0;
   let totalReviews = 0;
   let totalComments = 0;
@@ -1864,6 +2057,48 @@ export async function runCollection(options: SyncOptions) {
         ? error.message
         : "Unexpected error while collecting issues.";
     await updateSyncLog(issuesLogId, "failed", message);
+    await updateSyncLog(commentLogId, "failed", message);
+    throw error;
+  }
+
+  const discussionsLogId = ensureLogId(
+    await recordSyncLog("discussions", "running"),
+  );
+
+  try {
+    for (const repository of repositories) {
+      const discussionsResult = await collectDiscussionsForRepository(
+        client,
+        repository,
+        options,
+      );
+      latestDiscussionUpdated = maxTimestamp(
+        latestDiscussionUpdated,
+        discussionsResult.latestDiscussionUpdated,
+      );
+      latestCommentUpdated = maxTimestamp(
+        latestCommentUpdated,
+        discussionsResult.latestCommentUpdated,
+      );
+      totalDiscussions += discussionsResult.discussionCount;
+      totalComments += discussionsResult.commentCount;
+    }
+
+    if (latestDiscussionUpdated) {
+      await updateSyncState("discussions", null, latestDiscussionUpdated);
+    }
+
+    await updateSyncLog(
+      discussionsLogId,
+      "success",
+      `Upserted ${totalDiscussions} discussions across ${repositories.length} repositories.`,
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unexpected error while collecting discussions.";
+    await updateSyncLog(discussionsLogId, "failed", message);
     await updateSyncLog(commentLogId, "failed", message);
     throw error;
   }
@@ -1934,13 +2169,14 @@ export async function runCollection(options: SyncOptions) {
   await updateSyncLog(
     commentLogId,
     "success",
-    `Captured ${totalComments} comments from issues, pull requests, and reviews.`,
+    `Captured ${totalComments} comments from issues, discussions, pull requests, and reviews.`,
   );
 
   return {
     repositoriesProcessed: repositories.length,
     counts: {
       issues: totalIssues,
+      discussions: totalDiscussions,
       pullRequests: totalPullRequests,
       reviews: totalReviews,
       comments: totalComments,
@@ -1948,6 +2184,7 @@ export async function runCollection(options: SyncOptions) {
     timestamps: {
       repositories: repositoriesLatest,
       issues: latestIssueUpdated,
+      discussions: latestDiscussionUpdated,
       pullRequests: latestPullRequestUpdated,
       reviews: latestReviewSubmitted,
       comments: latestCommentUpdated,

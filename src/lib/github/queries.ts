@@ -293,6 +293,104 @@ export const repositoryIssuesQuery = gql`
   }
 `;
 
+export const repositoryDiscussionsQuery = gql`
+  query RepositoryDiscussions($owner: String!, $name: String!, $cursor: String) {
+    repository(owner: $owner, name: $name) {
+      discussions(first: 25, after: $cursor, orderBy: { field: UPDATED_AT, direction: ASC }) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        nodes {
+          __typename
+          id
+          number
+          title
+          url
+          body
+          bodyText
+          bodyHTML
+          createdAt
+          updatedAt
+          answerChosenAt
+          answerable
+          locked
+          author {
+            __typename
+            ... on User {
+              id
+              login
+              name
+              avatarUrl(size: 200)
+              createdAt
+              updatedAt
+            }
+            ... on Organization {
+              id
+              login
+              name
+              avatarUrl(size: 200)
+              createdAt
+              updatedAt
+            }
+            ... on Bot {
+              id
+              login
+              avatarUrl(size: 200)
+            }
+          }
+          category {
+            id
+            name
+            description
+            isAnswerable
+          }
+          answerChosenBy {
+            __typename
+            ... on User {
+              id
+              login
+              name
+              avatarUrl(size: 200)
+              createdAt
+              updatedAt
+            }
+            ... on Organization {
+              id
+              login
+              name
+              avatarUrl(size: 200)
+              createdAt
+              updatedAt
+            }
+            ... on Bot {
+              id
+              login
+              avatarUrl(size: 200)
+            }
+          }
+          comments(first: 0) {
+            totalCount
+          }
+          reactions(first: 25, orderBy: { field: CREATED_AT, direction: ASC }) {
+            nodes {
+              id
+              content
+              createdAt
+              user {
+                id
+                login
+                name
+                avatarUrl(size: 200)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
 export const repositoryPullRequestsQuery = gql`
   query RepositoryPullRequests($owner: String!, $name: String!, $cursor: String) {
     repository(owner: $owner, name: $name) {
@@ -582,6 +680,67 @@ export const pullRequestCommentsQuery = gql`
             updatedAt
             url
             body
+            reactions(first: 25, orderBy: { field: CREATED_AT, direction: ASC }) {
+              nodes {
+                id
+                content
+                createdAt
+                user {
+                  id
+                  login
+                  name
+                  avatarUrl(size: 200)
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export const discussionCommentsQuery = gql`
+  query DiscussionComments($owner: String!, $name: String!, $number: Int!, $cursor: String) {
+    repository(owner: $owner, name: $name) {
+      discussion(number: $number) {
+        comments(first: 50, after: $cursor) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+          nodes {
+            id
+            author {
+              __typename
+              ... on User {
+                id
+                login
+                name
+                avatarUrl(size: 200)
+                createdAt
+                updatedAt
+              }
+              ... on Organization {
+                id
+                login
+                name
+                avatarUrl(size: 200)
+                createdAt
+                updatedAt
+              }
+              ... on Bot {
+                id
+                login
+                avatarUrl(size: 200)
+              }
+            }
+            createdAt
+            updatedAt
+            url
+            replyTo {
+              id
+            }
             reactions(first: 25, orderBy: { field: CREATED_AT, direction: ASC }) {
               nodes {
                 id

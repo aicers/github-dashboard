@@ -261,6 +261,7 @@ export async function runBackfill(startDate: string, logger?: SyncLogger) {
 
   const totals: SyncCounts = {
     issues: 0,
+    discussions: 0,
     pullRequests: 0,
     reviews: 0,
     comments: 0,
@@ -296,6 +297,7 @@ export async function runBackfill(startDate: string, logger?: SyncLogger) {
 
       const counts = result.summary.counts;
       totals.issues += counts.issues;
+      totals.discussions += counts.discussions;
       totals.pullRequests += counts.pullRequests;
       totals.reviews += counts.reviews;
       totals.comments += counts.comments;
