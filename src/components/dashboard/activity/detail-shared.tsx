@@ -90,21 +90,104 @@ function sanitizeMarkdownHtml(value: string) {
     .replace(/<(iframe|object|embed|form)[^>]*>[\s\S]*?<\/\1>/gi, "");
 }
 
-function formatPlaintextAsHtml(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed.length) {
+function sanitizeLanguageTag(value: string) {
+  return value
+    .trim()
+    .split(/\s+/)[0]
+    ?.replace(/[^A-Za-z0-9_-]/g, "")
+    .toLowerCase();
+}
+
+export function formatPlaintextAsHtml(value: string) {
+  const normalized = value.replace(/\r\n/g, "\n").trim();
+  if (!normalized.length) {
     return "";
   }
-  const escaped = escapeHtml(trimmed);
-  const highlighted = escaped.replace(
-    /(^|[\s(])(@[A-Za-z0-9][A-Za-z0-9-]*)/g,
-    (_, prefix: string, mention: string) =>
-      `${prefix}<span class="user-mention">${mention}</span>`,
-  );
-  const paragraphs = highlighted
-    .split(/\n{2,}/)
-    .map((paragraph) => paragraph.replace(/\n/g, "<br />"));
-  return paragraphs.map((paragraph) => `<p>${paragraph}</p>`).join("");
+  const lines = normalized.split("\n");
+  const htmlParts: string[] = [];
+  let paragraphBuffer: string[] = [];
+  let inCodeFence = false;
+  let fenceLanguage: string | null = null;
+  let codeBuffer: string[] = [];
+
+  const flushParagraph = () => {
+    if (!paragraphBuffer.length) {
+      return;
+    }
+    const paragraphText = paragraphBuffer.join("\n");
+    paragraphBuffer = [];
+    const placeholders: string[] = [];
+    let textWithPlaceholders = paragraphText.replace(
+      /`([^`\n]+)`/g,
+      (_match, code) => {
+        const placeholder = `@@CODE_PLACEHOLDER_${placeholders.length}@@`;
+        placeholders.push(`<code>${escapeHtml(code)}</code>`);
+        return placeholder;
+      },
+    );
+    textWithPlaceholders = escapeHtml(textWithPlaceholders);
+    const highlighted = textWithPlaceholders.replace(
+      /(^|[\s(])(@[A-Za-z0-9][A-Za-z0-9-]*)/g,
+      (_, prefix: string, mention: string) =>
+        `${prefix}<span class="user-mention">${mention}</span>`,
+    );
+    const restored = highlighted.replace(
+      /@@CODE_PLACEHOLDER_(\d+)@@/g,
+      (_match, index) => placeholders[Number.parseInt(index, 10)] ?? "",
+    );
+    const paragraph = restored.replace(/\n/g, "<br />");
+    if (paragraph.trim().length) {
+      htmlParts.push(`<p>${paragraph}</p>`);
+    }
+  };
+
+  const flushCodeBlock = () => {
+    const codeContent = codeBuffer.join("\n");
+    codeBuffer = [];
+    const escapedCode = escapeHtml(codeContent);
+    const language = fenceLanguage ? sanitizeLanguageTag(fenceLanguage) : null;
+    const classAttr = language ? ` class="language-${language}"` : "";
+    htmlParts.push(`<pre><code${classAttr}>${escapedCode}</code></pre>`);
+    fenceLanguage = null;
+  };
+
+  lines.forEach((line, index) => {
+    const fenceMatch = line.match(/^```(.*)$/);
+    if (fenceMatch) {
+      if (inCodeFence) {
+        flushCodeBlock();
+        inCodeFence = false;
+      } else {
+        flushParagraph();
+        inCodeFence = true;
+        fenceLanguage = fenceMatch[1] ?? null;
+      }
+      return;
+    }
+
+    if (inCodeFence) {
+      codeBuffer.push(line);
+      return;
+    }
+
+    if (line.trim().length === 0) {
+      flushParagraph();
+      return;
+    }
+
+    paragraphBuffer.push(line);
+
+    const isLastLine = index === lines.length - 1;
+    if (isLastLine) {
+      flushParagraph();
+    }
+  });
+
+  if (inCodeFence) {
+    flushCodeBlock();
+  }
+
+  return htmlParts.join("");
 }
 
 export function resolveDetailBodyHtml(detail?: ActivityItemDetail | null) {
