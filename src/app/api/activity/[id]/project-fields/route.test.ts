@@ -85,6 +85,8 @@ function createDetail(
     raw: {},
     parentIssues: [],
     subIssues: [],
+    comments: [],
+    commentCount: 0,
     todoStatusTimes: {},
     activityStatusTimes: {},
   };

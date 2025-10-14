@@ -60,6 +60,7 @@ import { cn } from "@/lib/utils";
 import { ActivityDetailOverlay } from "./activity/activity-detail-overlay";
 import { ActivityListItemSummary } from "./activity/activity-list-item-summary";
 import {
+  ActivityCommentSection,
   formatDateOnly,
   formatDateTime,
   formatProjectField,
@@ -660,12 +661,17 @@ function FollowUpDetailContent({
             );
           }
           return (
-            <div className="space-y-4 leading-relaxed [&_a]:text-primary [&_a]:underline-offset-2 [&_a:hover]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5">
+            <div className="space-y-4 leading-relaxed [&_a]:text-primary [&_a]:underline-offset-2 [&_a:hover]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_.user-mention]:font-semibold">
               {renderedContent}
             </div>
           );
         })()}
       </div>
+      <ActivityCommentSection
+        comments={detail.comments}
+        timezone={timezone}
+        dateTimeFormat={dateTimeFormat}
+      />
       {(detail.parentIssues.length > 0 || detail.subIssues.length > 0) && (
         <div className="space-y-4 text-xs">
           {detail.parentIssues.length > 0 && (

@@ -120,6 +120,18 @@ export type ActivityLinkedIssue = {
   url: string | null;
 };
 
+export type ActivityItemComment = {
+  id: string;
+  author: ActivityUser | null;
+  body: string | null;
+  bodyHtml: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  url: string | null;
+  reviewId: string | null;
+  replyToId: string | null;
+};
+
 export type ActivityLinkedIssueFilter = "has_parent" | "has_sub";
 
 export type ActivityReviewRequestWait = {
@@ -206,6 +218,8 @@ export type ActivityItemDetail = {
   raw: unknown;
   parentIssues: ActivityLinkedIssue[];
   subIssues: ActivityLinkedIssue[];
+  comments: ActivityItemComment[];
+  commentCount: number;
   todoStatusTimes?: Partial<Record<IssueProjectStatus, string | null>>;
   activityStatusTimes?: Partial<Record<IssueProjectStatus, string | null>>;
 };

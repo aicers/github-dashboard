@@ -145,6 +145,8 @@ export function buildActivityItemDetailFixture(
     raw: {},
     parentIssues: [],
     subIssues: [],
+    comments: [],
+    commentCount: 0,
     todoStatusTimes: {
       todo: "2024-03-22T00:00:00.000Z",
       in_progress: "2024-03-24T00:00:00.000Z",
@@ -154,10 +156,16 @@ export function buildActivityItemDetailFixture(
     },
   };
 
+  const comments = overrides.comments ?? base.comments;
+  const commentCount =
+    overrides.commentCount ?? (comments ? comments.length : base.commentCount);
+
   return {
     ...base,
     ...overrides,
     item: baseItem,
+    comments,
+    commentCount,
   };
 }
 
