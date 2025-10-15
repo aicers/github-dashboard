@@ -235,6 +235,87 @@ HTTP attempts to the secure endpoint.
 - nginx proxy: exposes port 443 (HTTPS) and forwards traffic to the app
   container. Certificates live in `infra/nginx/certs/`.
 
+### Deployment modes
+
+#### Using Docker Compose
+
+Docker Compose keeps the application and nginx proxy definitions in
+`docker-compose.yml`, letting you run the full stack with a single command:
+
+```yaml
+services:
+  app:
+    build: .
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_ORG: ${GITHUB_ORG:-}
+      DATABASE_URL: ${DATABASE_URL}
+    restart: unless-stopped
+
+  proxy:
+    image: nginx:1.28.0
+    depends_on:
+      - app
+    ports:
+      - "443:443"
+    volumes:
+      - ./infra/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./infra/nginx/certs:/etc/nginx/certs:ro
+    restart: unless-stopped
+```
+
+1. Copy `.env`, TLS assets (`infra/nginx/certs/*`), and either the source tree
+   or a pre-built image tarball to the server.
+2. Run `docker compose up -d --build` the first time (or `--force-recreate`
+   after loading a new tarball) to start both services. Compose injects the
+   environment values from `.env` and mounts the nginx configuration automatically.
+
+#### Using docker run for each container
+
+If you prefer to manage containers manually, mirror the compose setup by
+starting the app and proxy containers yourself:
+
+1. Load the image and create a shared network:
+
+   ```bash
+   docker load -i github-dashboard-0.1.0.tar
+   docker network create github-dashboard-net || true
+   ```
+
+2. Launch the application container with the required environment variables:
+
+   ```bash
+   docker stop github-dashboard-app 2>/dev/null || true
+   docker rm github-dashboard-app 2>/dev/null || true
+   docker run -d \
+     --name github-dashboard-app \
+     --env-file .env \
+     --network github-dashboard-net \
+     github-dashboard:0.1.0
+   ```
+
+3. Start the nginx proxy container and expose HTTPS:
+
+   ```bash
+   docker stop github-dashboard-proxy 2>/dev/null || true
+   docker rm github-dashboard-proxy 2>/dev/null || true
+   docker run -d \
+     --name github-dashboard-proxy \
+     --network github-dashboard-net \
+     -p 443:443 \
+     -v $(pwd)/infra/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro \
+     -v $(pwd)/infra/nginx/certs:/etc/nginx/certs:ro \
+     nginx:1.28.0
+   ```
+
+Maintain the same `.env` file (or equivalent secrets store) for both containers
+and restart them with `docker restart <name>` when shipping updates.
+
 ## Project Structure
 
 ```text
@@ -264,6 +345,7 @@ Environment variables are parsed through `src/lib/env.ts`:
 | `SESSION_SECRET` | ✅ | Secret key for signing session cookies |
 | `DATABASE_URL` | ✅ | PostgreSQL connection string |
 | `SYNC_INTERVAL_MINUTES` | ⛔ (default 60) | Interval for automatic incremental sync |
+| `TODO_PROJECT_NAME` | ⛔ | Optional GitHub Projects board name to mirror issue metadata |
 <!-- markdownlint-enable MD013 -->
 
 Define them in `.env.local` for local development or provide them via your
