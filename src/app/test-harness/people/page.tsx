@@ -10,12 +10,14 @@ export default function PeopleHarnessPage() {
     ...analytics,
     individual: null,
   };
+  const currentUserId = initialAnalytics.contributors[0]?.id ?? null;
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 px-6 py-10">
       <PeopleView
         initialAnalytics={initialAnalytics}
         defaultRange={DASHBOARD_FIXTURE_RANGE}
+        currentUserId={currentUserId}
       />
     </main>
   );
