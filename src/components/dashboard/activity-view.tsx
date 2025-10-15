@@ -1186,8 +1186,6 @@ export function ActivityView({
     return filterOptions.issueTypes.map((issueType) => ({
       value: issueType.id,
       label: issueType.name ?? issueType.id,
-      description:
-        issueType.name && issueType.name !== issueType.id ? issueType.id : null,
     }));
   }, [filterOptions.issueTypes]);
 
