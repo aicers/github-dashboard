@@ -107,7 +107,7 @@ describe("SyncControls", () => {
       ],
     });
 
-    render(<SyncControls status={status} />);
+    render(<SyncControls status={status} isAdmin />);
 
     expect(
       screen.getByRole("heading", { name: "데이터 동기화 제어" }),
@@ -143,13 +143,30 @@ describe("SyncControls", () => {
       ],
     });
 
-    render(<SyncControls status={status} />);
+    render(<SyncControls status={status} isAdmin />);
 
     expect(screen.getByText("2024-04-02 09:00")).toBeInTheDocument();
     expect(screen.getByText("2024-04-02 12:15")).toBeInTheDocument();
     expect(
       screen.getByText("2024-04-02 00:00 → 2024-04-02 01:45"),
     ).toBeInTheDocument();
+  });
+
+  it("disables sync actions and displays an admin notice for non-admin users", () => {
+    const status = buildStatus();
+
+    render(<SyncControls status={status} isAdmin={false} />);
+
+    expect(
+      screen.getByText("관리자 권한이 있는 사용자만 실행할 수 있습니다."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "백필 실행" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "자동 동기화 시작" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "모든 데이터 삭제" }),
+    ).toBeDisabled();
   });
 
   it("runs a manual backfill, shows success feedback, stores history, and refreshes the router", async () => {
@@ -170,7 +187,7 @@ describe("SyncControls", () => {
 
     mockFetchJsonOnce({ success: true, result: backfillResult });
 
-    render(<SyncControls status={status} />);
+    render(<SyncControls status={status} isAdmin />);
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "백필 실행" }));
@@ -229,7 +246,7 @@ describe("SyncControls", () => {
       },
     });
 
-    render(<SyncControls status={status} />);
+    render(<SyncControls status={status} isAdmin />);
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "백필 실행" }));
@@ -252,7 +269,7 @@ describe("SyncControls", () => {
       json: { success: false, message: "backfill failed" },
     });
 
-    render(<SyncControls status={status} />);
+    render(<SyncControls status={status} isAdmin />);
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "백필 실행" }));
@@ -282,7 +299,7 @@ describe("SyncControls", () => {
 
     mockFetchJsonOnce({ success: true, result: backfillResult });
 
-    render(<SyncControls status={status} />);
+    render(<SyncControls status={status} isAdmin />);
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "백필 실행" }));
@@ -316,7 +333,7 @@ describe("SyncControls", () => {
       },
     });
 
-    render(<SyncControls status={status} />);
+    render(<SyncControls status={status} isAdmin />);
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "자동 동기화 시작" }));
@@ -339,7 +356,7 @@ describe("SyncControls", () => {
       new Response(null, { status: 204, statusText: "No Content" }),
     );
 
-    render(<SyncControls status={status} />);
+    render(<SyncControls status={status} isAdmin />);
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "자동 동기화 시작" }));
@@ -368,7 +385,7 @@ describe("SyncControls", () => {
       }),
     );
 
-    render(<SyncControls status={status} />);
+    render(<SyncControls status={status} isAdmin />);
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "자동 동기화 중단" }));
@@ -393,7 +410,7 @@ describe("SyncControls", () => {
 
     mockFetchJsonOnce({ success: true, action: "enabled" });
 
-    render(<SyncControls status={status} />);
+    render(<SyncControls status={status} isAdmin />);
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "자동 동기화 시작" }));
@@ -431,7 +448,7 @@ describe("SyncControls", () => {
       json: { success: false, message: "toggle failed" },
     });
 
-    render(<SyncControls status={status} />);
+    render(<SyncControls status={status} isAdmin />);
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "자동 동기화 중단" }));
@@ -448,7 +465,7 @@ describe("SyncControls", () => {
 
     mockFetchJsonOnce({ success: true });
 
-    render(<SyncControls status={status} />);
+    render(<SyncControls status={status} isAdmin />);
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "모든 데이터 삭제" }));
@@ -482,7 +499,7 @@ describe("SyncControls", () => {
       json: { success: false, message: "reset failed" },
     });
 
-    render(<SyncControls status={status} />);
+    render(<SyncControls status={status} isAdmin />);
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "모든 데이터 삭제" }));
@@ -498,7 +515,7 @@ describe("SyncControls", () => {
     const status = buildStatus();
     const confirmMock = vi.spyOn(window, "confirm").mockReturnValue(false);
 
-    render(<SyncControls status={status} />);
+    render(<SyncControls status={status} isAdmin />);
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "모든 데이터 삭제" }));
