@@ -2026,6 +2026,32 @@ function IssueList({
           activityItem.businessDaysInProgressOpen =
             item.inProgressAgeDays ?? null;
         }
+        if (item.issueTodoProjectStatus) {
+          activityItem.issueTodoProjectStatus = item.issueTodoProjectStatus;
+          activityItem.issueProjectStatus =
+            item.issueProjectStatus ?? item.issueTodoProjectStatus;
+          activityItem.issueProjectStatusSource =
+            item.issueProjectStatusSource ?? "todo_project";
+          activityItem.issueProjectStatusLocked =
+            item.issueProjectStatusLocked ??
+            (item.issueTodoProjectStatus === "in_progress" ||
+              item.issueTodoProjectStatus === "done" ||
+              item.issueTodoProjectStatus === "pending");
+        } else {
+          activityItem.issueProjectStatus = item.issueProjectStatus ?? null;
+          activityItem.issueProjectStatusSource =
+            item.issueProjectStatusSource ?? "none";
+          activityItem.issueProjectStatusLocked =
+            item.issueProjectStatusLocked ?? false;
+        }
+        activityItem.issueTodoProjectPriority =
+          item.issueTodoProjectPriority ?? null;
+        activityItem.issueTodoProjectWeight =
+          item.issueTodoProjectWeight ?? null;
+        activityItem.issueTodoProjectInitiationOptions =
+          item.issueTodoProjectInitiationOptions ?? null;
+        activityItem.issueTodoProjectStartDate =
+          item.issueTodoProjectStartDate ?? null;
         const mentionDetails = mentionWaitMap.get(item.id) ?? [];
         if (mentionDetails.length) {
           activityItem.mentionWaits = toActivityMentionWaits(mentionDetails);
@@ -2052,14 +2078,14 @@ function IssueList({
         const updatedAbsoluteLabel = item.updatedAt
           ? formatTimestamp(item.updatedAt, timezone, dateTimeFormat)
           : "-";
-        const detailItem = detail?.item;
-        const todoStatusLabel = detailItem?.issueTodoProjectStatus
-          ? (ISSUE_STATUS_LABEL_MAP.get(detailItem.issueTodoProjectStatus) ??
-            detailItem.issueTodoProjectStatus)
+        const displayItem = overlayItem;
+        const todoStatusLabel = displayItem.issueTodoProjectStatus
+          ? (ISSUE_STATUS_LABEL_MAP.get(displayItem.issueTodoProjectStatus) ??
+            displayItem.issueTodoProjectStatus)
           : null;
-        const todoPriorityLabel = detailItem
-          ? formatProjectField(detailItem.issueTodoProjectPriority)
-          : "-";
+        const todoPriorityLabel = formatProjectField(
+          displayItem.issueTodoProjectPriority,
+        );
         const metadata = (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-foreground/90">
             {metrics.map((metric) => (
@@ -2069,12 +2095,12 @@ function IssueList({
             {item.assignees.length > 0 && (
               <span>담당자 {formatUserList(item.assignees)}</span>
             )}
-            {detailItem?.type === "issue" && todoStatusLabel ? (
+            {displayItem.type === "issue" && todoStatusLabel ? (
               <span className={PROJECT_FIELD_BADGE_CLASS}>
                 {todoStatusLabel}
               </span>
             ) : null}
-            {detailItem?.type === "issue" && todoPriorityLabel !== "-" ? (
+            {displayItem.type === "issue" && todoPriorityLabel !== "-" ? (
               <span className={PROJECT_FIELD_BADGE_CLASS}>
                 {todoPriorityLabel}
               </span>
