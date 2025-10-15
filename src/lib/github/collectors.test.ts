@@ -490,7 +490,6 @@ describe("runCollection", () => {
       createdAt: "2024-04-01T12:00:00.000Z",
       updatedAt: "2024-04-02T10:00:00.000Z",
       answerChosenAt: null,
-      answerable: true,
       locked: false,
       author: {
         id: "author-discussion",

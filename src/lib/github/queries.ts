@@ -320,7 +320,6 @@ export const repositoryDiscussionsQuery = gql`
           createdAt
           updatedAt
           answerChosenAt
-          answerable
           locked
           author {
             __typename
