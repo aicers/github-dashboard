@@ -134,6 +134,13 @@ export const repositoryIssuesQuery = gql`
               }
             }
           }
+          labels(first: 50) {
+            nodes {
+              id
+              name
+              color
+            }
+          }
           comments(first: 0) {
             totalCount
           }
@@ -471,6 +478,13 @@ export const repositoryPullRequestsQuery = gql`
           }
           reviews(first: 0) {
             totalCount
+          }
+          labels(first: 50) {
+            nodes {
+              id
+              name
+              color
+            }
           }
           timelineItems(last: 50, itemTypes: [REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT]) {
             nodes {
