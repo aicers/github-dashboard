@@ -32,6 +32,7 @@ import type {
 type PeopleViewProps = {
   initialAnalytics: DashboardAnalytics;
   defaultRange: { start: string; end: string };
+  currentUserId: string | null;
 };
 
 const summaryMetricConfigs = [
@@ -108,6 +109,7 @@ const summaryMetricConfigs = [
 export function PeopleView({
   initialAnalytics,
   defaultRange,
+  currentUserId,
 }: PeopleViewProps) {
   const autoSelectedPersonIdsRef = useRef(new Set<string>());
   const {
@@ -125,6 +127,7 @@ export function PeopleView({
 
   const repositories = analytics.repositories;
   const unsortedContributors = analytics.contributors;
+  const activeContributors = analytics.activeContributors ?? [];
   const contributors = useMemo(() => {
     const displayName = (person: (typeof unsortedContributors)[number]) =>
       person.login ?? person.name ?? person.id;
@@ -196,18 +199,26 @@ export function PeopleView({
     const normalize = (value: string | null | undefined) =>
       (value ?? "").toLowerCase().replace(/^@/, "");
 
+    if (
+      currentUserId &&
+      (contributors.some((person) => person.id === currentUserId) ||
+        activeContributors.some((person) => person.id === currentUserId))
+    ) {
+      return currentUserId;
+    }
+
     const octoaideFromContributors = contributors.find(
       (person) =>
         normalize(person.login ?? person.name ?? person.id) === "octoaide",
     );
 
-    const octoaideFromActive = (analytics.activeContributors ?? []).find(
+    const octoaideFromActive = activeContributors.find(
       (person) =>
         normalize(person.login ?? person.name ?? person.id) === "octoaide",
     );
 
     return octoaideFromContributors?.id ?? octoaideFromActive?.id ?? "octoaide";
-  }, [analytics.activeContributors, contributors, filters.personId]);
+  }, [activeContributors, contributors, currentUserId, filters.personId]);
 
   useEffect(() => {
     if (!filters.personId && initialContributorId) {

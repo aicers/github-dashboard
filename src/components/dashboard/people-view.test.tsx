@@ -397,6 +397,7 @@ describe("PeopleView", () => {
       <PeopleView
         initialAnalytics={state.analytics}
         defaultRange={DEFAULT_RANGE}
+        currentUserId={state.filters.personId}
       />,
     );
 
@@ -445,6 +446,7 @@ describe("PeopleView", () => {
       <PeopleView
         initialAnalytics={state.analytics}
         defaultRange={DEFAULT_RANGE}
+        currentUserId={state.filters.personId}
       />,
     );
 
@@ -476,6 +478,7 @@ it("orders contributor buttons as octoaide, codecov, dependabot, then others alp
     <PeopleView
       initialAnalytics={state.analytics}
       defaultRange={DEFAULT_RANGE}
+      currentUserId="user-99"
     />,
   );
 
@@ -511,6 +514,7 @@ it("auto-selects octoaide even when contributors list does not include it", asyn
     <PeopleView
       initialAnalytics={state.analytics}
       defaultRange={DEFAULT_RANGE}
+      currentUserId="user-99"
     />,
   );
 
@@ -519,5 +523,35 @@ it("auto-selects octoaide even when contributors list does not include it", asyn
   });
   expect(state.applyFilters).toHaveBeenCalledWith(
     expect.objectContaining({ personId: "octoaide" }),
+  );
+});
+
+it("auto-selects the current user when they are in the contributors list", async () => {
+  const currentUser = createUser("user-self", "selfuser");
+  const contributors = [
+    createUser("user-1", "alice"),
+    currentUser,
+    createUser("user-3", "bravo"),
+  ];
+  const state = buildStateWithContributors({
+    contributors,
+    activeContributors: [],
+    initialPersonId: null,
+  });
+  mockUseDashboardAnalytics.mockReturnValue(state);
+
+  render(
+    <PeopleView
+      initialAnalytics={state.analytics}
+      defaultRange={DEFAULT_RANGE}
+      currentUserId={currentUser.id}
+    />,
+  );
+
+  await waitFor(() => {
+    expect(state.applyFilters).toHaveBeenCalled();
+  });
+  expect(state.applyFilters).toHaveBeenCalledWith(
+    expect.objectContaining({ personId: currentUser.id }),
   );
 });
