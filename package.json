@@ -48,7 +48,7 @@
     "@types/node": "^20",
     "@types/pg": "^8.15.5",
     "@types/react": "^19.2.2",
-    "@types/react-dom": "^19.2.1",
+    "@types/react-dom": "^19.2.2",
     "jsdom": "^27.0.0",
     "markdownlint-cli": "^0.45.0",
     "tailwindcss": "^4",
