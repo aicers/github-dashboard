@@ -149,7 +149,6 @@ type DiscussionNode = {
   createdAt: string;
   updatedAt: string;
   answerChosenAt?: string | null;
-  answerable?: boolean | null;
   locked?: boolean | null;
   author?: GithubActor | null;
   answerChosenBy?: GithubActor | null;
