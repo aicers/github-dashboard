@@ -14,6 +14,7 @@ import type {
   IssueAttentionItem,
   PullRequestAttentionItem,
 } from "@/lib/dashboard/attention";
+import { query } from "@/lib/db/client";
 import type {
   DbActor,
   DbComment,
@@ -318,6 +319,74 @@ describe("activity service integration", () => {
       "user-alice",
       "user-bob",
     ]);
+  });
+
+  it("filters issues by to-do project status when other project history entries exist", async () => {
+    const { issueAlpha } = await seedBasicActivityData();
+
+    const updatedHistory = [
+      {
+        status: "Todo",
+        occurredAt: "2024-01-06T00:00:00.000Z",
+        project: { title: "Acme Project" },
+        projectTitle: "Acme Project",
+      },
+      {
+        status: "In Progress",
+        occurredAt: "2024-01-08T00:00:00.000Z",
+        project: { title: "Acme Project" },
+        projectTitle: "Acme Project",
+      },
+      {
+        status: "Review",
+        occurredAt: "2024-01-15T00:00:00.000Z",
+        project: { title: "Other Project" },
+        projectTitle: "Other Project",
+      },
+    ];
+
+    await query(
+      `UPDATE issues
+         SET data = jsonb_set(data, '{projectStatusHistory}', $1::jsonb)
+       WHERE id = $2`,
+      [JSON.stringify(updatedHistory), issueAlpha.id],
+    );
+
+    const result = await getActivityItems({
+      types: ["issue"],
+      statuses: ["in_progress"],
+    });
+
+    expect(result.items.map((item) => item.id)).toEqual([issueAlpha.id]);
+  });
+
+  it("includes issues when activity status matches even if project status differs", async () => {
+    const { issueAlpha } = await seedBasicActivityData();
+
+    await insertIssueStatusHistory([
+      {
+        issueId: issueAlpha.id,
+        status: "todo",
+        occurredAt: "2024-01-06T00:00:00.000Z",
+      },
+      {
+        issueId: issueAlpha.id,
+        status: "in_progress",
+        occurredAt: "2024-01-08T00:00:00.000Z",
+      },
+      {
+        issueId: issueAlpha.id,
+        status: "done",
+        occurredAt: "2024-01-20T00:00:00.000Z",
+      },
+    ]);
+
+    const result = await getActivityItems({
+      types: ["issue"],
+      statuses: ["done"],
+    });
+
+    expect(result.items.map((item) => item.id)).toEqual([issueAlpha.id]);
   });
 
   it("returns paginated activity items filtered by repository with attention flags applied", async () => {

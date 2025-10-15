@@ -408,6 +408,10 @@ function normalizeText(value: string | null | undefined) {
   return trimmed.length ? trimmed : null;
 }
 
+function escapeSqlLiteral(value: string) {
+  return value.replace(/'/g, "''");
+}
+
 function matchProject(projectName: unknown, target: string | null) {
   if (!target) {
     return false;
@@ -1093,19 +1097,6 @@ function buildQueryFilters(
     END)`;
   };
 
-  const buildEffectiveStatusExpr = (alias: string) => {
-    const normalizedExpr = buildNormalizedStatusExpr(alias);
-    return `(CASE
-      WHEN ${alias}.item_type = 'issue'
-        AND ${alias}.activity_status IS NOT NULL
-        AND ${normalizedExpr} IN ('no_status', 'todo')
-      THEN ${alias}.activity_status
-      ELSE ${normalizedExpr}
-    END)`;
-  };
-
-  const effectiveIssueStatusExpr = buildEffectiveStatusExpr("items");
-
   const haveSameMembers = (first: string[], second: string[]) => {
     if (first.length !== second.length) {
       return false;
@@ -1366,8 +1357,11 @@ function buildQueryFilters(
     if (issueProjectStatuses.length) {
       const uniqueIssueStatuses = Array.from(new Set(issueProjectStatuses));
       values.push(uniqueIssueStatuses);
+      const issueStatusParamIndex = values.length;
+      const normalizedStatusExpr = buildNormalizedStatusExpr("items");
+      const activityStatusExpr = "items.activity_status";
       clauses.push(
-        `(items.item_type <> 'issue' OR ${effectiveIssueStatusExpr} = ANY($${values.length}::text[]))`,
+        `(items.item_type <> 'issue' OR ${normalizedStatusExpr} = ANY($${issueStatusParamIndex}::text[]) OR (${activityStatusExpr} IS NOT NULL AND ${activityStatusExpr} = ANY($${issueStatusParamIndex}::text[])))`,
       );
       issueProjectStatuses.splice(
         0,
@@ -1399,7 +1393,49 @@ function buildQueryFilters(
   return { clauses, values, issueProjectStatuses };
 }
 
-const BASE_QUERY = /* sql */ `
+function buildBaseQuery(targetProject: string | null): string {
+  const mapProjectStatus = (valueExpr: string) => `(CASE
+    WHEN ${valueExpr} IN ('', 'no', 'no_status') THEN 'no_status'
+    WHEN ${valueExpr} IN ('todo', 'to_do', 'to do') THEN 'todo'
+    WHEN ${valueExpr} LIKE 'in_progress%' OR ${valueExpr} = 'doing' OR ${valueExpr} = 'in-progress' THEN 'in_progress'
+    WHEN ${valueExpr} IN ('done', 'completed', 'complete', 'finished', 'closed') THEN 'done'
+    WHEN ${valueExpr} LIKE 'pending%' OR ${valueExpr} = 'waiting' THEN 'pending'
+    ELSE NULL
+  END)`;
+
+  const todoProjectStatusSelection =
+    targetProject === null
+      ? "NULL"
+      : `(SELECT mapped.status_value
+          FROM (
+            SELECT ${mapProjectStatus(
+              "normalized.normalized_status",
+            )} AS status_value,
+                   normalized.occurred_at AS occurred_at
+            FROM (
+              SELECT
+                REGEXP_REPLACE(LOWER(COALESCE(entry->>'status', '')), '[^a-z0-9]+', '_', 'g') AS normalized_status,
+                entry->>'occurredAt' AS occurred_at,
+                LOWER(TRIM(COALESCE(
+                  entry->>'projectTitle',
+                  entry->'project'->>'title',
+                  entry->'project'->>'name',
+                  ''
+                ))) AS project_name
+              FROM jsonb_array_elements(COALESCE(i.data->'projectStatusHistory', '[]'::jsonb)) AS entry
+            ) AS normalized
+            WHERE normalized.project_name = '${escapeSqlLiteral(targetProject)}'
+          ) AS mapped
+          WHERE mapped.status_value IS NOT NULL
+          ORDER BY COALESCE(mapped.occurred_at, '') DESC NULLS LAST
+          LIMIT 1)`;
+
+  const issueProjectStatusExpr =
+    targetProject === null
+      ? "'no_status'"
+      : `COALESCE(${todoProjectStatusSelection}, 'no_status')`;
+
+  return /* sql */ `
 WITH activity_status AS (
   SELECT DISTINCT ON (issue_id)
     issue_id,
@@ -1470,26 +1506,7 @@ issue_items AS (
     FALSE AS is_merged,
     i.data AS raw_data,
     COALESCE(i.data->'projectStatusHistory', '[]'::jsonb) AS project_history,
-    CASE
-      WHEN jsonb_array_length(COALESCE(i.data->'projectStatusHistory', '[]'::jsonb)) = 0 THEN 'no_status'
-      ELSE (
-        SELECT CASE
-          WHEN normalized IN ('', 'no', 'no_status') THEN 'no_status'
-          WHEN normalized IN ('to_do', 'todo') THEN 'todo'
-          WHEN normalized LIKE 'in_progress%' OR normalized = 'doing' THEN 'in_progress'
-          WHEN normalized IN ('done', 'completed', 'complete', 'finished', 'closed') THEN 'done'
-          WHEN normalized LIKE 'pending%' THEN 'pending'
-          ELSE 'no_status'
-        END
-        FROM (
-          SELECT LOWER(REGEXP_REPLACE(COALESCE(entry->>'status', ''), '[^a-z0-9]+', '_', 'g')) AS normalized,
-                 entry->>'occurredAt' AS occurred_at
-          FROM jsonb_array_elements(COALESCE(i.data->'projectStatusHistory', '[]'::jsonb)) AS entry
-        ) AS status_entries
-        ORDER BY COALESCE(status_entries.occurred_at, '') DESC NULLS LAST
-        LIMIT 1
-      )
-    END AS issue_project_status,
+    ${issueProjectStatusExpr} AS issue_project_status,
     COALESCE(i.data->>'body', '') AS body_text,
     recent_status.status AS activity_status,
     recent_status.occurred_at AS activity_status_at
@@ -1687,8 +1704,10 @@ combined AS (
   FROM pr_items
 )
 `;
+}
 
 async function fetchJumpPage(
+  baseQuery: string,
   filters: string[],
   values: unknown[],
   perPage: number,
@@ -1705,7 +1724,7 @@ async function fetchJumpPage(
     : "";
 
   const result = await query<{ count: string }>(
-    `${BASE_QUERY}
+    `${baseQuery}
      SELECT COUNT(*) AS count
      FROM combined AS items
      WHERE 1 = 1${predicate}
@@ -2249,6 +2268,9 @@ export async function getActivityItems(
     ...params.thresholds,
   };
 
+  const targetProject = normalizeText(env.TODO_PROJECT_NAME);
+  const baseQuery = buildBaseQuery(targetProject);
+
   const perPage = Math.min(
     MAX_PER_PAGE,
     Math.max(1, params.perPage ?? DEFAULT_PER_PAGE),
@@ -2297,6 +2319,7 @@ export async function getActivityItems(
 
   if (params.jumpToDate) {
     const jumpPage = await fetchJumpPage(
+      baseQuery,
       clauses,
       values,
       perPage,
@@ -2316,7 +2339,7 @@ export async function getActivityItems(
   const queryParams = [...values, perPage, offset];
 
   const result = await query<ActivityRow>(
-    `${BASE_QUERY}
+    `${baseQuery}
      SELECT
        items.*,
        COUNT(*) OVER() AS total_count
@@ -2364,7 +2387,6 @@ export async function getActivityItems(
   const profiles = await getUserProfiles(Array.from(userIds));
   const users = toUserMap(profiles);
 
-  const targetProject = normalizeText(env.TODO_PROJECT_NAME);
   const now = new Date();
 
   const items = rows.map((row) =>
@@ -2410,9 +2432,11 @@ export async function getActivityItemDetail(
 
   const thresholds: Required<ActivityThresholds> = { ...DEFAULT_THRESHOLDS };
   const attentionSets = await resolveAttentionSets(thresholds);
+  const targetProject = normalizeText(env.TODO_PROJECT_NAME);
+  const baseQuery = buildBaseQuery(targetProject);
 
   const result = await query<ActivityRow>(
-    `${BASE_QUERY}
+    `${baseQuery}
      SELECT items.*, 0::bigint AS total_count
      FROM combined AS items
      WHERE items.id = $1
@@ -2447,7 +2471,6 @@ export async function getActivityItemDetail(
 
   const profiles = await getUserProfiles(Array.from(userIds));
   const users = toUserMap(profiles);
-  const targetProject = normalizeText(env.TODO_PROJECT_NAME);
   const now = new Date();
   const activityStatusHistory =
     row.item_type === "issue"
