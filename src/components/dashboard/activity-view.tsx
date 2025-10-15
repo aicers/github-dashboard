@@ -3314,10 +3314,8 @@ export function ActivityView({
               </div>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 <div className="space-y-2">
-                  <Label className="text-xs font-semibold uppercase text-foreground">
-                    이슈 임계값 (영업일) ·{" "}
-                    <span className="normal-case">Backlog 정체</span>,{" "}
-                    <span className="normal-case">In Progress 정체</span>
+                  <Label className="text-xs font-semibold text-foreground">
+                    이슈 임계값 (영업일): Backlog 정체, In Progress 정체
                   </Label>
                   <div className="grid grid-cols-2 gap-2">
                     <Input
@@ -3359,8 +3357,8 @@ export function ActivityView({
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-xs font-semibold uppercase text-foreground">
-                    PR 임계값 (영업일) · PR 생성, PR 정체
+                  <Label className="text-xs font-semibold text-foreground">
+                    PR 임계값 (영업일): PR 생성, PR 정체
                   </Label>
                   <div className="grid grid-cols-2 gap-2">
                     <Input
@@ -3402,8 +3400,8 @@ export function ActivityView({
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-xs font-semibold uppercase text-foreground">
-                    리뷰/멘션 임계값 (영업일) · 리뷰 무응답, 멘션 무응답
+                  <Label className="text-xs font-semibold text-foreground">
+                    리뷰/멘션 임계값 (영업일): 리뷰 무응답, 멘션 무응답
                   </Label>
                   <div className="grid grid-cols-2 gap-2">
                     <Input
