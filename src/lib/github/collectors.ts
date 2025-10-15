@@ -120,6 +120,11 @@ type IssueNode = {
   projectItems?: {
     nodes: ProjectV2ItemNode[] | null;
   } | null;
+  labels?: {
+    nodes?:
+      | { id: string; name?: string | null; color?: string | null }[]
+      | null;
+  } | null;
   reactions?: {
     nodes: ReactionNode[] | null;
   } | null;
