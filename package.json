@@ -37,7 +37,7 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.2.5",
+    "@biomejs/biome": "^2.2.6",
     "@playwright/test": "^1.51.1",
     "@tailwindcss/postcss": "^4",
     "@testcontainers/postgresql": "^11.7.1",
@@ -48,7 +48,7 @@
     "@types/node": "^20",
     "@types/pg": "^8.15.5",
     "@types/react": "^19.2.2",
-    "@types/react-dom": "^19.2.1",
+    "@types/react-dom": "^19.2.2",
     "jsdom": "^27.0.0",
     "markdownlint-cli": "^0.45.0",
     "tailwindcss": "^4",
