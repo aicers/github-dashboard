@@ -22,6 +22,10 @@ export type ActivityPullRequestStatusFilter =
 
 export type ActivityIssueBaseStatusFilter = "issue_open" | "issue_closed";
 
+export type ActivityIssuePriorityFilter = "P0" | "P1" | "P2";
+
+export type ActivityIssueWeightFilter = "Heavy" | "Medium" | "Light";
+
 export type ActivityAttentionFilter =
   | "unanswered_mentions"
   | "review_requests_pending"
@@ -45,6 +49,8 @@ export type ActivityFilters = {
   repositoryIds?: string[];
   labelKeys?: string[];
   issueTypeIds?: string[];
+  issuePriorities?: ActivityIssuePriorityFilter[];
+  issueWeights?: ActivityIssueWeightFilter[];
   milestoneIds?: string[];
   pullRequestStatuses?: ActivityPullRequestStatusFilter[];
   issueBaseStatuses?: ActivityIssueBaseStatusFilter[];
@@ -230,6 +236,8 @@ export type ActivityFilterOptions = {
   users: ActivityUser[];
   issueTypes: ActivityIssueType[];
   milestones: ActivityMilestone[];
+  issuePriorities: ActivityIssuePriorityFilter[];
+  issueWeights: ActivityIssueWeightFilter[];
 };
 
 export type ActivitySavedFilter = {

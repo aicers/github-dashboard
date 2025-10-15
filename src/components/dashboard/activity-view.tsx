@@ -12,6 +12,7 @@ import { DateTime } from "luxon";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   type KeyboardEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useId,
@@ -38,6 +39,8 @@ import {
 import type {
   ActivityFilterOptions,
   ActivityIssueBaseStatusFilter,
+  ActivityIssuePriorityFilter,
+  ActivityIssueWeightFilter,
   ActivityItem,
   ActivityItemType as ActivityItemCategory,
   ActivityItemDetail,
@@ -393,7 +396,7 @@ function MultiSelectInput({
   options,
   emptyLabel,
 }: {
-  label: string;
+  label: ReactNode;
   placeholder?: string;
   value: string[];
   onChange: (next: string[]) => void;
@@ -1208,6 +1211,22 @@ export function ActivityView({
     });
   }, [filterOptions.milestones]);
 
+  const issuePriorityOptions = useMemo<MultiSelectOption[]>(() => {
+    const priorities = filterOptions.issuePriorities ?? [];
+    return priorities.map((priority) => ({
+      value: priority,
+      label: priority,
+    }));
+  }, [filterOptions.issuePriorities]);
+
+  const issueWeightOptions = useMemo<MultiSelectOption[]>(() => {
+    const weights = filterOptions.issueWeights ?? [];
+    return weights.map((weight) => ({
+      value: weight,
+      label: weight,
+    }));
+  }, [filterOptions.issueWeights]);
+
   const allowedIssueTypeIds = useMemo(
     () => new Set(issueTypeOptions.map((type) => type.value)),
     [issueTypeOptions],
@@ -1216,6 +1235,16 @@ export function ActivityView({
   const allowedMilestoneIds = useMemo(
     () => new Set(milestoneOptions.map((option) => option.value)),
     [milestoneOptions],
+  );
+
+  const allowedIssuePriorities = useMemo(
+    () => new Set(issuePriorityOptions.map((option) => option.value)),
+    [issuePriorityOptions],
+  );
+
+  const allowedIssueWeights = useMemo(
+    () => new Set(issueWeightOptions.map((option) => option.value)),
+    [issueWeightOptions],
   );
 
   useEffect(() => {
@@ -1275,6 +1304,48 @@ export function ActivityView({
       return { ...current, milestoneIds: sanitized };
     });
   }, [allowedMilestoneIds]);
+
+  useEffect(() => {
+    setDraft((current) => {
+      const sanitized = current.issuePriorities.filter((value) =>
+        allowedIssuePriorities.has(value),
+      );
+      if (arraysShallowEqual(current.issuePriorities, sanitized)) {
+        return current;
+      }
+      return { ...current, issuePriorities: sanitized };
+    });
+    setApplied((current) => {
+      const sanitized = current.issuePriorities.filter((value) =>
+        allowedIssuePriorities.has(value),
+      );
+      if (arraysShallowEqual(current.issuePriorities, sanitized)) {
+        return current;
+      }
+      return { ...current, issuePriorities: sanitized };
+    });
+  }, [allowedIssuePriorities]);
+
+  useEffect(() => {
+    setDraft((current) => {
+      const sanitized = current.issueWeights.filter((value) =>
+        allowedIssueWeights.has(value),
+      );
+      if (arraysShallowEqual(current.issueWeights, sanitized)) {
+        return current;
+      }
+      return { ...current, issueWeights: sanitized };
+    });
+    setApplied((current) => {
+      const sanitized = current.issueWeights.filter((value) =>
+        allowedIssueWeights.has(value),
+      );
+      if (arraysShallowEqual(current.issueWeights, sanitized)) {
+        return current;
+      }
+      return { ...current, issueWeights: sanitized };
+    });
+  }, [allowedIssueWeights]);
 
   const userOptions = useMemo<MultiSelectOption[]>(
     () =>
@@ -2942,8 +3013,18 @@ export function ActivityView({
                   emptyLabel="미적용"
                 />
                 <MultiSelectInput
-                  label="이슈 타입"
-                  placeholder="이슈 타입 선택"
+                  label="마일스톤"
+                  placeholder="마일스톤 선택"
+                  value={draft.milestoneIds}
+                  onChange={(next) =>
+                    setDraft((current) => ({ ...current, milestoneIds: next }))
+                  }
+                  options={milestoneOptions}
+                  emptyLabel="미적용"
+                />
+                <MultiSelectInput
+                  label={<span className="normal-case">이슈 Type</span>}
+                  placeholder="이슈 Type 선택"
                   value={draft.issueTypeIds}
                   onChange={(next) =>
                     setDraft((current) => ({ ...current, issueTypeIds: next }))
@@ -2952,13 +3033,29 @@ export function ActivityView({
                   emptyLabel="미적용"
                 />
                 <MultiSelectInput
-                  label="마일스톤"
-                  placeholder="마일스톤 선택"
-                  value={draft.milestoneIds}
+                  label={<span className="normal-case">이슈 Priority</span>}
+                  placeholder="Priority 선택"
+                  value={draft.issuePriorities}
                   onChange={(next) =>
-                    setDraft((current) => ({ ...current, milestoneIds: next }))
+                    setDraft((current) => ({
+                      ...current,
+                      issuePriorities: next as ActivityIssuePriorityFilter[],
+                    }))
                   }
-                  options={milestoneOptions}
+                  options={issuePriorityOptions}
+                  emptyLabel="미적용"
+                />
+                <MultiSelectInput
+                  label={<span className="normal-case">이슈 Weight</span>}
+                  placeholder="Weight 선택"
+                  value={draft.issueWeights}
+                  onChange={(next) =>
+                    setDraft((current) => ({
+                      ...current,
+                      issueWeights: next as ActivityIssueWeightFilter[],
+                    }))
+                  }
+                  options={issueWeightOptions}
                   emptyLabel="미적용"
                 />
                 <MultiSelectInput
