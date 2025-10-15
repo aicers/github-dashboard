@@ -9,9 +9,13 @@ import type { SyncStatus } from "@/lib/sync/service";
 
 type SyncControlsHarnessProps = {
   status: SyncStatus;
+  isAdmin?: boolean;
 };
 
-export function SyncControlsHarness({ status }: SyncControlsHarnessProps) {
+export function SyncControlsHarness({
+  status,
+  isAdmin = true,
+}: SyncControlsHarnessProps) {
   const router = useMemo<AppRouterInstance>(
     () => ({
       back: () => {},
@@ -26,7 +30,7 @@ export function SyncControlsHarness({ status }: SyncControlsHarnessProps) {
 
   return (
     <AppRouterContext.Provider value={router}>
-      <SyncControls status={status} />
+      <SyncControls status={status} isAdmin={isAdmin} />
     </AppRouterContext.Provider>
   );
 }

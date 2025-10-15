@@ -22,6 +22,7 @@ import type { BackfillResult, SyncStatus } from "@/lib/sync/service";
 
 type SyncControlsProps = {
   status: SyncStatus;
+  isAdmin: boolean;
 };
 
 type ApiResponse<T> = {
@@ -70,7 +71,9 @@ const statusColors: Record<string, string> = {
   running: "text-amber-600",
 };
 
-export function SyncControls({ status }: SyncControlsProps) {
+const ADMIN_ONLY_MESSAGE = "관리자 권한이 있는 사용자만 실행할 수 있습니다.";
+
+export function SyncControls({ status, isAdmin }: SyncControlsProps) {
   const router = useRouter();
   const config = status.config;
   const timeZone =
@@ -102,6 +105,8 @@ export function SyncControls({ status }: SyncControlsProps) {
   const [isTogglingAuto, startToggleAuto] = useTransition();
   const [isResetting, startReset] = useTransition();
 
+  const canManageSync = isAdmin;
+
   useEffect(() => {
     setAutoEnabled(config?.auto_sync_enabled ?? false);
   }, [config?.auto_sync_enabled]);
@@ -116,6 +121,11 @@ export function SyncControls({ status }: SyncControlsProps) {
   }
 
   async function handleBackfill() {
+    if (!canManageSync) {
+      setFeedback(ADMIN_ONLY_MESSAGE);
+      return;
+    }
+
     startBackfill(async () => {
       try {
         if (!backfillDate) {
@@ -164,6 +174,11 @@ export function SyncControls({ status }: SyncControlsProps) {
   }
 
   async function handleAutoToggle(nextEnabled: boolean) {
+    if (!canManageSync) {
+      setFeedback(ADMIN_ONLY_MESSAGE);
+      return;
+    }
+
     startToggleAuto(async () => {
       try {
         const intervalValue = Number(config?.sync_interval_minutes ?? 60);
@@ -205,6 +220,11 @@ export function SyncControls({ status }: SyncControlsProps) {
   }
 
   async function handleReset() {
+    if (!canManageSync) {
+      setFeedback(ADMIN_ONLY_MESSAGE);
+      return;
+    }
+
     if (!window.confirm("정말로 모든 데이터를 삭제하시겠습니까?")) {
       return;
     }
@@ -243,6 +263,9 @@ export function SyncControls({ status }: SyncControlsProps) {
         <p className="text-sm text-muted-foreground">
           조직({config?.org_name})의 GitHub 데이터 수집과 동기화를 관리합니다.
         </p>
+        {!canManageSync ? (
+          <p className="text-sm text-muted-foreground">{ADMIN_ONLY_MESSAGE}</p>
+        ) : null}
         {feedback ? <p className="text-sm text-primary">{feedback}</p> : null}
       </header>
 
@@ -269,7 +292,11 @@ export function SyncControls({ status }: SyncControlsProps) {
             </label>
           </CardContent>
           <CardFooter>
-            <Button onClick={handleBackfill} disabled={isRunningBackfill}>
+            <Button
+              onClick={handleBackfill}
+              disabled={isRunningBackfill || !canManageSync}
+              title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+            >
               {isRunningBackfill ? "백필 실행 중..." : "백필 실행"}
             </Button>
           </CardFooter>
@@ -306,7 +333,8 @@ export function SyncControls({ status }: SyncControlsProps) {
             <Button
               variant={autoEnabled ? "secondary" : "default"}
               onClick={() => handleAutoToggle(!autoEnabled)}
-              disabled={isTogglingAuto}
+              disabled={isTogglingAuto || !canManageSync}
+              title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
             >
               {isTogglingAuto
                 ? "처리 중..."
@@ -332,7 +360,8 @@ export function SyncControls({ status }: SyncControlsProps) {
             <Button
               variant="destructive"
               onClick={handleReset}
-              disabled={isResetting}
+              disabled={isResetting || !canManageSync}
+              title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
             >
               {isResetting ? "삭제 중..." : "모든 데이터 삭제"}
             </Button>

@@ -1,14 +1,28 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { POST } from "@/app/api/sync/backfill/route";
+import { readActiveSession } from "@/lib/auth/session";
 import { runBackfill } from "@/lib/sync/service";
 
 vi.mock("@/lib/sync/service", () => ({
   runBackfill: vi.fn(),
 }));
+vi.mock("@/lib/auth/session", () => ({
+  readActiveSession: vi.fn(),
+}));
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(readActiveSession).mockResolvedValue({
+    id: "session",
+    userId: "user",
+    orgSlug: "org",
+    orgVerified: true,
+    isAdmin: true,
+    createdAt: new Date(),
+    lastSeenAt: new Date(),
+    expiresAt: new Date(Date.now() + 60_000),
+  });
 });
 
 describe("POST /api/sync/backfill", () => {
@@ -84,5 +98,52 @@ describe("POST /api/sync/backfill", () => {
       success: false,
       message: "Unexpected error during backfill run.",
     });
+  });
+
+  it("returns 401 when the user is not authenticated", async () => {
+    vi.mocked(readActiveSession).mockResolvedValueOnce(null);
+
+    const response = await POST(
+      new Request("http://localhost/api/sync/backfill", {
+        method: "POST",
+        body: JSON.stringify({ startDate: "2024-04-01" }),
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      success: false,
+      message: "Authentication required.",
+    });
+    expect(runBackfill).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 when the user is not an administrator", async () => {
+    vi.mocked(readActiveSession).mockResolvedValueOnce({
+      id: "session",
+      userId: "user",
+      orgSlug: "org",
+      orgVerified: true,
+      isAdmin: false,
+      createdAt: new Date(),
+      lastSeenAt: new Date(),
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    const response = await POST(
+      new Request("http://localhost/api/sync/backfill", {
+        method: "POST",
+        body: JSON.stringify({ startDate: "2024-04-01" }),
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      success: false,
+      message: "Administrator access is required to manage sync operations.",
+    });
+    expect(runBackfill).not.toHaveBeenCalled();
   });
 });
