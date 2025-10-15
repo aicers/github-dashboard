@@ -201,6 +201,8 @@ export function buildActivityListParamsFixture(
     repositoryIds: [],
     labelKeys: [],
     issueTypeIds: [],
+    issuePriorities: [],
+    issueWeights: [],
     milestoneIds: [],
     pullRequestStatuses: [],
     issueBaseStatuses: [],
@@ -267,6 +269,8 @@ export function buildActivityFilterOptionsFixture(): ActivityFilterOptions {
         url: "https://example.com/milestones/1",
       },
     ],
+    issuePriorities: ["P0", "P1", "P2"],
+    issueWeights: ["Heavy", "Medium", "Light"],
   };
 }
 

@@ -79,6 +79,8 @@ function createDefaultProps(overrides?: {
       users: [user],
       issueTypes: [],
       milestones: [],
+      issuePriorities: [],
+      issueWeights: [],
     },
     initialParams:
       overrides?.initialParams ??

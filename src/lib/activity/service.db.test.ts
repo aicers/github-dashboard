@@ -314,6 +314,8 @@ describe("activity service integration", () => {
         }),
       ]),
     );
+    expect(options.issuePriorities).toEqual(["P0", "P1", "P2"]);
+    expect(options.issueWeights).toEqual(["Heavy", "Medium", "Light"]);
     expect(options.users.map((user) => user.id)).toEqual([
       "user-octoaide",
       "user-alice",

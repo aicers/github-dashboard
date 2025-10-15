@@ -49,6 +49,10 @@ describe("parseActivityListParams", () => {
     params.append("issueTypeId", "type-1");
     params.append("issueTypeId", "type-1");
     params.append("milestoneId", "milestone-1");
+    params.append("issuePriority", "P0");
+    params.append("issuePriority", "P0");
+    params.append("issueWeight", "Heavy");
+    params.append("issueWeight", "Medium");
     params.append("linkedIssue", "has_parent");
     params.append("linkedIssue", "has_sub");
     params.append("prStatus", "pr_open");
@@ -59,6 +63,8 @@ describe("parseActivityListParams", () => {
 
     expect(result.issueTypeIds).toEqual(["type-1"]);
     expect(result.milestoneIds).toEqual(["milestone-1"]);
+    expect(result.issuePriorities).toEqual(["P0"]);
+    expect(result.issueWeights).toEqual(["Heavy", "Medium"]);
     expect(result.linkedIssueStates).toEqual(["has_parent", "has_sub"]);
     expect(result.pullRequestStatuses).toEqual(["pr_open", "pr_closed"]);
     expect(result.issueBaseStatuses).toEqual(["issue_open"]);
@@ -78,6 +84,8 @@ describe("parseActivityListParams", () => {
     const search = createSearchParamsFromRecord({
       issueTypeId: ["type-1", "type-2"],
       milestoneId: ["milestone-1"],
+      issuePriority: ["P0", "P1"],
+      issueWeight: ["Heavy"],
       linkedIssue: ["has_parent"],
       prStatus: ["pr_open", "pr_merged"],
       issueBaseStatus: ["issue_closed"],
@@ -87,6 +95,8 @@ describe("parseActivityListParams", () => {
 
     expect(result.issueTypeIds).toEqual(["type-1", "type-2"]);
     expect(result.milestoneIds).toEqual(["milestone-1"]);
+    expect(result.issuePriorities).toEqual(["P0", "P1"]);
+    expect(result.issueWeights).toEqual(["Heavy"]);
     expect(result.linkedIssueStates).toEqual(["has_parent"]);
     expect(result.pullRequestStatuses).toEqual(["pr_open", "pr_merged"]);
     expect(result.issueBaseStatuses).toEqual(["issue_closed"]);

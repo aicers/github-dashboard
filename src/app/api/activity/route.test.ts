@@ -89,6 +89,8 @@ describe("GET /api/activity/options", () => {
       users: [],
       issueTypes: [],
       milestones: [],
+      issuePriorities: [],
+      issueWeights: [],
     };
     getActivityFilterOptions.mockResolvedValue(options);
 

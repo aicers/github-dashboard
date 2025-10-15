@@ -11,6 +11,8 @@ import type {
   ActivityAttentionFlags,
   ActivityFilterOptions,
   ActivityIssueBaseStatusFilter,
+  ActivityIssuePriorityFilter,
+  ActivityIssueWeightFilter,
   ActivityItem,
   ActivityItemComment,
   ActivityItemDetail,
@@ -67,6 +69,78 @@ const ISSUE_PROJECT_STATUS_LOCKED = new Set<IssueProjectStatus>([
   "done",
   "pending",
 ]);
+
+const ISSUE_PRIORITY_VALUES: ActivityIssuePriorityFilter[] = ["P0", "P1", "P2"];
+
+const ISSUE_WEIGHT_VALUES: ActivityIssueWeightFilter[] = [
+  "Heavy",
+  "Medium",
+  "Light",
+];
+
+function normalizePriorityText(value: string | null | undefined) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed.length) {
+    return null;
+  }
+  const lowered = trimmed.toLowerCase();
+  if (lowered.startsWith("p0")) {
+    return "P0";
+  }
+  if (lowered.startsWith("p1")) {
+    return "P1";
+  }
+  if (lowered.startsWith("p2")) {
+    return "P2";
+  }
+  return trimmed;
+}
+
+function normalizeWeightText(value: string | null | undefined) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed.length) {
+    return null;
+  }
+  const lowered = trimmed.toLowerCase();
+  if (lowered.startsWith("heavy")) {
+    return "Heavy";
+  }
+  if (lowered.startsWith("medium")) {
+    return "Medium";
+  }
+  if (lowered.startsWith("light")) {
+    return "Light";
+  }
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+}
+
+function normalizePrioritySql(valueExpr: string) {
+  return `(CASE
+    WHEN ${valueExpr} IS NULL THEN NULL
+    WHEN BTRIM(${valueExpr}) = '' THEN NULL
+    WHEN LOWER(BTRIM(${valueExpr})) LIKE 'p0%' THEN 'P0'
+    WHEN LOWER(BTRIM(${valueExpr})) LIKE 'p1%' THEN 'P1'
+    WHEN LOWER(BTRIM(${valueExpr})) LIKE 'p2%' THEN 'P2'
+    ELSE BTRIM(${valueExpr})
+  END)`;
+}
+
+function normalizeWeightSql(valueExpr: string) {
+  return `(CASE
+    WHEN ${valueExpr} IS NULL THEN NULL
+    WHEN BTRIM(${valueExpr}) = '' THEN NULL
+    WHEN LOWER(BTRIM(${valueExpr})) LIKE 'heavy%' THEN 'Heavy'
+    WHEN LOWER(BTRIM(${valueExpr})) LIKE 'medium%' THEN 'Medium'
+    WHEN LOWER(BTRIM(${valueExpr})) LIKE 'light%' THEN 'Light'
+    ELSE INITCAP(BTRIM(${valueExpr}))
+  END)`;
+}
 
 const PR_STATUS_VALUES: ActivityPullRequestStatusFilter[] = [
   "pr_open",
@@ -132,6 +206,8 @@ type ActivityRow = {
   raw_data: unknown;
   project_history: unknown;
   issue_project_status: string | null;
+  issue_priority_value: string | null;
+  issue_weight_value: string | null;
   activity_status: string | null;
   activity_status_at: string | null;
   body_text: string | null;
@@ -815,6 +891,7 @@ function extractTodoProjectFieldValues(
     : [];
 
   const priorityAggregate = createProjectFieldAggregate();
+  const weightAggregate = createProjectFieldAggregate();
   const initiationAggregate = createProjectFieldAggregate();
   const startAggregate = createProjectFieldAggregate();
 
@@ -854,6 +931,13 @@ function extractTodoProjectFieldValues(
       ),
     );
     applyProjectFieldCandidate(
+      weightAggregate,
+      extractProjectFieldValueInfo(
+        (record as { weight?: unknown }).weight,
+        fallbackTimestamps,
+      ),
+    );
+    applyProjectFieldCandidate(
       initiationAggregate,
       extractProjectFieldValueInfo(
         (record as { initiationOptions?: unknown }).initiationOptions,
@@ -870,10 +954,10 @@ function extractTodoProjectFieldValues(
   });
 
   return {
-    priority: priorityAggregate.value,
+    priority: normalizePriorityText(priorityAggregate.value),
     priorityUpdatedAt: priorityAggregate.updatedAt,
-    weight: null,
-    weightUpdatedAt: null,
+    weight: normalizeWeightText(weightAggregate.value),
+    weightUpdatedAt: weightAggregate.updatedAt,
     initiationOptions: initiationAggregate.value,
     initiationOptionsUpdatedAt: initiationAggregate.updatedAt,
     startDate: startAggregate.dateValue ?? startAggregate.value,
@@ -1233,6 +1317,20 @@ function buildQueryFilters(
     );
   }
 
+  if (params.issuePriorities?.length) {
+    values.push(params.issuePriorities);
+    clauses.push(
+      `(items.item_type <> 'issue' OR items.issue_priority_value = ANY($${values.length}::text[]))`,
+    );
+  }
+
+  if (params.issueWeights?.length) {
+    values.push(params.issueWeights);
+    clauses.push(
+      `(items.item_type <> 'issue' OR items.issue_weight_value = ANY($${values.length}::text[]))`,
+    );
+  }
+
   if (params.milestoneIds?.length) {
     values.push(params.milestoneIds);
     clauses.push(
@@ -1435,6 +1533,40 @@ function buildBaseQuery(targetProject: string | null): string {
       ? "'no_status'"
       : `COALESCE(${todoProjectStatusSelection}, 'no_status')`;
 
+  const projectMatchExpr =
+    targetProject === null
+      ? "FALSE"
+      : `LOWER(TRIM(COALESCE(
+           node->'project'->>'title',
+           node->'project'->>'name',
+           node->>'projectTitle',
+           ''
+         ))) = '${escapeSqlLiteral(targetProject)}'`;
+  const priorityValueExpr = `NULLIF(TRIM(COALESCE(
+    node->'priority'->>'name',
+    node->'priority'->>'title',
+    node->'priority'->>'text',
+    node->'priority'->>'date',
+    node->'priority'->>'number'
+  )), '')`;
+  const priorityUpdatedAtExpr = `NULLIF(TRIM(COALESCE(
+    node->'priority'->>'updatedAt',
+    node->>'updatedAt',
+    node->>'createdAt'
+  )), '')`;
+  const weightValueExpr = `NULLIF(TRIM(COALESCE(
+    node->'weight'->>'name',
+    node->'weight'->>'title',
+    node->'weight'->>'text',
+    node->'weight'->>'number'
+  )), '')`;
+  const weightUpdatedAtExpr = `NULLIF(TRIM(COALESCE(
+    node->'weight'->>'updatedAt',
+    node->>'updatedAt',
+    node->>'createdAt'
+  )), '')`;
+  const lockedStatusExpr = `(${issueProjectStatusExpr} IN ('in_progress', 'done', 'pending'))`;
+
   return /* sql */ `
 WITH activity_status AS (
   SELECT DISTINCT ON (issue_id)
@@ -1507,6 +1639,22 @@ issue_items AS (
     i.data AS raw_data,
     COALESCE(i.data->'projectStatusHistory', '[]'::jsonb) AS project_history,
     ${issueProjectStatusExpr} AS issue_project_status,
+    ${normalizePrioritySql(`CASE
+      WHEN ${lockedStatusExpr}
+        THEN priority_fields.priority_value
+      ELSE COALESCE(
+        NULLIF(BTRIM(overrides.priority_value), ''),
+        priority_fields.priority_value
+      )
+    END`)} AS issue_priority_value,
+    ${normalizeWeightSql(`CASE
+      WHEN ${lockedStatusExpr}
+        THEN weight_fields.weight_value
+      ELSE COALESCE(
+        NULLIF(BTRIM(overrides.weight_value), ''),
+        weight_fields.weight_value
+      )
+    END`)} AS issue_weight_value,
     COALESCE(i.data->>'body', '') AS body_text,
     recent_status.status AS activity_status,
     recent_status.occurred_at AS activity_status_at
@@ -1542,6 +1690,27 @@ issue_items AS (
     FROM reactions r
     WHERE r.subject_type IN ('Issue', 'Discussion') AND r.subject_id = i.id
   ) reactors ON TRUE
+  LEFT JOIN LATERAL (
+    SELECT
+      ${priorityValueExpr} AS priority_value,
+      ${priorityUpdatedAtExpr} AS priority_updated_at
+    FROM jsonb_array_elements(COALESCE(i.data->'projectItems'->'nodes', '[]'::jsonb)) AS node
+    WHERE ${projectMatchExpr}
+      AND ${priorityValueExpr} IS NOT NULL
+    ORDER BY COALESCE(${priorityUpdatedAtExpr}, '') DESC NULLS LAST
+    LIMIT 1
+  ) priority_fields ON TRUE
+  LEFT JOIN LATERAL (
+    SELECT
+      ${weightValueExpr} AS weight_value,
+      ${weightUpdatedAtExpr} AS weight_updated_at
+    FROM jsonb_array_elements(COALESCE(i.data->'projectItems'->'nodes', '[]'::jsonb)) AS node
+    WHERE ${projectMatchExpr}
+      AND ${weightValueExpr} IS NOT NULL
+    ORDER BY COALESCE(${weightUpdatedAtExpr}, '') DESC NULLS LAST
+    LIMIT 1
+  ) weight_fields ON TRUE
+  LEFT JOIN activity_issue_project_overrides overrides ON overrides.issue_id = i.id
   LEFT JOIN activity_status recent_status ON recent_status.issue_id = i.id
 ),
 pr_items AS (
@@ -1580,6 +1749,8 @@ pr_items AS (
     pr.data AS raw_data,
     '[]'::jsonb AS project_history,
     NULL::text AS issue_project_status,
+    NULL::text AS issue_priority_value,
+    NULL::text AS issue_weight_value,
     COALESCE(pr.data->>'body', '') AS body_text,
     NULL::text AS activity_status,
     NULL::timestamptz AS activity_status_at
@@ -1657,6 +1828,8 @@ combined AS (
     raw_data,
     project_history,
     issue_project_status,
+    issue_priority_value,
+    issue_weight_value,
     activity_status,
     activity_status_at,
     body_text,
@@ -1693,6 +1866,8 @@ combined AS (
     raw_data,
     project_history,
     issue_project_status,
+    issue_priority_value,
+    issue_weight_value,
     activity_status,
     activity_status_at,
     body_text,
@@ -1871,7 +2046,9 @@ function buildActivityItem(
       const overrides = projectOverrides.get(row.id);
       if (overrides) {
         if (overrides.priority) {
-          issueTodoProjectPriorityValue = overrides.priority;
+          issueTodoProjectPriorityValue = normalizePriorityText(
+            overrides.priority,
+          );
           issueTodoProjectPriorityUpdatedAtValue =
             overrides.priorityUpdatedAt ??
             issueTodoProjectPriorityUpdatedAtValue;
@@ -1883,7 +2060,7 @@ function buildActivityItem(
             issueTodoProjectInitiationOptionsUpdatedAtValue;
         }
         if (overrides.weight) {
-          issueTodoProjectWeightValue = overrides.weight;
+          issueTodoProjectWeightValue = normalizeWeightText(overrides.weight);
           issueTodoProjectWeightUpdatedAtValue =
             overrides.weightUpdatedAt ?? issueTodoProjectWeightUpdatedAtValue;
         }
@@ -2255,7 +2432,15 @@ export async function getActivityFilterOptions(): Promise<ActivityFilterOptions>
       return normalize(first).localeCompare(normalize(second));
     });
 
-  return { repositories, labels, users, issueTypes, milestones };
+  return {
+    repositories,
+    labels,
+    users,
+    issueTypes,
+    milestones,
+    issuePriorities: [...ISSUE_PRIORITY_VALUES],
+    issueWeights: [...ISSUE_WEIGHT_VALUES],
+  };
 }
 
 export async function getActivityItems(

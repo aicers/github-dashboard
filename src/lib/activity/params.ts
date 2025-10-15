@@ -1,6 +1,8 @@
 import type {
   ActivityAttentionFilter,
   ActivityIssueBaseStatusFilter,
+  ActivityIssuePriorityFilter,
+  ActivityIssueWeightFilter,
   ActivityItemType,
   ActivityLinkedIssueFilter,
   ActivityListParams,
@@ -112,6 +114,16 @@ export function parseActivityListParams(
     repositoryIds: parseStringList(searchParams, "repositoryId"),
     labelKeys: parseStringList(searchParams, "labelKey"),
     issueTypeIds: parseStringList(searchParams, "issueTypeId"),
+    issuePriorities: parseEnumValues<ActivityIssuePriorityFilter>(
+      searchParams,
+      "issuePriority",
+      ["P0", "P1", "P2"],
+    ),
+    issueWeights: parseEnumValues<ActivityIssueWeightFilter>(
+      searchParams,
+      "issueWeight",
+      ["Heavy", "Medium", "Light"],
+    ),
     milestoneIds: parseStringList(searchParams, "milestoneId"),
     pullRequestStatuses: parseEnumValues<ActivityPullRequestStatusFilter>(
       searchParams,

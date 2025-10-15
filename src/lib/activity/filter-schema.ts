@@ -103,6 +103,8 @@ export const activityFilterPayloadSchema: z.ZodType<ActivityFilterPayload> = z
     repositoryIds: stringArrayField,
     labelKeys: stringArrayField,
     issueTypeIds: stringArrayField,
+    issuePriorities: stringArrayField,
+    issueWeights: stringArrayField,
     milestoneIds: stringArrayField,
     pullRequestStatuses: stringArrayField,
     issueBaseStatuses: stringArrayField,
