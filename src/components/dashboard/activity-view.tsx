@@ -2873,15 +2873,46 @@ export function ActivityView({
                             onClick={() => {
                               setDraft((current) => {
                                 const nextSet = new Set(current.statuses);
+                                const hadIssueStatuses = current.statuses.some(
+                                  (status) =>
+                                    ISSUE_STATUS_VALUE_SET.has(status),
+                                );
                                 if (nextSet.has(option.value)) {
                                   nextSet.delete(option.value);
                                 } else {
                                   nextSet.add(option.value);
                                 }
-                                return {
+                                const nextStatuses = Array.from(nextSet);
+                                let nextState: FilterState = {
                                   ...current,
-                                  statuses: Array.from(nextSet),
+                                  statuses: nextStatuses,
                                 };
+                                const hasIssueStatuses = nextStatuses.some(
+                                  (status) =>
+                                    ISSUE_STATUS_VALUE_SET.has(status),
+                                );
+                                if (
+                                  current.categories.length === 0 &&
+                                  !hadIssueStatuses &&
+                                  hasIssueStatuses
+                                ) {
+                                  const nextCategories: ActivityItemCategory[] =
+                                    ["issue"];
+                                  nextState = {
+                                    ...nextState,
+                                    categories: nextCategories,
+                                  };
+                                  const peopleState =
+                                    derivePeopleState(current);
+                                  if (peopleState.isSynced) {
+                                    nextState = applyPeopleSelection(
+                                      nextState,
+                                      peopleState.selection,
+                                      nextCategories,
+                                    );
+                                  }
+                                }
+                                return nextState;
                               });
                             }}
                           >
