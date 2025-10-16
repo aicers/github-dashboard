@@ -37,6 +37,7 @@ import {
   normalizeSearchParams,
 } from "@/lib/activity/filter-state";
 import type {
+  ActivityAttentionFilter,
   ActivityFilterOptions,
   ActivityIssueBaseStatusFilter,
   ActivityIssuePriorityFilter,
@@ -167,6 +168,96 @@ const PEOPLE_ROLE_KEYS: PeopleRoleKey[] = [
   "commenterIds",
   "reactorIds",
 ];
+
+const ATTENTION_CATEGORY_MAP = {
+  no_attention: [],
+  issue_backlog: ["issue"],
+  issue_stalled: ["issue"],
+  pr_open_too_long: ["pull_request"],
+  pr_inactive: ["pull_request"],
+  review_requests_pending: ["pull_request"],
+  unanswered_mentions: [],
+} satisfies Record<
+  ActivityAttentionFilter,
+  ReadonlyArray<ActivityItemCategory>
+>;
+
+function sortCategoriesForDisplay(
+  categories: Iterable<ActivityItemCategory>,
+): ActivityItemCategory[] {
+  const allowed = new Set(categories);
+  if (!allowed.size) {
+    return [];
+  }
+  return CATEGORY_OPTIONS.map((option) => option.value).filter((value) =>
+    allowed.has(value),
+  );
+}
+
+function collectRequiredCategoriesFromAttention(
+  attention: ActivityAttentionFilter[],
+): ActivityItemCategory[] {
+  const required = new Set<ActivityItemCategory>();
+  attention.forEach((value) => {
+    const mapped = ATTENTION_CATEGORY_MAP[value] ?? [];
+    for (const category of mapped) {
+      required.add(category);
+    }
+  });
+  return sortCategoriesForDisplay(required);
+}
+
+function mergeCategoriesWithRequirements(
+  currentCategories: ActivityItemCategory[],
+  requiredCategories: ActivityItemCategory[],
+): ActivityItemCategory[] {
+  if (!requiredCategories.length) {
+    return currentCategories;
+  }
+  const merged = new Set<ActivityItemCategory>();
+  if (currentCategories.length) {
+    for (const category of currentCategories) {
+      merged.add(category);
+    }
+  }
+  for (const category of requiredCategories) {
+    merged.add(category);
+  }
+  const ordered = sortCategoriesForDisplay(merged);
+  if (ordered.length === CATEGORY_OPTIONS.length) {
+    return [];
+  }
+  return ordered;
+}
+
+function attentionMatchesCategories(
+  attention: ActivityAttentionFilter,
+  categories: ActivityItemCategory[],
+): boolean {
+  if (!categories.length) {
+    return true;
+  }
+  const mapped = ATTENTION_CATEGORY_MAP[attention] ?? [];
+  if (!mapped.length) {
+    return true;
+  }
+  return mapped.some((category) => categories.includes(category));
+}
+
+function filterAttentionByCategories(
+  attentions: ActivityAttentionFilter[],
+  categories: ActivityItemCategory[],
+): ActivityAttentionFilter[] {
+  if (!attentions.length) {
+    return attentions;
+  }
+  if (!categories.length) {
+    return [...attentions];
+  }
+  return attentions.filter((value) =>
+    attentionMatchesCategories(value, categories),
+  );
+}
 
 function includesIssueCategory(categories: ActivityItemCategory[]) {
   return categories.length === 0 || categories.includes("issue");
@@ -2817,6 +2908,7 @@ export function ActivityView({
                         onClick={() => {
                           setDraft((current) => {
                             const nextSet = new Set(current.categories);
+                            const wasActive = nextSet.has(option.value);
                             if (nextSet.has(option.value)) {
                               nextSet.delete(option.value);
                             } else {
@@ -2830,10 +2922,46 @@ export function ActivityView({
                             ) {
                               nextCategories = [];
                             }
+                            let nextAttention = current.attention;
+                            let attentionChanged = false;
+
+                            if (!nextCategories.length) {
+                              if (
+                                wasActive &&
+                                current.categories.length === 1 &&
+                                current.categories[0] === option.value &&
+                                current.attention.length > 0
+                              ) {
+                                nextAttention = [];
+                                attentionChanged = true;
+                              }
+                            } else {
+                              const filteredAttention =
+                                filterAttentionByCategories(
+                                  current.attention,
+                                  nextCategories,
+                                );
+                              if (
+                                !arraysShallowEqual(
+                                  current.attention,
+                                  filteredAttention,
+                                )
+                              ) {
+                                nextAttention = filteredAttention;
+                                attentionChanged = true;
+                              }
+                            }
+
                             let nextState: FilterState = {
                               ...current,
                               categories: nextCategories,
                             };
+                            if (attentionChanged) {
+                              nextState = {
+                                ...nextState,
+                                attention: nextAttention,
+                              };
+                            }
                             const peopleState = derivePeopleState(current);
                             if (peopleState.isSynced) {
                               nextState = applyPeopleSelection(
@@ -2991,21 +3119,53 @@ export function ActivityView({
                         onClick={() => {
                           setDraft((current) => {
                             const nextSet = new Set(current.attention);
-                            if (nextSet.has(option.value)) {
+                            const wasActive = nextSet.has(option.value);
+                            if (wasActive) {
                               nextSet.delete(option.value);
                             } else {
                               nextSet.add(option.value);
                             }
-                            const nextAttention = Array.from(nextSet);
+                            let nextAttention = Array.from(nextSet);
                             if (
                               nextAttention.length === ATTENTION_OPTIONS.length
                             ) {
-                              return { ...current, attention: [] };
+                              nextAttention = [];
                             }
-                            return {
+                            let nextCategories = current.categories;
+                            if (!wasActive) {
+                              const requiredCategories =
+                                collectRequiredCategoriesFromAttention(
+                                  nextAttention,
+                                );
+                              nextCategories = mergeCategoriesWithRequirements(
+                                current.categories,
+                                requiredCategories,
+                              );
+                            }
+                            let nextState: FilterState = {
                               ...current,
                               attention: nextAttention,
                             };
+                            if (
+                              !arraysShallowEqual(
+                                nextCategories,
+                                current.categories,
+                              )
+                            ) {
+                              nextState = {
+                                ...nextState,
+                                categories: nextCategories,
+                              };
+                              const peopleState = derivePeopleState(current);
+                              if (peopleState.isSynced) {
+                                nextState = applyPeopleSelection(
+                                  nextState,
+                                  peopleState.selection,
+                                  nextCategories,
+                                );
+                              }
+                            }
+                            return nextState;
                           });
                         }}
                       >

@@ -180,6 +180,217 @@ describe("ActivityView", () => {
     consoleError.mockRestore();
   });
 
+  it("activating an attention while categories are unset enables the matching category", async () => {
+    const props = createDefaultProps();
+    mockFetchJsonOnce({ filters: [], limit: 30 });
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    const categorySection = screen.getByText("카테고리").parentElement;
+    const attentionSection = screen.getByText("주의").parentElement;
+    expect(categorySection).not.toBeNull();
+    expect(attentionSection).not.toBeNull();
+
+    const backlogAttention = within(attentionSection as HTMLElement).getByRole(
+      "button",
+      { name: "정체된 Backlog 이슈" },
+    );
+    fireEvent.click(backlogAttention);
+
+    const issueCategory = within(categorySection as HTMLElement).getByRole(
+      "button",
+      { name: "Issue" },
+    );
+
+    await waitFor(() =>
+      expect(backlogAttention).toHaveAttribute("aria-pressed", "true"),
+    );
+    expect(issueCategory).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("adds and prunes categories based on attention selections", async () => {
+    const props = createDefaultProps();
+    mockFetchJsonOnce({ filters: [], limit: 30 });
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    const categorySection = screen.getByText("카테고리").parentElement;
+    const attentionSection = screen.getByText("주의").parentElement;
+    expect(categorySection).not.toBeNull();
+    expect(attentionSection).not.toBeNull();
+
+    const issueCategory = within(categorySection as HTMLElement).getByRole(
+      "button",
+      { name: "Issue" },
+    );
+    const pullRequestCategory = within(
+      categorySection as HTMLElement,
+    ).getByRole("button", { name: "Pull Request" });
+
+    const backlogAttention = within(attentionSection as HTMLElement).getByRole(
+      "button",
+      { name: "정체된 Backlog 이슈" },
+    );
+    const inactivePrAttention = within(
+      attentionSection as HTMLElement,
+    ).getByRole("button", { name: "업데이트 없는 PR" });
+
+    fireEvent.click(backlogAttention);
+    await waitFor(() =>
+      expect(issueCategory).toHaveAttribute("aria-pressed", "true"),
+    );
+
+    fireEvent.click(inactivePrAttention);
+    await waitFor(() =>
+      expect(pullRequestCategory).toHaveAttribute("aria-pressed", "true"),
+    );
+
+    fireEvent.click(pullRequestCategory);
+
+    await waitFor(() =>
+      expect(pullRequestCategory).toHaveAttribute("aria-pressed", "false"),
+    );
+    expect(issueCategory).toHaveAttribute("aria-pressed", "true");
+    expect(inactivePrAttention).toHaveAttribute("aria-pressed", "false");
+    expect(backlogAttention).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("turning off an active attention keeps the category selection intact", async () => {
+    const props = createDefaultProps();
+    mockFetchJsonOnce({ filters: [], limit: 30 });
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    const categorySection = screen.getByText("카테고리").parentElement;
+    const attentionSection = screen.getByText("주의").parentElement;
+    expect(categorySection).not.toBeNull();
+    expect(attentionSection).not.toBeNull();
+
+    const issueCategory = within(categorySection as HTMLElement).getByRole(
+      "button",
+      { name: "Issue" },
+    );
+    const backlogAttention = within(attentionSection as HTMLElement).getByRole(
+      "button",
+      { name: "정체된 Backlog 이슈" },
+    );
+
+    fireEvent.click(backlogAttention);
+    await waitFor(() =>
+      expect(issueCategory).toHaveAttribute("aria-pressed", "true"),
+    );
+
+    fireEvent.click(backlogAttention);
+
+    await waitFor(() =>
+      expect(backlogAttention).toHaveAttribute("aria-pressed", "false"),
+    );
+    expect(issueCategory).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("clears attention filters when the last active category is removed", async () => {
+    const props = createDefaultProps();
+    mockFetchJsonOnce({ filters: [], limit: 30 });
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    const categorySection = screen.getByText("카테고리").parentElement;
+    const attentionSection = screen.getByText("주의").parentElement;
+    expect(categorySection).not.toBeNull();
+    expect(attentionSection).not.toBeNull();
+
+    const issueCategory = within(categorySection as HTMLElement).getByRole(
+      "button",
+      { name: "Issue" },
+    );
+    const backlogAttention = within(attentionSection as HTMLElement).getByRole(
+      "button",
+      { name: "정체된 Backlog 이슈" },
+    );
+    const attentionReset = within(attentionSection as HTMLElement).getByRole(
+      "button",
+      { name: "미적용" },
+    );
+
+    fireEvent.click(backlogAttention);
+    await waitFor(() =>
+      expect(issueCategory).toHaveAttribute("aria-pressed", "true"),
+    );
+
+    fireEvent.click(issueCategory);
+
+    await waitFor(() =>
+      expect(issueCategory).toHaveAttribute("aria-pressed", "false"),
+    );
+    expect(backlogAttention).toHaveAttribute("aria-pressed", "false");
+    expect(attentionReset).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("filters attention selections after resetting categories to 미적용", async () => {
+    const props = createDefaultProps();
+    mockFetchJsonOnce({ filters: [], limit: 30 });
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    const categorySection = screen.getByText("카테고리").parentElement;
+    const attentionSection = screen.getByText("주의").parentElement;
+    expect(categorySection).not.toBeNull();
+    expect(attentionSection).not.toBeNull();
+
+    const [categoryReset] = within(categorySection as HTMLElement).getAllByRole(
+      "button",
+      { name: "미적용" },
+    );
+    const issueCategory = within(categorySection as HTMLElement).getByRole(
+      "button",
+      { name: "Issue" },
+    );
+    const pullRequestCategory = within(
+      categorySection as HTMLElement,
+    ).getByRole("button", { name: "Pull Request" });
+    const backlogAttention = within(attentionSection as HTMLElement).getByRole(
+      "button",
+      { name: "정체된 Backlog 이슈" },
+    );
+    const inactivePrAttention = within(
+      attentionSection as HTMLElement,
+    ).getByRole("button", { name: "업데이트 없는 PR" });
+
+    fireEvent.click(backlogAttention);
+    fireEvent.click(inactivePrAttention);
+
+    await waitFor(() =>
+      expect(inactivePrAttention).toHaveAttribute("aria-pressed", "true"),
+    );
+
+    fireEvent.click(categoryReset);
+
+    await waitFor(() =>
+      expect(issueCategory).toHaveAttribute("aria-pressed", "false"),
+    );
+    expect(pullRequestCategory).toHaveAttribute("aria-pressed", "false");
+    expect(backlogAttention).toHaveAttribute("aria-pressed", "true");
+    expect(inactivePrAttention).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(issueCategory);
+
+    await waitFor(() =>
+      expect(issueCategory).toHaveAttribute("aria-pressed", "true"),
+    );
+    expect(backlogAttention).toHaveAttribute("aria-pressed", "true");
+    expect(inactivePrAttention).toHaveAttribute("aria-pressed", "false");
+  });
+
   it("loads saved filters, applies the selected filter, and syncs controls", async () => {
     const consoleError = vi
       .spyOn(console, "error")
