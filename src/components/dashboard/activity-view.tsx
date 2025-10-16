@@ -486,6 +486,7 @@ function MultiSelectInput({
   onChange,
   options,
   emptyLabel,
+  disabled = false,
 }: {
   label: ReactNode;
   placeholder?: string;
@@ -493,6 +494,7 @@ function MultiSelectInput({
   onChange: (next: string[]) => void;
   options: MultiSelectOption[];
   emptyLabel?: string;
+  disabled?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [isFocused, setIsFocused] = useState(false);
@@ -532,24 +534,33 @@ function MultiSelectInput({
 
   const addValue = useCallback(
     (nextValue: string) => {
+      if (disabled) {
+        return;
+      }
       if (selectedSet.has(nextValue)) {
         return;
       }
       onChange([...value, nextValue]);
       setQuery("");
     },
-    [onChange, selectedSet, value],
+    [disabled, onChange, selectedSet, value],
   );
 
   const removeValue = useCallback(
     (target: string) => {
+      if (disabled) {
+        return;
+      }
       onChange(value.filter((entry) => entry !== target));
     },
-    [onChange, value],
+    [disabled, onChange, value],
   );
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent<HTMLInputElement>) => {
+      if (disabled) {
+        return;
+      }
       if (event.key === "Backspace" && !query.length && value.length) {
         event.preventDefault();
         const next = [...value];
@@ -564,18 +575,28 @@ function MultiSelectInput({
         }
       }
     },
-    [addValue, filteredOptions, onChange, query.length, value],
+    [addValue, disabled, filteredOptions, onChange, query.length, value],
   );
 
   return (
-    <div ref={containerRef} className="space-y-2">
-      <Label className="text-xs font-semibold uppercase text-foreground">
+    <div
+      ref={containerRef}
+      className={cn("space-y-2", disabled && "opacity-50")}
+      aria-disabled={disabled}
+      data-disabled={disabled ? "true" : undefined}
+    >
+      <Label
+        className={cn(
+          "text-xs font-semibold uppercase text-foreground",
+          disabled && "text-muted-foreground",
+        )}
+      >
         {label}
       </Label>
       <div
         className={cn(
           "rounded-md border border-border bg-background px-2 py-1 text-sm",
-          isFocused && "ring-2 ring-ring",
+          isFocused && !disabled && "ring-2 ring-ring",
         )}
       >
         <div className="flex flex-wrap items-center gap-1">
@@ -597,6 +618,7 @@ function MultiSelectInput({
                   className="rounded-full p-0.5 hover:bg-primary/20"
                   onClick={() => removeValue(entry)}
                   aria-label={`Remove ${option?.label ?? entry}`}
+                  disabled={disabled}
                 >
                   ×
                 </button>
@@ -607,13 +629,19 @@ function MultiSelectInput({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={handleKeyDown}
-            onFocus={() => setIsFocused(true)}
+            onFocus={() => {
+              if (disabled) {
+                return;
+              }
+              setIsFocused(true);
+            }}
             placeholder={placeholder}
             className="flex-1 min-w-[120px] bg-transparent px-1 py-1 outline-none"
+            disabled={disabled}
           />
         </div>
       </div>
-      {isFocused && filteredOptions.length > 0 && (
+      {!disabled && isFocused && filteredOptions.length > 0 && (
         <div className="max-h-48 overflow-y-auto rounded-md border border-border bg-popover text-sm shadow-lg">
           {filteredOptions.map((option) => (
             <button
@@ -740,19 +768,25 @@ function TogglePill({
   children,
   onClick,
   variant,
+  disabled = false,
 }: {
   active: boolean;
   children: React.ReactNode;
   onClick: () => void;
   variant?: "active" | "inactive" | "muted";
+  disabled?: boolean;
 }) {
-  const resolvedVariant = variant ?? (active ? "active" : "inactive");
+  const resolvedVariant = disabled
+    ? "disabled"
+    : (variant ?? (active ? "active" : "inactive"));
   const variantClass =
     resolvedVariant === "active"
       ? "border-primary bg-primary/10 text-primary"
       : resolvedVariant === "muted"
         ? "border-border/60 bg-muted/15 text-muted-foreground/80 hover:border-border hover:bg-muted/25 hover:text-foreground"
-        : "border-border text-foreground/80 hover:bg-muted";
+        : resolvedVariant === "disabled"
+          ? "border-border/60 bg-muted/15 text-muted-foreground/60 cursor-not-allowed"
+          : "border-border text-foreground/80 hover:bg-muted";
 
   return (
     <button
@@ -763,6 +797,7 @@ function TogglePill({
       )}
       aria-pressed={active}
       onClick={onClick}
+      disabled={disabled}
     >
       {children}
     </button>
@@ -1602,6 +1637,8 @@ export function ActivityView({
     () => includesIssueCategory(draft.categories),
     [draft.categories],
   );
+  const issueFiltersDisabled = !allowIssueStatuses;
+  const prFiltersDisabled = !allowPullRequestStatuses;
 
   const selectedIssueStatuses = useMemo(
     () => draft.statuses.filter((status) => ISSUE_STATUS_VALUE_SET.has(status)),
@@ -1622,14 +1659,45 @@ export function ActivityView({
         (status) => !ISSUE_STATUS_VALUE_SET.has(status),
       );
       let next: FilterState = current;
+      let mutated = false;
       if (sanitizedStatuses.length !== current.statuses.length) {
         next = { ...next, statuses: sanitizedStatuses };
+        mutated = true;
       }
       if (next.issueBaseStatuses.length > 0) {
-        if (next === current) {
+        if (!mutated) {
           next = { ...next };
+          mutated = true;
         }
         next.issueBaseStatuses = [];
+      }
+      if (next.issueTypeIds.length > 0) {
+        if (!mutated) {
+          next = { ...next };
+          mutated = true;
+        }
+        next.issueTypeIds = [];
+      }
+      if (next.issuePriorities.length > 0) {
+        if (!mutated) {
+          next = { ...next };
+          mutated = true;
+        }
+        next.issuePriorities = [];
+      }
+      if (next.issueWeights.length > 0) {
+        if (!mutated) {
+          next = { ...next };
+          mutated = true;
+        }
+        next.issueWeights = [];
+      }
+      if (next.linkedIssueStates.length > 0) {
+        if (!mutated) {
+          next = { ...next };
+          mutated = true;
+        }
+        next.linkedIssueStates = [];
       }
       return next;
     });
@@ -1639,14 +1707,45 @@ export function ActivityView({
         (status) => !ISSUE_STATUS_VALUE_SET.has(status),
       );
       let next: FilterState = current;
+      let mutated = false;
       if (sanitizedStatuses.length !== current.statuses.length) {
         next = { ...next, statuses: sanitizedStatuses };
+        mutated = true;
       }
       if (next.issueBaseStatuses.length > 0) {
-        if (next === current) {
+        if (!mutated) {
           next = { ...next };
+          mutated = true;
         }
         next.issueBaseStatuses = [];
+      }
+      if (next.issueTypeIds.length > 0) {
+        if (!mutated) {
+          next = { ...next };
+          mutated = true;
+        }
+        next.issueTypeIds = [];
+      }
+      if (next.issuePriorities.length > 0) {
+        if (!mutated) {
+          next = { ...next };
+          mutated = true;
+        }
+        next.issuePriorities = [];
+      }
+      if (next.issueWeights.length > 0) {
+        if (!mutated) {
+          next = { ...next };
+          mutated = true;
+        }
+        next.issueWeights = [];
+      }
+      if (next.linkedIssueStates.length > 0) {
+        if (!mutated) {
+          next = { ...next };
+          mutated = true;
+        }
+        next.linkedIssueStates = [];
       }
       return next;
     });
@@ -1658,17 +1757,25 @@ export function ActivityView({
     }
 
     setDraft((current) => {
-      if (current.prStatuses.length === 0) {
+      if (current.prStatuses.length === 0 && current.reviewerIds.length === 0) {
         return current;
       }
-      return { ...current, prStatuses: [] };
+      return {
+        ...current,
+        prStatuses: [],
+        reviewerIds: [],
+      };
     });
 
     setApplied((current) => {
-      if (current.prStatuses.length === 0) {
+      if (current.prStatuses.length === 0 && current.reviewerIds.length === 0) {
         return current;
       }
-      return { ...current, prStatuses: [] };
+      return {
+        ...current,
+        prStatuses: [],
+        reviewerIds: [],
+      };
     });
   }, [allowPullRequestStatuses]);
 
@@ -3256,6 +3363,7 @@ export function ActivityView({
                   }
                   options={issueTypeOptions}
                   emptyLabel="미적용"
+                  disabled={issueFiltersDisabled}
                 />
                 <MultiSelectInput
                   label={<span className="normal-case">이슈 Priority</span>}
@@ -3269,6 +3377,7 @@ export function ActivityView({
                   }
                   options={issuePriorityOptions}
                   emptyLabel="미적용"
+                  disabled={issueFiltersDisabled}
                 />
                 <MultiSelectInput
                   label={<span className="normal-case">이슈 Weight</span>}
@@ -3282,6 +3391,7 @@ export function ActivityView({
                   }
                   options={issueWeightOptions}
                   emptyLabel="미적용"
+                  disabled={issueFiltersDisabled}
                 />
                 <MultiSelectInput
                   label="작성자"
@@ -3312,6 +3422,7 @@ export function ActivityView({
                   }
                   options={userOptions}
                   emptyLabel="미적용"
+                  disabled={prFiltersDisabled}
                 />
                 <MultiSelectInput
                   label="멘션된 구성원"
@@ -3368,118 +3479,129 @@ export function ActivityView({
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                {allowPullRequestStatuses && (
-                  <>
-                    <Label className="text-xs font-semibold uppercase text-foreground">
-                      PR 상태
-                    </Label>
+                <Label
+                  className={cn(
+                    "text-xs font-semibold uppercase text-foreground",
+                    prFiltersDisabled && "text-muted-foreground/70",
+                  )}
+                >
+                  PR 상태
+                </Label>
+                <TogglePill
+                  active={prStatusesAllSelected}
+                  variant={prStatusesAllSelected ? "active" : "inactive"}
+                  onClick={() =>
+                    setDraft((current) => ({ ...current, prStatuses: [] }))
+                  }
+                  disabled={prFiltersDisabled}
+                >
+                  미적용
+                </TogglePill>
+                {PR_STATUS_OPTIONS.map((option) => {
+                  const active = draft.prStatuses.includes(option.value);
+                  const variant = prStatusesAllSelected
+                    ? "muted"
+                    : active
+                      ? "active"
+                      : "inactive";
+                  return (
                     <TogglePill
-                      active={prStatusesAllSelected}
-                      variant={prStatusesAllSelected ? "active" : "inactive"}
-                      onClick={() =>
-                        setDraft((current) => ({ ...current, prStatuses: [] }))
-                      }
+                      key={`advanced-pr-status-${option.value}`}
+                      active={active}
+                      variant={variant}
+                      onClick={() => {
+                        setDraft((current) => {
+                          const nextSet = new Set(current.prStatuses);
+                          if (nextSet.has(option.value)) {
+                            nextSet.delete(option.value);
+                          } else {
+                            nextSet.add(option.value);
+                          }
+                          return {
+                            ...current,
+                            prStatuses: Array.from(nextSet),
+                          };
+                        });
+                      }}
+                      disabled={prFiltersDisabled}
                     >
-                      미적용
+                      {option.label}
                     </TogglePill>
-                    {PR_STATUS_OPTIONS.map((option) => {
-                      const active = draft.prStatuses.includes(option.value);
-                      const variant = prStatusesAllSelected
-                        ? "muted"
-                        : active
-                          ? "active"
-                          : "inactive";
-                      return (
-                        <TogglePill
-                          key={`advanced-pr-status-${option.value}`}
-                          active={active}
-                          variant={variant}
-                          onClick={() => {
-                            setDraft((current) => {
-                              const nextSet = new Set(current.prStatuses);
-                              if (nextSet.has(option.value)) {
-                                nextSet.delete(option.value);
-                              } else {
-                                nextSet.add(option.value);
-                              }
-                              return {
-                                ...current,
-                                prStatuses: Array.from(nextSet),
-                              };
-                            });
-                          }}
-                        >
-                          {option.label}
-                        </TogglePill>
-                      );
-                    })}
-                  </>
-                )}
-                {allowIssueStatuses && (
-                  <>
-                    <span
-                      aria-hidden="true"
-                      className="mx-2 h-4 border-l border-border/50"
-                    />
-                    <Label className="text-xs font-semibold uppercase text-foreground">
-                      이슈 상태
-                    </Label>
-                    <TogglePill
-                      active={issueBaseStatusesAllSelected}
-                      variant={
-                        issueBaseStatusesAllSelected ? "active" : "inactive"
-                      }
-                      onClick={() =>
-                        setDraft((current) => ({
-                          ...current,
-                          issueBaseStatuses: [],
-                        }))
-                      }
-                    >
-                      미적용
-                    </TogglePill>
-                    {ISSUE_BASE_STATUS_OPTIONS.map((option) => {
-                      const active = draft.issueBaseStatuses.includes(
-                        option.value,
-                      );
-                      const variant = issueBaseStatusesAllSelected
-                        ? "muted"
-                        : active
-                          ? "active"
-                          : "inactive";
-                      return (
-                        <TogglePill
-                          key={`advanced-issue-base-status-${option.value}`}
-                          active={active}
-                          variant={variant}
-                          onClick={() => {
-                            setDraft((current) => {
-                              const nextSet = new Set(
-                                current.issueBaseStatuses,
-                              );
-                              if (nextSet.has(option.value)) {
-                                nextSet.delete(option.value);
-                              } else {
-                                nextSet.add(option.value);
-                              }
-                              return {
-                                ...current,
-                                issueBaseStatuses: Array.from(nextSet),
-                              };
-                            });
-                          }}
-                        >
-                          {option.label}
-                        </TogglePill>
-                      );
-                    })}
-                  </>
-                )}
+                  );
+                })}
                 <span
                   aria-hidden="true"
-                  className="mx-2 h-4 border-l border-border/50"
+                  className={cn(
+                    "mx-2 h-4 border-l border-border/50",
+                    issueFiltersDisabled && "opacity-40",
+                  )}
                 />
-                <Label className="text-xs font-semibold uppercase text-foreground">
+                <Label
+                  className={cn(
+                    "text-xs font-semibold uppercase text-foreground",
+                    issueFiltersDisabled && "text-muted-foreground/70",
+                  )}
+                >
+                  이슈 상태
+                </Label>
+                <TogglePill
+                  active={issueBaseStatusesAllSelected}
+                  variant={issueBaseStatusesAllSelected ? "active" : "inactive"}
+                  onClick={() =>
+                    setDraft((current) => ({
+                      ...current,
+                      issueBaseStatuses: [],
+                    }))
+                  }
+                  disabled={issueFiltersDisabled}
+                >
+                  미적용
+                </TogglePill>
+                {ISSUE_BASE_STATUS_OPTIONS.map((option) => {
+                  const active = draft.issueBaseStatuses.includes(option.value);
+                  const variant = issueBaseStatusesAllSelected
+                    ? "muted"
+                    : active
+                      ? "active"
+                      : "inactive";
+                  return (
+                    <TogglePill
+                      key={`advanced-issue-base-status-${option.value}`}
+                      active={active}
+                      variant={variant}
+                      onClick={() => {
+                        setDraft((current) => {
+                          const nextSet = new Set(current.issueBaseStatuses);
+                          if (nextSet.has(option.value)) {
+                            nextSet.delete(option.value);
+                          } else {
+                            nextSet.add(option.value);
+                          }
+                          return {
+                            ...current,
+                            issueBaseStatuses: Array.from(nextSet),
+                          };
+                        });
+                      }}
+                      disabled={issueFiltersDisabled}
+                    >
+                      {option.label}
+                    </TogglePill>
+                  );
+                })}
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "mx-2 h-4 border-l border-border/50",
+                    issueFiltersDisabled && "opacity-40",
+                  )}
+                />
+                <Label
+                  className={cn(
+                    "text-xs font-semibold uppercase text-foreground",
+                    issueFiltersDisabled && "text-muted-foreground/70",
+                  )}
+                >
                   이슈 연결
                 </Label>
                 <TogglePill
@@ -3491,6 +3613,7 @@ export function ActivityView({
                       linkedIssueStates: [],
                     }))
                   }
+                  disabled={issueFiltersDisabled}
                 >
                   미적용
                 </TogglePill>
@@ -3531,6 +3654,7 @@ export function ActivityView({
                           };
                         });
                       }}
+                      disabled={issueFiltersDisabled}
                     >
                       {label}
                     </TogglePill>
@@ -3538,7 +3662,12 @@ export function ActivityView({
                 })}
               </div>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                <div className="space-y-2">
+                <div
+                  className={cn(
+                    "space-y-2",
+                    issueFiltersDisabled && "opacity-60",
+                  )}
+                >
                   <Label className="text-xs font-semibold text-foreground">
                     이슈 임계값 (영업일): Backlog 정체, In Progress 정체
                   </Label>
@@ -3547,6 +3676,7 @@ export function ActivityView({
                       type="number"
                       min={1}
                       value={draft.thresholds.backlogIssueDays}
+                      disabled={issueFiltersDisabled}
                       onChange={(event) =>
                         setDraft((current) => ({
                           ...current,
@@ -3565,6 +3695,7 @@ export function ActivityView({
                       type="number"
                       min={1}
                       value={draft.thresholds.stalledIssueDays}
+                      disabled={issueFiltersDisabled}
                       onChange={(event) =>
                         setDraft((current) => ({
                           ...current,
@@ -3581,7 +3712,9 @@ export function ActivityView({
                     />
                   </div>
                 </div>
-                <div className="space-y-2">
+                <div
+                  className={cn("space-y-2", prFiltersDisabled && "opacity-60")}
+                >
                   <Label className="text-xs font-semibold text-foreground">
                     PR 임계값 (영업일): PR 생성, PR 정체
                   </Label>
@@ -3590,6 +3723,7 @@ export function ActivityView({
                       type="number"
                       min={1}
                       value={draft.thresholds.stalePrDays}
+                      disabled={prFiltersDisabled}
                       onChange={(event) =>
                         setDraft((current) => ({
                           ...current,
@@ -3608,6 +3742,7 @@ export function ActivityView({
                       type="number"
                       min={1}
                       value={draft.thresholds.idlePrDays}
+                      disabled={prFiltersDisabled}
                       onChange={(event) =>
                         setDraft((current) => ({
                           ...current,
@@ -3633,6 +3768,7 @@ export function ActivityView({
                       type="number"
                       min={1}
                       value={draft.thresholds.reviewRequestDays}
+                      disabled={prFiltersDisabled}
                       onChange={(event) =>
                         setDraft((current) => ({
                           ...current,
