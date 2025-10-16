@@ -391,6 +391,107 @@ describe("ActivityView", () => {
     expect(inactivePrAttention).toHaveAttribute("aria-pressed", "false");
   });
 
+  it("disables issue-specific filters when only the Pull Request category is active", async () => {
+    const props = createDefaultProps();
+    mockFetchJsonOnce({ filters: [], limit: 30 });
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
+
+    const pullRequestToggle = screen.getByRole("button", {
+      name: "Pull Request",
+    });
+    fireEvent.click(pullRequestToggle);
+
+    await waitFor(() =>
+      expect(pullRequestToggle).toHaveAttribute("aria-pressed", "true"),
+    );
+
+    const issueTypeLabel = screen.getByText(
+      (content) => content.trim() === "이슈 Type",
+    );
+    const issueTypeWrapper = issueTypeLabel.closest(
+      "[aria-disabled]",
+    ) as HTMLDivElement | null;
+    if (!issueTypeWrapper) {
+      throw new Error("이슈 Type 입력 컨테이너를 찾지 못했습니다.");
+    }
+    expect(issueTypeWrapper).toHaveAttribute("aria-disabled", "true");
+    const issueTypeInput = issueTypeWrapper.querySelector("input");
+    if (issueTypeInput) {
+      expect(issueTypeInput).toBeDisabled();
+    }
+
+    const issueStatusLabel = screen.getByText("이슈 상태");
+    const issueStatusReset =
+      issueStatusLabel.nextElementSibling as HTMLButtonElement | null;
+    if (!issueStatusReset) {
+      throw new Error("이슈 상태 초기화 토글을 찾지 못했습니다.");
+    }
+    expect(issueStatusReset).toBeDisabled();
+
+    const linkedIssueLabel = screen.getByText("이슈 연결");
+    const linkedIssueReset =
+      linkedIssueLabel.nextElementSibling as HTMLButtonElement | null;
+    if (!linkedIssueReset) {
+      throw new Error("이슈 연결 초기화 토글을 찾지 못했습니다.");
+    }
+    expect(linkedIssueReset).toBeDisabled();
+
+    const backlogThreshold = screen.getByPlaceholderText("Backlog 정체");
+    expect(backlogThreshold).toBeDisabled();
+  });
+
+  it("disables pull request filters when only the Issue category is active", async () => {
+    const props = createDefaultProps();
+    mockFetchJsonOnce({ filters: [], limit: 30 });
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
+
+    const issueToggle = screen.getByRole("button", { name: "Issue" });
+    fireEvent.click(issueToggle);
+
+    await waitFor(() =>
+      expect(issueToggle).toHaveAttribute("aria-pressed", "true"),
+    );
+
+    const reviewerLabel = screen.getByText(
+      (content) => content.trim() === "리뷰어",
+    );
+    const reviewerWrapper = reviewerLabel.closest(
+      "[aria-disabled]",
+    ) as HTMLDivElement | null;
+    if (!reviewerWrapper) {
+      throw new Error("리뷰어 입력 컨테이너를 찾지 못했습니다.");
+    }
+    expect(reviewerWrapper).toHaveAttribute("aria-disabled", "true");
+    const reviewerInput = reviewerWrapper.querySelector("input");
+    if (reviewerInput) {
+      expect(reviewerInput).toBeDisabled();
+    }
+
+    const prStatusLabel = screen.getByText("PR 상태");
+    const prStatusReset =
+      prStatusLabel.nextElementSibling as HTMLButtonElement | null;
+    if (!prStatusReset) {
+      throw new Error("PR 상태 초기화 토글을 찾지 못했습니다.");
+    }
+    expect(prStatusReset).toBeDisabled();
+
+    const prStaleInput = screen.getByPlaceholderText("PR 생성");
+    expect(prStaleInput).toBeDisabled();
+
+    const reviewThresholdInput = screen.getByPlaceholderText("리뷰 무응답");
+    expect(reviewThresholdInput).toBeDisabled();
+  });
+
   it("loads saved filters, applies the selected filter, and syncs controls", async () => {
     const consoleError = vi
       .spyOn(console, "error")
