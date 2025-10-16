@@ -2810,9 +2810,14 @@ export function ActivityView({
                             } else {
                               nextSet.add(option.value);
                             }
-                            const nextCategories = Array.from(
+                            let nextCategories = Array.from(
                               nextSet,
                             ) as ActivityItemCategory[];
+                            if (
+                              nextCategories.length === CATEGORY_OPTIONS.length
+                            ) {
+                              nextCategories = [];
+                            }
                             let nextState: FilterState = {
                               ...current,
                               categories: nextCategories,
