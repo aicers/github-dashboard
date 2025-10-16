@@ -560,6 +560,10 @@ function PeopleToggleList({
   options: MultiSelectOption[];
   synced: boolean;
 }) {
+  const optionValueSet = useMemo(
+    () => new Set(options.map((option) => option.value)),
+    [options],
+  );
   const selectedSet = useMemo(() => new Set(value), [value]);
   const allSelected = synced && value.length === 0;
 
@@ -568,10 +572,18 @@ function PeopleToggleList({
       if (selectedSet.has(optionValue)) {
         onChange(value.filter((entry) => entry !== optionValue));
       } else {
-        onChange([...value, optionValue]);
+        const next = [...value, optionValue];
+        const covered = new Set(
+          next.filter((entry) => optionValueSet.has(entry)),
+        );
+        if (optionValueSet.size > 0 && covered.size === optionValueSet.size) {
+          onChange([]);
+          return;
+        }
+        onChange(next);
       }
     },
-    [onChange, selectedSet, value],
+    [onChange, optionValueSet, selectedSet, value],
   );
 
   const handleSelectAll = useCallback(() => {
@@ -2887,7 +2899,20 @@ export function ActivityView({
                                 } else {
                                   nextSet.add(option.value);
                                 }
-                                const nextStatuses = Array.from(nextSet);
+                                let nextStatuses = Array.from(nextSet);
+                                const issueStatuses = nextStatuses.filter(
+                                  (status) =>
+                                    ISSUE_STATUS_VALUE_SET.has(status),
+                                );
+                                if (
+                                  issueStatuses.length ===
+                                  ISSUE_STATUS_OPTIONS.length
+                                ) {
+                                  nextStatuses = nextStatuses.filter(
+                                    (status) =>
+                                      !ISSUE_STATUS_VALUE_SET.has(status),
+                                  );
+                                }
                                 let nextState: FilterState = {
                                   ...current,
                                   statuses: nextStatuses,
@@ -2971,9 +2996,15 @@ export function ActivityView({
                             } else {
                               nextSet.add(option.value);
                             }
+                            const nextAttention = Array.from(nextSet);
+                            if (
+                              nextAttention.length === ATTENTION_OPTIONS.length
+                            ) {
+                              return { ...current, attention: [] };
+                            }
                             return {
                               ...current,
-                              attention: Array.from(nextSet),
+                              attention: nextAttention,
                             };
                           });
                         }}
