@@ -488,6 +488,115 @@ describe("activity service integration", () => {
     expect(issueItems.pageInfo.totalCount).toBe(1);
   });
 
+  it("does not apply issue attention badges to discussions", async () => {
+    const { repoAlpha, userPriority } = await seedBasicActivityData();
+
+    const discussionRaw = {
+      __typename: "Discussion",
+      url: "https://example.com/discussions/303",
+      assignees: { nodes: [] },
+      labels: { nodes: [] },
+      body: "Discussion body content",
+    };
+
+    const discussion: DbIssue = {
+      id: "discussion-alpha",
+      number: 303,
+      repositoryId: repoAlpha.id,
+      authorId: userPriority.id,
+      title: "Alpha discussion",
+      state: "OPEN",
+      createdAt: BASE_TIME,
+      updatedAt: "2024-01-04T00:00:00.000Z",
+      closedAt: null,
+      raw: discussionRaw,
+    };
+
+    await seedActivityIssues([discussion]);
+
+    const attention: AttentionInsights = {
+      ...emptyInsights(),
+      backlogIssues: [
+        {
+          id: discussion.id,
+          number: discussion.number,
+          title: discussion.title ?? null,
+          url: discussionRaw.url,
+          repository: {
+            id: repoAlpha.id,
+            name: repoAlpha.name,
+            nameWithOwner: repoAlpha.nameWithOwner,
+          },
+          author: null,
+          assignees: [],
+          createdAt: discussion.createdAt,
+          updatedAt: discussion.updatedAt,
+          ageDays: 60,
+        } satisfies IssueAttentionItem,
+      ],
+      stalledInProgressIssues: [
+        {
+          id: discussion.id,
+          number: discussion.number,
+          title: discussion.title ?? null,
+          url: discussionRaw.url,
+          repository: {
+            id: repoAlpha.id,
+            name: repoAlpha.name,
+            nameWithOwner: repoAlpha.nameWithOwner,
+          },
+          author: null,
+          assignees: [],
+          createdAt: discussion.createdAt,
+          updatedAt: discussion.updatedAt,
+          ageDays: 60,
+          startedAt: discussion.createdAt,
+          inProgressAgeDays: 40,
+        } satisfies IssueAttentionItem,
+      ],
+      unansweredMentions: [
+        {
+          commentId: "discussion-comment-1",
+          url: `${discussionRaw.url}#comment-1`,
+          mentionedAt: "2024-01-10T00:00:00.000Z",
+          waitingDays: 10,
+          author: null,
+          target: null,
+          container: {
+            type: "discussion",
+            id: discussion.id,
+            number: discussion.number,
+            title: discussion.title ?? null,
+            url: discussionRaw.url,
+            repository: {
+              id: repoAlpha.id,
+              name: repoAlpha.name,
+              nameWithOwner: repoAlpha.nameWithOwner,
+            },
+          },
+          commentExcerpt: null,
+        },
+      ],
+    };
+
+    mockedAttentionInsights.mockResolvedValue(attention);
+
+    const discussionItems = await getActivityItems({
+      types: ["discussion"],
+      perPage: 5,
+    });
+
+    expect(discussionItems.items).toHaveLength(1);
+    const [discussionItem] = discussionItems.items;
+    expect(discussionItem.type).toBe("discussion");
+    expect(discussionItem.attention.unansweredMention).toBe(true);
+    expect(discussionItem.attention.reviewRequestPending).toBe(false);
+    expect(discussionItem.attention.staleOpenPr).toBe(false);
+    expect(discussionItem.attention.idlePr).toBe(false);
+    expect(discussionItem.attention.backlogIssue).toBe(false);
+    expect(discussionItem.attention.stalledIssue).toBe(false);
+  });
+
   it("returns detailed activity item with project overrides and status timelines", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2024-01-31T00:00:00.000Z"));
