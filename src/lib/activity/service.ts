@@ -1931,6 +1931,17 @@ function buildAttentionFlags(
     };
   }
 
+  if (row.item_type === "discussion") {
+    return {
+      unansweredMention: sets.unansweredMentions.has(row.id),
+      reviewRequestPending: false,
+      staleOpenPr: false,
+      idlePr: false,
+      backlogIssue: false,
+      stalledIssue: false,
+    };
+  }
+
   const backlog = sets.backlogIssues.has(row.id);
   const stalled = sets.stalledIssues.has(row.id);
 
