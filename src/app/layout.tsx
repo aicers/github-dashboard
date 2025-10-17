@@ -19,6 +19,10 @@ export const metadata: Metadata = {
   },
   description:
     "Foundation for a GitHub insights dashboard powered by Next.js, Tailwind CSS, and shadcn/ui.",
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+  },
 };
 
 export default function RootLayout({

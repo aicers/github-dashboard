@@ -1,4 +1,4 @@
-import { Github, LayoutGrid } from "lucide-react";
+import { Github } from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
@@ -16,10 +16,16 @@ export default function Home() {
     >
       <div className="relative w-[672px] h-[317px]">
         {/* Icon Container */}
-        <div className="absolute left-[304px] top-0 w-16 h-16 flex items-center justify-center bg-white rounded-2xl shadow-[0px_10px_15px_-3px_rgba(173,70,255,0.2),0px_4px_6px_-4px_rgba(173,70,255,0.2)]">
-          <div className="w-8 h-8 bg-gradient-to-br from-[#ad46ff] to-[#7047ff] rounded-lg flex items-center justify-center">
-            <LayoutGrid className="w-5 h-5 text-white" strokeWidth={1.8} />
-          </div>
+        <div className="absolute left-1/2 top-0 flex h-[88px] w-[88px] -translate-x-1/2 items-center justify-center">
+          {/* biome-ignore lint/performance/noImgElement: Next Image clips the drop shadow for this SVG */}
+          <img
+            src="/entrance-icon.svg"
+            alt="GitHub Dashboard icon"
+            width={88}
+            height={88}
+            className="h-auto w-full"
+            loading="eager"
+          />
         </div>
 
         {/* Content Container */}

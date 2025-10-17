@@ -32,7 +32,7 @@ export default async function DashboardTabsLayout({
             userLogin={profile?.login ?? null}
             userAvatarUrl={profile?.avatarUrl ?? null}
           />
-          <div className="mt-2">
+          <div className="mt-0.5">
             <DashboardTabs />
           </div>
         </div>
