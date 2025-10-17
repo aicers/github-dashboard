@@ -259,6 +259,67 @@ const MEDIA_TOKEN_REGEX =
 const MEDIA_PLACEHOLDER_CLASS =
   "inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground/90";
 
+const ATTACHMENT_PLACEHOLDER_CLASS =
+  "inline-flex items-center gap-1 rounded-md border border-dashed border-border/70 bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground/90";
+
+function extractFileName(href: string | null | undefined) {
+  if (!href) {
+    return null;
+  }
+  try {
+    const url = new URL(href);
+    const pathname = url.pathname.replace(/\/+$/, "");
+    const segments = pathname.split("/");
+    const candidate = segments.at(-1);
+    return candidate?.trim() ? candidate : null;
+  } catch {
+    const sanitized = href.split(/[?#]/)[0];
+    const segments = sanitized.split("/");
+    const candidate = segments.at(-1);
+    return candidate?.trim() ? candidate : null;
+  }
+}
+
+function createAttachmentPlaceholder(
+  key: string,
+  kind: "image" | "file",
+  options: {
+    alt?: string | null;
+    title?: string | null;
+    href?: string | null;
+  },
+) {
+  const icon = kind === "image" ? "🖼️" : "📎";
+  const labelParts: string[] = [];
+  labelParts.push(kind === "image" ? "이미지 첨부" : "파일 첨부");
+
+  const alt = options.alt?.trim();
+  const title = options.title?.trim();
+  const fileName = extractFileName(options.href);
+
+  if (alt) {
+    labelParts.push(alt);
+  } else if (title) {
+    labelParts.push(title);
+  }
+
+  if (fileName && fileName !== alt && fileName !== title) {
+    labelParts.push(fileName);
+  }
+
+  const label = labelParts.join(" · ");
+  return createElement(
+    "span",
+    {
+      key,
+      role: "img",
+      "aria-label": label,
+      className: ATTACHMENT_PLACEHOLDER_CLASS,
+    },
+    `${icon} ${label}`,
+  );
+}
+
 function isImageLink(href: string) {
   try {
     const url = new URL(href);
@@ -375,17 +436,10 @@ function convertDomNodeToReact(node: ChildNode, key: string): ReactNode {
 
   if (tagName === "img") {
     const src = element.getAttribute("src");
-    if (!src) {
-      return null;
-    }
-    const alt = element.getAttribute("alt") ?? "";
-    const title = element.getAttribute("title") ?? undefined;
-    return createElement("img", {
-      key,
-      src,
-      alt,
-      title,
-      loading: "lazy",
+    return createAttachmentPlaceholder(key, "image", {
+      href: src,
+      alt: element.getAttribute("alt"),
+      title: element.getAttribute("title"),
     });
   }
 
@@ -434,15 +488,9 @@ function convertDomNodeToReact(node: ChildNode, key: string): ReactNode {
       if (shouldShortenLinkLabel(element, href)) {
         if (isImageLink(href)) {
           children = [
-            createElement("img", {
-              key: `${key}-img`,
-              src: href,
-              alt:
-                element.getAttribute("title") ??
-                element.textContent?.trim() ??
-                "Linked image",
-              loading: "lazy",
-              className: "max-h-64 w-auto rounded-md border border-border/50",
+            createAttachmentPlaceholder(`${key}-img`, "image", {
+              href,
+              title: element.getAttribute("title"),
             }),
           ];
         } else {
