@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, LayoutGrid } from "lucide-react";
+import { Bell } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -119,13 +119,19 @@ export function DashboardHeader({
     : "알림";
 
   return (
-    <header className="flex flex-col gap-4 pb-2">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="flex size-12 items-center justify-center rounded-[1.25rem] bg-gradient-to-br from-[#ad46ff] to-[#7047ff] text-white shadow-[0px_10px_25px_rgba(138,43,226,0.25)]">
-            <LayoutGrid className="size-6" strokeWidth={1.8} />
-          </div>
-          <div className="space-y-1">
+    <header className="flex flex-col gap-2 pb-0.5">
+      <div className="flex items-center justify-between gap-4 -mt-0.5">
+        <div className="flex items-center gap-2.5 -ml-2 -translate-y-[1px] transform">
+          {/* biome-ignore lint/performance/noImgElement: Next Image clips the drop shadow for this SVG */}
+          <img
+            src="/entrance-icon.svg"
+            alt="GitHub Dashboard icon"
+            width={88}
+            height={88}
+            className="h-16 w-16 translate-y-[4px] transform"
+            loading="lazy"
+          />
+          <div className="space-y-1 -translate-x-[1px] -translate-y-[3px] transform">
             <h1 className="text-xl font-semibold tracking-tight text-slate-900">
               GitHub Dashboard
             </h1>
@@ -134,7 +140,7 @@ export function DashboardHeader({
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 -translate-y-[2px] transform">
           <button
             type="button"
             aria-label={ariaLabel}
