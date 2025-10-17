@@ -8,8 +8,10 @@ import {
 } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ISSUE_STATUS_OPTIONS } from "@/components/dashboard/activity/detail-shared";
 import { ActivityView } from "@/components/dashboard/activity-view";
 import { buildActivityFilterOptionsFixture } from "@/components/test-harness/activity-fixtures";
+import { ATTENTION_OPTIONS } from "@/lib/activity/attention-options";
 import type {
   ActivityListParams,
   ActivitySavedFilter,
@@ -389,6 +391,203 @@ describe("ActivityView", () => {
     );
     expect(backlogAttention).toHaveAttribute("aria-pressed", "true");
     expect(inactivePrAttention).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("hides issue progress controls when only the Pull Request category is selected", async () => {
+    const props = createDefaultProps();
+    mockFetchJsonOnce({ filters: [], limit: 30 });
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    const pullRequestToggle = screen.getByRole("button", {
+      name: "Pull Request",
+    });
+    fireEvent.click(pullRequestToggle);
+
+    await waitFor(() =>
+      expect(pullRequestToggle).toHaveAttribute("aria-pressed", "true"),
+    );
+
+    expect(screen.queryByText("진행 상태")).not.toBeInTheDocument();
+    expect(screen.queryByText("이슈 상태")).not.toBeInTheDocument();
+  });
+
+  it("resets the category selection to 미적용 when every category is enabled", async () => {
+    const props = createDefaultProps();
+    mockFetchJsonOnce({ filters: [], limit: 30 });
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    const categorySection = screen.getByText("카테고리").parentElement;
+    expect(categorySection).not.toBeNull();
+    const issueToggle = within(categorySection as HTMLElement).getByRole(
+      "button",
+      { name: "Issue" },
+    );
+    const pullRequestToggle = within(categorySection as HTMLElement).getByRole(
+      "button",
+      { name: "Pull Request" },
+    );
+    const discussionToggle = within(categorySection as HTMLElement).getByRole(
+      "button",
+      { name: "Discussion" },
+    );
+    const [categoryResetToggle] = within(
+      categorySection as HTMLElement,
+    ).getAllByRole("button", { name: "미적용" });
+
+    fireEvent.click(issueToggle);
+    fireEvent.click(pullRequestToggle);
+    fireEvent.click(discussionToggle);
+
+    await waitFor(() =>
+      expect(categoryResetToggle).toHaveAttribute("aria-pressed", "true"),
+    );
+    expect(issueToggle).toHaveAttribute("aria-pressed", "false");
+    expect(pullRequestToggle).toHaveAttribute("aria-pressed", "false");
+    expect(discussionToggle).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("resets issue statuses to 미적용 when all status options are selected", async () => {
+    const props = createDefaultProps();
+    mockFetchJsonOnce({ filters: [], limit: 30 });
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    const statusLabel = screen.getByText("진행 상태");
+    const statusContainer = statusLabel.parentElement;
+    expect(statusContainer).not.toBeNull();
+    const statusReset = within(statusContainer as HTMLElement)
+      .getAllByRole("button", { name: "미적용" })
+      .at(-1);
+    if (!statusReset) {
+      throw new Error("진행 상태 '미적용' 토글을 찾지 못했습니다.");
+    }
+
+    for (const option of ISSUE_STATUS_OPTIONS) {
+      fireEvent.click(
+        within(statusContainer as HTMLElement).getByRole("button", {
+          name: option.label,
+        }),
+      );
+    }
+
+    await waitFor(() =>
+      expect(statusReset).toHaveAttribute("aria-pressed", "true"),
+    );
+  });
+
+  it("resets attention selection to 미적용 when all attention options are active", async () => {
+    const props = createDefaultProps();
+    mockFetchJsonOnce({ filters: [], limit: 30 });
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    const attentionSection = screen.getByText("주의").parentElement;
+    expect(attentionSection).not.toBeNull();
+    const resetToggle = within(attentionSection as HTMLElement).getByRole(
+      "button",
+      { name: "미적용" },
+    );
+
+    for (const option of ATTENTION_OPTIONS) {
+      const button = within(attentionSection as HTMLElement).getByRole(
+        "button",
+        {
+          name: option.label,
+        },
+      );
+      fireEvent.click(button);
+    }
+
+    await waitFor(() =>
+      expect(resetToggle).toHaveAttribute("aria-pressed", "true"),
+    );
+  });
+
+  it("resets people selection to 미적용 when every member is toggled on", async () => {
+    const props = createDefaultProps();
+    mockFetchJsonOnce({ filters: [], limit: 30 });
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    const peopleLabel = screen.getByText("구성원");
+    const peopleToggleContainer = peopleLabel.parentElement?.nextElementSibling;
+    expect(peopleToggleContainer).not.toBeNull();
+    const resetToggle = within(peopleToggleContainer as HTMLElement).getByRole(
+      "button",
+      { name: "미적용" },
+    );
+    const memberButton = within(peopleToggleContainer as HTMLElement).getByRole(
+      "button",
+      { name: "octocat" },
+    );
+
+    fireEvent.click(memberButton);
+
+    await waitFor(() =>
+      expect(resetToggle).toHaveAttribute("aria-pressed", "true"),
+    );
+    expect(memberButton).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("keeps categories unchanged when enabling unanswered mentions with existing coverage", async () => {
+    const props = createDefaultProps();
+    mockFetchJsonOnce({ filters: [], limit: 30 });
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    const categorySection = screen.getByText("카테고리").parentElement;
+    const attentionSection = screen.getByText("주의").parentElement;
+    expect(categorySection).not.toBeNull();
+    expect(attentionSection).not.toBeNull();
+
+    const issueToggle = within(categorySection as HTMLElement).getByRole(
+      "button",
+      { name: "Issue" },
+    );
+    const pullRequestToggle = within(categorySection as HTMLElement).getByRole(
+      "button",
+      { name: "Pull Request" },
+    );
+    const discussionToggle = within(categorySection as HTMLElement).getByRole(
+      "button",
+      { name: "Discussion" },
+    );
+
+    fireEvent.click(issueToggle);
+    fireEvent.click(pullRequestToggle);
+
+    await waitFor(() =>
+      expect(issueToggle).toHaveAttribute("aria-pressed", "true"),
+    );
+    await waitFor(() =>
+      expect(pullRequestToggle).toHaveAttribute("aria-pressed", "true"),
+    );
+
+    const unansweredMentionToggle = within(
+      attentionSection as HTMLElement,
+    ).getByRole("button", { name: "응답 없는 멘션" });
+    fireEvent.click(unansweredMentionToggle);
+
+    await waitFor(() =>
+      expect(unansweredMentionToggle).toHaveAttribute("aria-pressed", "true"),
+    );
+    expect(discussionToggle).toHaveAttribute("aria-pressed", "false");
+    expect(issueToggle).toHaveAttribute("aria-pressed", "true");
+    expect(pullRequestToggle).toHaveAttribute("aria-pressed", "true");
   });
 
   it("disables issue-specific filters when only the Pull Request category is active", async () => {
