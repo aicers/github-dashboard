@@ -453,7 +453,7 @@ describe("PeopleView", () => {
     expect(screen.getByText("리뷰 활동 히트맵")).toBeInTheDocument();
     expect(screen.getByText("전체 활동 히트맵")).toBeInTheDocument();
     expect(screen.getByText("Parent / Child 이슈 지표")).toBeInTheDocument();
-    expect(screen.getByText("활동 리포지토리")).toBeInTheDocument();
+    expect(screen.getByText("활동 저장소")).toBeInTheDocument();
     expect(screen.getAllByTestId("activity-heatmap")).toHaveLength(2);
     expect(screen.getByTestId("repo-activity-table")).toBeInTheDocument();
   });

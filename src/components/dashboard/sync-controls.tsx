@@ -73,6 +73,18 @@ const statusColors: Record<string, string> = {
 
 const ADMIN_ONLY_MESSAGE = "관리자 권한이 있는 사용자만 실행할 수 있습니다.";
 
+function toIsoString(value: string | Date | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  return value;
+}
+
 export function SyncControls({ status, isAdmin }: SyncControlsProps) {
   const router = useRouter();
   const config = status.config;
@@ -117,8 +129,43 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
   }, [dateTimeFormat, timeZone]);
 
   function formatRange(startIso: string | null, endIso: string | null) {
-    return `${formatDateTime(startIso)} → ${formatDateTime(endIso)}`;
+    const start = formatDateTime(startIso);
+    const end = formatDateTime(endIso);
+
+    if (start && end) {
+      return `${start} → ${end}`;
+    }
+
+    if (start) {
+      return `${start} → -`;
+    }
+
+    if (end) {
+      return `- → ${end}`;
+    }
+
+    return "-";
   }
+
+  const lastSuccessfulSyncStartedAt = useMemo(() => {
+    const successIso = toIsoString(config?.last_successful_sync_at ?? null);
+    if (!successIso) {
+      return null;
+    }
+
+    const completedIso = toIsoString(config?.last_sync_completed_at ?? null);
+    const startedIso = toIsoString(config?.last_sync_started_at ?? null);
+
+    if (completedIso && startedIso && completedIso === successIso) {
+      return startedIso;
+    }
+
+    return null;
+  }, [
+    config?.last_successful_sync_at,
+    config?.last_sync_completed_at,
+    config?.last_sync_started_at,
+  ]);
 
   async function handleBackfill() {
     if (!canManageSync) {
@@ -319,11 +366,21 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
           <CardContent className="space-y-3 text-sm text-muted-foreground">
             <p>
               최근 동기화:{" "}
-              <span>{formatDateTime(config?.last_sync_completed_at)}</span>
+              <span>
+                {formatRange(
+                  config?.last_sync_started_at ?? null,
+                  config?.last_sync_completed_at ?? null,
+                )}
+              </span>
             </p>
             <p>
               마지막 성공:{" "}
-              <span>{formatDateTime(config?.last_successful_sync_at)}</span>
+              <span>
+                {formatRange(
+                  lastSuccessfulSyncStartedAt,
+                  config?.last_successful_sync_at ?? null,
+                )}
+              </span>
             </p>
             <p>
               주기: {(config?.sync_interval_minutes ?? 60).toLocaleString()}분
@@ -435,7 +492,7 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
         </Card>
       )}
 
-      <Card className="border-border/70">
+      <Card className="mt-4 border-border/70">
         <CardHeader>
           <CardTitle>최근 동기화 로그</CardTitle>
           <CardDescription>

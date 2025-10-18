@@ -84,6 +84,7 @@ describe("SyncControls", () => {
         sync_interval_minutes: 30,
         timezone: "Asia/Seoul",
         date_time_format: "iso-24h",
+        last_sync_started_at: "2024-04-02T09:30:00.000Z",
         last_sync_completed_at: "2024-04-02T10:00:00.000Z",
         last_successful_sync_at: "2024-04-02T10:00:00.000Z",
       },
@@ -128,6 +129,7 @@ describe("SyncControls", () => {
       config: {
         timezone: "Asia/Seoul",
         date_time_format: "iso-24h",
+        last_sync_started_at: "2024-04-01T23:00:00.000Z",
         last_sync_completed_at: "2024-04-02T00:00:00.000Z",
         last_successful_sync_at: "2024-04-02T03:15:00.000Z",
       },
@@ -145,8 +147,10 @@ describe("SyncControls", () => {
 
     render(<SyncControls status={status} isAdmin />);
 
-    expect(screen.getByText("2024-04-02 09:00")).toBeInTheDocument();
-    expect(screen.getByText("2024-04-02 12:15")).toBeInTheDocument();
+    expect(
+      screen.getByText("2024-04-02 08:00 → 2024-04-02 09:00"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("- → 2024-04-02 12:15")).toBeInTheDocument();
     expect(
       screen.getByText("2024-04-02 00:00 → 2024-04-02 01:45"),
     ).toBeInTheDocument();

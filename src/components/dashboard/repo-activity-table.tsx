@@ -196,7 +196,7 @@ export function RepoActivityTable({ items }: RepoActivityTableProps) {
         <thead className="text-left text-xs uppercase text-muted-foreground">
           <tr>
             <th className="pb-3" scope="col">
-              리포지토리
+              저장소
             </th>
             {repoActivityColumns.map((column) => (
               <th

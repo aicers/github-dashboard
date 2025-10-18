@@ -231,7 +231,7 @@ describe("SettingsView", () => {
     ).toBeGreaterThan(0);
     expect(
       within(organizationSection as HTMLElement).getByText(
-        "제외된 리포지토리: 1개",
+        "제외된 저장소: 1개",
         { selector: "span" },
       ),
     ).toBeInTheDocument();
@@ -280,9 +280,7 @@ describe("SettingsView", () => {
     await user.selectOptions(weekStartSelect, "sunday");
 
     const repoSelect =
-      within(organizationSection).getByLabelText(
-        /제외할 리포지토리를 선택하세요/,
-      );
+      within(organizationSection).getByLabelText(/제외할 저장소를 선택하세요/);
     await user.deselectOptions(repoSelect, ["repo-2"]);
     await user.selectOptions(repoSelect, ["repo-1", "repo-3"]);
 
@@ -425,7 +423,7 @@ describe("SettingsView", () => {
     await user.click(clearRepos);
 
     expect(
-      within(organizationSection).getByText("제외된 리포지토리: 0개", {
+      within(organizationSection).getByText("제외된 저장소: 0개", {
         selector: "span",
       }),
     ).toBeInTheDocument();
@@ -498,9 +496,7 @@ describe("SettingsView", () => {
     expect(intervalInput).toBeDisabled();
 
     const repoSelect =
-      within(organizationSection).getByLabelText(
-        /제외할 리포지토리를 선택하세요/,
-      );
+      within(organizationSection).getByLabelText(/제외할 저장소를 선택하세요/);
     expect(repoSelect).toBeDisabled();
 
     const memberSelect =

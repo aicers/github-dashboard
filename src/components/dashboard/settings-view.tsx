@@ -1174,16 +1174,16 @@ export function SettingsView({
 
             <Card className="border-border/70">
               <CardHeader>
-                <CardTitle>리포지토리 제외</CardTitle>
+                <CardTitle>저장소 제외</CardTitle>
                 <CardDescription>
-                  제외된 리포지토리는 Analytics와 People 메뉴의 필터 목록에
-                  표시되지 않습니다.
+                  제외된 저장소는 Analytics와 People 메뉴의 필터 목록에 표시되지
+                  않습니다.
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-4 text-sm">
                 {sortedRepositories.length === 0 ? (
                   <p className="text-muted-foreground text-sm">
-                    동기화된 리포지토리가 없습니다.
+                    동기화된 저장소가 없습니다.
                   </p>
                 ) : (
                   <label
@@ -1191,7 +1191,7 @@ export function SettingsView({
                     htmlFor={excludeSelectId}
                   >
                     <span className="text-muted-foreground">
-                      제외할 리포지토리를 선택하세요
+                      제외할 저장소를 선택하세요
                     </span>
                     <select
                       id={excludeSelectId}
@@ -1211,15 +1211,14 @@ export function SettingsView({
                       ))}
                     </select>
                     <span className="text-xs text-muted-foreground">
-                      여러 리포지토리를 선택하려면 ⌘/Ctrl 키를 눌러 복수
-                      선택하세요.
+                      여러 저장소를 선택하려면 ⌘/Ctrl 키를 눌러 복수 선택하세요.
                     </span>
                   </label>
                 )}
               </CardContent>
               <CardFooter className="flex justify-between">
                 <span className="text-xs text-muted-foreground">
-                  제외된 리포지토리: {excludedRepos.length}개
+                  제외된 저장소: {excludedRepos.length}개
                 </span>
                 <Button
                   variant="secondary"
