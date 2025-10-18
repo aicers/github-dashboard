@@ -335,7 +335,7 @@ export function DashboardFilterPanel({
             <div className="flex flex-col gap-1">
               <span className={emphasizedSectionLabelClass}>저장소</span>
               <p className={helperTextClass}>
-                관심 있는 리포지토리를 선택해서 집중해 보세요.
+                관심 있는 저장소를 선택해서 집중해 보세요.
               </p>
             </div>
             <Button
@@ -362,7 +362,7 @@ export function DashboardFilterPanel({
             ))}
           </select>
           <p className={helperTextClass}>
-            여러 리포지토리를 선택하려면 ⌘/Ctrl 키를 누른 상태에서 선택하세요.
+            여러 저장소를 선택하려면 ⌘/Ctrl 키를 누른 상태에서 선택하세요.
           </p>
         </div>
 

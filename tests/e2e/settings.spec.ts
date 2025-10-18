@@ -41,14 +41,14 @@ test.describe("SettingsView (Playwright)", () => {
     await expect(
       page.getByText("허용된 팀: 1개 · 허용된 구성원: 1명"),
     ).toBeVisible();
-    await expect(
-      page.getByLabel("제외할 리포지토리를 선택하세요"),
-    ).toHaveValues(["repo-2"]);
+    await expect(page.getByLabel("제외할 저장소를 선택하세요")).toHaveValues([
+      "repo-2",
+    ]);
     await expect(page.getByLabel("제외할 구성원을 선택하세요")).toHaveValues([
       "user-3",
     ]);
 
-    await expect(page.getByText("제외된 리포지토리: 1개")).toBeVisible();
+    await expect(page.getByText("제외된 저장소: 1개")).toBeVisible();
     await expect(page.getByText("제외된 구성원: 1명")).toBeVisible();
   });
 
@@ -76,7 +76,7 @@ test.describe("SettingsView (Playwright)", () => {
     await page.getByLabel("표준 시간대").selectOption("Europe/London");
     await page.getByLabel("주의 시작 요일").selectOption("sunday");
     await page
-      .getByLabel("제외할 리포지토리를 선택하세요")
+      .getByLabel("제외할 저장소를 선택하세요")
       .selectOption(["repo-1", "repo-3"]);
     await page
       .getByLabel("제외할 구성원을 선택하세요")
@@ -156,7 +156,7 @@ test.describe("SettingsView (Playwright)", () => {
     const [clearRepos, clearMembers] = clearButtons;
 
     await clearRepos.click();
-    await expect(page.getByText("제외된 리포지토리: 0개")).toBeVisible();
+    await expect(page.getByText("제외된 저장소: 0개")).toBeVisible();
     await expect(clearRepos).toBeDisabled();
 
     await clearMembers.click();

@@ -642,7 +642,7 @@ describe("AnalyticsView UI", () => {
       "이슈 순증 추이",
       "PR 순증 추이",
       "리뷰 활동 히트맵",
-      "리포지토리 비교",
+      "저장소 비교",
     ];
 
     sectionTitles.forEach((title) => {
@@ -653,7 +653,7 @@ describe("AnalyticsView UI", () => {
       screen.getByText("테스트 조직 조직의 활동 지표"),
     ).toBeInTheDocument();
 
-    const repoComparisonCard = findCardByTitle("리포지토리 비교");
+    const repoComparisonCard = findCardByTitle("저장소 비교");
     const repoAlphaRow = within(repoComparisonCard)
       .getByText("org/alpha")
       .closest("tr");

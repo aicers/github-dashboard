@@ -400,10 +400,10 @@ export function PeopleView({
             <Card className="border-border/70">
               <CardHeader>
                 <CardTitle className="text-base font-medium">
-                  활동 리포지토리
+                  활동 저장소
                 </CardTitle>
                 <CardDescription className="text-sm text-muted-foreground">
-                  해당 기간 동안 활동한 모든 리포지토리의 세부 지표
+                  해당 기간 동안 활동한 모든 저장소의 세부 지표
                 </CardDescription>
               </CardHeader>
               <CardContent>

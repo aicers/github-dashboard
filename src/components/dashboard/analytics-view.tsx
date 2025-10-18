@@ -599,13 +599,10 @@ function RepoComparisonSection({
     <section className="grid gap-4">
       <Card className="border-border/70">
         <CardHeader>
-          <CardTitle className="text-base font-medium">
-            리포지토리 비교
-          </CardTitle>
+          <CardTitle className="text-base font-medium">저장소 비교</CardTitle>
           <CardDescription className="text-sm text-muted-foreground">
-            리포지토리별 이슈 생성·해결, PR 생성·머지, 리뷰·댓글, 첫 리뷰까지의
-            평균 시간을 비교합니다. Dependabot이 생성한 Pull Request는
-            제외됩니다.
+            저장소별 이슈 생성·해결, PR 생성·머지, 리뷰·댓글, 첫 리뷰까지의 평균
+            시간을 비교합니다. Dependabot이 생성한 Pull Request는 제외됩니다.
           </CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
@@ -613,7 +610,7 @@ function RepoComparisonSection({
             <thead className="text-left text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="pb-3" scope="col">
-                  리포지토리
+                  저장소
                 </th>
                 {columns.map((column) => (
                   <th
@@ -759,11 +756,9 @@ function IndividualSection({ individual }: IndividualSectionProps) {
 
         <Card className="border-border/70">
           <CardHeader>
-            <CardTitle className="text-base font-medium">
-              리포지토리 활동
-            </CardTitle>
+            <CardTitle className="text-base font-medium">저장소 활동</CardTitle>
             <CardDescription className="text-sm text-muted-foreground">
-              해당 기간 동안 활동이 집중된 리포지토리
+              해당 기간 동안 활동이 집중된 저장소
             </CardDescription>
           </CardHeader>
           <CardContent>
