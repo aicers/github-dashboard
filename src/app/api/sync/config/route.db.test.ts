@@ -41,6 +41,8 @@ async function resetDatabaseState() {
          week_start = 'monday',
          excluded_repository_ids = '{}',
          excluded_user_ids = '{}',
+         allowed_team_slugs = '{}',
+         allowed_user_ids = '{}',
          date_time_format = 'auto',
          last_sync_started_at = NULL,
          last_sync_completed_at = NULL,
@@ -124,6 +126,8 @@ describe("sync config API routes", () => {
           dateTimeFormat: "en-gb-24h",
           excludedRepositories: [" repo-1 ", "repo-2", "repo-1"],
           excludedPeople: [" user-1 ", "user-2", "user-1"],
+          allowedTeams: [" team-alpha ", "team-beta", "team-alpha"],
+          allowedUsers: [" user-3 ", "user-3", "user-4 "],
         }),
       }),
     );
@@ -147,6 +151,8 @@ describe("sync config API routes", () => {
     expect(config?.date_time_format).toBe("en-gb-24h");
     expect(config?.excluded_repository_ids).toEqual(["repo-1", "repo-2"]);
     expect(config?.excluded_user_ids).toEqual(["user-1", "user-2"]);
+    expect(config?.allowed_team_slugs).toEqual(["team-alpha", "team-beta"]);
+    expect(config?.allowed_user_ids).toEqual(["user-3", "user-4"]);
 
     const intervalCall = setIntervalSpy.mock.calls[0];
     expect(intervalCall?.[1]).toBe(24 * 60 * 1000);

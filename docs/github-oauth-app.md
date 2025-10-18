@@ -38,7 +38,10 @@ APP_BASE_URL=http://localhost:3000   # production: https://your-domain
 SESSION_SECRET=$(openssl rand -hex 32)
 ```
 
-- `GITHUB_ALLOWED_ORG` is the GitHub organization slug used to gate access.
+- `GITHUB_ALLOWED_ORG` is the GitHub organization slug used to gate access. After
+  the app boots, administrators can open **Settings → Organization** to choose
+  which teams or individual members are allowed to sign in. Until at least one
+  team or member is whitelisted, only dashboard administrators may log in.
 - `DASHBOARD_ADMIN_IDS` is an optional comma-separated list of GitHub user
   logins or node IDs that should receive admin access to organization settings.
 - `APP_BASE_URL` enables the server to build redirect URIs (GitHub requires an

@@ -105,10 +105,11 @@ export async function GET(request: NextRequest) {
       state,
     });
     const profile = await fetchGithubProfile(accessToken);
-    const membership = await verifyOrganizationMembership(
+    const membership = await verifyOrganizationMembership({
       accessToken,
-      profile.actor.login ?? "",
-    );
+      login: profile.actor.login ?? "",
+      userId: profile.actor.id,
+    });
 
     if (!membership.allowed) {
       const deniedUrl = new URL("/auth/denied", resolveBaseUrl(request));

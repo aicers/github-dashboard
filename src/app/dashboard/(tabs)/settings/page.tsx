@@ -5,6 +5,12 @@ import {
   listAllRepositories,
   listAllUsers,
 } from "@/lib/db/operations";
+import { env } from "@/lib/env";
+import type { GithubMemberSummary, GithubTeamSummary } from "@/lib/github/org";
+import {
+  fetchOrganizationMembers,
+  fetchOrganizationTeams,
+} from "@/lib/github/org";
 import { fetchSyncStatus } from "@/lib/sync/service";
 
 export const dynamic = "force-dynamic";
@@ -22,12 +28,42 @@ export default async function SettingsPage() {
   const excludedMemberIds = Array.isArray(config?.excluded_user_ids)
     ? (config?.excluded_user_ids as string[])
     : [];
+  const allowedTeamSlugs = Array.isArray(config?.allowed_team_slugs)
+    ? (config?.allowed_team_slugs as string[])
+    : [];
+  const allowedUserIds = Array.isArray(config?.allowed_user_ids)
+    ? (config?.allowed_user_ids as string[])
+    : [];
   const currentUserProfile = session?.userId
     ? (members.find((member) => member.id === session.userId) ?? null)
     : null;
   const avatarState = session?.userId
     ? await getUserAvatarState(session.userId)
     : { avatarUrl: null, originalAvatarUrl: null, customAvatarUrl: null };
+  const targetOrgSlug =
+    env.GITHUB_ALLOWED_ORG ?? config?.org_name ?? env.GITHUB_ORG ?? "";
+  let organizationTeams: GithubTeamSummary[] = [];
+  let organizationMembers: GithubMemberSummary[] = [];
+
+  if (targetOrgSlug) {
+    try {
+      organizationTeams = await fetchOrganizationTeams(targetOrgSlug);
+    } catch (error) {
+      console.error(
+        "[settings] Failed to load GitHub teams for organization access controls",
+        error,
+      );
+    }
+
+    try {
+      organizationMembers = await fetchOrganizationMembers(targetOrgSlug);
+    } catch (error) {
+      console.error(
+        "[settings] Failed to load GitHub members for organization access controls",
+        error,
+      );
+    }
+  }
 
   return (
     <SettingsView
@@ -40,6 +76,10 @@ export default async function SettingsPage() {
       excludedRepositoryIds={excludedRepositoryIds}
       members={members}
       excludedMemberIds={excludedMemberIds}
+      allowedTeamSlugs={allowedTeamSlugs}
+      allowedUserIds={allowedUserIds}
+      organizationTeams={organizationTeams}
+      organizationMembers={organizationMembers}
       isAdmin={Boolean(session?.isAdmin)}
       currentUserId={session?.userId ?? null}
       currentUserName={currentUserProfile?.name ?? null}

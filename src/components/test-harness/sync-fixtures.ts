@@ -11,6 +11,8 @@ export function buildSyncStatusFixture(): SyncStatus {
       week_start: "monday",
       excluded_repository_ids: [],
       excluded_user_ids: [],
+      allowed_team_slugs: [],
+      allowed_user_ids: [],
       last_sync_started_at: "2024-04-02T09:00:00.000Z",
       last_sync_completed_at: "2024-04-02T10:30:00.000Z",
       last_successful_sync_at: "2024-04-02T10:30:00.000Z",

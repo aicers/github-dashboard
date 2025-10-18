@@ -29,6 +29,14 @@ const patchSchema = z.object({
     .array(z.string().min(1))
     .optional()
     .transform((value) => (value ? Array.from(new Set(value)) : undefined)),
+  allowedTeams: z
+    .array(z.string().min(1))
+    .optional()
+    .transform((value) => (value ? Array.from(new Set(value)) : undefined)),
+  allowedUsers: z
+    .array(z.string().min(1))
+    .optional()
+    .transform((value) => (value ? Array.from(new Set(value)) : undefined)),
 });
 
 export async function GET() {
@@ -77,6 +85,8 @@ export async function PATCH(request: Request) {
       syncIntervalMinutes,
       excludedRepositories,
       excludedPeople,
+      allowedTeams,
+      allowedUsers,
       timezone,
       weekStart,
       dateTimeFormat,
@@ -87,7 +97,9 @@ export async function PATCH(request: Request) {
         orgName !== undefined ||
         syncIntervalMinutes !== undefined ||
         excludedRepositories !== undefined ||
-        excludedPeople !== undefined;
+        excludedPeople !== undefined ||
+        allowedTeams !== undefined ||
+        allowedUsers !== undefined;
 
       if (attemptedAdminUpdate) {
         return NextResponse.json(
@@ -109,6 +121,8 @@ export async function PATCH(request: Request) {
         weekStart,
         excludedRepositories,
         excludedPeople,
+        allowedTeams,
+        allowedUsers,
         dateTimeFormat,
       });
     }

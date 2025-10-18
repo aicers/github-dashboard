@@ -384,6 +384,8 @@ export async function updateSyncSettings(params: {
   weekStart?: "sunday" | "monday";
   excludedRepositories?: string[];
   excludedPeople?: string[];
+  allowedTeams?: string[];
+  allowedUsers?: string[];
   dateTimeFormat?: string;
 }) {
   await ensureSchema();
@@ -451,6 +453,30 @@ export async function updateSyncSettings(params: {
     );
 
     await updateSyncConfig({ excludedUsers: normalized });
+  }
+
+  if (params.allowedTeams !== undefined) {
+    const normalized = Array.from(
+      new Set(
+        params.allowedTeams
+          .map((slug) => slug.trim())
+          .filter((slug) => slug.length > 0),
+      ),
+    );
+
+    await updateSyncConfig({ allowedTeams: normalized });
+  }
+
+  if (params.allowedUsers !== undefined) {
+    const normalized = Array.from(
+      new Set(
+        params.allowedUsers
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0),
+      ),
+    );
+
+    await updateSyncConfig({ allowedUsers: normalized });
   }
 
   if (params.dateTimeFormat !== undefined) {

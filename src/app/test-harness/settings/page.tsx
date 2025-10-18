@@ -40,6 +40,44 @@ const members: UserProfile[] = [
   },
 ];
 
+const organizationTeams = [
+  {
+    id: 10,
+    nodeId: "T_kwDOABCDE",
+    slug: "core-team",
+    name: "Core Team",
+    description: null,
+  },
+  {
+    id: 11,
+    nodeId: "T_kwDOABCD2",
+    slug: "qa-team",
+    name: "QA Team",
+    description: null,
+  },
+];
+
+const organizationMembers = [
+  {
+    id: 100,
+    nodeId: "MDQ6VXNlcjEwMA==",
+    login: "octocat",
+    avatarUrl: null,
+  },
+  {
+    id: 101,
+    nodeId: "MDQ6VXNlcjEwMQ==",
+    login: "hubot",
+    avatarUrl: null,
+  },
+  {
+    id: 102,
+    nodeId: "MDQ6VXNlcjEwMg==",
+    login: "monalisa",
+    avatarUrl: null,
+  },
+];
+
 function resolveIsAdmin(searchParams?: { admin?: string }) {
   const value = searchParams?.admin;
   if (!value) {
@@ -69,6 +107,10 @@ export default async function SettingsHarnessPage({
         excludedRepositoryIds={["repo-2"]}
         members={members}
         excludedMemberIds={["user-3"]}
+        allowedTeamSlugs={["core-team"]}
+        allowedUserIds={["MDQ6VXNlcjEwMA=="]}
+        organizationTeams={organizationTeams}
+        organizationMembers={organizationMembers}
         isAdmin={isAdmin}
         currentUserId="user-1"
         currentUserName="Octo Cat"
