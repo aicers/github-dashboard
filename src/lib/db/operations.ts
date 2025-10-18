@@ -645,7 +645,7 @@ export async function getSyncState(resource: string) {
 
 export async function getSyncConfig() {
   const result = await query(
-    `SELECT id, org_name, auto_sync_enabled, sync_interval_minutes, timezone, week_start, excluded_repository_ids, excluded_user_ids, date_time_format, last_sync_started_at, last_sync_completed_at, last_successful_sync_at
+    `SELECT id, org_name, auto_sync_enabled, sync_interval_minutes, timezone, week_start, excluded_repository_ids, excluded_user_ids, allowed_team_slugs, allowed_user_ids, date_time_format, last_sync_started_at, last_sync_completed_at, last_successful_sync_at
      FROM sync_config
      WHERE id = 'default'`,
   );
@@ -661,6 +661,8 @@ export async function updateSyncConfig(params: {
   weekStart?: "sunday" | "monday";
   excludedRepositories?: string[];
   excludedUsers?: string[];
+  allowedTeams?: string[];
+  allowedUsers?: string[];
   dateTimeFormat?: string;
   lastSyncStartedAt?: string | null;
   lastSyncCompletedAt?: string | null;
@@ -702,6 +704,16 @@ export async function updateSyncConfig(params: {
   if (Array.isArray(params.excludedUsers)) {
     fields.push(`excluded_user_ids = $${fields.length + 1}`);
     values.push(params.excludedUsers);
+  }
+
+  if (Array.isArray(params.allowedTeams)) {
+    fields.push(`allowed_team_slugs = $${fields.length + 1}`);
+    values.push(params.allowedTeams);
+  }
+
+  if (Array.isArray(params.allowedUsers)) {
+    fields.push(`allowed_user_ids = $${fields.length + 1}`);
+    values.push(params.allowedUsers);
   }
 
   if (typeof params.dateTimeFormat === "string") {

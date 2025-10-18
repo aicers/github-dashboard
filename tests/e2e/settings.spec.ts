@@ -27,7 +27,20 @@ test.describe("SettingsView (Playwright)", () => {
     await expect(
       page.getByRole("option", { name: "acme/repo-two" }),
     ).toBeAttached();
-    await expect(page.getByRole("option", { name: "monalisa" })).toBeAttached();
+    await expect(
+      page
+        .getByLabel("제외할 구성원을 선택하세요")
+        .getByRole("option", { name: "monalisa" }),
+    ).toBeAttached();
+    await expect(page.getByLabel("로그인 허용 팀을 선택하세요")).toHaveValues([
+      "core-team",
+    ]);
+    await expect(
+      page.getByLabel("로그인 허용 개별 구성원을 선택하세요"),
+    ).toHaveValues(["MDQ6VXNlcjEwMA=="]);
+    await expect(
+      page.getByText("허용된 팀: 1개 · 허용된 구성원: 1명"),
+    ).toBeVisible();
     await expect(
       page.getByLabel("제외할 리포지토리를 선택하세요"),
     ).toHaveValues(["repo-2"]);
@@ -68,6 +81,12 @@ test.describe("SettingsView (Playwright)", () => {
     await page
       .getByLabel("제외할 구성원을 선택하세요")
       .selectOption(["user-1", "user-2"]);
+    await page
+      .getByLabel("로그인 허용 팀을 선택하세요")
+      .selectOption(["qa-team"]);
+    await page
+      .getByLabel("로그인 허용 개별 구성원을 선택하세요")
+      .selectOption(["MDQ6VXNlcjEwMQ=="]);
 
     await page.getByRole("button", { name: "조직 설정 저장" }).click();
 
@@ -86,8 +105,16 @@ test.describe("SettingsView (Playwright)", () => {
     const excludedPeople = Array.from(
       (capturedPayload?.excludedPeople as string[]) ?? [],
     ).sort();
+    const allowedTeams = Array.from(
+      (capturedPayload?.allowedTeams as string[]) ?? [],
+    ).sort();
+    const allowedUsers = Array.from(
+      (capturedPayload?.allowedUsers as string[]) ?? [],
+    ).sort();
     expect(excludedRepositories).toEqual(["repo-1", "repo-3"]);
     expect(excludedPeople).toEqual(["user-1", "user-2"]);
+    expect(allowedTeams).toEqual(["qa-team"]);
+    expect(allowedUsers).toEqual(["MDQ6VXNlcjEwMQ=="]);
   });
 
   test("shows validation errors without hitting the API", async ({ page }) => {

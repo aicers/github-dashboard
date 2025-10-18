@@ -28,6 +28,7 @@ import {
   normalizeDateTimeDisplayFormat,
 } from "@/lib/date-time-format";
 import type { RepositoryProfile, UserProfile } from "@/lib/db/operations";
+import type { GithubMemberSummary, GithubTeamSummary } from "@/lib/github/org";
 import { buildUserInitials } from "@/lib/user/initials";
 import { cn } from "@/lib/utils";
 
@@ -47,7 +48,20 @@ const ADMIN_ONLY_MESSAGE = "관리자 권한이 있는 사용자만 수정할 �
 const MAX_AVATAR_FILE_SIZE = 4 * 1024 * 1024; // 4MB
 const ACCEPTED_AVATAR_MIME_TYPES = ["image/png", "image/jpeg", "image/webp"];
 
-function getTimezoneOptions() {
+function buildTimezoneOptions(seed: string) {
+  const options = new Set<string>();
+  if (seed) {
+    options.add(seed);
+  }
+
+  for (const zone of FALLBACK_TIMEZONES) {
+    options.add(zone);
+  }
+
+  return Array.from(options);
+}
+
+function readSupportedTimezones() {
   try {
     const supportedValuesOf = (
       Intl as typeof Intl & {
@@ -61,7 +75,7 @@ function getTimezoneOptions() {
     // ignore and fall back
   }
 
-  return FALLBACK_TIMEZONES;
+  return [];
 }
 
 type SettingsViewProps = {
@@ -74,6 +88,10 @@ type SettingsViewProps = {
   excludedRepositoryIds: string[];
   members: UserProfile[];
   excludedMemberIds: string[];
+  allowedTeamSlugs: string[];
+  allowedUserIds: string[];
+  organizationTeams: GithubTeamSummary[];
+  organizationMembers: GithubMemberSummary[];
   isAdmin: boolean;
   currentUserId: string | null;
   currentUserName: string | null;
@@ -99,6 +117,10 @@ export function SettingsView({
   excludedRepositoryIds,
   members,
   excludedMemberIds,
+  allowedTeamSlugs,
+  allowedUserIds,
+  organizationTeams,
+  organizationMembers,
   isAdmin,
   currentUserId,
   currentUserName,
@@ -160,6 +182,37 @@ export function SettingsView({
   const [excludedPeople, setExcludedPeople] = useState<string[]>(
     normalizedExcludedMembers,
   );
+  const normalizedAllowedTeams = useMemo(() => {
+    const available = new Set(organizationTeams.map((team) => team.slug));
+    return allowedTeamSlugs.filter((slug) => available.has(slug));
+  }, [allowedTeamSlugs, organizationTeams]);
+  const [allowedTeams, setAllowedTeams] = useState<string[]>(
+    normalizedAllowedTeams,
+  );
+  const normalizedAllowedUsers = useMemo(() => {
+    const available = new Set<string>();
+    for (const member of organizationMembers) {
+      if (member.nodeId) {
+        available.add(member.nodeId);
+      }
+      available.add(member.login.toLowerCase());
+    }
+
+    return allowedUserIds.filter((value) => {
+      if (!value) {
+        return false;
+      }
+
+      if (available.has(value)) {
+        return true;
+      }
+
+      return available.has(value.toLowerCase());
+    });
+  }, [allowedUserIds, organizationMembers]);
+  const [allowedUsers, setAllowedUsers] = useState<string[]>(
+    normalizedAllowedUsers,
+  );
   const [isSavingPersonal, startSavingPersonal] = useTransition();
   const [isSavingOrganization, startSavingOrganization] = useTransition();
   const [isUploadingAvatar, startUploadingAvatar] = useTransition();
@@ -172,17 +225,34 @@ export function SettingsView({
   const intervalInputId = useId();
   const excludeSelectId = useId();
   const excludePeopleSelectId = useId();
+  const allowedTeamsSelectId = useId();
+  const allowedUsersSelectId = useId();
+  const feedbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const canEditOrganization = isAdmin;
 
-  const timezones = useMemo(() => {
-    const options = getTimezoneOptions();
-    if (options.includes(timezone)) {
-      return options;
+  const [timezones, setTimezones] = useState<string[]>(() =>
+    buildTimezoneOptions(timeZone),
+  );
+
+  useEffect(() => {
+    setTimezones(buildTimezoneOptions(timeZone));
+  }, [timeZone]);
+
+  useEffect(() => {
+    const supported = readSupportedTimezones();
+    if (!supported.length) {
+      return;
     }
 
-    return [timezone, ...options];
-  }, [timezone]);
+    setTimezones((previous) => {
+      const merged = new Set(previous);
+      for (const zone of supported) {
+        merged.add(zone);
+      }
+      return Array.from(merged);
+    });
+  }, []);
 
   useEffect(() => {
     setPersistedAvatarUrl(currentUserAvatarUrl);
@@ -203,6 +273,10 @@ export function SettingsView({
       if (tempAvatarUrlRef.current) {
         URL.revokeObjectURL(tempAvatarUrlRef.current);
       }
+      if (feedbackTimeoutRef.current) {
+        clearTimeout(feedbackTimeoutRef.current);
+        feedbackTimeoutRef.current = null;
+      }
     };
   }, []);
 
@@ -215,8 +289,45 @@ export function SettingsView({
   }, [normalizedExcludedMembers]);
 
   useEffect(() => {
+    setAllowedTeams(normalizedAllowedTeams);
+  }, [normalizedAllowedTeams]);
+
+  useEffect(() => {
+    setAllowedUsers(normalizedAllowedUsers);
+  }, [normalizedAllowedUsers]);
+
+  useEffect(() => {
     setDateTimeFormatValue(normalizeDateTimeDisplayFormat(dateTimeFormat));
   }, [dateTimeFormat]);
+
+  useEffect(() => {
+    if (feedbackTimeoutRef.current) {
+      clearTimeout(feedbackTimeoutRef.current);
+      feedbackTimeoutRef.current = null;
+    }
+
+    const message = activeTab === "personal" ? personalFeedback : orgFeedback;
+    if (!message) {
+      return;
+    }
+
+    feedbackTimeoutRef.current = setTimeout(() => {
+      if (activeTab === "personal") {
+        setPersonalFeedback(null);
+      } else {
+        setOrgFeedback(null);
+      }
+      feedbackTimeoutRef.current = null;
+    }, 4000);
+  }, [personalFeedback, orgFeedback, activeTab]);
+
+  useEffect(() => {
+    if (activeTab === "personal") {
+      setOrgFeedback(null);
+    } else if (activeTab === "organization") {
+      setPersonalFeedback(null);
+    }
+  }, [activeTab]);
 
   const sortedRepositories = useMemo(() => {
     return [...repositories].sort((a, b) => {
@@ -235,6 +346,20 @@ export function SettingsView({
       }),
     );
   }, [members]);
+  const sortedOrganizationTeams = useMemo(() => {
+    return [...organizationTeams].sort((a, b) =>
+      (a.name || a.slug).localeCompare(b.name || b.slug, undefined, {
+        sensitivity: "base",
+      }),
+    );
+  }, [organizationTeams]);
+  const sortedOrganizationMembers = useMemo(() => {
+    return [...organizationMembers].sort((a, b) =>
+      a.login.localeCompare(b.login, undefined, {
+        sensitivity: "base",
+      }),
+    );
+  }, [organizationMembers]);
 
   const hasPersistedAvatar = Boolean(persistedAvatarUrl);
   const hasCustomAvatar = Boolean(persistedCustomAvatarUrl);
@@ -252,6 +377,32 @@ export function SettingsView({
 
   const handleClearExcluded = () => {
     setExcludedRepos([]);
+  };
+
+  const handleAllowedTeamsChange = (
+    event: React.ChangeEvent<HTMLSelectElement>,
+  ) => {
+    const selected = Array.from(event.target.selectedOptions).map(
+      (option) => option.value,
+    );
+    setAllowedTeams(selected);
+  };
+
+  const handleClearAllowedTeams = () => {
+    setAllowedTeams([]);
+  };
+
+  const handleAllowedUsersChange = (
+    event: React.ChangeEvent<HTMLSelectElement>,
+  ) => {
+    const selected = Array.from(event.target.selectedOptions).map(
+      (option) => option.value,
+    );
+    setAllowedUsers(selected);
+  };
+
+  const handleClearAllowedUsers = () => {
+    setAllowedUsers([]);
   };
 
   const releaseTempAvatarPreview = () => {
@@ -505,6 +656,8 @@ export function SettingsView({
             dateTimeFormat: dateTimeFormatValue,
             excludedRepositories: excludedRepos,
             excludedPeople,
+            allowedTeams,
+            allowedUsers,
           }),
         });
         const data = (await response.json()) as ApiResponse<unknown>;
@@ -899,6 +1052,124 @@ export function SettingsView({
                   </select>
                 </label>
               </CardContent>
+            </Card>
+
+            <Card className="border-border/70">
+              <CardHeader>
+                <CardTitle>접근 허용 제어</CardTitle>
+                <CardDescription>
+                  GitHub OAuth 로그인 허용 범위를 설정합니다. 선택된 팀이나
+                  구성원만 접근할 수 있으며, 비어 있으면 관리자만 로그인
+                  가능합니다.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4 text-sm">
+                <p className="text-xs text-muted-foreground">
+                  목록은 Settings에 들어올 때 GitHub에서 갱신됩니다. 새로운
+                  팀이나 구성원이 보이지 않으면 페이지를 새로고침해 주세요.
+                </p>
+                {sortedOrganizationTeams.length === 0 ? (
+                  <p className="text-muted-foreground text-sm">
+                    불러온 GitHub 팀이 없습니다. 조직의 팀이 없다면 그대로
+                    두어도 괜찮습니다.
+                  </p>
+                ) : (
+                  <label
+                    className="flex flex-col gap-2"
+                    htmlFor={allowedTeamsSelectId}
+                  >
+                    <span className="text-muted-foreground">
+                      로그인 허용 팀을 선택하세요
+                    </span>
+                    <select
+                      id={allowedTeamsSelectId}
+                      multiple
+                      value={allowedTeams}
+                      onChange={handleAllowedTeamsChange}
+                      className="h-48 rounded-md border border-border/60 bg-background p-2 text-sm"
+                      disabled={!canEditOrganization}
+                      title={
+                        !canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined
+                      }
+                    >
+                      {sortedOrganizationTeams.map((team) => (
+                        <option key={team.slug} value={team.slug}>
+                          {team.name} · {team.slug}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-xs text-muted-foreground">
+                      여러 팀을 선택하려면 ⌘/Ctrl 키를 눌러 복수 선택하세요.
+                    </span>
+                  </label>
+                )}
+                {sortedOrganizationMembers.length === 0 ? (
+                  <p className="text-muted-foreground text-sm">
+                    불러온 GitHub 구성원이 없습니다. GITHUB_TOKEN과 Organization
+                    설정을 확인해 주세요.
+                  </p>
+                ) : (
+                  <label
+                    className="flex flex-col gap-2"
+                    htmlFor={allowedUsersSelectId}
+                  >
+                    <span className="text-muted-foreground">
+                      로그인 허용 개별 구성원을 선택하세요
+                    </span>
+                    <select
+                      id={allowedUsersSelectId}
+                      multiple
+                      value={allowedUsers}
+                      onChange={handleAllowedUsersChange}
+                      className="h-48 rounded-md border border-border/60 bg-background p-2 text-sm"
+                      disabled={!canEditOrganization}
+                      title={
+                        !canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined
+                      }
+                    >
+                      {sortedOrganizationMembers.map((member) => {
+                        const value = member.nodeId ?? member.login;
+                        return (
+                          <option key={value} value={value}>
+                            {member.login}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <span className="text-xs text-muted-foreground">
+                      여러 구성원을 선택하려면 ⌘/Ctrl 키를 눌러 복수 선택하세요.
+                    </span>
+                  </label>
+                )}
+              </CardContent>
+              <CardFooter className="flex flex-col gap-2 text-xs text-muted-foreground md:flex-row md:items-center md:justify-between">
+                <span>
+                  허용된 팀: {allowedTeams.length}개 · 허용된 구성원:{" "}
+                  {allowedUsers.length}명
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    variant="secondary"
+                    onClick={handleClearAllowedTeams}
+                    disabled={!canEditOrganization || allowedTeams.length === 0}
+                    title={
+                      !canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined
+                    }
+                  >
+                    허용 팀 비우기
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={handleClearAllowedUsers}
+                    disabled={!canEditOrganization || allowedUsers.length === 0}
+                    title={
+                      !canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined
+                    }
+                  >
+                    허용 구성원 비우기
+                  </Button>
+                </div>
+              </CardFooter>
             </Card>
 
             <Card className="border-border/70">

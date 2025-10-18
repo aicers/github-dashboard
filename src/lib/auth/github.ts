@@ -1,5 +1,6 @@
+import { isAdminUser } from "@/lib/auth/admin";
 import { ensureSchema } from "@/lib/db";
-import { type DbActor, upsertUser } from "@/lib/db/operations";
+import { type DbActor, getSyncConfig, upsertUser } from "@/lib/db/operations";
 import { env } from "@/lib/env";
 
 const GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize";
@@ -242,10 +243,17 @@ type MembershipResult = {
   orgSlug: string | null;
 };
 
-export async function verifyOrganizationMembership(
-  accessToken: string,
-  login: string,
-): Promise<MembershipResult> {
+type VerifyMembershipOptions = {
+  accessToken: string;
+  login: string;
+  userId?: string | null;
+};
+
+export async function verifyOrganizationMembership({
+  accessToken,
+  login,
+  userId,
+}: VerifyMembershipOptions): Promise<MembershipResult> {
   const targetOrg = env.GITHUB_ALLOWED_ORG?.trim();
   if (!targetOrg) {
     return { allowed: true, orgSlug: null };
@@ -255,7 +263,7 @@ export async function verifyOrganizationMembership(
     return { allowed: false, orgSlug: targetOrg };
   }
 
-  const response = await fetch(
+  const membershipResponse = await fetch(
     `https://api.github.com/orgs/${encodeURIComponent(targetOrg)}/memberships/${encodeURIComponent(login)}`,
     {
       headers: {
@@ -267,28 +275,184 @@ export async function verifyOrganizationMembership(
     },
   );
 
-  if (response.status === 404) {
+  if (membershipResponse.status === 404) {
     return { allowed: false, orgSlug: targetOrg };
   }
 
-  if (response.status === 403) {
+  if (membershipResponse.status === 403) {
     return { allowed: false, orgSlug: targetOrg };
   }
 
-  if (!response.ok) {
+  if (!membershipResponse.ok) {
     throw new Error(
-      `Unable to verify organization membership. GitHub responded with ${response.status}.`,
+      `Unable to verify organization membership. GitHub responded with ${membershipResponse.status}.`,
     );
   }
 
-  const membership = (await response.json()) as {
+  const membership = (await membershipResponse.json()) as {
     state?: string;
     organization?: { login?: string };
   };
 
   const isActive = membership.state === "active";
-  return {
-    allowed: isActive,
-    orgSlug: membership.organization?.login ?? targetOrg,
+  const orgSlug = membership.organization?.login ?? targetOrg;
+
+  if (!isActive) {
+    return { allowed: false, orgSlug };
+  }
+
+  await ensureSchema();
+  const config = await getSyncConfig();
+  const allowedTeamSlugs = Array.isArray(config?.allowed_team_slugs)
+    ? (config?.allowed_team_slugs as string[])
+    : [];
+  const allowedUserIds = Array.isArray(config?.allowed_user_ids)
+    ? (config?.allowed_user_ids as string[])
+    : [];
+
+  const isAdmin = isAdminUser({
+    userId: userId ?? "",
+    login,
+  });
+  if (isAdmin) {
+    return { allowed: true, orgSlug };
+  }
+
+  const hasTeamRules = allowedTeamSlugs.length > 0;
+  const hasUserRules = allowedUserIds.length > 0;
+
+  if (!hasTeamRules && !hasUserRules) {
+    return { allowed: false, orgSlug };
+  }
+
+  const normalizedAllowedIds = new Set(allowedUserIds);
+  const normalizedAllowedLogins = new Set(
+    allowedUserIds.map((value) => value.toLowerCase()),
+  );
+
+  if (userId && normalizedAllowedIds.has(userId)) {
+    return { allowed: true, orgSlug };
+  }
+
+  if (normalizedAllowedLogins.has(login.toLowerCase())) {
+    return { allowed: true, orgSlug };
+  }
+
+  if (hasTeamRules) {
+    const belongsToAllowedTeam = await verifyTeamMembership({
+      org: orgSlug,
+      login,
+      teamSlugs: allowedTeamSlugs,
+      userToken: accessToken,
+      fallbackToken: env.GITHUB_TOKEN ?? null,
+    });
+
+    if (belongsToAllowedTeam) {
+      return { allowed: true, orgSlug };
+    }
+  }
+
+  return { allowed: false, orgSlug };
+}
+
+async function verifyTeamMembership({
+  org,
+  login,
+  teamSlugs,
+  userToken,
+  fallbackToken,
+}: {
+  org: string | null;
+  login: string;
+  teamSlugs: string[];
+  userToken: string;
+  fallbackToken: string | null;
+}): Promise<boolean> {
+  if (!org) {
+    return false;
+  }
+
+  const uniqueSlugs = Array.from(
+    new Set(teamSlugs.map((slug) => slug.trim()).filter((slug) => slug)),
+  );
+  if (uniqueSlugs.length === 0) {
+    return false;
+  }
+
+  const attemptMembershipFetch = async (
+    token: string,
+    slug: string,
+  ): Promise<Response | null> => {
+    if (!token) {
+      return null;
+    }
+
+    return await fetch(
+      `https://api.github.com/orgs/${encodeURIComponent(org)}/teams/${encodeURIComponent(slug)}/memberships/${encodeURIComponent(login)}`,
+      {
+        headers: {
+          Accept: "application/vnd.github+json",
+          Authorization: `Bearer ${token}`,
+          "User-Agent": USER_AGENT,
+        },
+        cache: "no-store",
+      },
+    );
   };
+
+  for (const slug of uniqueSlugs) {
+    const primaryResponse = await attemptMembershipFetch(userToken, slug);
+    const evaluated = await evaluateTeamMembershipResponse(
+      primaryResponse,
+      slug,
+    );
+    if (evaluated === "allowed") {
+      return true;
+    }
+    if (evaluated === "denied") {
+      continue;
+    }
+
+    if (fallbackToken) {
+      const fallbackResponse = await attemptMembershipFetch(
+        fallbackToken,
+        slug,
+      );
+      const fallbackEvaluated = await evaluateTeamMembershipResponse(
+        fallbackResponse,
+        slug,
+      );
+      if (fallbackEvaluated === "allowed") {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+async function evaluateTeamMembershipResponse(
+  response: Response | null,
+  slug: string,
+): Promise<"allowed" | "retry" | "denied"> {
+  if (!response) {
+    return "retry";
+  }
+
+  if (response.status === 404) {
+    return "denied";
+  }
+
+  if (response.status === 403) {
+    return "retry";
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `Unable to verify team membership for ${slug}. GitHub responded with ${response.status}.`,
+    );
+  }
+
+  const data = (await response.json()) as { state?: string };
+  return data.state === "active" ? "allowed" : "denied";
 }
