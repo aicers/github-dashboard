@@ -3,30 +3,30 @@ import { buildDashboardAnalyticsFixture } from "@/components/test-harness/dashbo
 import { buildSyncStatusFixture } from "@/components/test-harness/sync-fixtures";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import { resolveDashboardRange } from "@/lib/dashboard/date-range";
-import { fetchSyncStatus } from "@/lib/sync/service";
+import { fetchSyncConfig } from "@/lib/sync/service";
 
 export const dynamic = "force-dynamic";
 
 export default async function AnalyticsPage() {
   const skipDatabase = process.env.PLAYWRIGHT_SKIP_DB === "1";
 
-  const status = await (async () => {
+  const syncConfig = await (async () => {
     if (skipDatabase) {
-      return buildSyncStatusFixture();
+      return buildSyncStatusFixture().config;
     }
 
     try {
-      return await fetchSyncStatus();
+      return await fetchSyncConfig();
     } catch (error) {
       console.error(
-        "[github-dashboard] Falling back to fixture sync status",
+        "[github-dashboard] Falling back to fixture sync config",
         error,
       );
-      return buildSyncStatusFixture();
+      return buildSyncStatusFixture().config;
     }
   })();
 
-  const { start, end } = resolveDashboardRange(status.config);
+  const { start, end } = resolveDashboardRange(syncConfig);
 
   const analytics = await (async () => {
     if (skipDatabase) {
@@ -48,7 +48,7 @@ export default async function AnalyticsPage() {
     <AnalyticsView
       initialAnalytics={analytics}
       defaultRange={{ start, end }}
-      orgName={status.config?.org_name}
+      orgName={syncConfig?.org_name}
     />
   );
 }
