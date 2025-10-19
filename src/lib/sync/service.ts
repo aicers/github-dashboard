@@ -19,7 +19,11 @@ import {
 } from "@/lib/db/operations";
 import { env } from "@/lib/env";
 import type { ResourceKey, SyncLogger } from "@/lib/github/collectors";
-import { RESOURCE_KEYS, runCollection } from "@/lib/github/collectors";
+import {
+  collectPullRequestLinks,
+  RESOURCE_KEYS,
+  runCollection,
+} from "@/lib/github/collectors";
 import { emitSyncEvent } from "@/lib/sync/event-bus";
 import type { SyncRunSummaryEvent } from "@/lib/sync/events";
 
@@ -74,6 +78,16 @@ export type BackfillResult = {
   chunks: BackfillChunk[];
 };
 
+export type PrLinkBackfillResult = {
+  startDate: string;
+  endDate: string | null;
+  startedAt: string;
+  completedAt: string;
+  repositoriesProcessed: number;
+  pullRequestCount: number;
+  latestPullRequestUpdated: string | null;
+};
+
 export type SyncStatus = {
   config: Awaited<ReturnType<typeof getSyncConfig>>;
   runs: SyncRunSummary[];
@@ -86,6 +100,8 @@ export type DashboardStats = Awaited<ReturnType<typeof getDashboardStats>>;
 type SchedulerGlobal = typeof globalThis & {
   __githubDashboardScheduler?: SchedulerState;
 };
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 function getSchedulerState() {
   const globalWithScheduler = globalThis as SchedulerGlobal;
@@ -207,6 +223,17 @@ function pickLatest(start: string | null, candidate: string | null) {
 }
 
 type SyncStrategy = "incremental" | "backfill";
+
+function formatDayLabel(value: string | Date) {
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) {
+    return "unknown-day";
+  }
+  const normalized = new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+  );
+  return normalized.toISOString().slice(0, 10);
+}
 
 function toRunSummaryEvent(
   summary: SyncRunResult["summary"],
@@ -495,6 +522,230 @@ export async function runIncrementalSync(logger?: SyncLogger) {
       scheduleNextRun(scheduler.intervalMs);
     }
   }
+}
+
+export async function runPrLinkBackfill(
+  startDate: string,
+  endDate?: string | null,
+  logger?: SyncLogger,
+): Promise<PrLinkBackfillResult> {
+  const parsedDate = dateSchema.parse(startDate);
+  const start = new Date(parsedDate);
+  const startUtc = new Date(
+    Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()),
+  );
+  const sinceIso = startUtc.toISOString();
+  let endDateIso: string | null = null;
+  let untilIso: string | null = null;
+
+  if (endDate) {
+    const parsedEndDate = dateSchema.parse(endDate);
+    const end = new Date(parsedEndDate);
+    const endUtc = new Date(
+      Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()),
+    );
+
+    if (endUtc.getTime() < startUtc.getTime()) {
+      throw new Error(
+        "PR link backfill end date must be on or after the start date.",
+      );
+    }
+
+    endDateIso = endUtc.toISOString();
+    const exclusiveEndUtc = new Date(endDateIso);
+    exclusiveEndUtc.setUTCDate(exclusiveEndUtc.getUTCDate() + 1);
+    untilIso = exclusiveEndUtc.toISOString();
+  }
+
+  return withSyncLock(async () => {
+    await ensureSchema();
+    const org = await resolveOrgName();
+    const startedAtDate = new Date();
+    const startedAt = startedAtDate.toISOString();
+
+    const plannedExclusiveEndUtc = untilIso
+      ? new Date(untilIso)
+      : new Date(
+          Math.max(startUtc.getTime() + MS_PER_DAY, startedAtDate.getTime()),
+        );
+    if (Number.isNaN(plannedExclusiveEndUtc.getTime())) {
+      throw new Error("Invalid PR link backfill end boundary.");
+    }
+    const startDayLabel = formatDayLabel(startUtc);
+
+    logger?.(
+      `Starting PR link backfill for ${org} (period: ${startDayLabel}).`,
+    );
+
+    const runId = await createSyncRun({
+      runType: "backfill",
+      strategy: "backfill",
+      since: sinceIso,
+      until: untilIso,
+      startedAt,
+    });
+
+    if (runId === null) {
+      throw new Error("Failed to record PR link backfill run metadata.");
+    }
+
+    emitSyncEvent({
+      type: "run-started",
+      runId,
+      runType: "backfill",
+      strategy: "backfill",
+      status: "running",
+      since: sinceIso,
+      until: untilIso,
+      startedAt,
+    });
+
+    try {
+      const exclusiveEndUtc = plannedExclusiveEndUtc;
+
+      let cursor = startUtc;
+      let chunkIndex = 0;
+      let totalPullRequestCount = 0;
+      let repositoriesProcessed = 0;
+      let latestPullRequestUpdated: string | null = null;
+      let lastChunkDayLabel: string | null = null;
+
+      while (cursor.getTime() < exclusiveEndUtc.getTime()) {
+        const nextCursorMs = Math.min(
+          exclusiveEndUtc.getTime(),
+          cursor.getTime() + MS_PER_DAY,
+        );
+        if (nextCursorMs <= cursor.getTime()) {
+          break;
+        }
+        const chunkUntil = new Date(nextCursorMs);
+        const chunkSinceIso = cursor.toISOString();
+        const chunkUntilIso = chunkUntil.toISOString();
+        const chunkDayLabel = formatDayLabel(chunkSinceIso);
+
+        chunkIndex += 1;
+        logger?.(
+          `Collecting PR link chunk #${chunkIndex} for ${org} (period: ${chunkDayLabel}).`,
+        );
+
+        const chunkSummary = await collectPullRequestLinks({
+          org,
+          sinceByResource: { pull_requests: chunkSinceIso },
+          until: chunkUntilIso,
+          logger,
+        });
+
+        totalPullRequestCount += chunkSummary.pullRequestCount;
+        repositoriesProcessed = Math.max(
+          repositoriesProcessed,
+          chunkSummary.repositoriesProcessed,
+        );
+        latestPullRequestUpdated = pickLatest(
+          latestPullRequestUpdated,
+          chunkSummary.latestPullRequestUpdated,
+        );
+
+        cursor = chunkUntil;
+        lastChunkDayLabel = chunkDayLabel;
+      }
+
+      emitSyncEvent({
+        type: "log-started",
+        logId: runId * 1000,
+        runId,
+        resource: "pull_request_links",
+        status: "running",
+        message: "PR 링크 갱신 실행 중",
+        startedAt,
+      });
+
+      const completedAtDate = new Date();
+      const completedAt = completedAtDate.toISOString();
+      await updateSyncRunStatus(runId, "success", completedAt);
+      emitSyncEvent({
+        type: "run-status",
+        runId,
+        status: "success",
+        completedAt,
+      });
+      emitSyncEvent({
+        type: "run-completed",
+        runId,
+        status: "success",
+        completedAt,
+        summary: {
+          counts: {
+            issues: 0,
+            discussions: 0,
+            pullRequests: totalPullRequestCount,
+            reviews: 0,
+            comments: 0,
+          },
+          timestamps: {
+            pullRequests: latestPullRequestUpdated ?? null,
+          },
+        },
+      });
+
+      emitSyncEvent({
+        type: "log-updated",
+        logId: runId * 1000,
+        runId,
+        resource: "pull_request_links",
+        status: "success",
+        message: `${repositoriesProcessed}개 저장소, PR ${totalPullRequestCount}건 링크 갱신 완료`,
+        finishedAt: completedAt,
+      });
+
+      const completionDayLabel =
+        lastChunkDayLabel ??
+        (latestPullRequestUpdated
+          ? formatDayLabel(latestPullRequestUpdated)
+          : startDayLabel);
+
+      logger?.(
+        `Completed PR link backfill for ${org} (period: ${completionDayLabel}). Processed ${totalPullRequestCount} pull requests across ${repositoriesProcessed} repositories.`,
+      );
+
+      return {
+        startDate: sinceIso,
+        endDate: endDateIso,
+        startedAt,
+        completedAt,
+        repositoriesProcessed,
+        pullRequestCount: totalPullRequestCount,
+        latestPullRequestUpdated,
+      };
+    } catch (error) {
+      const failedAt = new Date().toISOString();
+      await updateSyncRunStatus(runId, "failed", failedAt);
+      emitSyncEvent({
+        type: "run-status",
+        runId,
+        status: "failed",
+        completedAt: failedAt,
+      });
+      const message =
+        error instanceof Error ? error.message : "PR link backfill failed.";
+      emitSyncEvent({
+        type: "run-failed",
+        runId,
+        status: "failed",
+        finishedAt: failedAt,
+        error: message,
+      });
+      emitSyncEvent({
+        type: "log-updated",
+        logId: runId * 1000,
+        runId,
+        resource: "pull_request_links",
+        status: "failed",
+        message,
+        finishedAt: failedAt,
+      });
+      throw error;
+    }
+  });
 }
 
 export async function enableAutomaticSync(options?: {

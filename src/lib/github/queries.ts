@@ -485,6 +485,18 @@ export const repositoryPullRequestsQuery = gql`
               color
             }
           }
+          closingIssuesReferences(first: 20) {
+            nodes {
+              id
+              number
+              title
+              url
+              state
+              repository {
+                nameWithOwner
+              }
+            }
+          }
           timelineItems(last: 50, itemTypes: [REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT]) {
             nodes {
               __typename
@@ -540,6 +552,91 @@ export const repositoryPullRequestsQuery = gql`
                 login
                 name
                 avatarUrl(size: 200)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export const repositoryPullRequestLinksQuery = gql`
+  query RepositoryPullRequestLinks($owner: String!, $name: String!, $cursor: String) {
+    repository(owner: $owner, name: $name) {
+      pullRequests(first: 25, after: $cursor, orderBy: { field: UPDATED_AT, direction: ASC }) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        nodes {
+          id
+          number
+          title
+          state
+          url
+          createdAt
+          updatedAt
+          closedAt
+          mergedAt
+          merged
+          author {
+            __typename
+            ... on User {
+              id
+              login
+              name
+              avatarUrl(size: 200)
+              createdAt
+              updatedAt
+            }
+            ... on Organization {
+              id
+              login
+              name
+              avatarUrl(size: 200)
+              createdAt
+              updatedAt
+            }
+            ... on Bot {
+              id
+              login
+              avatarUrl(size: 200)
+            }
+          }
+          mergedBy {
+            __typename
+            ... on User {
+              id
+              login
+              name
+              avatarUrl(size: 200)
+              createdAt
+              updatedAt
+            }
+            ... on Organization {
+              id
+              login
+              name
+              avatarUrl(size: 200)
+              createdAt
+              updatedAt
+            }
+            ... on Bot {
+              id
+              login
+              avatarUrl(size: 200)
+            }
+          }
+          closingIssuesReferences(first: 20) {
+            nodes {
+              id
+              number
+              title
+              url
+              state
+              repository {
+                nameWithOwner
               }
             }
           }

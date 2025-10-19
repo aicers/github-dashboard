@@ -1,4 +1,10 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -272,7 +278,7 @@ describe("SyncControls", () => {
         /이슈 1\s+\/ 토론\s+1\s+\/ PR\s+2\s+\/ 리뷰\s+3\s+\/ 댓글\s+4/,
       ),
     ).toBeInTheDocument();
-    expect(routerRefreshMock).toHaveBeenCalledTimes(1);
+    expect(routerRefreshMock).not.toHaveBeenCalled();
   });
 
   it("shows a detailed failure message when any backfill chunk fails", async () => {
@@ -362,9 +368,7 @@ describe("SyncControls", () => {
     const historyHeading = await screen.findByText("백필 결과 히스토리");
     const historyCard = historyHeading.closest('[data-slot="card"]');
     expect(historyCard).not.toBeNull();
-    await waitFor(() => {
-      expect(routerRefreshMock).toHaveBeenCalledTimes(1);
-    });
+    expect(routerRefreshMock).not.toHaveBeenCalled();
 
     mockFetchOnce(async () => {
       throw new Error("network failure");
@@ -375,10 +379,85 @@ describe("SyncControls", () => {
     await waitFor(() => {
       expect(screen.getByText("network failure")).toBeInTheDocument();
     });
-    expect(routerRefreshMock).toHaveBeenCalledTimes(1);
+    expect(routerRefreshMock).not.toHaveBeenCalled();
     expect(
       within(historyCard as HTMLElement).getByText(/실행 #1/),
     ).toBeInTheDocument();
+  });
+
+  it("runs a PR 링크 백필 and shows feedback", async () => {
+    const status = buildStatus();
+    const prLinkResult = {
+      startDate: "2024-04-01T00:00:00.000Z",
+      endDate: null,
+      startedAt: "2024-05-01T12:00:00.000Z",
+      completedAt: "2024-05-01T12:01:00.000Z",
+      repositoriesProcessed: 2,
+      pullRequestCount: 5,
+      latestPullRequestUpdated: "2024-04-10T00:00:00.000Z",
+    };
+
+    mockFetchJsonOnce({ success: true, result: prLinkResult });
+
+    render(<SyncControls status={status} isAdmin />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "PR 링크 백필 실행" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+
+    const request = fetchMock.mock.calls[0]?.[0] as Request;
+    expect(request.url).toContain("/api/sync/pr-link-backfill");
+    expect(request.method).toBe("POST");
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "PR 링크 백필을 요청했습니다. 진행 상황은 동기화 로그에서 확인하세요.",
+        ),
+      ).toBeInTheDocument();
+    });
+
+    expect(routerRefreshMock).not.toHaveBeenCalled();
+  });
+
+  it("sends an end date when running a PR 링크 백필 with a range", async () => {
+    const status = buildStatus();
+    const prLinkResult = {
+      startDate: "2024-04-01T00:00:00.000Z",
+      endDate: "2024-04-10T00:00:00.000Z",
+      startedAt: "2024-05-01T12:00:00.000Z",
+      completedAt: "2024-05-01T12:01:00.000Z",
+      repositoriesProcessed: 2,
+      pullRequestCount: 5,
+      latestPullRequestUpdated: "2024-04-10T00:00:00.000Z",
+    };
+
+    mockFetchJsonOnce({ success: true, result: prLinkResult });
+
+    render(<SyncControls status={status} isAdmin />);
+    const user = userEvent.setup();
+
+    const prLinkStartInput = screen.getAllByLabelText("시작 날짜")[1];
+    fireEvent.change(prLinkStartInput, { target: { value: "2024-04-01" } });
+    const prLinkEndInput = screen.getByLabelText("종료 날짜 (선택)");
+    fireEvent.change(prLinkEndInput, { target: { value: "2024-04-10" } });
+
+    await user.click(screen.getByRole("button", { name: "PR 링크 백필 실행" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+
+    const request = fetchMock.mock.calls[0]?.[0] as Request;
+    expect(request.url).toContain("/api/sync/pr-link-backfill");
+    const body = await request.clone().json();
+    expect(body).toEqual({
+      startDate: "2024-04-01",
+      endDate: "2024-04-10",
+    });
   });
 
   it("validates the sync interval before toggling automatic sync", async () => {

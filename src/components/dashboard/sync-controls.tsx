@@ -18,7 +18,11 @@ import {
   formatDateTime as formatDateTimeDisplay,
   normalizeDateTimeDisplayFormat,
 } from "@/lib/date-time-format";
-import type { BackfillResult, SyncStatus } from "@/lib/sync/service";
+import type {
+  BackfillResult,
+  PrLinkBackfillResult,
+  SyncStatus,
+} from "@/lib/sync/service";
 
 type SyncControlsProps = {
   status: SyncStatus;
@@ -267,10 +271,15 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
     now.setMonth(now.getMonth() - 1);
     return now.toISOString().slice(0, 10);
   });
+  const prLinkBackfillInputId = useId();
+  const prLinkBackfillEndInputId = useId();
+  const [prLinkStartDate, setPrLinkStartDate] = useState(() => backfillDate);
+  const [prLinkEndDate, setPrLinkEndDate] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [backfillHistory, setBackfillHistory] = useState<BackfillResult[]>([]);
 
   const [isRunningBackfill, setIsRunningBackfill] = useState(false);
+  const [isRunningPrLinkBackfill, setIsRunningPrLinkBackfill] = useState(false);
   const [isTogglingAuto, setIsTogglingAuto] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [isCleaning, setIsCleaning] = useState(false);
@@ -423,7 +432,6 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
       } else {
         setFeedback("백필이 성공적으로 실행되었습니다.");
       }
-      router.refresh();
     } catch (error) {
       setFeedback(
         error instanceof Error ? error.message : "백필 중 오류가 발생했습니다.",
@@ -569,6 +577,55 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
     }
   }
 
+  async function handlePrLinkBackfill() {
+    if (!canManageSync) {
+      setFeedback(ADMIN_ONLY_MESSAGE);
+      return;
+    }
+
+    if (!prLinkStartDate) {
+      setFeedback("PR 링크 백필 시작 날짜를 선택하세요.");
+      return;
+    }
+
+    if (prLinkEndDate && prLinkEndDate < prLinkStartDate) {
+      setFeedback(
+        "PR 링크 백필 종료 날짜는 시작 날짜와 같거나 이후여야 합니다.",
+      );
+      return;
+    }
+
+    setIsRunningPrLinkBackfill(true);
+    try {
+      const response = await fetch("/api/sync/pr-link-backfill", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          startDate: prLinkStartDate,
+          ...(prLinkEndDate ? { endDate: prLinkEndDate } : {}),
+        }),
+      });
+      const data = await parseApiResponse<PrLinkBackfillResult>(response);
+      if (!data.success) {
+        throw new Error(data.message ?? "PR 링크 백필 실행에 실패했습니다.");
+      }
+
+      setFeedback(
+        "PR 링크 백필을 요청했습니다. 진행 상황은 동기화 로그에서 확인하세요.",
+      );
+    } catch (error) {
+      setFeedback(
+        error instanceof Error
+          ? error.message
+          : "PR 링크 백필 중 오류가 발생했습니다.",
+      );
+    } finally {
+      setIsRunningPrLinkBackfill(false);
+    }
+  }
+
   return (
     <section className="flex flex-col gap-3">
       <header className="flex flex-col gap-1">
@@ -611,6 +668,53 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
               title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
             >
               {isRunningBackfill ? "백필 실행 중..." : "백필 실행"}
+            </Button>
+          </CardFooter>
+        </Card>
+
+        <Card className="border-border/70">
+          <CardHeader>
+            <CardTitle>PR 링크 백필 (임시)</CardTitle>
+            <CardDescription>
+              지정한 날짜 이후의 PR을 다시 수집해 연결된 이슈 정보를 갱신합니다.
+              실행 결과는 동기화 히스토리에서 확인하세요.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <label
+              className="flex flex-col gap-2 text-sm"
+              htmlFor={prLinkBackfillInputId}
+            >
+              <span className="text-muted-foreground">시작 날짜</span>
+              <Input
+                id={prLinkBackfillInputId}
+                value={prLinkStartDate}
+                onChange={(event) => setPrLinkStartDate(event.target.value)}
+                type="date"
+              />
+            </label>
+            <label
+              className="flex flex-col gap-2 text-sm"
+              htmlFor={prLinkBackfillEndInputId}
+            >
+              <span className="text-muted-foreground">종료 날짜 (선택)</span>
+              <Input
+                id={prLinkBackfillEndInputId}
+                value={prLinkEndDate}
+                onChange={(event) => setPrLinkEndDate(event.target.value)}
+                type="date"
+              />
+            </label>
+          </CardContent>
+          <CardFooter>
+            <Button
+              onClick={handlePrLinkBackfill}
+              disabled={isRunningPrLinkBackfill || !canManageSync}
+              title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+            >
+              {isRunningPrLinkBackfill
+                ? "PR 링크 백필 실행 중..."
+                : "PR 링크 백필 실행"}
             </Button>
           </CardFooter>
         </Card>

@@ -5,8 +5,8 @@ import { clearProjectFieldOverrides } from "@/lib/activity/project-field-store";
 import { clearActivityStatuses } from "@/lib/activity/status-store";
 import {
   fetchIssueRawMap,
-  markReviewRequestRemoved,
   recordSyncLog,
+  replacePullRequestIssues,
   reviewExists,
   updateSyncLog,
   updateSyncState,
@@ -16,7 +16,6 @@ import {
   upsertReaction,
   upsertRepository,
   upsertReview,
-  upsertReviewRequest,
   upsertUser,
 } from "@/lib/db/operations";
 import { env } from "@/lib/env";
@@ -30,6 +29,7 @@ import {
   pullRequestReviewsQuery,
   repositoryDiscussionsQuery,
   repositoryIssuesQuery,
+  repositoryPullRequestLinksQuery,
   repositoryPullRequestsQuery,
 } from "@/lib/github/queries";
 
@@ -169,6 +169,7 @@ type PullRequestNode = IssueNode & {
   reactions?: {
     nodes: ReactionNode[] | null;
   } | null;
+  closingIssuesReferences?: IssueRelationConnection | null;
   timelineItems?: {
     nodes: PullRequestTimelineItem[] | null;
   } | null;
@@ -363,6 +364,28 @@ type RepositoryDiscussionsQueryResponse = {
 type RepositoryPullRequestsQueryResponse = {
   repository: {
     pullRequests: GraphQLConnection<PullRequestNode> | null;
+  } | null;
+};
+
+type PullRequestLinkNode = {
+  id: string;
+  number: number;
+  title: string;
+  state: string;
+  url: string;
+  createdAt: string;
+  updatedAt: string;
+  closedAt?: string | null;
+  mergedAt?: string | null;
+  merged?: boolean | null;
+  author?: GithubActor | null;
+  mergedBy?: GithubActor | null;
+  closingIssuesReferences?: IssueRelationConnection | null;
+};
+
+type RepositoryPullRequestLinksQueryResponse = {
+  repository: {
+    pullRequests: GraphQLConnection<PullRequestLinkNode> | null;
   } | null;
 };
 
@@ -726,6 +749,8 @@ type TimeBounds = {
   until: number | null;
 };
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
 function toTime(value: string | null | undefined) {
   if (!value) {
     return null;
@@ -742,6 +767,39 @@ function createBounds(
     since: toTime(since),
     until: toTime(until),
   };
+}
+
+function formatBoundsForLog(bounds: TimeBounds) {
+  const sinceIso =
+    bounds.since !== null ? new Date(bounds.since).toISOString() : null;
+  const untilIso =
+    bounds.until !== null ? new Date(bounds.until).toISOString() : null;
+
+  if (!sinceIso && !untilIso) {
+    return "";
+  }
+
+  const parts: string[] = [];
+  if (sinceIso && untilIso) {
+    parts.push(`period: ${sinceIso} <= updatedAt < ${untilIso}`);
+  } else if (sinceIso) {
+    parts.push(`period: updatedAt >= ${sinceIso}`);
+  } else if (untilIso) {
+    parts.push(`period: updatedAt < ${untilIso}`);
+  }
+
+  if (bounds.since !== null) {
+    const exclusiveEndMs = bounds.until ?? Date.now();
+    const spanMs = Math.max(0, exclusiveEndMs - bounds.since);
+    const days = Math.max(1, Math.ceil(spanMs / MS_PER_DAY));
+    const approximate = bounds.until === null;
+    const prefix = approximate ? "~" : "";
+    const plural = days === 1 ? "day" : "days";
+    const suffix = approximate ? " so far" : "";
+    parts.push(`span: ${prefix}${days} ${plural} of data${suffix}`);
+  }
+
+  return parts.length ? ` (${parts.join("; ")})` : "";
 }
 
 function evaluateTimestamp(
@@ -775,21 +833,6 @@ async function processActor(actor: Maybe<GithubActor>) {
 
   await upsertUser(normalized);
   return normalized.id;
-}
-
-async function resolveReviewerId(
-  reviewer: Maybe<{ id?: string | null; __typename?: string }>,
-) {
-  if (!reviewer?.id) {
-    return null;
-  }
-
-  const typename = reviewer.__typename ?? "";
-  if (typename === "Team") {
-    return null;
-  }
-
-  return processActor(reviewer as GithubActor);
 }
 
 async function processReactions(
@@ -1813,58 +1856,25 @@ async function collectPullRequestsForRepository(
         raw: pullRequest,
       });
 
-      const timeline = Array.isArray(pullRequest.timelineItems?.nodes)
-        ? [...(pullRequest.timelineItems?.nodes as PullRequestTimelineItem[])]
-        : [];
+      const closingIssuesNodes = (pullRequest.closingIssuesReferences?.nodes ??
+        []) as IssueRelationNode[];
+      const closingIssues = closingIssuesNodes
+        .filter((issue): issue is IssueRelationNode =>
+          Boolean(issue && typeof issue.id === "string"),
+        )
+        .map((issue) => ({
+          issueId: issue.id,
+          issueNumber: typeof issue.number === "number" ? issue.number : null,
+          issueTitle: issue.title ?? null,
+          issueState: issue.state ?? null,
+          issueUrl: issue.url ?? null,
+          issueRepository:
+            typeof issue.repository?.nameWithOwner === "string"
+              ? issue.repository.nameWithOwner
+              : null,
+        }));
 
-      timeline.sort((a, b) => {
-        const left =
-          toTime(typeof a.createdAt === "string" ? a.createdAt : null) ?? 0;
-        const right =
-          toTime(typeof b.createdAt === "string" ? b.createdAt : null) ?? 0;
-        return left - right;
-      });
-
-      for (const event of timeline) {
-        if (!event || typeof event.__typename !== "string") {
-          continue;
-        }
-
-        if (event.__typename === "ReviewRequestedEvent") {
-          const reviewerId = await resolveReviewerId(event.requestedReviewer);
-          if (!reviewerId || typeof event.createdAt !== "string" || !event.id) {
-            continue;
-          }
-
-          await upsertReviewRequest({
-            id: event.id,
-            pullRequestId: pullRequest.id,
-            reviewerId,
-            requestedAt: event.createdAt,
-            raw: event,
-          });
-        } else if (event.__typename === "ReviewRequestRemovedEvent") {
-          if (typeof event.createdAt !== "string") {
-            continue;
-          }
-          const reviewerId = await resolveReviewerId(event.requestedReviewer);
-          if (!reviewerId) {
-            continue;
-          }
-          await markReviewRequestRemoved({
-            pullRequestId: pullRequest.id,
-            reviewerId,
-            removedAt: event.createdAt,
-            raw: event,
-          });
-        }
-      }
-
-      await processReactions(
-        pullRequest.reactions,
-        "pull_request",
-        pullRequest.id,
-      );
+      await replacePullRequestIssues(pullRequest.id, closingIssues);
 
       latestPullRequestUpdated = maxTimestamp(
         latestPullRequestUpdated,
@@ -1931,6 +1941,117 @@ async function collectPullRequestsForRepository(
     pullRequestCount,
     reviewCount,
     commentCount,
+  };
+}
+
+async function collectPullRequestLinksForRepository(
+  client: GraphQLClient,
+  repository: RepositoryNode,
+  options: SyncOptions,
+) {
+  const { logger } = options;
+  const effectiveSince = resolveSince(options, "pull_requests");
+  const effectiveUntil = resolveUntil(options);
+  const bounds = createBounds(effectiveSince, effectiveUntil);
+  let cursor: string | null = null;
+  let hasNextPage = true;
+  const [owner, name] = repository.nameWithOwner.split("/");
+  let latestPullRequestUpdated: string | null = null;
+  let pullRequestCount = 0;
+
+  while (hasNextPage) {
+    const cursorLabel = cursor ? ` (cursor ${cursor})` : "";
+    const boundsLabel = formatBoundsForLog(bounds);
+    logger?.(
+      `Fetching pull request links for ${repository.nameWithOwner}${cursorLabel}${boundsLabel}`,
+    );
+
+    const data: RepositoryPullRequestLinksQueryResponse =
+      await requestWithRetry(
+        client,
+        repositoryPullRequestLinksQuery,
+        {
+          owner,
+          name,
+          cursor,
+        },
+        {
+          logger,
+          context: `pull request links ${repository.nameWithOwner}`,
+        },
+      );
+
+    const prsConnection = data.repository?.pullRequests;
+    const prNodes: PullRequestLinkNode[] = prsConnection?.nodes ?? [];
+    let reachedUpperBound = false;
+
+    for (const pullRequest of prNodes) {
+      const decision = evaluateTimestamp(pullRequest.updatedAt, bounds);
+      if (!decision.include) {
+        if (decision.afterUpperBound) {
+          reachedUpperBound = true;
+          break;
+        }
+        continue;
+      }
+
+      const authorId = await processActor(pullRequest.author);
+      await processActor(pullRequest.mergedBy);
+      await upsertPullRequest({
+        id: pullRequest.id,
+        number: pullRequest.number,
+        repositoryId: repository.id,
+        authorId: authorId ?? null,
+        title: pullRequest.title,
+        state: pullRequest.state,
+        createdAt: pullRequest.createdAt,
+        updatedAt: pullRequest.updatedAt,
+        closedAt: pullRequest.closedAt ?? null,
+        mergedAt: pullRequest.mergedAt ?? null,
+        merged: pullRequest.merged ?? null,
+        raw: pullRequest,
+      });
+
+      const closingIssuesNodes = (pullRequest.closingIssuesReferences?.nodes ??
+        []) as IssueRelationNode[];
+      const closingIssues = closingIssuesNodes
+        .filter((issue): issue is IssueRelationNode =>
+          Boolean(issue && typeof issue.id === "string"),
+        )
+        .map((issue) => ({
+          issueId: issue.id,
+          issueNumber: typeof issue.number === "number" ? issue.number : null,
+          issueTitle: issue.title ?? null,
+          issueState: issue.state ?? null,
+          issueUrl: issue.url ?? null,
+          issueRepository:
+            typeof issue.repository?.nameWithOwner === "string"
+              ? issue.repository.nameWithOwner
+              : null,
+        }));
+
+      await replacePullRequestIssues(pullRequest.id, closingIssues);
+
+      latestPullRequestUpdated = maxTimestamp(
+        latestPullRequestUpdated,
+        pullRequest.updatedAt,
+      );
+      pullRequestCount += 1;
+    }
+
+    if (reachedUpperBound) {
+      hasNextPage = false;
+      cursor = null;
+      break;
+    }
+
+    hasNextPage = prsConnection?.pageInfo?.hasNextPage ?? false;
+    cursor = prsConnection?.pageInfo?.endCursor ?? null;
+  }
+
+  return {
+    latestPullRequestUpdated,
+    pullRequestCount,
   };
 }
 
@@ -2211,5 +2332,40 @@ export async function runCollection(options: SyncOptions) {
       reviews: latestReviewSubmitted,
       comments: latestCommentUpdated,
     },
+  };
+}
+
+export async function collectPullRequestLinks(options: SyncOptions) {
+  if (!options.org) {
+    throw new Error("GitHub organization is not configured.");
+  }
+
+  const client = options.client ?? createGithubClient();
+  const repositoryResult = await collectRepositories(client, options);
+
+  let latestPullRequestUpdated: string | null = null;
+  let pullRequestCount = 0;
+
+  for (const repository of repositoryResult.repositories) {
+    const result = await collectPullRequestLinksForRepository(
+      client,
+      repository,
+      options,
+    );
+    latestPullRequestUpdated = maxTimestamp(
+      latestPullRequestUpdated,
+      result.latestPullRequestUpdated,
+    );
+    pullRequestCount += result.pullRequestCount;
+  }
+
+  if (latestPullRequestUpdated) {
+    await updateSyncState("pull_requests", null, latestPullRequestUpdated);
+  }
+
+  return {
+    repositoriesProcessed: repositoryResult.repositories.length,
+    pullRequestCount,
+    latestPullRequestUpdated,
   };
 }
