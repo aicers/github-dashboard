@@ -153,6 +153,14 @@ describe("SyncControls", () => {
     expect(screen.getByText("자동 동기화")).toBeInTheDocument();
     expect(screen.getByText("데이터 초기화")).toBeInTheDocument();
     expect(screen.getByText("활성")).toBeInTheDocument();
+    const nextSyncParagraph = screen.getByText(
+      (content, element) =>
+        element?.tagName.toLowerCase() === "p" &&
+        content.startsWith("다음 동기화 예정:"),
+    );
+    expect(nextSyncParagraph).toHaveTextContent(
+      /다음 동기화 예정:\s*2024-04-02 19:30/,
+    );
     expect(screen.getByText(/자동 동기화 •/)).toBeInTheDocument();
     expect(screen.getByText("Processed issues")).toBeInTheDocument();
     expect(screen.getByText("Timeout")).toBeInTheDocument();
@@ -191,6 +199,12 @@ describe("SyncControls", () => {
     expect(
       screen.getByText("2024-04-02 00:00 → 2024-04-02 01:45"),
     ).toBeInTheDocument();
+    const nextSyncParagraph = screen.getByText(
+      (content, element) =>
+        element?.tagName.toLowerCase() === "p" &&
+        content.startsWith("다음 동기화 예정:"),
+    );
+    expect(nextSyncParagraph).toHaveTextContent(/다음 동기화 예정:\s*-/);
   });
 
   it("disables sync actions and displays an admin notice for non-admin users", () => {

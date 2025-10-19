@@ -354,6 +354,30 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
     toIsoString(primaryLatestRun?.completedAt ?? null) ??
     toIsoString(config?.last_sync_completed_at ?? null) ??
     toIsoString(fallbackLatestRun?.completedAt ?? null);
+  const nextAutomaticSyncAt = useMemo(() => {
+    if (!autoEnabled) {
+      return null;
+    }
+
+    const intervalMinutes = config?.sync_interval_minutes ?? null;
+    if (!intervalMinutes || intervalMinutes <= 0) {
+      return null;
+    }
+
+    const lastCompletedIso = latestSyncCompletedAt;
+    if (!lastCompletedIso) {
+      return null;
+    }
+
+    const lastCompleted = new Date(lastCompletedIso);
+    if (Number.isNaN(lastCompleted.getTime())) {
+      return null;
+    }
+
+    return new Date(
+      lastCompleted.getTime() + intervalMinutes * 60 * 1000,
+    ).toISOString();
+  }, [autoEnabled, config?.sync_interval_minutes, latestSyncCompletedAt]);
 
   async function handleBackfill() {
     if (!canManageSync) {
@@ -569,6 +593,14 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
             </p>
             <p>
               간격: {(config?.sync_interval_minutes ?? 60).toLocaleString()}분
+            </p>
+            <p>
+              다음 동기화 예정:{" "}
+              <span>
+                {nextAutomaticSyncAt
+                  ? formatDateTime(nextAutomaticSyncAt)
+                  : "-"}
+              </span>
             </p>
           </CardContent>
           <CardFooter className="gap-3">
