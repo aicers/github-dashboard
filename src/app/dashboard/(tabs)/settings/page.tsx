@@ -11,14 +11,13 @@ import {
   fetchOrganizationMembers,
   fetchOrganizationTeams,
 } from "@/lib/github/org";
-import { fetchSyncStatus } from "@/lib/sync/service";
+import { fetchSyncConfig } from "@/lib/sync/service";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const session = await readActiveSession();
-  const status = await fetchSyncStatus();
-  const config = status.config;
+  const config = await fetchSyncConfig();
   const timeZone = config?.timezone ?? "UTC";
   const repositories = await listAllRepositories();
   const members = await listAllUsers();

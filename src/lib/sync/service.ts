@@ -676,6 +676,11 @@ export async function fetchSyncStatus(): Promise<SyncStatus> {
   return { config, runs, logs, dataFreshness };
 }
 
+export async function fetchSyncConfig() {
+  await ensureSchema();
+  return getSyncConfig();
+}
+
 export async function fetchDashboardStats() {
   await ensureSchema();
   return getDashboardStats();

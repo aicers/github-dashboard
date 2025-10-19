@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useMemo, useState, useTransition } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -270,10 +270,10 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [backfillHistory, setBackfillHistory] = useState<BackfillResult[]>([]);
 
-  const [isRunningBackfill, startBackfill] = useTransition();
-  const [isTogglingAuto, startToggleAuto] = useTransition();
-  const [isResetting, startReset] = useTransition();
-  const [isCleaning, startCleanup] = useTransition();
+  const [isRunningBackfill, setIsRunningBackfill] = useState(false);
+  const [isTogglingAuto, setIsTogglingAuto] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const [isCleaning, setIsCleaning] = useState(false);
 
   const canManageSync = isAdmin;
 
@@ -386,51 +386,51 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
       return;
     }
 
-    startBackfill(async () => {
-      try {
-        if (!backfillDate) {
-          throw new Error("백필 시작 날짜를 선택하세요.");
-        }
+    if (!backfillDate) {
+      setFeedback("백필 시작 날짜를 선택하세요.");
+      return;
+    }
 
-        setBackfillHistory((previous) => previous);
-        const response = await fetch("/api/sync/backfill", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ startDate: backfillDate }),
-        });
-        const data = await parseApiResponse<BackfillResult>(response);
+    setIsRunningBackfill(true);
+    try {
+      setBackfillHistory((previous) => previous);
+      const response = await fetch("/api/sync/backfill", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ startDate: backfillDate }),
+      });
+      const data = await parseApiResponse<BackfillResult>(response);
 
-        if (!data.success) {
-          throw new Error(data.message ?? "백필 실행에 실패했습니다.");
-        }
+      if (!data.success) {
+        throw new Error(data.message ?? "백필 실행에 실패했습니다.");
+      }
 
-        const report = data.result ?? null;
-        if (report) {
-          setBackfillHistory((previous) => [report, ...previous].slice(0, 5));
-          const failedChunk = report.chunks.find(
-            (chunk) => chunk.status === "failed",
+      const report = data.result ?? null;
+      if (report) {
+        setBackfillHistory((previous) => [report, ...previous].slice(0, 5));
+        const failedChunk = report.chunks.find(
+          (chunk) => chunk.status === "failed",
+        );
+        if (failedChunk && failedChunk.status === "failed") {
+          setFeedback(
+            `백필이 ${formatRange(failedChunk.since, failedChunk.until)} 구간에서 실패했습니다: ${failedChunk.error}`,
           );
-          if (failedChunk && failedChunk.status === "failed") {
-            setFeedback(
-              `백필이 ${formatRange(failedChunk.since, failedChunk.until)} 구간에서 실패했습니다: ${failedChunk.error}`,
-            );
-          } else {
-            setFeedback("백필이 성공적으로 실행되었습니다.");
-          }
         } else {
           setFeedback("백필이 성공적으로 실행되었습니다.");
         }
-        router.refresh();
-      } catch (error) {
-        setFeedback(
-          error instanceof Error
-            ? error.message
-            : "백필 중 오류가 발생했습니다.",
-        );
+      } else {
+        setFeedback("백필이 성공적으로 실행되었습니다.");
       }
-    });
+      router.refresh();
+    } catch (error) {
+      setFeedback(
+        error instanceof Error ? error.message : "백필 중 오류가 발생했습니다.",
+      );
+    } finally {
+      setIsRunningBackfill(false);
+    }
   }
 
   async function handleAutoToggle(nextEnabled: boolean) {
@@ -439,44 +439,45 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
       return;
     }
 
-    startToggleAuto(async () => {
-      try {
-        const intervalValue = Number(config?.sync_interval_minutes ?? 60);
-        if (!Number.isFinite(intervalValue) || intervalValue <= 0) {
-          throw new Error("유효한 동기화 간격을 설정에서 먼저 지정하세요.");
-        }
-
-        const response = await fetch("/api/sync/auto", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            enabled: nextEnabled,
-            intervalMinutes: intervalValue,
-          }),
-        });
-        const data = await parseApiResponse<unknown>(response);
-
-        if (!data.success) {
-          throw new Error(data.message ?? "자동 동기화 설정에 실패했습니다.");
-        }
-
-        setAutoEnabled(nextEnabled);
-        setFeedback(
-          nextEnabled
-            ? "자동 동기화를 실행했습니다."
-            : "자동 동기화를 중단했습니다.",
-        );
-        router.refresh();
-      } catch (error) {
-        setFeedback(
-          error instanceof Error
-            ? error.message
-            : "자동 동기화 설정 중 오류가 발생했습니다.",
-        );
+    setIsTogglingAuto(true);
+    try {
+      const intervalValue = Number(config?.sync_interval_minutes ?? 60);
+      if (!Number.isFinite(intervalValue) || intervalValue <= 0) {
+        throw new Error("유효한 동기화 간격을 설정에서 먼저 지정하세요.");
       }
-    });
+
+      const response = await fetch("/api/sync/auto", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          enabled: nextEnabled,
+          intervalMinutes: intervalValue,
+        }),
+      });
+      const data = await parseApiResponse<unknown>(response);
+
+      if (!data.success) {
+        throw new Error(data.message ?? "자동 동기화 설정에 실패했습니다.");
+      }
+
+      setAutoEnabled(nextEnabled);
+      setFeedback(
+        nextEnabled
+          ? "자동 동기화를 실행했습니다."
+          : "자동 동기화를 중단했습니다.",
+      );
+      router.refresh();
+    } catch (error) {
+      setFeedback(
+        error instanceof Error
+          ? error.message
+          : "자동 동기화 설정 중 오류가 발생했습니다.",
+      );
+    } finally {
+      setIsTogglingAuto(false);
+    }
   }
 
   async function handleReset() {
@@ -489,31 +490,32 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
       return;
     }
 
-    startReset(async () => {
-      try {
-        const response = await fetch("/api/sync/reset", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ preserveLogs: true }),
-        });
-        const data = await parseApiResponse<unknown>(response);
+    setIsResetting(true);
+    try {
+      const response = await fetch("/api/sync/reset", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ preserveLogs: true }),
+      });
+      const data = await parseApiResponse<unknown>(response);
 
-        if (!data.success) {
-          throw new Error(data.message ?? "데이터 초기화에 실패했습니다.");
-        }
-
-        setFeedback("데이터가 초기화되었습니다.");
-        router.refresh();
-      } catch (error) {
-        setFeedback(
-          error instanceof Error
-            ? error.message
-            : "데이터 초기화 중 오류가 발생했습니다.",
-        );
+      if (!data.success) {
+        throw new Error(data.message ?? "데이터 초기화에 실패했습니다.");
       }
-    });
+
+      setFeedback("데이터가 초기화되었습니다.");
+      router.refresh();
+    } catch (error) {
+      setFeedback(
+        error instanceof Error
+          ? error.message
+          : "데이터 초기화 중 오류가 발생했습니다.",
+      );
+    } finally {
+      setIsResetting(false);
+    }
   }
 
   async function handleCleanup() {
@@ -530,40 +532,41 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
       return;
     }
 
-    startCleanup(async () => {
-      try {
-        const response = await fetch("/api/sync/admin/cleanup", {
-          method: "POST",
-        });
-        const data = await parseApiResponse<{
-          runCount: number;
-          logCount: number;
-        }>(response);
+    setIsCleaning(true);
+    try {
+      const response = await fetch("/api/sync/admin/cleanup", {
+        method: "POST",
+      });
+      const data = await parseApiResponse<{
+        runCount: number;
+        logCount: number;
+      }>(response);
 
-        if (!data.success) {
-          throw new Error(
-            data.message ?? "멈춰 있는 동기화를 정리하지 못했습니다.",
-          );
-        }
-
-        const counts = data.result ?? { runCount: 0, logCount: 0 };
-        const total = (counts.runCount ?? 0) + (counts.logCount ?? 0);
-        if (total > 0) {
-          setFeedback(
-            `멈춰 있던 런 ${counts.runCount ?? 0}건과 로그 ${counts.logCount ?? 0}건을 실패 처리했습니다.`,
-          );
-        } else {
-          setFeedback("정리할 동기화가 없습니다.");
-        }
-        router.refresh();
-      } catch (error) {
-        setFeedback(
-          error instanceof Error
-            ? error.message
-            : "동기화 정리 작업 중 오류가 발생했습니다.",
+      if (!data.success) {
+        throw new Error(
+          data.message ?? "멈춰 있는 동기화를 정리하지 못했습니다.",
         );
       }
-    });
+
+      const counts = data.result ?? { runCount: 0, logCount: 0 };
+      const total = (counts.runCount ?? 0) + (counts.logCount ?? 0);
+      if (total > 0) {
+        setFeedback(
+          `멈춰 있던 런 ${counts.runCount ?? 0}건과 로그 ${counts.logCount ?? 0}건을 실패 처리했습니다.`,
+        );
+      } else {
+        setFeedback("정리할 동기화가 없습니다.");
+      }
+      router.refresh();
+    } catch (error) {
+      setFeedback(
+        error instanceof Error
+          ? error.message
+          : "동기화 정리 작업 중 오류가 발생했습니다.",
+      );
+    } finally {
+      setIsCleaning(false);
+    }
   }
 
   return (
