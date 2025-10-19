@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { SyncStreamEvent } from "@/lib/sync/events";
+
 type SyncConfigRow = {
   org_name: string | null;
   auto_sync_enabled: boolean;
@@ -51,6 +53,30 @@ const updateSyncRunStatusMock = vi.fn(
 );
 const getDataFreshnessMock = vi.fn(async () => null);
 const getDashboardStatsMock = vi.fn(async () => ({ repositories: 0 }));
+const cleanupRunningSyncRunsMock = vi.fn<
+  () => Promise<{
+    runs: Array<{
+      id: number;
+      run_type: string;
+      strategy: string;
+      since: string | null;
+      until: string | null;
+      status: string;
+      started_at: string | Date | null;
+      completed_at: string | Date | null;
+    }>;
+    logs: Array<{
+      id: number;
+      run_id: number | null;
+      resource: string;
+      status: string;
+      message: string | null;
+      started_at: string | Date | null;
+      finished_at: string | Date | null;
+    }>;
+  }>
+>(async () => ({ runs: [], logs: [] }));
+const emitSyncEventMock = vi.fn<(event: SyncStreamEvent) => void>();
 
 type RunCollectionResult = {
   repositoriesProcessed: number;
@@ -107,6 +133,7 @@ vi.mock("@/lib/db/operations", () => ({
   updateSyncRunStatus: updateSyncRunStatusMock,
   getDataFreshness: getDataFreshnessMock,
   getDashboardStats: getDashboardStatsMock,
+  cleanupRunningSyncRuns: cleanupRunningSyncRunsMock,
 }));
 
 vi.mock("@/lib/github/collectors", () => ({
@@ -126,6 +153,10 @@ vi.mock("@/lib/env", () => ({
     GITHUB_ORG: "env-org",
     SYNC_INTERVAL_MINUTES: 15,
   },
+}));
+
+vi.mock("@/lib/sync/event-bus", () => ({
+  emitSyncEvent: emitSyncEventMock,
 }));
 
 function getScheduler() {
@@ -153,6 +184,8 @@ describe("sync service (unit)", () => {
       globalThis as { __githubDashboardScheduler?: unknown }
     ).__githubDashboardScheduler = undefined;
     vi.useRealTimers();
+    cleanupRunningSyncRunsMock.mockResolvedValue({ runs: [], logs: [] });
+    emitSyncEventMock.mockReset();
 
     let nextRunId = 1;
     createSyncRunMock.mockImplementation(async () => nextRunId++);
@@ -526,5 +559,75 @@ describe("sync service (unit)", () => {
     );
 
     vi.useRealTimers();
+  });
+
+  it("emits failure events when cleanup marks running syncs as failed", async () => {
+    vi.resetModules();
+    const completedAt = "2024-05-01T00:05:00.000Z";
+    const startedAt = "2024-05-01T00:00:00.000Z";
+    cleanupRunningSyncRunsMock.mockResolvedValueOnce({
+      runs: [
+        {
+          id: 42,
+          run_type: "manual",
+          strategy: "incremental",
+          since: null,
+          until: null,
+          status: "failed",
+          started_at: startedAt,
+          completed_at: completedAt,
+        },
+      ],
+      logs: [
+        {
+          id: 7,
+          run_id: 42,
+          resource: "issues",
+          status: "failed",
+          message: "forced failure",
+          started_at: startedAt,
+          finished_at: completedAt,
+        },
+      ],
+    });
+
+    const { cleanupStuckSyncRuns } = await importService();
+    const result = await cleanupStuckSyncRuns({ actorId: "admin-user" });
+
+    expect(result).toEqual({ runCount: 1, logCount: 1 });
+    expect(cleanupRunningSyncRunsMock).toHaveBeenCalledTimes(1);
+    expect(emitSyncEventMock).toHaveBeenNthCalledWith(1, {
+      type: "run-status",
+      runId: 42,
+      status: "failed",
+      completedAt,
+    });
+    expect(emitSyncEventMock).toHaveBeenNthCalledWith(2, {
+      type: "run-failed",
+      runId: 42,
+      status: "failed",
+      finishedAt: completedAt,
+      error: "Marked as failed by admin cleanup.",
+    });
+    expect(emitSyncEventMock).toHaveBeenNthCalledWith(3, {
+      type: "log-updated",
+      logId: 7,
+      runId: 42,
+      resource: "issues",
+      status: "failed",
+      message: "forced failure",
+      finishedAt: completedAt,
+    });
+  });
+
+  it("returns zero counts when no running syncs exist", async () => {
+    vi.resetModules();
+    cleanupRunningSyncRunsMock.mockResolvedValueOnce({ runs: [], logs: [] });
+
+    const { cleanupStuckSyncRuns } = await importService();
+    const result = await cleanupStuckSyncRuns();
+
+    expect(result).toEqual({ runCount: 0, logCount: 0 });
+    expect(emitSyncEventMock).not.toHaveBeenCalled();
   });
 });
