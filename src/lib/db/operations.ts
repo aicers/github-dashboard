@@ -837,32 +837,39 @@ export async function updateSyncRunStatus(
   );
 }
 
-export async function getLatestSyncRuns(limit = 10): Promise<SyncRunSummary[]> {
+export async function getLatestSyncRuns(
+  logLimit = 36,
+): Promise<SyncRunSummary[]> {
+  const normalizedLimit =
+    Number.isFinite(logLimit) && logLimit > 0 ? logLimit : 36;
   const runsResult = await query<SyncRunRow>(
     `SELECT id, run_type, strategy, since, until, status, started_at, completed_at
      FROM sync_runs
      ORDER BY started_at DESC
      LIMIT $1`,
-    [limit],
+    [Math.max(normalizedLimit, 1)],
   );
 
   const runs = runsResult.rows;
-  const runIds = runs.map((run) => run.id);
-
-  let logs: SyncRunLogRow[] = [];
-  if (runIds.length > 0) {
-    const logsResult = await query<SyncRunLogRow>(
-      `SELECT id, run_id, resource, status, message, started_at, finished_at
-       FROM sync_log
-       WHERE run_id = ANY($1::int[])
-       ORDER BY started_at DESC`,
-      [runIds],
-    );
-    logs = logsResult.rows;
+  if (!runs.length) {
+    return [];
   }
 
+  const runIds = runs.map((run) => run.id);
+  const logsResult = await query<SyncRunLogRow>(
+    `SELECT id, run_id, resource, status, message, started_at, finished_at
+     FROM sync_log
+     WHERE run_id = ANY($1::int[])
+     ORDER BY started_at DESC`,
+    [runIds],
+  );
+
   const logsByRun = new Map<number, SyncRunLog[]>();
-  for (const log of logs) {
+  for (const log of logsResult.rows) {
+    if (log.run_id === null) {
+      continue;
+    }
+
     const entry: SyncRunLog = {
       id: log.id,
       runId: log.run_id,
@@ -873,19 +880,34 @@ export async function getLatestSyncRuns(limit = 10): Promise<SyncRunSummary[]> {
       finishedAt: toIsoString(log.finished_at),
     };
 
-    if (log.run_id === null) {
-      const legacy = logsByRun.get(-1) ?? [];
-      legacy.push(entry);
-      logsByRun.set(-1, legacy);
-      continue;
-    }
-
     const bucket = logsByRun.get(log.run_id) ?? [];
     bucket.push(entry);
     logsByRun.set(log.run_id, bucket);
   }
 
-  return runs.map((run) => ({
+  const includedRuns: SyncRunRow[] = [];
+  let accumulatedLogCount = 0;
+
+  for (const run of runs) {
+    const runLogs = logsByRun.get(run.id) ?? [];
+    const nextCount = accumulatedLogCount + runLogs.length;
+    if (includedRuns.length > 0 && accumulatedLogCount >= normalizedLimit) {
+      break;
+    }
+
+    if (includedRuns.length > 0 && nextCount > normalizedLimit) {
+      break;
+    }
+
+    // Sort logs ascending by started time for display consistency.
+    runLogs.sort((a, b) => compareAsc(a.startedAt, b.startedAt));
+    logsByRun.set(run.id, runLogs);
+
+    includedRuns.push(run);
+    accumulatedLogCount = nextCount;
+  }
+
+  return includedRuns.map((run) => ({
     id: run.id,
     runType: run.run_type,
     strategy: run.strategy,
@@ -913,6 +935,31 @@ function toIsoString(value: string | Date | null): string | null {
   }
 
   return value;
+}
+
+function compareAsc(a: string | null, b: string | null) {
+  const aTime =
+    typeof a === "string" ? new Date(a).getTime() : Number.NEGATIVE_INFINITY;
+  const bTime =
+    typeof b === "string" ? new Date(b).getTime() : Number.NEGATIVE_INFINITY;
+
+  if (Number.isNaN(aTime) && Number.isNaN(bTime)) {
+    return 0;
+  }
+
+  if (Number.isNaN(aTime)) {
+    return -1;
+  }
+
+  if (Number.isNaN(bTime)) {
+    return 1;
+  }
+
+  if (aTime === bTime) {
+    return 0;
+  }
+
+  return aTime < bTime ? -1 : 1;
 }
 
 export async function resetData({
