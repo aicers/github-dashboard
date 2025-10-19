@@ -94,6 +94,23 @@ curl -X POST http://localhost:3000/api/sync/reset -d '{"preserveLogs":true}' \
   `GET /api/data/stats` to present sync logs, data freshness, counts, and top
   contributors/repositories.
 
+### Real-time sync stream
+
+- **Server-Sent Events** — `GET /api/sync/stream` keeps an HTTP connection open
+  (`Content-Type: text/event-stream`) and pushes run lifecycle updates
+  (`run-started`, `log-started`, `log-updated`, `run-completed`, `run-failed`)
+  plus periodic heartbeats. The dashboard subscribes with
+  `new EventSource("/api/sync/stream")` to surface “backfill started → resources
+  progressing → completed” across all tabs via a shared status panel.
+- Events include run metadata (type, strategy, since/until window), per-resource
+  log status, completion summaries, and failure messages. The panel falls back
+  to `/api/sync/status` for initial hydration and whenever the SSE connection
+  re-opens.
+- No extra libraries are required—the server uses the built-in Next.js App
+  Router streaming response API, and the browser relies on native `EventSource`
+  with automatic reconnection. Expect a single SSE connection per browser tab
+  (~50 concurrent clients are well within the Node runtime budget).
+
 Administrators are identified through `DASHBOARD_ADMIN_IDS`, a comma-separated
 list of GitHub logins or node IDs. Admin users can modify organization-wide
 settings (org name, sync cadence, excluded repositories/members), while all

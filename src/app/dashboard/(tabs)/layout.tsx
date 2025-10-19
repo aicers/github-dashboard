@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { DashboardTabs } from "@/components/dashboard/dashboard-tabs";
+import { SyncStatusPanel } from "@/components/dashboard/sync-status-panel";
 import { readActiveSession } from "@/lib/auth/session";
 import { getUserProfiles } from "@/lib/db/operations";
 
@@ -39,6 +40,7 @@ export default async function DashboardTabsLayout({
       </div>
       <div className="flex-1">
         <div className="mx-auto w-full max-w-[1232px] px-3 pt-8 pb-10">
+          <SyncStatusPanel />
           {children}
         </div>
       </div>
