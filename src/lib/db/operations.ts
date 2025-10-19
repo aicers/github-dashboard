@@ -1,4 +1,5 @@
 import { query } from "@/lib/db/client";
+import { emitSyncEvent } from "@/lib/sync/event-bus";
 
 type TableCountKey = "issues" | "pull_requests" | "reviews" | "comments";
 
@@ -596,13 +597,31 @@ export async function recordSyncLog(
   message?: string,
   runId?: number | null,
 ) {
-  const result = await query<{ id: number }>(
+  const result = await query<{
+    id: number;
+    run_id: number | null;
+    started_at: string | Date;
+  }>(
     `INSERT INTO sync_log (resource, status, message, started_at, run_id)
      VALUES ($1, $2, $3, NOW(), $4)
-     RETURNING id`,
+     RETURNING id, run_id, started_at`,
     [resource, status, message ?? null, runId ?? null],
   );
-  return result.rows[0]?.id;
+  const row = result.rows[0];
+  if (row) {
+    emitSyncEvent({
+      type: "log-started",
+      logId: row.id,
+      runId: row.run_id,
+      resource,
+      status,
+      message: message ?? null,
+      startedAt: toIsoString(row.started_at) ?? new Date().toISOString(),
+    });
+    return row.id;
+  }
+
+  return undefined;
 }
 
 export async function updateSyncLog(
@@ -610,12 +629,31 @@ export async function updateSyncLog(
   status: SyncLogStatus,
   message?: string,
 ) {
-  await query(
+  const result = await query<{
+    run_id: number | null;
+    resource: string;
+    started_at: string | Date | null;
+    finished_at: string | Date | null;
+  }>(
     `UPDATE sync_log
      SET status = $2, message = $3, finished_at = NOW()
-     WHERE id = $1`,
+     WHERE id = $1
+     RETURNING run_id, resource, started_at, finished_at`,
     [id, status, message ?? null],
   );
+
+  const row = result.rows[0];
+  if (row) {
+    emitSyncEvent({
+      type: "log-updated",
+      logId: id,
+      runId: row.run_id,
+      resource: row.resource,
+      status,
+      message: message ?? null,
+      finishedAt: toIsoString(row.finished_at) ?? new Date().toISOString(),
+    });
+  }
 }
 
 export async function updateSyncState(
@@ -859,9 +897,9 @@ export async function getLatestSyncRuns(
   const logsResult = await query<SyncRunLogRow>(
     `SELECT id, run_id, resource, status, message, started_at, finished_at
      FROM sync_log
-     WHERE run_id = ANY($1::int[])
+     WHERE run_id::text = ANY($1::text[])
      ORDER BY started_at DESC`,
-    [runIds],
+    [runIds.map((id) => String(id))],
   );
 
   const logsByRun = new Map<number, SyncRunLog[]>();

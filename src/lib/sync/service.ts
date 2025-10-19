@@ -19,6 +19,8 @@ import {
 import { env } from "@/lib/env";
 import type { ResourceKey, SyncLogger } from "@/lib/github/collectors";
 import { RESOURCE_KEYS, runCollection } from "@/lib/github/collectors";
+import { emitSyncEvent } from "@/lib/sync/event-bus";
+import type { SyncRunSummaryEvent } from "@/lib/sync/events";
 
 const dateSchema = z.string().transform((value, ctx) => {
   const date = new Date(value);
@@ -205,6 +207,21 @@ function pickLatest(start: string | null, candidate: string | null) {
 
 type SyncStrategy = "incremental" | "backfill";
 
+function toRunSummaryEvent(
+  summary: SyncRunResult["summary"],
+): SyncRunSummaryEvent {
+  return {
+    counts: {
+      issues: summary.counts.issues,
+      discussions: summary.counts.discussions,
+      pullRequests: summary.counts.pullRequests,
+      reviews: summary.counts.reviews,
+      comments: summary.counts.comments,
+    },
+    timestamps: summary.timestamps ?? undefined,
+  };
+}
+
 async function buildSinceMap(base: string | null, _strategy: SyncStrategy) {
   const baseIso = coerceIso(base);
   const states = await Promise.all(
@@ -258,6 +275,17 @@ async function executeSync(params: {
       throw new Error("Failed to record sync run metadata.");
     }
 
+    emitSyncEvent({
+      type: "run-started",
+      runId,
+      runType: actualRunType,
+      strategy,
+      status: "running",
+      since,
+      until,
+      startedAt,
+    });
+
     try {
       const summary = await runCollection({
         org,
@@ -280,6 +308,19 @@ async function executeSync(params: {
         lastSuccessfulSyncAt: latestResourceTimestamp ?? completedAt,
       });
       await updateSyncRunStatus(runId, "success", completedAt);
+      emitSyncEvent({
+        type: "run-status",
+        runId,
+        status: "success",
+        completedAt,
+      });
+      emitSyncEvent({
+        type: "run-completed",
+        runId,
+        status: "success",
+        completedAt,
+        summary: toRunSummaryEvent(summary),
+      });
 
       return {
         since,
@@ -292,6 +333,21 @@ async function executeSync(params: {
       const failureCompletedAt = new Date().toISOString();
       await updateSyncRunStatus(runId, "failed", failureCompletedAt);
       await updateSyncConfig({ lastSyncCompletedAt: failureCompletedAt });
+      emitSyncEvent({
+        type: "run-status",
+        runId,
+        status: "failed",
+        completedAt: failureCompletedAt,
+      });
+      const message =
+        error instanceof Error ? error.message : "Sync run failed.";
+      emitSyncEvent({
+        type: "run-failed",
+        runId,
+        status: "failed",
+        finishedAt: failureCompletedAt,
+        error: message,
+      });
       throw error;
     }
   });
