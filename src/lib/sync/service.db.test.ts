@@ -23,10 +23,12 @@ import type {
   SyncLogStatus,
 } from "@/lib/db/operations";
 import {
+  createSyncRun,
   getSyncConfig,
   recordSyncLog,
   updateSyncConfig,
   updateSyncLog,
+  updateSyncRunStatus,
   upsertComment,
   upsertIssue,
   upsertPullRequest,
@@ -166,6 +168,7 @@ describe("sync service database integration", () => {
           ? status.dataFreshness.toISOString()
           : status.dataFreshness;
       expect(freshnessIso).toBe(lastSuccessful);
+      expect(status.runs).toEqual([]);
 
       expect(status.logs).toHaveLength(20);
       expect(status.logs[0].resource).toBe("resource-24");
@@ -173,6 +176,64 @@ describe("sync service database integration", () => {
       const expectedLatestStatus = statuses[24 % statuses.length];
       expect(status.logs[0].status).toBe(expectedLatestStatus);
       expect(status.logs[0].finished_at).not.toBeNull();
+    });
+
+    it("returns grouped runs with associated logs when run metadata is present", async () => {
+      const runStarted = new Date("2024-05-02T01:00:00.000Z");
+      const runCompleted = new Date("2024-05-02T01:05:00.000Z");
+
+      const runId = await createSyncRun({
+        runType: "automatic",
+        strategy: "incremental",
+        since: null,
+        until: null,
+        startedAt: runStarted.toISOString(),
+      });
+
+      expect(runId).not.toBeNull();
+
+      const resources = [
+        "repositories",
+        "issues",
+        "discussions",
+        "pull_requests",
+        "reviews",
+        "comments",
+      ] as const;
+
+      for (const [index, resource] of resources.entries()) {
+        const logId = ensureLogId(
+          await recordSyncLog(
+            resource,
+            "running",
+            `${resource}-start`,
+            runId ?? undefined,
+          ),
+        );
+        await updateSyncLog(logId, "success", `${resource}-done`);
+        const startedAt = new Date(runStarted.getTime() + index * 1_000);
+        const finishedAt = new Date(startedAt.getTime() + 500);
+        await query(
+          `UPDATE sync_log SET started_at = $1, finished_at = $2 WHERE id = $3`,
+          [startedAt.toISOString(), finishedAt.toISOString(), logId],
+        );
+      }
+
+      if (runId == null) {
+        throw new Error("Failed to create sync run");
+      }
+      await updateSyncRunStatus(runId, "success", runCompleted.toISOString());
+
+      const status = await fetchSyncStatus();
+      expect(status.runs).toHaveLength(1);
+      const [run] = status.runs;
+      expect(run.id).toBe(runId);
+      expect(run.startedAt).toBe(runStarted.toISOString());
+      expect(run.completedAt).toBe(runCompleted.toISOString());
+      expect(run.logs).toHaveLength(resources.length);
+      expect(run.logs[0].runId).toBe(runId);
+      const logResources = run.logs.map((log) => log.resource);
+      expect(logResources.sort()).toEqual([...resources].sort());
     });
   });
 

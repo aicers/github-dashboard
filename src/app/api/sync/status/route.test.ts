@@ -28,7 +28,7 @@ beforeEach(() => {
 
 describe("GET /api/sync/status", () => {
   it("returns sync status details", async () => {
-    const status = { config: { org_name: "acme" }, logs: [] };
+    const status = { config: { org_name: "acme" }, runs: [], logs: [] };
     vi.mocked(fetchSyncStatus).mockResolvedValueOnce(status as never);
 
     const response = await GET();

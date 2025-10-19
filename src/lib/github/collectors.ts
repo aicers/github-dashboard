@@ -42,6 +42,7 @@ export type SyncOptions = {
   sinceByResource?: Partial<Record<ResourceKey, string | null>>;
   logger?: SyncLogger;
   client?: GraphQLClient;
+  runId?: number | null;
 };
 
 type Maybe<T> = T | null | undefined;
@@ -1994,7 +1995,10 @@ export async function runCollection(options: SyncOptions) {
   }
 
   const client = options.client ?? createGithubClient();
-  const repoLogId = ensureLogId(await recordSyncLog("repositories", "running"));
+  const runId = options.runId ?? null;
+  const repoLogId = ensureLogId(
+    await recordSyncLog("repositories", "running", undefined, runId),
+  );
   let repositories: RepositoryNode[] = [];
   let repositoriesLatest: string | null = null;
 
@@ -2032,8 +2036,12 @@ export async function runCollection(options: SyncOptions) {
   let totalReviews = 0;
   let totalComments = 0;
 
-  const commentLogId = ensureLogId(await recordSyncLog("comments", "running"));
-  const issuesLogId = ensureLogId(await recordSyncLog("issues", "running"));
+  const commentLogId = ensureLogId(
+    await recordSyncLog("comments", "running", undefined, runId),
+  );
+  const issuesLogId = ensureLogId(
+    await recordSyncLog("issues", "running", undefined, runId),
+  );
 
   try {
     for (const repository of repositories) {
@@ -2074,7 +2082,7 @@ export async function runCollection(options: SyncOptions) {
   }
 
   const discussionsLogId = ensureLogId(
-    await recordSyncLog("discussions", "running"),
+    await recordSyncLog("discussions", "running", undefined, runId),
   );
 
   try {
@@ -2116,9 +2124,11 @@ export async function runCollection(options: SyncOptions) {
   }
 
   const pullRequestLogId = ensureLogId(
-    await recordSyncLog("pull_requests", "running"),
+    await recordSyncLog("pull_requests", "running", undefined, runId),
   );
-  const reviewLogId = ensureLogId(await recordSyncLog("reviews", "running"));
+  const reviewLogId = ensureLogId(
+    await recordSyncLog("reviews", "running", undefined, runId),
+  );
 
   try {
     for (const repository of repositories) {
