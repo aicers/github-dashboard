@@ -35,24 +35,45 @@ const getLatestSyncLogsMock = vi.fn(async () => []);
 const getDataFreshnessMock = vi.fn(async () => null);
 const getDashboardStatsMock = vi.fn(async () => ({ repositories: 0 }));
 
-const runCollectionMock = vi.fn(async () => ({
-  repositoriesProcessed: 0,
+type RunCollectionResult = {
+  repositoriesProcessed: number;
   counts: {
-    issues: 0,
-    discussions: 0,
-    pullRequests: 0,
-    reviews: 0,
-    comments: 0,
-  },
+    issues: number;
+    discussions: number;
+    pullRequests: number;
+    reviews: number;
+    comments: number;
+  };
   timestamps: {
-    repositories: null,
-    issues: null,
-    discussions: null,
-    pullRequests: null,
-    reviews: null,
-    comments: null,
-  },
-}));
+    repositories: string | null;
+    issues: string | null;
+    discussions: string | null;
+    pullRequests: string | null;
+    reviews: string | null;
+    comments: string | null;
+  };
+};
+
+const runCollectionMock = vi.fn(
+  async (): Promise<RunCollectionResult> => ({
+    repositoriesProcessed: 0,
+    counts: {
+      issues: 0,
+      discussions: 0,
+      pullRequests: 0,
+      reviews: 0,
+      comments: 0,
+    },
+    timestamps: {
+      repositories: null,
+      issues: null,
+      discussions: null,
+      pullRequests: null,
+      reviews: null,
+      comments: null,
+    },
+  }),
+);
 
 vi.mock("@/lib/db", () => ({
   ensureSchema: ensureSchemaMock,
@@ -118,24 +139,27 @@ describe("sync service (unit)", () => {
       last_successful_sync_at: "2024-04-01T00:00:00.000Z",
     }));
     getSyncStateMock.mockImplementation(async () => null);
-    runCollectionMock.mockImplementation(async () => ({
-      repositoriesProcessed: 1,
-      counts: {
-        issues: 1,
-        discussions: 1,
-        pullRequests: 1,
-        reviews: 1,
-        comments: 1,
-      },
-      timestamps: {
-        repositories: null,
-        issues: null,
-        discussions: null,
-        pullRequests: null,
-        reviews: null,
-        comments: null,
-      },
-    }));
+    runCollectionMock.mockImplementation(
+      async () =>
+        ({
+          repositoriesProcessed: 1,
+          counts: {
+            issues: 1,
+            discussions: 1,
+            pullRequests: 1,
+            reviews: 1,
+            comments: 1,
+          },
+          timestamps: {
+            repositories: null,
+            issues: null,
+            discussions: null,
+            pullRequests: null,
+            reviews: null,
+            comments: null,
+          },
+        }) satisfies RunCollectionResult,
+    );
   });
 
   it("prevents overlapping incremental runs and releases the lock after completion", async () => {
@@ -168,7 +192,7 @@ describe("sync service (unit)", () => {
           reviews: null,
           comments: null,
         },
-      };
+      } satisfies RunCollectionResult;
     });
 
     const [first, second] = [
@@ -271,7 +295,7 @@ describe("sync service (unit)", () => {
           reviews: null,
           comments: null,
         },
-      })
+      } satisfies RunCollectionResult)
       .mockRejectedValueOnce(new Error("rate limit"))
       .mockResolvedValueOnce({
         repositoriesProcessed: 1,
@@ -290,7 +314,7 @@ describe("sync service (unit)", () => {
           reviews: null,
           comments: null,
         },
-      });
+      } satisfies RunCollectionResult);
 
     const consoleSpy = vi
       .spyOn(console, "error")
@@ -343,7 +367,7 @@ describe("sync service (unit)", () => {
           reviews: null,
           comments: null,
         },
-      });
+      } satisfies RunCollectionResult);
 
     const { runIncrementalSync } = await importService();
 
@@ -378,5 +402,52 @@ describe("sync service (unit)", () => {
       (call) => "lastSuccessfulSyncAt" in call,
     );
     expect(successfulCall).toBeUndefined();
+  });
+
+  it("records the latest resource timestamp as the last successful sync time", async () => {
+    vi.resetModules();
+    vi.useFakeTimers();
+    const completedAt = new Date("2024-04-12T12:00:00.000Z");
+    vi.setSystemTime(completedAt);
+
+    runCollectionMock.mockResolvedValueOnce({
+      repositoriesProcessed: 1,
+      counts: {
+        issues: 1,
+        discussions: 1,
+        pullRequests: 1,
+        reviews: 1,
+        comments: 1,
+      },
+      timestamps: {
+        repositories: "2024-04-12T10:00:00.000Z",
+        issues: "2024-04-12T11:30:00.000Z",
+        discussions: null,
+        pullRequests: "2024-04-12T11:45:00.000Z",
+        reviews: null,
+        comments: "2024-04-12T11:15:00.000Z",
+      },
+    } satisfies RunCollectionResult);
+
+    const updateCalls: Record<string, unknown>[] = [];
+    updateSyncConfigMock.mockImplementation(async (params) => {
+      updateCalls.push(params);
+    });
+
+    const { runIncrementalSync } = await importService();
+    await runIncrementalSync();
+
+    const successfulCall = updateCalls.find(
+      (call) => "lastSuccessfulSyncAt" in call,
+    ) as { lastSuccessfulSyncAt?: unknown } | undefined;
+    expect(successfulCall?.lastSuccessfulSyncAt).toBe(
+      "2024-04-12T11:45:00.000Z",
+    );
+    const completedCall = updateCalls.find(
+      (call) => "lastSyncCompletedAt" in call,
+    ) as { lastSyncCompletedAt?: unknown } | undefined;
+    expect(completedCall?.lastSyncCompletedAt).toBe(completedAt.toISOString());
+
+    vi.useRealTimers();
   });
 });
