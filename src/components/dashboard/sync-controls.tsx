@@ -273,6 +273,7 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
   const [isRunningBackfill, startBackfill] = useTransition();
   const [isTogglingAuto, startToggleAuto] = useTransition();
   const [isResetting, startReset] = useTransition();
+  const [isCleaning, startCleanup] = useTransition();
 
   const canManageSync = isAdmin;
 
@@ -515,6 +516,56 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
     });
   }
 
+  async function handleCleanup() {
+    if (!canManageSync) {
+      setFeedback(ADMIN_ONLY_MESSAGE);
+      return;
+    }
+
+    if (
+      !window.confirm(
+        "진행 중으로 표시된 동기화를 실패 처리할까요? 최근 중단된 백필/자동 동기화가 모두 정리됩니다.",
+      )
+    ) {
+      return;
+    }
+
+    startCleanup(async () => {
+      try {
+        const response = await fetch("/api/sync/admin/cleanup", {
+          method: "POST",
+        });
+        const data = await parseApiResponse<{
+          runCount: number;
+          logCount: number;
+        }>(response);
+
+        if (!data.success) {
+          throw new Error(
+            data.message ?? "멈춰 있는 동기화를 정리하지 못했습니다.",
+          );
+        }
+
+        const counts = data.result ?? { runCount: 0, logCount: 0 };
+        const total = (counts.runCount ?? 0) + (counts.logCount ?? 0);
+        if (total > 0) {
+          setFeedback(
+            `멈춰 있던 런 ${counts.runCount ?? 0}건과 로그 ${counts.logCount ?? 0}건을 실패 처리했습니다.`,
+          );
+        } else {
+          setFeedback("정리할 동기화가 없습니다.");
+        }
+        router.refresh();
+      } catch (error) {
+        setFeedback(
+          error instanceof Error
+            ? error.message
+            : "동기화 정리 작업 중 오류가 발생했습니다.",
+        );
+      }
+    });
+  }
+
   return (
     <section className="flex flex-col gap-3">
       <header className="flex flex-col gap-1">
@@ -638,6 +689,32 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
               title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
             >
               {isResetting ? "삭제 중..." : "모든 데이터 삭제"}
+            </Button>
+          </CardFooter>
+        </Card>
+
+        <Card className="border-primary/40">
+          <CardHeader>
+            <CardTitle>멈춰 있는 동기화 정리</CardTitle>
+            <CardDescription>
+              중단된 백필이나 자동 동기화가 계속 &ldquo;진행 중&rdquo;으로 보일
+              때 실패 처리하여 상태를 정리합니다.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            <p>
+              실패 처리된 런과 로그는 다시 실행되지 않으며, 필요 시 새로
+              동기화를 시작해야 합니다.
+            </p>
+          </CardContent>
+          <CardFooter>
+            <Button
+              variant="outline"
+              onClick={handleCleanup}
+              disabled={isCleaning || !canManageSync}
+              title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+            >
+              {isCleaning ? "정리 중..." : "멈춘 동기화 정리"}
             </Button>
           </CardFooter>
         </Card>

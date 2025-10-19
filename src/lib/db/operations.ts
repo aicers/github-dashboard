@@ -1,4 +1,4 @@
-import { query } from "@/lib/db/client";
+import { query, withTransaction } from "@/lib/db/client";
 import { emitSyncEvent } from "@/lib/sync/event-bus";
 
 type TableCountKey = "issues" | "pull_requests" | "reviews" | "comments";
@@ -956,6 +956,53 @@ export async function getLatestSyncRuns(
     completedAt: toIsoString(run.completed_at),
     logs: logsByRun.get(run.id) ?? [],
   }));
+}
+
+export async function cleanupRunningSyncRuns(): Promise<{
+  runs: SyncRunRow[];
+  logs: SyncRunLogRow[];
+}> {
+  return withTransaction(async (client) => {
+    const runsResult = await client.query<SyncRunRow>(
+      `UPDATE sync_runs
+       SET status = 'failed',
+           completed_at = COALESCE(completed_at, NOW())
+       WHERE status = 'running'
+       RETURNING id,
+                 run_type,
+                 strategy,
+                 since,
+                 until,
+                 status,
+                 started_at,
+                 completed_at`,
+    );
+
+    const runs = runsResult.rows;
+    if (!runs.length) {
+      return { runs, logs: [] };
+    }
+
+    const runIds = runs.map((run) => String(run.id));
+    const logsResult = await client.query<SyncRunLogRow>(
+      `UPDATE sync_log
+       SET status = 'failed',
+           finished_at = COALESCE(finished_at, NOW())
+       WHERE status = 'running'
+         AND run_id IS NOT NULL
+         AND run_id::text = ANY($1::text[])
+       RETURNING id,
+                 run_id,
+                 resource,
+                 status,
+                 message,
+                 started_at,
+                 finished_at`,
+      [runIds],
+    );
+
+    return { runs, logs: logsResult.rows };
+  });
 }
 
 function toIsoString(value: string | Date | null): string | null {
