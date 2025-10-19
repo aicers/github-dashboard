@@ -170,9 +170,9 @@ describe("sync service database integration", () => {
       expect(freshnessIso).toBe(lastSuccessful);
       expect(status.runs).toEqual([]);
 
-      expect(status.logs).toHaveLength(20);
+      expect(status.logs).toHaveLength(25);
       expect(status.logs[0].resource).toBe("resource-24");
-      expect(status.logs.at(-1)?.resource).toBe("resource-5");
+      expect(status.logs.at(-1)?.resource).toBe("resource-0");
       const expectedLatestStatus = statuses[24 % statuses.length];
       expect(status.logs[0].status).toBe(expectedLatestStatus);
       expect(status.logs[0].finished_at).not.toBeNull();
@@ -234,6 +234,76 @@ describe("sync service database integration", () => {
       expect(run.logs[0].runId).toBe(runId);
       const logResources = run.logs.map((log) => log.resource);
       expect(logResources.sort()).toEqual([...resources].sort());
+    });
+
+    it("limits grouped run history to the latest 36 logs while keeping run boundaries intact", async () => {
+      const baseStarted = new Date("2024-05-10T00:00:00.000Z");
+      const resources = [
+        "repositories",
+        "issues",
+        "discussions",
+        "pull_requests",
+        "reviews",
+        "comments",
+      ] as const;
+
+      const createdRunIds: number[] = [];
+
+      for (let index = 0; index < 7; index += 1) {
+        const startedAt = new Date(baseStarted.getTime() + index * 60_000);
+        const completedAt = new Date(startedAt.getTime() + 30_000);
+
+        const runId = await createSyncRun({
+          runType: "automatic",
+          strategy: "incremental",
+          since: null,
+          until: null,
+          startedAt: startedAt.toISOString(),
+        });
+
+        if (runId == null) {
+          throw new Error("Failed to create sync run");
+        }
+
+        createdRunIds.push(runId);
+
+        for (const [logIndex, resource] of resources.entries()) {
+          const logId = ensureLogId(
+            await recordSyncLog(
+              resource,
+              "running",
+              `${resource}-run-${index}`,
+              runId,
+            ),
+          );
+          await updateSyncLog(logId, "success", `${resource}-done-${index}`);
+          const resourceStarted = new Date(
+            startedAt.getTime() + logIndex * 1_000,
+          );
+          const resourceFinished = new Date(resourceStarted.getTime() + 500);
+          await query(
+            `UPDATE sync_log SET started_at = $1, finished_at = $2 WHERE id = $3`,
+            [
+              resourceStarted.toISOString(),
+              resourceFinished.toISOString(),
+              logId,
+            ],
+          );
+        }
+
+        await updateSyncRunStatus(runId, "success", completedAt.toISOString());
+      }
+
+      const status = await fetchSyncStatus();
+      expect(status.runs).toHaveLength(6);
+      const runIdsInStatus = status.runs.map((run) => run.id);
+      expect(runIdsInStatus).toEqual(createdRunIds.slice(1).reverse());
+      const totalRunLogs = status.runs.reduce(
+        (sum, run) => sum + run.logs.length,
+        0,
+      );
+      expect(totalRunLogs).toBe(36);
+      expect(status.logs).toHaveLength(36);
     });
   });
 

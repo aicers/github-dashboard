@@ -611,8 +611,8 @@ export async function fetchSyncStatus(): Promise<SyncStatus> {
   await ensureSchema();
   const [config, runs, logs, dataFreshness] = await Promise.all([
     getSyncConfig(),
-    getLatestSyncRuns(10),
-    getLatestSyncLogs(20),
+    getLatestSyncRuns(36),
+    getLatestSyncLogs(36),
     getDataFreshness(),
   ]);
 
