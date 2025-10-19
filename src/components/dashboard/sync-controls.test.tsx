@@ -344,7 +344,7 @@ describe("SyncControls", () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(
-      screen.getByText("유효한 동기화 주기를 설정에서 먼저 지정하세요."),
+      screen.getByText("유효한 동기화 간격을 설정에서 먼저 지정하세요."),
     ).toBeInTheDocument();
   });
 

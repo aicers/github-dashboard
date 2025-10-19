@@ -112,7 +112,7 @@ describe("sync config API routes", () => {
     );
 
     vi.useFakeTimers();
-    const setIntervalSpy = vi.spyOn(global, "setInterval");
+    const setTimeoutSpy = vi.spyOn(global, "setTimeout");
 
     const response = await handlers.PATCH(
       new Request("http://localhost/api/sync/config", {
@@ -154,8 +154,34 @@ describe("sync config API routes", () => {
     expect(config?.allowed_team_slugs).toEqual(["team-alpha", "team-beta"]);
     expect(config?.allowed_user_ids).toEqual(["user-3", "user-4"]);
 
-    const intervalCall = setIntervalSpy.mock.calls[0];
-    expect(intervalCall?.[1]).toBe(24 * 60 * 1000);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const getSchedulerCalls = () =>
+      setTimeoutSpy.mock.calls.filter(
+        (call) =>
+          typeof call?.[0] === "function" &&
+          call[0]?.toString().includes("runIncrementalSync"),
+      ) as Array<[TimerHandler, number?, ...unknown[]]>;
+
+    const initialSchedulerCalls = getSchedulerCalls();
+    const firstTimeout = initialSchedulerCalls[0];
+    expect(firstTimeout?.[1]).toBe(0);
+
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const scheduler = (
+      globalThis as {
+        __githubDashboardScheduler?: {
+          intervalMs: number | null;
+          isEnabled: boolean;
+        };
+      }
+    ).__githubDashboardScheduler;
+    expect(scheduler?.intervalMs).toBe(24 * 60 * 1000);
+    expect(scheduler?.isEnabled).toBe(true);
 
     const repositories = await listAllRepositories();
     expect(repositories.map((repo) => repo.id)).toEqual(["repo-1", "repo-2"]);

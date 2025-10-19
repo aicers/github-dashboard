@@ -23,7 +23,7 @@ test.describe("SettingsView (Playwright)", () => {
       page.getByRole("button", { name: "Organization" }),
     ).toHaveAttribute("aria-current", "true");
     await expect(page.getByLabel("Organization 이름")).toHaveValue("acme");
-    await expect(page.getByLabel("자동 동기화 주기 (분)")).toHaveValue("30");
+    await expect(page.getByLabel("자동 동기화 간격 (분)")).toHaveValue("30");
     await expect(
       page.getByRole("option", { name: "acme/repo-two" }),
     ).toBeAttached();
@@ -71,8 +71,8 @@ test.describe("SettingsView (Playwright)", () => {
     await page.getByRole("button", { name: "Organization" }).click();
 
     await page.getByLabel("Organization 이름").fill("  new-org  ");
-    await page.getByLabel("자동 동기화 주기 (분)").fill("");
-    await page.getByLabel("자동 동기화 주기 (분)").fill("15");
+    await page.getByLabel("자동 동기화 간격 (분)").fill("");
+    await page.getByLabel("자동 동기화 간격 (분)").fill("15");
     await page.getByLabel("표준 시간대").selectOption("Europe/London");
     await page.getByLabel("주의 시작 요일").selectOption("sunday");
     await page
@@ -132,12 +132,12 @@ test.describe("SettingsView (Playwright)", () => {
 
     await page.getByRole("button", { name: "Organization" }).click();
 
-    await page.getByLabel("자동 동기화 주기 (분)").fill("");
-    await page.getByLabel("자동 동기화 주기 (분)").fill("0");
+    await page.getByLabel("자동 동기화 간격 (분)").fill("");
+    await page.getByLabel("자동 동기화 간격 (분)").fill("0");
     await page.getByRole("button", { name: "조직 설정 저장" }).click();
 
     await expect(
-      page.getByText("동기화 주기는 1 이상의 정수여야 합니다."),
+      page.getByText("동기화 간격은 1 이상의 정수여야 합니다."),
     ).toBeVisible();
     expect(called).toBe(false);
   });

@@ -636,7 +636,7 @@ export function SettingsView({
       try {
         const parsedInterval = Number.parseInt(interval, 10);
         if (Number.isNaN(parsedInterval) || parsedInterval <= 0) {
-          throw new Error("동기화 주기는 1 이상의 정수여야 합니다.");
+          throw new Error("동기화 간격은 1 이상의 정수여야 합니다.");
         }
 
         if (!name.trim()) {
@@ -946,7 +946,7 @@ export function SettingsView({
               <CardHeader>
                 <CardTitle>Organization & 동기화</CardTitle>
                 <CardDescription>
-                  GitHub Organization 이름과 자동 동기화 주기를 관리합니다.
+                  GitHub Organization 이름과 자동 동기화 간격을 관리합니다.
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
@@ -973,7 +973,7 @@ export function SettingsView({
                   htmlFor={intervalInputId}
                 >
                   <span className="text-muted-foreground">
-                    자동 동기화 주기 (분)
+                    자동 동기화 간격 (분)
                   </span>
                   <Input
                     id={intervalInputId}

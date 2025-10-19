@@ -182,7 +182,7 @@ describe("SettingsView", () => {
     ).toHaveValue("acme");
     expect(
       within(organizationSection as HTMLElement).getByLabelText(
-        "자동 동기화 주기 (분)",
+        "자동 동기화 간격 (분)",
       ),
     ).toHaveValue(30);
     expect(
@@ -266,7 +266,7 @@ describe("SettingsView", () => {
     await user.type(orgInput, "  new-org  ");
 
     const intervalInput = within(organizationSection).getByLabelText(
-      "자동 동기화 주기 (분)",
+      "자동 동기화 간격 (분)",
     );
     await user.clear(intervalInput);
     await user.type(intervalInput, "15");
@@ -382,7 +382,7 @@ describe("SettingsView", () => {
     ).closest("section") as HTMLElement;
 
     const intervalInput = within(organizationSection).getByLabelText(
-      "자동 동기화 주기 (분)",
+      "자동 동기화 간격 (분)",
     );
     await user.clear(intervalInput);
     await user.type(intervalInput, "0");
@@ -395,7 +395,7 @@ describe("SettingsView", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText("동기화 주기는 1 이상의 정수여야 합니다.", {
+        screen.getByText("동기화 간격은 1 이상의 정수여야 합니다.", {
           selector: "p",
         }),
       ).toBeInTheDocument();
@@ -491,7 +491,7 @@ describe("SettingsView", () => {
     expect(orgInput).toBeDisabled();
 
     const intervalInput = within(organizationSection).getByLabelText(
-      "자동 동기화 주기 (분)",
+      "자동 동기화 간격 (분)",
     );
     expect(intervalInput).toBeDisabled();
 
