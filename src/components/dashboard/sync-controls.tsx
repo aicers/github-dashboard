@@ -230,7 +230,7 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
       try {
         const intervalValue = Number(config?.sync_interval_minutes ?? 60);
         if (!Number.isFinite(intervalValue) || intervalValue <= 0) {
-          throw new Error("유효한 동기화 주기를 설정에서 먼저 지정하세요.");
+          throw new Error("유효한 동기화 간격을 설정에서 먼저 지정하세요.");
         }
 
         const response = await fetch("/api/sync/auto", {
@@ -383,7 +383,7 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
               </span>
             </p>
             <p>
-              주기: {(config?.sync_interval_minutes ?? 60).toLocaleString()}분
+              간격: {(config?.sync_interval_minutes ?? 60).toLocaleString()}분
             </p>
           </CardContent>
           <CardFooter className="gap-3">

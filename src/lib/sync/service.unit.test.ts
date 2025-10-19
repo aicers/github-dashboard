@@ -111,7 +111,12 @@ vi.mock("@/lib/env", () => ({
 function getScheduler() {
   return (
     globalThis as {
-      __githubDashboardScheduler?: { timer: NodeJS.Timeout | null };
+      __githubDashboardScheduler?: {
+        timer: NodeJS.Timeout | null;
+        intervalMs: number | null;
+        isEnabled: boolean;
+        currentRun: Promise<void> | null;
+      };
     }
   ).__githubDashboardScheduler;
 }
@@ -324,11 +329,19 @@ describe("sync service (unit)", () => {
 
     await enableAutomaticSync({ intervalMinutes });
 
-    const schedulerBeforeTick = getScheduler();
-    expect(schedulerBeforeTick?.timer).toBeDefined();
+    let scheduler = getScheduler();
+    expect(scheduler?.isEnabled).toBe(true);
+    expect(scheduler?.intervalMs).toBe(intervalMs);
+    expect(scheduler?.timer).toBeDefined();
+    expect(runCollectionMock).toHaveBeenCalledTimes(1);
 
     await vi.advanceTimersByTimeAsync(intervalMs);
+    scheduler = getScheduler();
+    await scheduler?.currentRun?.catch(() => undefined);
+
     await vi.advanceTimersByTimeAsync(intervalMs);
+    scheduler = getScheduler();
+    await scheduler?.currentRun?.catch(() => undefined);
 
     expect(runCollectionMock).toHaveBeenCalledTimes(3);
     expect(consoleSpy).toHaveBeenCalledWith(
@@ -339,6 +352,7 @@ describe("sync service (unit)", () => {
     await disableAutomaticSync();
     const schedulerAfterDisable = getScheduler();
     expect(schedulerAfterDisable?.timer).toBeNull();
+    expect(schedulerAfterDisable?.isEnabled).toBe(false);
     expect(updateSyncConfigMock).toHaveBeenLastCalledWith(
       expect.objectContaining({ autoSyncEnabled: false }),
     );

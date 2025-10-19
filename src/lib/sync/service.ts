@@ -31,6 +31,8 @@ const dateSchema = z.string().transform((value, ctx) => {
 type SchedulerState = {
   timer: NodeJS.Timeout | null;
   currentRun: Promise<void> | null;
+  intervalMs: number | null;
+  isEnabled: boolean;
 };
 
 type SyncRunResult = {
@@ -82,10 +84,57 @@ function getSchedulerState() {
     globalWithScheduler.__githubDashboardScheduler = {
       timer: null,
       currentRun: null,
+      intervalMs: null,
+      isEnabled: false,
     };
   }
 
   return globalWithScheduler.__githubDashboardScheduler;
+}
+
+function scheduleNextRun(delayMs: number) {
+  const scheduler = getSchedulerState();
+  if (!scheduler.isEnabled || scheduler.intervalMs === null) {
+    return;
+  }
+
+  if (scheduler.timer) {
+    clearTimeout(scheduler.timer);
+  }
+
+  scheduler.timer = setTimeout(
+    () => {
+      scheduler.timer = null;
+      void runIncrementalSync().catch((error) => {
+        console.error("[github-dashboard] Automatic sync failed", error);
+      });
+    },
+    Math.max(0, delayMs),
+  );
+}
+
+async function computeInitialDelay(intervalMs: number) {
+  try {
+    const config = await getSyncConfig();
+    const lastCompletedIso = coerceIso(config?.last_sync_completed_at ?? null);
+    if (!lastCompletedIso) {
+      return 0;
+    }
+
+    const completedMs = new Date(lastCompletedIso).getTime();
+    if (Number.isNaN(completedMs)) {
+      return intervalMs;
+    }
+
+    const elapsed = Date.now() - completedMs;
+    if (elapsed >= intervalMs) {
+      return 0;
+    }
+
+    return intervalMs - elapsed;
+  } catch (_error) {
+    return intervalMs;
+  }
 }
 
 async function withSyncLock<T>(handler: () => Promise<T>) {
@@ -218,28 +267,38 @@ async function executeSync(params: {
   });
 }
 
-function startScheduler(intervalMinutes: number) {
+function startScheduler(
+  intervalMinutes: number,
+  options?: { initialDelayMs?: number },
+) {
   const scheduler = getSchedulerState();
   const intervalMs = intervalMinutes * 60 * 1000;
 
   if (scheduler.timer) {
-    clearInterval(scheduler.timer);
+    clearTimeout(scheduler.timer);
     scheduler.timer = null;
   }
 
-  scheduler.timer = setInterval(() => {
-    void runIncrementalSync().catch((error) => {
-      console.error("[github-dashboard] Automatic sync failed", error);
-    });
-  }, intervalMs);
+  scheduler.intervalMs = intervalMs;
+  scheduler.isEnabled = true;
+
+  const scheduleInitial = async () => {
+    const delay =
+      options?.initialDelayMs ?? (await computeInitialDelay(intervalMs));
+    scheduleNextRun(delay);
+  };
+
+  void scheduleInitial();
 }
 
 function stopScheduler() {
   const scheduler = getSchedulerState();
   if (scheduler.timer) {
-    clearInterval(scheduler.timer);
+    clearTimeout(scheduler.timer);
     scheduler.timer = null;
   }
+  scheduler.intervalMs = null;
+  scheduler.isEnabled = false;
 }
 
 export async function initializeScheduler() {
@@ -341,7 +400,14 @@ export async function runIncrementalSync(logger?: SyncLogger) {
   await ensureSchema();
   const config = await getSyncConfig();
   const since = config?.last_successful_sync_at ?? null;
-  return executeSync({ since, logger, strategy: "incremental" });
+  try {
+    return await executeSync({ since, logger, strategy: "incremental" });
+  } finally {
+    const scheduler = getSchedulerState();
+    if (scheduler.isEnabled && scheduler.intervalMs !== null) {
+      scheduleNextRun(scheduler.intervalMs);
+    }
+  }
 }
 
 export async function enableAutomaticSync(options?: {
@@ -363,7 +429,9 @@ export async function enableAutomaticSync(options?: {
     syncIntervalMinutes: interval,
   });
 
-  startScheduler(interval);
+  startScheduler(interval, {
+    initialDelayMs: interval * 60 * 1000,
+  });
   return runIncrementalSync(options?.logger);
 }
 
