@@ -25,6 +25,7 @@ const {
   upsertUserMock,
   upsertIssueMock,
   upsertPullRequestMock,
+  replacePullRequestIssuesMock,
   upsertReviewMock,
   upsertReviewRequestMock,
   upsertCommentMock,
@@ -47,6 +48,7 @@ const {
     upsertUserMock: vi.fn(async () => {}),
     upsertIssueMock: vi.fn(async () => {}),
     upsertPullRequestMock: vi.fn(async () => {}),
+    replacePullRequestIssuesMock: vi.fn(async () => {}),
     upsertReviewMock: vi.fn(async () => {}),
     upsertReviewRequestMock: vi.fn(async () => {}),
     upsertCommentMock: vi.fn(async () => {}),
@@ -79,6 +81,9 @@ vi.mock("@/lib/db/operations", () => ({
     upsertIssueMock(...args),
   upsertPullRequest: (...args: Parameters<typeof upsertPullRequestMock>) =>
     upsertPullRequestMock(...args),
+  replacePullRequestIssues: (
+    ...args: Parameters<typeof replacePullRequestIssuesMock>
+  ) => replacePullRequestIssuesMock(...args),
   upsertReview: (...args: Parameters<typeof upsertReviewMock>) =>
     upsertReviewMock(...args),
   upsertReviewRequest: (...args: Parameters<typeof upsertReviewRequestMock>) =>

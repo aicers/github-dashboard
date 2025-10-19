@@ -1,11 +1,12 @@
 import "../../../tests/helpers/postgres-container";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { query } from "@/lib/db/client";
 import {
   type DbActor,
   getUserAvatarState,
+  replacePullRequestIssues,
   updateUserAvatarUrl,
   upsertUser,
 } from "@/lib/db/operations";
@@ -100,5 +101,129 @@ describe("db operations", () => {
       "https://github.com/new-original.png",
     );
     expect(avatarState.customAvatarUrl).toBeNull();
+  });
+});
+
+describe("replacePullRequestIssues", () => {
+  const repositoryId = "repo_123";
+  const pullRequestId = "pr_123";
+
+  beforeEach(async () => {
+    await query(
+      `INSERT INTO repositories (
+         id,
+         name,
+         name_with_owner,
+         data,
+         github_created_at,
+         github_updated_at
+       ) VALUES ($1, $2, $3, '{}'::jsonb, NOW(), NOW())
+       ON CONFLICT (id) DO NOTHING`,
+      [repositoryId, "demo", "acme/demo"],
+    );
+
+    await query(
+      `INSERT INTO pull_requests (
+         id,
+         number,
+         repository_id,
+         github_created_at,
+         github_updated_at,
+         data
+       ) VALUES ($1, 1, $2, NOW(), NOW(), '{}'::jsonb)
+       ON CONFLICT (id) DO NOTHING`,
+      [pullRequestId, repositoryId],
+    );
+  });
+
+  afterEach(async () => {
+    await query("TRUNCATE TABLE pull_request_issues, pull_requests CASCADE");
+    await query("TRUNCATE TABLE repositories CASCADE");
+  });
+
+  it("replaces linked issues for a pull request", async () => {
+    await replacePullRequestIssues(pullRequestId, [
+      {
+        issueId: "issue-1",
+        issueNumber: 42,
+        issueTitle: "First issue",
+        issueState: "OPEN",
+        issueUrl: "https://github.com/acme/demo/issues/42",
+        issueRepository: "acme/demo",
+      },
+      {
+        issueId: "issue-2",
+        issueNumber: 43,
+        issueTitle: "Second issue",
+        issueState: "CLOSED",
+        issueUrl: "https://github.com/acme/demo/issues/43",
+        issueRepository: "acme/demo",
+      },
+    ]);
+
+    const initial = await query(
+      `SELECT issue_id, issue_number, issue_title, issue_state, issue_url, issue_repository
+         FROM pull_request_issues
+        WHERE pull_request_id = $1
+        ORDER BY issue_id`,
+      [pullRequestId],
+    );
+
+    expect(initial.rows).toEqual([
+      {
+        issue_id: "issue-1",
+        issue_number: 42,
+        issue_title: "First issue",
+        issue_state: "OPEN",
+        issue_url: "https://github.com/acme/demo/issues/42",
+        issue_repository: "acme/demo",
+      },
+      {
+        issue_id: "issue-2",
+        issue_number: 43,
+        issue_title: "Second issue",
+        issue_state: "CLOSED",
+        issue_url: "https://github.com/acme/demo/issues/43",
+        issue_repository: "acme/demo",
+      },
+    ]);
+
+    await replacePullRequestIssues(pullRequestId, [
+      {
+        issueId: "issue-2",
+        issueNumber: 43,
+        issueTitle: "Second issue updated",
+        issueState: "CLOSED",
+        issueUrl: "https://github.com/acme/demo/issues/43",
+        issueRepository: "acme/demo",
+      },
+    ]);
+
+    const updated = await query(
+      `SELECT issue_id, issue_number, issue_title, issue_state, issue_url, issue_repository
+         FROM pull_request_issues
+        WHERE pull_request_id = $1`,
+      [pullRequestId],
+    );
+
+    expect(updated.rows).toEqual([
+      {
+        issue_id: "issue-2",
+        issue_number: 43,
+        issue_title: "Second issue updated",
+        issue_state: "CLOSED",
+        issue_url: "https://github.com/acme/demo/issues/43",
+        issue_repository: "acme/demo",
+      },
+    ]);
+
+    await replacePullRequestIssues(pullRequestId, []);
+
+    const cleared = await query(
+      `SELECT COUNT(*)::int AS count FROM pull_request_issues WHERE pull_request_id = $1`,
+      [pullRequestId],
+    );
+
+    expect(cleared.rows[0]?.count).toBe(0);
   });
 });

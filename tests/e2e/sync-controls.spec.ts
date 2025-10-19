@@ -60,7 +60,7 @@ test.describe("SyncControls (Playwright)", () => {
       });
     });
 
-    await page.getByRole("button", { name: "백필 실행" }).click();
+    await page.getByRole("button", { name: "백필 실행", exact: true }).click();
 
     await expect(
       page.getByText("백필이 성공적으로 실행되었습니다."),
@@ -132,7 +132,7 @@ test.describe("SyncControls (Playwright)", () => {
       });
     });
 
-    await page.getByRole("button", { name: "백필 실행" }).click();
+    await page.getByRole("button", { name: "백필 실행", exact: true }).click();
 
     await expect(
       page.getByText(

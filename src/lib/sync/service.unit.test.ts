@@ -118,6 +118,12 @@ const runCollectionMock = vi.fn(
   }),
 );
 
+const collectPullRequestLinksMock = vi.fn(async () => ({
+  repositoriesProcessed: 0,
+  pullRequestCount: 0,
+  latestPullRequestUpdated: null as string | null,
+}));
+
 vi.mock("@/lib/db", () => ({
   ensureSchema: ensureSchemaMock,
 }));
@@ -146,6 +152,7 @@ vi.mock("@/lib/github/collectors", () => ({
     "comments",
   ] as const,
   runCollection: runCollectionMock,
+  collectPullRequestLinks: collectPullRequestLinksMock,
 }));
 
 vi.mock("@/lib/env", () => ({
@@ -629,5 +636,116 @@ describe("sync service (unit)", () => {
 
     expect(result).toEqual({ runCount: 0, logCount: 0 });
     expect(emitSyncEventMock).not.toHaveBeenCalled();
+  });
+
+  it("runs PR link backfill and returns summary", async () => {
+    vi.useFakeTimers();
+    const now = new Date("2024-04-02T00:00:00.000Z");
+    vi.setSystemTime(now);
+
+    collectPullRequestLinksMock.mockResolvedValueOnce({
+      repositoriesProcessed: 3,
+      pullRequestCount: 12,
+      latestPullRequestUpdated: "2024-04-15T00:00:00.000Z",
+    });
+
+    const { runPrLinkBackfill } = await importService();
+    const result = await runPrLinkBackfill("2024-04-01");
+
+    expect(result).toEqual({
+      startDate: "2024-04-01T00:00:00.000Z",
+      endDate: null,
+      startedAt: now.toISOString(),
+      completedAt: now.toISOString(),
+      repositoriesProcessed: 3,
+      pullRequestCount: 12,
+      latestPullRequestUpdated: "2024-04-15T00:00:00.000Z",
+    });
+
+    expect(collectPullRequestLinksMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        org: "acme",
+        sinceByResource: { pull_requests: "2024-04-01T00:00:00.000Z" },
+        until: "2024-04-02T00:00:00.000Z",
+      }),
+    );
+
+    expect(createSyncRunMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runType: "backfill",
+        strategy: "backfill",
+        since: "2024-04-01T00:00:00.000Z",
+        startedAt: now.toISOString(),
+        until: null,
+      }),
+    );
+    expect(updateSyncRunStatusMock).toHaveBeenCalledWith(
+      1,
+      "success",
+      expect.any(String),
+    );
+    expect(emitSyncEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "run-started", runId: 1 }),
+    );
+    expect(emitSyncEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "run-completed", runId: 1 }),
+    );
+
+    vi.useRealTimers();
+  });
+
+  it("runs PR link backfill with an end date and forwards the until boundary", async () => {
+    vi.useFakeTimers();
+    const now = new Date("2024-05-01T12:00:00.000Z");
+    vi.setSystemTime(now);
+
+    collectPullRequestLinksMock
+      .mockResolvedValueOnce({
+        repositoriesProcessed: 1,
+        pullRequestCount: 3,
+        latestPullRequestUpdated: "2024-04-02T00:00:00.000Z",
+      })
+      .mockResolvedValueOnce({
+        repositoriesProcessed: 2,
+        pullRequestCount: 1,
+        latestPullRequestUpdated: "2024-04-03T00:00:00.000Z",
+      });
+
+    const { runPrLinkBackfill } = await importService();
+    const result = await runPrLinkBackfill("2024-04-01", "2024-04-02");
+
+    expect(result).toEqual({
+      startDate: "2024-04-01T00:00:00.000Z",
+      endDate: "2024-04-02T00:00:00.000Z",
+      startedAt: now.toISOString(),
+      completedAt: now.toISOString(),
+      repositoriesProcessed: 2,
+      pullRequestCount: 4,
+      latestPullRequestUpdated: "2024-04-03T00:00:00.000Z",
+    });
+
+    expect(collectPullRequestLinksMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        sinceByResource: { pull_requests: "2024-04-01T00:00:00.000Z" },
+        until: "2024-04-02T00:00:00.000Z",
+      }),
+    );
+    expect(collectPullRequestLinksMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        sinceByResource: { pull_requests: "2024-04-02T00:00:00.000Z" },
+        until: "2024-04-03T00:00:00.000Z",
+      }),
+    );
+
+    expect(createSyncRunMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        since: "2024-04-01T00:00:00.000Z",
+        until: "2024-04-03T00:00:00.000Z",
+      }),
+    );
+
+    vi.useRealTimers();
   });
 });

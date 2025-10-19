@@ -82,6 +82,19 @@ const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS pull_requests_author_idx ON pull_requests(author_id)`,
   `CREATE INDEX IF NOT EXISTS pull_requests_created_idx ON pull_requests(github_created_at)`,
   `CREATE INDEX IF NOT EXISTS pull_requests_updated_idx ON pull_requests(github_updated_at)`,
+  `CREATE TABLE IF NOT EXISTS pull_request_issues (
+    pull_request_id TEXT NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
+    issue_id TEXT NOT NULL,
+    issue_number INTEGER,
+    issue_title TEXT,
+    issue_state TEXT,
+    issue_url TEXT,
+    issue_repository TEXT,
+    inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (pull_request_id, issue_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS pull_request_issues_issue_idx ON pull_request_issues(issue_id)`,
   `CREATE TABLE IF NOT EXISTS reviews (
     id TEXT PRIMARY KEY,
     pull_request_id TEXT NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,

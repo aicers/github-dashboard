@@ -97,6 +97,15 @@ export type DbPullRequest = {
   raw: unknown;
 };
 
+export type DbPullRequestIssueLink = {
+  issueId: string;
+  issueNumber?: number | null;
+  issueTitle?: string | null;
+  issueState?: string | null;
+  issueUrl?: string | null;
+  issueRepository?: string | null;
+};
+
 export type DbReview = {
   id: string;
   pullRequestId: string;
@@ -422,6 +431,55 @@ export async function upsertPullRequest(pullRequest: DbPullRequest) {
       toJsonb(pullRequest.raw),
     ],
   );
+}
+
+export async function replacePullRequestIssues(
+  pullRequestId: string,
+  issues: readonly DbPullRequestIssueLink[],
+) {
+  await withTransaction(async (client) => {
+    await client.query(
+      `DELETE FROM pull_request_issues WHERE pull_request_id = $1`,
+      [pullRequestId],
+    );
+
+    if (!issues.length) {
+      return;
+    }
+
+    for (const issue of issues) {
+      await client.query(
+        `INSERT INTO pull_request_issues (
+           pull_request_id,
+           issue_id,
+           issue_number,
+           issue_title,
+           issue_state,
+           issue_url,
+           issue_repository,
+           inserted_at,
+           updated_at
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+         ON CONFLICT (pull_request_id, issue_id) DO UPDATE SET
+           issue_number = EXCLUDED.issue_number,
+           issue_title = EXCLUDED.issue_title,
+           issue_state = EXCLUDED.issue_state,
+           issue_url = EXCLUDED.issue_url,
+           issue_repository = EXCLUDED.issue_repository,
+           updated_at = NOW()`,
+        [
+          pullRequestId,
+          issue.issueId,
+          issue.issueNumber ?? null,
+          issue.issueTitle ?? null,
+          issue.issueState ?? null,
+          issue.issueUrl ?? null,
+          issue.issueRepository ?? null,
+        ],
+      );
+    }
+  });
 }
 
 export async function upsertReaction(reaction: DbReaction) {
