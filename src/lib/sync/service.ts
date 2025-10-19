@@ -193,9 +193,15 @@ async function executeSync(params: {
       });
 
       const completedAt = new Date().toISOString();
+      const latestResourceTimestamp = Object.values(
+        summary.timestamps ?? {},
+      ).reduce<string | null>(
+        (latest, current) => pickLatest(latest, coerceIso(current)),
+        null,
+      );
       await updateSyncConfig({
         lastSyncCompletedAt: completedAt,
-        lastSuccessfulSyncAt: completedAt,
+        lastSuccessfulSyncAt: latestResourceTimestamp ?? completedAt,
       });
 
       return {

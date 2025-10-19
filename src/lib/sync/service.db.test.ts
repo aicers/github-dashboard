@@ -38,6 +38,7 @@ import * as collectors from "@/lib/github/collectors";
 import { resetDashboardAndSyncTables } from "../../../tests/helpers/dashboard-metrics";
 
 let fetchSyncStatus: typeof import("@/lib/sync/service")["fetchSyncStatus"];
+let runIncrementalSync: typeof import("@/lib/sync/service")["runIncrementalSync"];
 let runBackfill: typeof import("@/lib/sync/service")["runBackfill"];
 let resetSyncData: typeof import("@/lib/sync/service")["resetData"];
 
@@ -99,6 +100,7 @@ describe("sync service database integration", () => {
   beforeAll(async () => {
     ({
       fetchSyncStatus,
+      runIncrementalSync,
       runBackfill,
       resetData: resetSyncData,
     } = await import("@/lib/sync/service"));
@@ -171,6 +173,50 @@ describe("sync service database integration", () => {
       const expectedLatestStatus = statuses[24 % statuses.length];
       expect(status.logs[0].status).toBe(expectedLatestStatus);
       expect(status.logs[0].finished_at).not.toBeNull();
+    });
+  });
+
+  describe("runIncrementalSync", () => {
+    it("records the latest resource timestamp as the last successful sync time", async () => {
+      vi.useFakeTimers();
+      const completedAt = new Date("2024-04-12T12:00:00.000Z");
+      vi.setSystemTime(completedAt);
+
+      const runCollectionSpy = vi.spyOn(collectors, "runCollection");
+      runCollectionSpy.mockResolvedValueOnce({
+        repositoriesProcessed: 1,
+        counts: {
+          issues: 3,
+          discussions: 2,
+          pullRequests: 4,
+          reviews: 1,
+          comments: 5,
+        },
+        timestamps: {
+          repositories: "2024-04-12T10:00:00.000Z",
+          issues: "2024-04-12T11:30:00.000Z",
+          discussions: null,
+          pullRequests: "2024-04-12T11:45:00.000Z",
+          reviews: null,
+          comments: "2024-04-12T11:40:00.000Z",
+        },
+      } satisfies Awaited<ReturnType<typeof collectors.runCollection>>);
+
+      await runIncrementalSync();
+
+      expect(runCollectionSpy).toHaveBeenCalledTimes(1);
+      const latestConfig = await getSyncConfig();
+      const completedIso =
+        latestConfig?.last_sync_completed_at instanceof Date
+          ? latestConfig.last_sync_completed_at.toISOString()
+          : latestConfig?.last_sync_completed_at;
+      const successfulIso =
+        latestConfig?.last_successful_sync_at instanceof Date
+          ? latestConfig.last_successful_sync_at.toISOString()
+          : latestConfig?.last_successful_sync_at;
+
+      expect(completedIso).toBe(completedAt.toISOString());
+      expect(successfulIso).toBe("2024-04-12T11:45:00.000Z");
     });
   });
 
