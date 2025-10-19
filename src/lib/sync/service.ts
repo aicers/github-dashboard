@@ -3,13 +3,18 @@ import { z } from "zod";
 import { isValidDateTimeDisplayFormat } from "@/lib/date-time-format";
 import { ensureSchema } from "@/lib/db";
 import {
+  createSyncRun,
   getDashboardStats,
   getDataFreshness,
   getLatestSyncLogs,
+  getLatestSyncRuns,
   getSyncConfig,
   getSyncState,
   resetData as resetDatabase,
+  type SyncRunSummary,
+  type SyncRunType,
   updateSyncConfig,
+  updateSyncRunStatus,
 } from "@/lib/db/operations";
 import { env } from "@/lib/env";
 import type { ResourceKey, SyncLogger } from "@/lib/github/collectors";
@@ -68,6 +73,7 @@ export type BackfillResult = {
 
 export type SyncStatus = {
   config: Awaited<ReturnType<typeof getSyncConfig>>;
+  runs: SyncRunSummary[];
   logs: Awaited<ReturnType<typeof getLatestSyncLogs>>;
   dataFreshness: Awaited<ReturnType<typeof getDataFreshness>>;
 };
@@ -224,13 +230,33 @@ async function executeSync(params: {
   until?: string | null;
   logger?: SyncLogger;
   strategy?: SyncStrategy;
+  runType?: SyncRunType;
 }) {
-  const { since, until = null, logger, strategy = "incremental" } = params;
+  const {
+    since,
+    until = null,
+    logger,
+    strategy = "incremental",
+    runType,
+  } = params;
   const org = await resolveOrgName();
   const startedAt = new Date().toISOString();
+  const actualRunType: SyncRunType =
+    runType ?? (strategy === "backfill" ? "backfill" : "automatic");
 
   return withSyncLock(async () => {
     await updateSyncConfig({ lastSyncStartedAt: startedAt });
+    const runId = await createSyncRun({
+      runType: actualRunType,
+      strategy,
+      since,
+      until,
+      startedAt,
+    });
+
+    if (runId === null) {
+      throw new Error("Failed to record sync run metadata.");
+    }
 
     try {
       const summary = await runCollection({
@@ -239,6 +265,7 @@ async function executeSync(params: {
         until,
         sinceByResource: await buildSinceMap(since, strategy),
         logger,
+        runId,
       });
 
       const completedAt = new Date().toISOString();
@@ -252,6 +279,7 @@ async function executeSync(params: {
         lastSyncCompletedAt: completedAt,
         lastSuccessfulSyncAt: latestResourceTimestamp ?? completedAt,
       });
+      await updateSyncRunStatus(runId, "success", completedAt);
 
       return {
         since,
@@ -261,7 +289,9 @@ async function executeSync(params: {
         summary,
       } satisfies SyncRunResult;
     } catch (error) {
-      await updateSyncConfig({ lastSyncCompletedAt: new Date().toISOString() });
+      const failureCompletedAt = new Date().toISOString();
+      await updateSyncRunStatus(runId, "failed", failureCompletedAt);
+      await updateSyncConfig({ lastSyncCompletedAt: failureCompletedAt });
       throw error;
     }
   });
@@ -579,13 +609,14 @@ export async function resetData({
 
 export async function fetchSyncStatus(): Promise<SyncStatus> {
   await ensureSchema();
-  const [config, logs, dataFreshness] = await Promise.all([
+  const [config, runs, logs, dataFreshness] = await Promise.all([
     getSyncConfig(),
+    getLatestSyncRuns(10),
     getLatestSyncLogs(20),
     getDataFreshness(),
   ]);
 
-  return { config, logs, dataFreshness };
+  return { config, runs, logs, dataFreshness };
 }
 
 export async function fetchDashboardStats() {

@@ -35,6 +35,7 @@ function buildStatus(overrides: Partial<SyncStatus> = {}): SyncStatus {
       last_successful_sync_at: null,
       ...(overrides.config ?? {}),
     },
+    runs: overrides.runs ?? [],
     logs: overrides.logs ?? [],
     dataFreshness: overrides.dataFreshness ?? null,
   };
@@ -88,6 +89,38 @@ describe("SyncControls", () => {
         last_sync_completed_at: "2024-04-02T10:00:00.000Z",
         last_successful_sync_at: "2024-04-02T10:00:00.000Z",
       },
+      runs: [
+        {
+          id: 10,
+          runType: "automatic",
+          strategy: "incremental",
+          status: "success",
+          since: null,
+          until: null,
+          startedAt: "2024-04-02T09:30:00.000Z",
+          completedAt: "2024-04-02T10:00:00.000Z",
+          logs: [
+            {
+              id: 1,
+              runId: 10,
+              resource: "issues",
+              status: "success",
+              message: "Processed issues",
+              startedAt: "2024-04-02T09:30:00.000Z",
+              finishedAt: "2024-04-02T09:45:00.000Z",
+            },
+            {
+              id: 2,
+              runId: 10,
+              resource: "pull_requests",
+              status: "failed",
+              message: "Timeout",
+              startedAt: "2024-04-02T09:45:00.000Z",
+              finishedAt: "2024-04-02T09:55:00.000Z",
+            },
+          ],
+        },
+      ],
       logs: [
         {
           id: 1,
@@ -96,6 +129,7 @@ describe("SyncControls", () => {
           message: "Processed issues",
           started_at: "2024-04-02T09:00:00.000Z",
           finished_at: "2024-04-02T09:30:00.000Z",
+          run_id: 10,
         },
         {
           id: 2,
@@ -104,6 +138,7 @@ describe("SyncControls", () => {
           message: "Timeout",
           started_at: "2024-04-02T09:00:00.000Z",
           finished_at: "2024-04-02T09:15:00.000Z",
+          run_id: 10,
         },
       ],
     });
@@ -118,10 +153,11 @@ describe("SyncControls", () => {
     expect(screen.getByText("자동 동기화")).toBeInTheDocument();
     expect(screen.getByText("데이터 초기화")).toBeInTheDocument();
     expect(screen.getByText("활성")).toBeInTheDocument();
+    expect(screen.getByText(/자동 동기화 •/)).toBeInTheDocument();
     expect(screen.getByText("Processed issues")).toBeInTheDocument();
     expect(screen.getByText("Timeout")).toBeInTheDocument();
-    expect(screen.getByText("Success")).toBeInTheDocument();
-    expect(screen.getByText("Failed")).toBeInTheDocument();
+    expect(screen.getAllByText("Success")).not.toHaveLength(0);
+    expect(screen.getAllByText("Failed")).not.toHaveLength(0);
   });
 
   it("formats timestamps using the configured timezone and display format", () => {
@@ -141,6 +177,7 @@ describe("SyncControls", () => {
           message: null,
           started_at: "2024-04-01T15:00:00.000Z",
           finished_at: "2024-04-01T16:45:00.000Z",
+          run_id: null,
         },
       ],
     });

@@ -594,12 +594,13 @@ export async function recordSyncLog(
   resource: string,
   status: SyncLogStatus,
   message?: string,
+  runId?: number | null,
 ) {
   const result = await query<{ id: number }>(
-    `INSERT INTO sync_log (resource, status, message, started_at)
-     VALUES ($1, $2, $3, NOW())
+    `INSERT INTO sync_log (resource, status, message, started_at, run_id)
+     VALUES ($1, $2, $3, NOW(), $4)
      RETURNING id`,
-    [resource, status, message ?? null],
+    [resource, status, message ?? null, runId ?? null],
   );
   return result.rows[0]?.id;
 }
@@ -751,6 +752,169 @@ export async function updateSyncConfig(params: {
   );
 }
 
+export type SyncRunStatus = "running" | "success" | "failed";
+export type SyncRunType = "automatic" | "manual" | "backfill";
+export type SyncRunStrategy = "incremental" | "backfill";
+
+type SyncRunRow = {
+  id: number;
+  run_type: SyncRunType;
+  strategy: SyncRunStrategy;
+  since: string | Date | null;
+  until: string | Date | null;
+  status: SyncRunStatus;
+  started_at: string | Date;
+  completed_at: string | Date | null;
+};
+
+type SyncRunLogRow = {
+  id: number;
+  run_id: number | null;
+  resource: string;
+  status: SyncLogStatus;
+  message: string | null;
+  started_at: string;
+  finished_at: string | null;
+};
+
+export type SyncRunLog = {
+  id: number;
+  runId: number | null;
+  resource: string;
+  status: SyncLogStatus;
+  message: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+};
+
+export type SyncRunSummary = {
+  id: number;
+  runType: SyncRunType;
+  strategy: SyncRunStrategy;
+  since: string | null;
+  until: string | null;
+  status: SyncRunStatus;
+  startedAt: string;
+  completedAt: string | null;
+  logs: SyncRunLog[];
+};
+
+export async function createSyncRun(params: {
+  runType: SyncRunType;
+  strategy: SyncRunStrategy;
+  since: string | null;
+  until: string | null;
+  startedAt: string;
+}) {
+  const result = await query<{ id: number }>(
+    `INSERT INTO sync_runs (run_type, strategy, since, until, status, started_at)
+     VALUES ($1, $2, $3, $4, 'running', $5)
+     RETURNING id`,
+    [
+      params.runType,
+      params.strategy,
+      params.since ?? null,
+      params.until ?? null,
+      params.startedAt,
+    ],
+  );
+
+  return result.rows[0]?.id ?? null;
+}
+
+export async function updateSyncRunStatus(
+  runId: number,
+  status: SyncRunStatus,
+  completedAt: string | null,
+) {
+  await query(
+    `UPDATE sync_runs
+     SET status = $2,
+         completed_at = COALESCE($3, completed_at),
+         updated_at = NOW()
+     WHERE id = $1`,
+    [runId, status, completedAt ?? null],
+  );
+}
+
+export async function getLatestSyncRuns(limit = 10): Promise<SyncRunSummary[]> {
+  const runsResult = await query<SyncRunRow>(
+    `SELECT id, run_type, strategy, since, until, status, started_at, completed_at
+     FROM sync_runs
+     ORDER BY started_at DESC
+     LIMIT $1`,
+    [limit],
+  );
+
+  const runs = runsResult.rows;
+  const runIds = runs.map((run) => run.id);
+
+  let logs: SyncRunLogRow[] = [];
+  if (runIds.length > 0) {
+    const logsResult = await query<SyncRunLogRow>(
+      `SELECT id, run_id, resource, status, message, started_at, finished_at
+       FROM sync_log
+       WHERE run_id = ANY($1::int[])
+       ORDER BY started_at DESC`,
+      [runIds],
+    );
+    logs = logsResult.rows;
+  }
+
+  const logsByRun = new Map<number, SyncRunLog[]>();
+  for (const log of logs) {
+    const entry: SyncRunLog = {
+      id: log.id,
+      runId: log.run_id,
+      resource: log.resource,
+      status: log.status,
+      message: log.message,
+      startedAt: toIsoString(log.started_at),
+      finishedAt: toIsoString(log.finished_at),
+    };
+
+    if (log.run_id === null) {
+      const legacy = logsByRun.get(-1) ?? [];
+      legacy.push(entry);
+      logsByRun.set(-1, legacy);
+      continue;
+    }
+
+    const bucket = logsByRun.get(log.run_id) ?? [];
+    bucket.push(entry);
+    logsByRun.set(log.run_id, bucket);
+  }
+
+  return runs.map((run) => ({
+    id: run.id,
+    runType: run.run_type,
+    strategy: run.strategy,
+    since: toIsoString(run.since),
+    until: toIsoString(run.until),
+    status: run.status,
+    startedAt: toIsoString(run.started_at) ?? "",
+    completedAt: toIsoString(run.completed_at),
+    logs: logsByRun.get(run.id) ?? [],
+  }));
+}
+
+function toIsoString(value: string | Date | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString();
+  }
+
+  return value;
+}
+
 export async function resetData({
   preserveLogs = true,
 }: {
@@ -762,18 +926,18 @@ export async function resetData({
     );
   } else {
     await query(
-      `TRUNCATE comments, reviews, issues, pull_requests, repositories, users, sync_log, sync_state RESTART IDENTITY CASCADE`,
+      `TRUNCATE comments, reviews, issues, pull_requests, repositories, users, sync_log, sync_runs, sync_state RESTART IDENTITY CASCADE`,
     );
   }
 }
 
 export async function deleteSyncLogs() {
-  await query(`TRUNCATE sync_log RESTART IDENTITY CASCADE`);
+  await query(`TRUNCATE sync_log, sync_runs RESTART IDENTITY CASCADE`);
 }
 
 export async function getLatestSyncLogs(limit = 20) {
-  const result = await query(
-    `SELECT id, resource, status, message, started_at, finished_at
+  const result = await query<SyncRunLogRow>(
+    `SELECT id, resource, status, message, started_at, finished_at, run_id
      FROM sync_log
      ORDER BY started_at DESC
      LIMIT $1`,

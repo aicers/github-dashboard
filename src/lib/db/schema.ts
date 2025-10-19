@@ -171,16 +171,30 @@ const SCHEMA_STATEMENTS = [
     last_item_timestamp TIMESTAMPTZ,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
+  `CREATE TABLE IF NOT EXISTS sync_runs (
+    id SERIAL PRIMARY KEY,
+    run_type TEXT NOT NULL,
+    strategy TEXT NOT NULL,
+    since TIMESTAMPTZ,
+    until TIMESTAMPTZ,
+    status TEXT NOT NULL DEFAULT 'running',
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS sync_runs_started_idx ON sync_runs(started_at DESC)`,
   `CREATE TABLE IF NOT EXISTS sync_log (
     id SERIAL PRIMARY KEY,
     resource TEXT NOT NULL,
     started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     finished_at TIMESTAMPTZ,
     status TEXT NOT NULL,
-    message TEXT
+    message TEXT,
+    run_id INTEGER REFERENCES sync_runs(id) ON DELETE SET NULL
   )`,
   `CREATE INDEX IF NOT EXISTS sync_log_resource_idx ON sync_log(resource)`,
   `CREATE INDEX IF NOT EXISTS sync_log_started_idx ON sync_log(started_at)`,
+  `ALTER TABLE sync_log ADD COLUMN IF NOT EXISTS run_id INTEGER REFERENCES sync_runs(id) ON DELETE SET NULL`,
   `CREATE TABLE IF NOT EXISTS activity_issue_status_history (
     id SERIAL PRIMARY KEY,
     issue_id TEXT NOT NULL REFERENCES issues(id) ON DELETE CASCADE,

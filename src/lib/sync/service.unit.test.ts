@@ -32,6 +32,23 @@ const getSyncStateMock = vi.fn(
 );
 const resetDataMock = vi.fn(async () => {});
 const getLatestSyncLogsMock = vi.fn(async () => []);
+const getLatestSyncRunsMock = vi.fn(async () => []);
+const createSyncRunMock = vi.fn(
+  async (_params: {
+    runType: string;
+    strategy: string;
+    since: string | null;
+    until: string | null;
+    startedAt: string;
+  }) => 1,
+);
+const updateSyncRunStatusMock = vi.fn(
+  async (
+    _runId: number,
+    _status: "running" | "success" | "failed",
+    _completedAt: string | null,
+  ) => {},
+);
 const getDataFreshnessMock = vi.fn(async () => null);
 const getDashboardStatsMock = vi.fn(async () => ({ repositories: 0 }));
 
@@ -85,6 +102,9 @@ vi.mock("@/lib/db/operations", () => ({
   getSyncState: getSyncStateMock,
   resetData: resetDataMock,
   getLatestSyncLogs: getLatestSyncLogsMock,
+  getLatestSyncRuns: getLatestSyncRunsMock,
+  createSyncRun: createSyncRunMock,
+  updateSyncRunStatus: updateSyncRunStatusMock,
   getDataFreshness: getDataFreshnessMock,
   getDashboardStats: getDashboardStatsMock,
 }));
@@ -134,6 +154,10 @@ describe("sync service (unit)", () => {
     ).__githubDashboardScheduler = undefined;
     vi.useRealTimers();
 
+    let nextRunId = 1;
+    createSyncRunMock.mockImplementation(async () => nextRunId++);
+    updateSyncRunStatusMock.mockResolvedValue(undefined);
+    getLatestSyncRunsMock.mockResolvedValue([]);
     getSyncConfigMock.mockImplementation(async () => ({
       org_name: "acme",
       auto_sync_enabled: false,
@@ -209,6 +233,11 @@ describe("sync service (unit)", () => {
 
     expect(runCollectionMock).toHaveBeenCalledTimes(2);
     expect(maxConcurrent).toBe(1);
+    expect(createSyncRunMock).toHaveBeenCalledTimes(2);
+    expect(updateSyncRunStatusMock).toHaveBeenCalledTimes(2);
+    expect(
+      updateSyncRunStatusMock.mock.calls.every((call) => call[1] === "success"),
+    ).toBe(true);
   });
 
   it("builds a since map per resource based on sync state and last successful sync", async () => {
@@ -245,9 +274,17 @@ describe("sync service (unit)", () => {
     await runIncrementalSync();
 
     expect(runCollectionMock).toHaveBeenCalledTimes(1);
+    expect(createSyncRunMock).toHaveBeenCalledWith({
+      runType: "automatic",
+      strategy: "incremental",
+      since: "2024-04-01T00:00:00.000Z",
+      until: null,
+      startedAt: expect.any(String),
+    });
     const firstCall = runCollectionMock.mock.calls[0] as unknown as
       | [
           {
+            runId?: number | null;
             since?: string | null;
             sinceByResource?: Partial<Record<string, string | null>>;
           },
@@ -255,6 +292,7 @@ describe("sync service (unit)", () => {
       | undefined;
     const callArgs = firstCall?.[0];
     expect(callArgs?.since).toBe("2024-04-01T00:00:00.000Z");
+    expect(callArgs?.runId).toBe(1);
     expect(callArgs?.sinceByResource).toEqual({
       repositories: "2024-04-05T10:00:00.000Z",
       issues: "2024-04-01T00:00:00.000Z",
@@ -358,6 +396,15 @@ describe("sync service (unit)", () => {
     );
 
     consoleSpy.mockRestore();
+    expect(createSyncRunMock).toHaveBeenCalledTimes(3);
+    const failedUpdates = updateSyncRunStatusMock.mock.calls.filter(
+      (call) => call[1] === "failed",
+    );
+    const successfulUpdates = updateSyncRunStatusMock.mock.calls.filter(
+      (call) => call[1] === "success",
+    );
+    expect(failedUpdates).toHaveLength(1);
+    expect(successfulUpdates).toHaveLength(2);
   });
 
   it("resets the lock after failures so subsequent runs can proceed", async () => {
@@ -388,6 +435,11 @@ describe("sync service (unit)", () => {
     await expect(runIncrementalSync()).rejects.toThrow("transient failure");
     const secondAttempt = await runIncrementalSync();
     expect(secondAttempt.summary.repositoriesProcessed).toBe(1);
+    expect(createSyncRunMock).toHaveBeenCalledTimes(2);
+    expect(updateSyncRunStatusMock.mock.calls.map((call) => call[1])).toEqual([
+      "failed",
+      "success",
+    ]);
   });
 
   it("updates sync timestamps when runs fail without touching lastSuccessfulSyncAt", async () => {
@@ -416,6 +468,11 @@ describe("sync service (unit)", () => {
       (call) => "lastSuccessfulSyncAt" in call,
     );
     expect(successfulCall).toBeUndefined();
+    expect(updateSyncRunStatusMock).toHaveBeenCalledWith(
+      1,
+      "failed",
+      expect.any(String),
+    );
   });
 
   it("records the latest resource timestamp as the last successful sync time", async () => {
@@ -461,6 +518,12 @@ describe("sync service (unit)", () => {
       (call) => "lastSyncCompletedAt" in call,
     ) as { lastSyncCompletedAt?: unknown } | undefined;
     expect(completedCall?.lastSyncCompletedAt).toBe(completedAt.toISOString());
+
+    expect(updateSyncRunStatusMock).toHaveBeenCalledWith(
+      1,
+      "success",
+      completedAt.toISOString(),
+    );
 
     vi.useRealTimers();
   });
