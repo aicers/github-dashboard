@@ -566,6 +566,68 @@ describe("SyncControls", () => {
     confirmMock.mockRestore();
   });
 
+  it("fails stuck runs via the cleanup endpoint and shows feedback", async () => {
+    const status = buildStatus();
+    const confirmMock = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    mockFetchJsonOnce({
+      success: true,
+      result: { runCount: 2, logCount: 3 },
+    });
+
+    render(<SyncControls status={status} isAdmin />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "멈춘 동기화 정리" }));
+
+    expect(confirmMock).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+    const request = fetchMock.mock.calls[0]?.[0] as Request;
+    expect(request.url).toContain("/api/sync/admin/cleanup");
+    expect(request.method).toBe("POST");
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("멈춰 있던 런 2건과 로그 3건을 실패 처리했습니다."),
+      ).toBeInTheDocument();
+    });
+    expect(routerRefreshMock).toHaveBeenCalledTimes(1);
+    confirmMock.mockRestore();
+  });
+
+  it("informs the user when there are no stuck runs to clean up", async () => {
+    const status = buildStatus();
+    const confirmMock = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    mockFetchJsonOnce({
+      success: true,
+      result: { runCount: 0, logCount: 0 },
+    });
+
+    render(<SyncControls status={status} isAdmin />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "멈춘 동기화 정리" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("정리할 동기화가 없습니다.")).toBeInTheDocument();
+    });
+    expect(routerRefreshMock).toHaveBeenCalledTimes(1);
+    confirmMock.mockRestore();
+  });
+
+  it("disables the cleanup button for non-admin users", async () => {
+    const status = buildStatus();
+
+    render(<SyncControls status={status} isAdmin={false} />);
+
+    const button = screen.getByRole("button", { name: "멈춘 동기화 정리" });
+    expect(button).toBeDisabled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("cancels reset when the confirmation dialog is rejected", async () => {
     const status = buildStatus();
     const confirmMock = vi.spyOn(window, "confirm").mockReturnValue(false);

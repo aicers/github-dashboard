@@ -70,6 +70,12 @@ session cookie; non-members are redirected to `/auth/denied` with instructions
 on granting access under **Settings → Applications → Authorized OAuth Apps**.
 Full OAuth setup instructions live in [docs/github-oauth-app.md](docs/github-oauth-app.md).
 
+Administrators are identified through `DASHBOARD_ADMIN_IDS`, a comma-separated
+list of GitHub logins or node IDs. Admin users can modify organization-wide
+settings (org name, sync cadence, excluded repositories/members), while all
+authenticated users can adjust their personal timezone and week-start
+preferences.
+
 ### PostgreSQL schema bootstrap
 
 The first API call or dashboard render triggers schema creation (tables for
@@ -93,6 +99,14 @@ curl -X POST http://localhost:3000/api/sync/reset -d '{"preserveLogs":true}' \
 - **Status & analytics** — the dashboard consumes `GET /api/sync/status` and
   `GET /api/data/stats` to present sync logs, data freshness, counts, and top
   contributors/repositories.
+<!-- markdownlint-disable MD013 -->
+- **Stuck sync cleanup** — administrators can use the Sync tab’s “멈춘 동기화 정리”
+  button (or call `POST /api/sync/admin/cleanup`) to mark lingering
+  `running` sync runs/logs as failed so the real-time panel clears. As a manual
+  fallback, run
+  `UPDATE sync_runs SET status = 'failed', completed_at = NOW(), updated_at = NOW() WHERE status = 'running';`
+  (and similar for `sync_log`) via `psql` or a SQL client.
+<!-- markdownlint-enable MD013 -->
 
 ### Real-time sync stream
 
@@ -110,12 +124,6 @@ curl -X POST http://localhost:3000/api/sync/reset -d '{"preserveLogs":true}' \
   Router streaming response API, and the browser relies on native `EventSource`
   with automatic reconnection. Expect a single SSE connection per browser tab
   (~50 concurrent clients are well within the Node runtime budget).
-
-Administrators are identified through `DASHBOARD_ADMIN_IDS`, a comma-separated
-list of GitHub logins or node IDs. Admin users can modify organization-wide
-settings (org name, sync cadence, excluded repositories/members), while all
-authenticated users can adjust their personal timezone and week-start
-preferences.
 
 ### Optional GitHub to-do project integration
 
