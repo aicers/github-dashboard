@@ -123,6 +123,33 @@ const collectPullRequestLinksMock = vi.fn(async () => ({
   pullRequestCount: 0,
   latestPullRequestUpdated: null as string | null,
 }));
+const activityCacheRefreshResultMock = {
+  filterOptions: {
+    cacheKey: "activity-filter-options",
+    generatedAt: "2024-04-01T00:00:00.000Z",
+    syncRunId: 1,
+    itemCount: 0,
+    metadata: {},
+  },
+  issueLinks: {
+    cacheKey: "activity-issue-links",
+    generatedAt: "2024-04-01T00:00:00.000Z",
+    syncRunId: 1,
+    itemCount: 0,
+    metadata: { linkCount: 0 },
+  },
+  pullRequestLinks: {
+    cacheKey: "activity-pull-request-links",
+    generatedAt: "2024-04-01T00:00:00.000Z",
+    syncRunId: 1,
+    itemCount: 0,
+    metadata: { linkCount: 0 },
+  },
+};
+const refreshActivityCachesMock = vi.fn(
+  async () => activityCacheRefreshResultMock,
+);
+const ensureActivityCachesMock = vi.fn(async () => null);
 
 vi.mock("@/lib/db", () => ({
   ensureSchema: ensureSchemaMock,
@@ -155,6 +182,10 @@ vi.mock("@/lib/github/collectors", () => ({
   collectPullRequestLinks: collectPullRequestLinksMock,
 }));
 
+vi.mock("@/lib/activity/cache", () => ({
+  refreshActivityCaches: refreshActivityCachesMock,
+  ensureActivityCaches: ensureActivityCachesMock,
+}));
 vi.mock("@/lib/env", () => ({
   env: {
     GITHUB_ORG: "env-org",
@@ -198,6 +229,8 @@ describe("sync service (unit)", () => {
     createSyncRunMock.mockImplementation(async () => nextRunId++);
     updateSyncRunStatusMock.mockResolvedValue(undefined);
     getLatestSyncRunsMock.mockResolvedValue([]);
+    refreshActivityCachesMock.mockResolvedValue(activityCacheRefreshResultMock);
+    ensureActivityCachesMock.mockResolvedValue(null);
     getSyncConfigMock.mockImplementation(async () => ({
       org_name: "acme",
       auto_sync_enabled: false,

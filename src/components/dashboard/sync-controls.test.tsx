@@ -9,14 +9,66 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SyncControls } from "@/components/dashboard/sync-controls";
+import type { ActivityCacheRefreshResult } from "@/lib/activity/cache";
 import type { BackfillChunkSuccess, SyncStatus } from "@/lib/sync/service";
 import {
   fetchMock,
   mockFetchJsonOnce,
   mockFetchOnce,
+  setDefaultFetchHandler,
 } from "../../../tests/setup/mock-fetch";
 
 const routerRefreshMock = vi.fn();
+const mockActivityCacheSummary: ActivityCacheRefreshResult = {
+  filterOptions: {
+    cacheKey: "activity-filter-options",
+    generatedAt: "2024-04-01T00:00:00.000Z",
+    syncRunId: 1,
+    itemCount: 5,
+    metadata: {
+      counts: {
+        repositories: 3,
+        labels: 10,
+        users: 4,
+        issueTypes: 2,
+        milestones: 1,
+      },
+    },
+  },
+  issueLinks: {
+    cacheKey: "activity-issue-links",
+    generatedAt: "2024-04-01T00:00:00.000Z",
+    syncRunId: 1,
+    itemCount: 12,
+    metadata: { linkCount: 12 },
+  },
+  pullRequestLinks: {
+    cacheKey: "activity-pull-request-links",
+    generatedAt: "2024-04-01T00:00:00.000Z",
+    syncRunId: 1,
+    itemCount: 7,
+    metadata: { linkCount: 7 },
+  },
+};
+const mockActivityCacheResponse = {
+  success: true,
+  caches: mockActivityCacheSummary,
+};
+
+function findRequest(substring: string, method?: string): Request | null {
+  const call = fetchMock.mock.calls.find(([entry]) => {
+    const request = entry as Request;
+    return (
+      request.url.includes(substring) &&
+      (method ? request.method === method : true)
+    );
+  });
+  return call ? (call[0] as Request) : null;
+}
+
+function hasRequest(substring: string, method?: string): boolean {
+  return findRequest(substring, method) !== null;
+}
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -82,6 +134,8 @@ describe("SyncControls", () => {
   beforeEach(() => {
     routerRefreshMock.mockReset();
     fetchMock.mockReset();
+    setDefaultFetchHandler({ json: mockActivityCacheResponse });
+    mockFetchJsonOnce(mockActivityCacheResponse);
   });
 
   it("renders primary sections and the latest sync logs", () => {
@@ -254,9 +308,13 @@ describe("SyncControls", () => {
     await user.click(screen.getByRole("button", { name: "백필 실행" }));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalled();
+      expect(hasRequest("/api/sync/backfill", "POST")).toBe(true);
     });
-    const request = fetchMock.mock.calls[0]?.[0] as Request;
+    const request = findRequest("/api/sync/backfill", "POST");
+    expect(request).not.toBeNull();
+    if (!request) {
+      throw new Error("Expected backfill request");
+    }
     expect(request.url).toContain("/api/sync/backfill");
     expect(request.method).toBe("POST");
 
@@ -405,10 +463,14 @@ describe("SyncControls", () => {
     await user.click(screen.getByRole("button", { name: "PR 링크 백필 실행" }));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalled();
+      expect(hasRequest("/api/sync/pr-link-backfill", "POST")).toBe(true);
     });
 
-    const request = fetchMock.mock.calls[0]?.[0] as Request;
+    const request = findRequest("/api/sync/pr-link-backfill", "POST");
+    expect(request).not.toBeNull();
+    if (!request) {
+      throw new Error("Expected PR link backfill request");
+    }
     expect(request.url).toContain("/api/sync/pr-link-backfill");
     expect(request.method).toBe("POST");
 
@@ -448,10 +510,14 @@ describe("SyncControls", () => {
     await user.click(screen.getByRole("button", { name: "PR 링크 백필 실행" }));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalled();
+      expect(hasRequest("/api/sync/pr-link-backfill", "POST")).toBe(true);
     });
 
-    const request = fetchMock.mock.calls[0]?.[0] as Request;
+    const request = findRequest("/api/sync/pr-link-backfill", "POST");
+    expect(request).not.toBeNull();
+    if (!request) {
+      throw new Error("Expected PR link backfill request");
+    }
     expect(request.url).toContain("/api/sync/pr-link-backfill");
     const body = await request.clone().json();
     expect(body).toEqual({
@@ -472,7 +538,7 @@ describe("SyncControls", () => {
 
     await user.click(screen.getByRole("button", { name: "자동 동기화 시작" }));
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(hasRequest("/api/sync/auto", "POST")).toBe(false);
     expect(
       screen.getByText("유효한 동기화 간격을 설정에서 먼저 지정하세요."),
     ).toBeInTheDocument();
@@ -550,9 +616,13 @@ describe("SyncControls", () => {
     await user.click(screen.getByRole("button", { name: "자동 동기화 시작" }));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalled();
+      expect(hasRequest("/api/sync/auto", "POST")).toBe(true);
     });
-    const request = fetchMock.mock.calls[0]?.[0] as Request;
+    const request = findRequest("/api/sync/auto", "POST");
+    expect(request).not.toBeNull();
+    if (!request) {
+      throw new Error("Expected auto-sync request");
+    }
     expect(request.url).toContain("/api/sync/auto");
     expect(request.method).toBe("POST");
     const body = await request.clone().json();
@@ -607,10 +677,13 @@ describe("SyncControls", () => {
     expect(confirmMock).toHaveBeenCalled();
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalled();
+      expect(hasRequest("/api/sync/reset", "POST")).toBe(true);
     });
-    const request = fetchMock.mock.calls[0]?.[0] as Request;
-    expect(request.url).toContain("/api/sync/reset");
+    const request = findRequest("/api/sync/reset", "POST");
+    expect(request).not.toBeNull();
+    if (!request) {
+      throw new Error("Expected reset request");
+    }
     expect(request.method).toBe("POST");
     const body = await request.clone().json();
     expect(body).toEqual({ preserveLogs: true });
@@ -661,10 +734,13 @@ describe("SyncControls", () => {
 
     expect(confirmMock).toHaveBeenCalled();
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalled();
+      expect(hasRequest("/api/sync/admin/cleanup", "POST")).toBe(true);
     });
-    const request = fetchMock.mock.calls[0]?.[0] as Request;
-    expect(request.url).toContain("/api/sync/admin/cleanup");
+    const request = findRequest("/api/sync/admin/cleanup", "POST");
+    expect(request).not.toBeNull();
+    if (!request) {
+      throw new Error("Expected cleanup request");
+    }
     expect(request.method).toBe("POST");
 
     await waitFor(() => {
@@ -704,7 +780,7 @@ describe("SyncControls", () => {
 
     const button = screen.getByRole("button", { name: "멈춘 동기화 정리" });
     expect(button).toBeDisabled();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(hasRequest("/api/sync/backfill", "POST")).toBe(false);
   });
 
   it("cancels reset when the confirmation dialog is rejected", async () => {
@@ -716,7 +792,7 @@ describe("SyncControls", () => {
 
     await user.click(screen.getByRole("button", { name: "모든 데이터 삭제" }));
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(hasRequest("/api/sync/reset", "POST")).toBe(false);
     confirmMock.mockRestore();
   });
 });
