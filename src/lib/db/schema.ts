@@ -241,6 +241,41 @@ const SCHEMA_STATEMENTS = [
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
   `CREATE INDEX IF NOT EXISTS activity_saved_filters_user_idx ON activity_saved_filters(user_id, updated_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS activity_filter_options_cache (
+    id TEXT PRIMARY KEY DEFAULT 'default',
+    payload JSONB NOT NULL,
+    generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    sync_run_id INTEGER,
+    repository_count INTEGER NOT NULL DEFAULT 0,
+    label_count INTEGER NOT NULL DEFAULT 0,
+    user_count INTEGER NOT NULL DEFAULT 0,
+    issue_type_count INTEGER NOT NULL DEFAULT 0,
+    milestone_count INTEGER NOT NULL DEFAULT 0
+  )`,
+  `CREATE TABLE IF NOT EXISTS activity_issue_links_cache (
+    issue_id TEXT PRIMARY KEY,
+    links JSONB NOT NULL,
+    link_count INTEGER NOT NULL DEFAULT 0,
+    generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    sync_run_id INTEGER
+  )`,
+  `CREATE INDEX IF NOT EXISTS activity_issue_links_cache_generated_idx ON activity_issue_links_cache(generated_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS activity_pull_request_links_cache (
+    pull_request_id TEXT PRIMARY KEY,
+    links JSONB NOT NULL,
+    link_count INTEGER NOT NULL DEFAULT 0,
+    generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    sync_run_id INTEGER
+  )`,
+  `CREATE INDEX IF NOT EXISTS activity_pull_request_links_cache_generated_idx ON activity_pull_request_links_cache(generated_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS activity_cache_state (
+    cache_key TEXT PRIMARY KEY,
+    generated_at TIMESTAMPTZ,
+    sync_run_id INTEGER,
+    item_count INTEGER,
+    metadata JSONB NOT NULL DEFAULT '{}',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
 ];
 
 let ensurePromise: Promise<void> | null = null;

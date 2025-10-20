@@ -1,7 +1,10 @@
+import {
+  getLinkedIssuesMap,
+  getLinkedPullRequestsMap,
+} from "@/lib/activity/cache";
 import type {
   ActivityLinkedIssue,
   ActivityLinkedPullRequest,
-  ActivityLinkedPullRequestStatus,
   IssueProjectStatus,
 } from "@/lib/activity/types";
 import {
@@ -260,156 +263,20 @@ type IssueRow = {
   repository_name_with_owner: string | null;
 };
 
-type PullRequestLinkRow = {
-  issue_id: string;
-  pull_request_id: string;
-  pull_request_number: number | null;
-  pull_request_title: string | null;
-  pull_request_state: string | null;
-  pull_request_merged: boolean | null;
-  pull_request_closed_at: string | null;
-  pull_request_merged_at: string | null;
-  pull_request_updated_at: string | null;
-  pull_request_url: string | null;
-  pull_request_repository_name_with_owner: string | null;
-};
-
-type IssueLinkRow = {
-  pull_request_id: string;
-  issue_id: string;
-  issue_number: number | null;
-  issue_title: string | null;
-  issue_state: string | null;
-  issue_url: string | null;
-  issue_repository_name_with_owner: string | null;
-};
-
-function toIsoTimestamp(value: string | null | undefined) {
-  if (!value) {
-    return null;
-  }
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
-}
-
-function resolveLinkedPullRequestStatus(
-  merged: boolean | null,
-  state: string | null,
-  closedAt: string | null,
-): ActivityLinkedPullRequestStatus {
-  if (merged) {
-    return "merged";
-  }
-  const lowered = state?.toLowerCase() ?? "";
-  if (lowered === "closed" || lowered === "merged" || closedAt) {
-    return merged ? "merged" : "closed";
-  }
-  return "open";
-}
-
 async function fetchLinkedPullRequestsForIssues(
   issueIds: readonly string[],
 ): Promise<Map<string, ActivityLinkedPullRequest[]>> {
-  if (!issueIds.length) {
-    return new Map();
-  }
-
-  const ids = Array.from(issueIds);
-  const result = await query<PullRequestLinkRow>(
-    `SELECT
-       pri.issue_id,
-       pr.id AS pull_request_id,
-       pr.number AS pull_request_number,
-       pr.title AS pull_request_title,
-       pr.state AS pull_request_state,
-       pr.merged AS pull_request_merged,
-       pr.github_closed_at AS pull_request_closed_at,
-       pr.github_merged_at AS pull_request_merged_at,
-       pr.github_updated_at AS pull_request_updated_at,
-       pr.data->>'url' AS pull_request_url,
-       repo.name_with_owner AS pull_request_repository_name_with_owner
-     FROM pull_request_issues pri
-     JOIN pull_requests pr ON pr.id = pri.pull_request_id
-     JOIN repositories repo ON repo.id = pr.repository_id
-     WHERE pri.issue_id = ANY($1::text[])
-     ORDER BY pri.issue_id, pr.github_updated_at DESC NULLS LAST, pr.github_created_at DESC`,
-    [ids],
-  );
-
-  const map = new Map<string, ActivityLinkedPullRequest[]>();
-  result.rows.forEach((row) => {
-    const status = resolveLinkedPullRequestStatus(
-      row.pull_request_merged,
-      row.pull_request_state,
-      row.pull_request_closed_at,
-    );
-    const entry: ActivityLinkedPullRequest = {
-      id: row.pull_request_id,
-      number: row.pull_request_number,
-      title: row.pull_request_title,
-      state: row.pull_request_state,
-      status,
-      repositoryNameWithOwner: row.pull_request_repository_name_with_owner,
-      url: row.pull_request_url,
-      mergedAt: toIsoTimestamp(row.pull_request_merged_at),
-      closedAt: toIsoTimestamp(row.pull_request_closed_at),
-      updatedAt: toIsoTimestamp(row.pull_request_updated_at),
-    };
-    const list = map.get(row.issue_id);
-    if (list) {
-      list.push(entry);
-    } else {
-      map.set(row.issue_id, [entry]);
-    }
-  });
-
-  return map;
+  return issueIds.length
+    ? getLinkedPullRequestsMap(issueIds)
+    : new Map<string, ActivityLinkedPullRequest[]>();
 }
 
 async function fetchLinkedIssuesForPullRequests(
   pullRequestIds: readonly string[],
 ): Promise<Map<string, ActivityLinkedIssue[]>> {
-  if (!pullRequestIds.length) {
-    return new Map();
-  }
-
-  const ids = Array.from(pullRequestIds);
-  const result = await query<IssueLinkRow>(
-    `SELECT
-       pri.pull_request_id,
-       COALESCE(i.id, pri.issue_id) AS issue_id,
-       COALESCE(i.number, pri.issue_number) AS issue_number,
-       COALESCE(i.title, pri.issue_title) AS issue_title,
-       COALESCE(i.state, pri.issue_state) AS issue_state,
-       COALESCE(i.data->>'url', pri.issue_url) AS issue_url,
-       COALESCE(repo.name_with_owner, pri.issue_repository) AS issue_repository_name_with_owner
-     FROM pull_request_issues pri
-     LEFT JOIN issues i ON i.id = pri.issue_id
-     LEFT JOIN repositories repo ON repo.id = i.repository_id
-     WHERE pri.pull_request_id = ANY($1::text[])
-     ORDER BY pri.pull_request_id, pri.updated_at DESC NULLS LAST`,
-    [ids],
-  );
-
-  const map = new Map<string, ActivityLinkedIssue[]>();
-  result.rows.forEach((row) => {
-    const entry: ActivityLinkedIssue = {
-      id: row.issue_id,
-      number: row.issue_number,
-      title: row.issue_title,
-      state: row.issue_state,
-      repositoryNameWithOwner: row.issue_repository_name_with_owner,
-      url: row.issue_url,
-    };
-    const list = map.get(row.pull_request_id);
-    if (list) {
-      list.push(entry);
-    } else {
-      map.set(row.pull_request_id, [entry]);
-    }
-  });
-
-  return map;
+  return pullRequestIds.length
+    ? getLinkedIssuesMap(pullRequestIds)
+    : new Map<string, ActivityLinkedIssue[]>();
 }
 
 type MentionRow = {

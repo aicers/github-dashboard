@@ -1,4 +1,9 @@
 import {
+  getCachedActivityFilterOptions,
+  getLinkedIssuesMap,
+  getLinkedPullRequestsMap,
+} from "@/lib/activity/cache";
+import {
   getProjectFieldOverrides,
   type ProjectFieldOverrides,
 } from "@/lib/activity/project-field-store";
@@ -11,15 +16,12 @@ import type {
   ActivityAttentionFlags,
   ActivityFilterOptions,
   ActivityIssueBaseStatusFilter,
-  ActivityIssuePriorityFilter,
-  ActivityIssueWeightFilter,
   ActivityItem,
   ActivityItemComment,
   ActivityItemDetail,
   ActivityLabel,
   ActivityLinkedIssue,
   ActivityLinkedPullRequest,
-  ActivityLinkedPullRequestStatus,
   ActivityListParams,
   ActivityListResult,
   ActivityPullRequestStatusFilter,
@@ -71,14 +73,6 @@ const ISSUE_PROJECT_STATUS_LOCKED = new Set<IssueProjectStatus>([
   "done",
   "pending",
 ]);
-
-const ISSUE_PRIORITY_VALUES: ActivityIssuePriorityFilter[] = ["P0", "P1", "P2"];
-
-const ISSUE_WEIGHT_VALUES: ActivityIssueWeightFilter[] = [
-  "Heavy",
-  "Medium",
-  "Light",
-];
 
 function normalizePriorityText(value: string | null | undefined) {
   if (typeof value !== "string") {
@@ -226,151 +220,6 @@ type AttentionSets = {
   reviewRequestDetails: Map<string, ReviewRequestAttentionItem[]>;
   mentionDetails: Map<string, MentionAttentionItem[]>;
 };
-
-type PullRequestLinkRow = {
-  issue_id: string;
-  pull_request_id: string;
-  pull_request_number: number | null;
-  pull_request_title: string | null;
-  pull_request_state: string | null;
-  pull_request_merged: boolean | null;
-  pull_request_closed_at: string | null;
-  pull_request_merged_at: string | null;
-  pull_request_updated_at: string | null;
-  pull_request_url: string | null;
-  pull_request_repository_name_with_owner: string | null;
-};
-
-type IssueLinkRow = {
-  pull_request_id: string;
-  issue_id: string;
-  issue_number: number | null;
-  issue_title: string | null;
-  issue_state: string | null;
-  issue_url: string | null;
-  issue_repository_name_with_owner: string | null;
-};
-
-function resolveLinkedPullRequestStatus(
-  merged: boolean | null,
-  state: string | null,
-  closedAt: string | null,
-): ActivityLinkedPullRequestStatus {
-  if (merged) {
-    return "merged";
-  }
-  const lowered = state?.toLowerCase() ?? "";
-  if (lowered === "closed" || closedAt) {
-    return "closed";
-  }
-  if (lowered === "merged") {
-    return "merged";
-  }
-  return "open";
-}
-
-async function fetchLinkedPullRequests(
-  issueIds: string[],
-): Promise<Map<string, ActivityLinkedPullRequest[]>> {
-  if (!issueIds.length) {
-    return new Map();
-  }
-
-  const result = await query<PullRequestLinkRow>(
-    `SELECT
-       pri.issue_id,
-       pr.id AS pull_request_id,
-       pr.number AS pull_request_number,
-       pr.title AS pull_request_title,
-       pr.state AS pull_request_state,
-       pr.merged AS pull_request_merged,
-       pr.github_closed_at AS pull_request_closed_at,
-       pr.github_merged_at AS pull_request_merged_at,
-       pr.github_updated_at AS pull_request_updated_at,
-       pr.data->>'url' AS pull_request_url,
-       repo.name_with_owner AS pull_request_repository_name_with_owner
-     FROM pull_request_issues pri
-     JOIN pull_requests pr ON pr.id = pri.pull_request_id
-     JOIN repositories repo ON repo.id = pr.repository_id
-     WHERE pri.issue_id = ANY($1::text[])
-     ORDER BY pri.issue_id, pr.github_updated_at DESC NULLS LAST, pr.github_created_at DESC`,
-    [issueIds],
-  );
-
-  const map = new Map<string, ActivityLinkedPullRequest[]>();
-  result.rows.forEach((row) => {
-    const status = resolveLinkedPullRequestStatus(
-      row.pull_request_merged,
-      row.pull_request_state,
-      row.pull_request_closed_at,
-    );
-    const entry: ActivityLinkedPullRequest = {
-      id: row.pull_request_id,
-      number: row.pull_request_number,
-      title: row.pull_request_title,
-      state: row.pull_request_state,
-      status,
-      repositoryNameWithOwner: row.pull_request_repository_name_with_owner,
-      url: row.pull_request_url,
-      mergedAt: toIso(row.pull_request_merged_at),
-      closedAt: toIso(row.pull_request_closed_at),
-      updatedAt: toIso(row.pull_request_updated_at),
-    };
-    const list = map.get(row.issue_id);
-    if (list) {
-      list.push(entry);
-    } else {
-      map.set(row.issue_id, [entry]);
-    }
-  });
-
-  return map;
-}
-
-async function fetchLinkedIssues(
-  pullRequestIds: string[],
-): Promise<Map<string, ActivityLinkedIssue[]>> {
-  if (!pullRequestIds.length) {
-    return new Map();
-  }
-
-  const result = await query<IssueLinkRow>(
-    `SELECT
-       pri.pull_request_id,
-       COALESCE(i.id, pri.issue_id) AS issue_id,
-       COALESCE(i.number, pri.issue_number) AS issue_number,
-       COALESCE(i.title, pri.issue_title) AS issue_title,
-       COALESCE(i.state, pri.issue_state) AS issue_state,
-       COALESCE(i.data->>'url', pri.issue_url) AS issue_url,
-       COALESCE(repo.name_with_owner, pri.issue_repository) AS issue_repository_name_with_owner
-     FROM pull_request_issues pri
-     LEFT JOIN issues i ON i.id = pri.issue_id
-     LEFT JOIN repositories repo ON repo.id = i.repository_id
-     WHERE pri.pull_request_id = ANY($1::text[])
-     ORDER BY pri.pull_request_id, pri.updated_at DESC NULLS LAST`,
-    [pullRequestIds],
-  );
-
-  const map = new Map<string, ActivityLinkedIssue[]>();
-  result.rows.forEach((row) => {
-    const entry: ActivityLinkedIssue = {
-      id: row.issue_id,
-      number: row.issue_number,
-      title: row.issue_title,
-      state: row.issue_state,
-      repositoryNameWithOwner: row.issue_repository_name_with_owner,
-      url: row.issue_url,
-    };
-    const list = map.get(row.pull_request_id);
-    if (list) {
-      list.push(entry);
-    } else {
-      map.set(row.pull_request_id, [entry]);
-    }
-  });
-
-  return map;
-}
 
 type AttentionFilterSelection = {
   includeIds: string[];
@@ -2392,221 +2241,7 @@ function toRawObject(value: unknown) {
 
 export async function getActivityFilterOptions(): Promise<ActivityFilterOptions> {
   await ensureSchema();
-
-  const [
-    repositoriesResult,
-    labelsResult,
-    usersResult,
-    issueTypesResult,
-    milestonesResult,
-    syncConfig,
-  ] = await Promise.all([
-    query<{
-      id: string;
-      name: string | null;
-      name_with_owner: string | null;
-    }>(
-      `SELECT id, name, name_with_owner
-       FROM repositories
-       ORDER BY name_with_owner`,
-    ),
-    query<{
-      repository_id: string;
-      repository_name_with_owner: string | null;
-      label_name: string;
-    }>(
-      `SELECT DISTINCT
-         repo.id AS repository_id,
-         repo.name_with_owner AS repository_name_with_owner,
-         label_node->>'name' AS label_name
-       FROM issues i
-       JOIN repositories repo ON repo.id = i.repository_id
-       CROSS JOIN LATERAL jsonb_array_elements(COALESCE(i.data->'labels'->'nodes', '[]'::jsonb)) AS label_node
-       WHERE label_node->>'name' IS NOT NULL
-       UNION
-       SELECT DISTINCT
-         repo.id AS repository_id,
-         repo.name_with_owner AS repository_name_with_owner,
-         label_node->>'name' AS label_name
-       FROM pull_requests pr
-       JOIN repositories repo ON repo.id = pr.repository_id
-       CROSS JOIN LATERAL jsonb_array_elements(COALESCE(pr.data->'labels'->'nodes', '[]'::jsonb)) AS label_node
-       WHERE label_node->>'name' IS NOT NULL
-       ORDER BY repository_name_with_owner, label_name`,
-    ),
-    query<{
-      id: string;
-      login: string | null;
-      name: string | null;
-      avatar_url: string | null;
-    }>(
-      `SELECT id, login, name, avatar_url
-         FROM users
-         ORDER BY LOWER(COALESCE(NULLIF(login, ''), NULLIF(name, ''), id))`,
-    ),
-    query<{
-      id: string | null;
-      name: string | null;
-    }>(
-      `SELECT id, name
-       FROM (
-         SELECT
-           COALESCE(
-             NULLIF(i.data->'issueType'->>'id', ''),
-             CASE
-               WHEN EXISTS (
-                 SELECT 1
-                 FROM jsonb_array_elements(COALESCE(i.data->'labels'->'nodes', '[]'::jsonb)) AS label_node
-                 WHERE LOWER(label_node->>'name') = 'bug'
-               ) THEN 'label:issue_type:bug'
-               WHEN EXISTS (
-                 SELECT 1
-                 FROM jsonb_array_elements(COALESCE(i.data->'labels'->'nodes', '[]'::jsonb)) AS label_node
-                 WHERE LOWER(label_node->>'name') IN ('feature', 'feature request', 'enhancement')
-               ) THEN 'label:issue_type:feature'
-               WHEN EXISTS (
-                 SELECT 1
-                 FROM jsonb_array_elements(COALESCE(i.data->'labels'->'nodes', '[]'::jsonb)) AS label_node
-                 WHERE LOWER(label_node->>'name') IN ('task', 'todo', 'chore')
-               ) THEN 'label:issue_type:task'
-               ELSE NULL
-             END
-           ) AS id,
-           COALESCE(
-             NULLIF(i.data->'issueType'->>'name', ''),
-             CASE
-               WHEN EXISTS (
-                 SELECT 1
-                 FROM jsonb_array_elements(COALESCE(i.data->'labels'->'nodes', '[]'::jsonb)) AS label_node
-                 WHERE LOWER(label_node->>'name') = 'bug'
-               ) THEN 'Bug'
-               WHEN EXISTS (
-                 SELECT 1
-                 FROM jsonb_array_elements(COALESCE(i.data->'labels'->'nodes', '[]'::jsonb)) AS label_node
-                 WHERE LOWER(label_node->>'name') IN ('feature', 'feature request', 'enhancement')
-               ) THEN 'Feature'
-               WHEN EXISTS (
-                 SELECT 1
-                 FROM jsonb_array_elements(COALESCE(i.data->'labels'->'nodes', '[]'::jsonb)) AS label_node
-                 WHERE LOWER(label_node->>'name') IN ('task', 'todo', 'chore')
-               ) THEN 'Task'
-               ELSE NULL
-             END
-           ) AS name
-         FROM issues i
-       ) AS issue_types
-       WHERE id IS NOT NULL
-       GROUP BY id, name
-       ORDER BY LOWER(COALESCE(NULLIF(name, ''), id))`,
-    ),
-    query<{
-      id: string | null;
-      title: string | null;
-      state: string | null;
-      due_on: string | null;
-      url: string | null;
-    }>(
-      `SELECT id, title, state, due_on, url
-       FROM (
-         SELECT
-           NULLIF(i.data->'milestone'->>'id', '') AS id,
-           NULLIF(i.data->'milestone'->>'title', '') AS title,
-           NULLIF(i.data->'milestone'->>'state', '') AS state,
-           NULLIF(i.data->'milestone'->>'dueOn', '') AS due_on,
-           NULLIF(i.data->'milestone'->>'url', '') AS url
-         FROM issues i
-       ) AS milestones
-       WHERE id IS NOT NULL
-       GROUP BY id, title, state, due_on, url
-       ORDER BY LOWER(COALESCE(NULLIF(title, ''), id))`,
-    ),
-    getSyncConfig(),
-  ]);
-
-  const repositories = repositoriesResult.rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    nameWithOwner: row.name_with_owner,
-  }));
-
-  const labels: ActivityLabel[] = labelsResult.rows.map((row) => ({
-    key: `${row.repository_name_with_owner ?? row.repository_id}:${row.label_name}`,
-    name: row.label_name,
-    repositoryId: row.repository_id,
-    repositoryNameWithOwner: row.repository_name_with_owner,
-  }));
-
-  const issueTypes = issueTypesResult.rows
-    .filter((row) => typeof row.id === "string" && row.id.length > 0)
-    .map((row) => ({
-      id: row.id as string,
-      name: row.name ?? null,
-    }));
-
-  const milestones = milestonesResult.rows
-    .filter((row) => typeof row.id === "string" && row.id.length > 0)
-    .map((row) => ({
-      id: row.id as string,
-      title: row.title ?? null,
-      state: row.state ?? null,
-      dueOn: row.due_on ?? null,
-      url: row.url ?? null,
-    }));
-
-  const excludedUserIds = new Set<string>(
-    Array.isArray(syncConfig?.excluded_user_ids)
-      ? (syncConfig.excluded_user_ids as string[]).filter(
-          (value) => typeof value === "string" && value.trim().length > 0,
-        )
-      : [],
-  );
-
-  const priorityLogins = ["octoaide", "codecov", "dependabot"];
-  const priorityLookup = new Map(
-    priorityLogins.map((login, index) => [login, index]),
-  );
-
-  const users: ActivityUser[] = usersResult.rows
-    .filter((row) => !excludedUserIds.has(row.id))
-    .map((row) => ({
-      id: row.id,
-      login: row.login,
-      name: row.name,
-      avatarUrl: row.avatar_url,
-    }))
-    .sort((first, second) => {
-      const normalize = (user: ActivityUser) =>
-        (user.login ?? user.name ?? user.id ?? "").toLowerCase();
-
-      const firstPriority = priorityLookup.get(
-        first.login ? first.login.toLowerCase() : "",
-      );
-      const secondPriority = priorityLookup.get(
-        second.login ? second.login.toLowerCase() : "",
-      );
-
-      if (firstPriority !== undefined || secondPriority !== undefined) {
-        if (firstPriority === undefined) {
-          return 1;
-        }
-        if (secondPriority === undefined) {
-          return -1;
-        }
-        return firstPriority - secondPriority;
-      }
-
-      return normalize(first).localeCompare(normalize(second));
-    });
-
-  return {
-    repositories,
-    labels,
-    users,
-    issueTypes,
-    milestones,
-    issuePriorities: [...ISSUE_PRIORITY_VALUES],
-    issueWeights: [...ISSUE_WEIGHT_VALUES],
-  };
+  return getCachedActivityFilterOptions();
 }
 
 export async function getActivityItems(
@@ -2716,8 +2351,8 @@ export async function getActivityItems(
   ] = await Promise.all([
     getActivityStatusHistory(issueIds),
     getProjectFieldOverrides(issueIds),
-    fetchLinkedPullRequests(issueIds),
-    fetchLinkedIssues(pullRequestIds),
+    getLinkedPullRequestsMap(issueIds),
+    getLinkedIssuesMap(pullRequestIds),
   ]);
   const totalCount = rows.length > 0 ? Number(rows[0]?.total_count ?? 0) : 0;
   const totalPages =
@@ -2845,8 +2480,8 @@ export async function getActivityItemDetail(
   ] = await Promise.all([
     getActivityStatusHistory(issueIds),
     getProjectFieldOverrides(issueIds),
-    fetchLinkedPullRequests(issueIds),
-    fetchLinkedIssues(pullRequestIds),
+    getLinkedPullRequestsMap(issueIds),
+    getLinkedIssuesMap(pullRequestIds),
   ]);
   const item = buildActivityItem(
     row,

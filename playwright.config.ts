@@ -19,6 +19,7 @@ export default defineConfig({
     trace: "retain-on-failure",
     video: "retain-on-failure",
   },
+  globalSetup: "./tests/e2e/global-setup.ts",
   webServer: {
     command: `npm run dev -- --hostname ${HOST} --port ${PORT}`,
     url: BASE_URL,
