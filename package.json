@@ -38,7 +38,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.6",
-    "@playwright/test": "^1.51.1",
+    "@playwright/test": "^1.56.1",
     "@tailwindcss/postcss": "^4",
     "@testcontainers/postgresql": "^11.7.1",
     "@testing-library/jest-dom": "^6.8.0",
