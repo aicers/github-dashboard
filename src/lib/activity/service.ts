@@ -64,6 +64,7 @@ const ISSUE_PROJECT_STATUS_VALUES: IssueProjectStatus[] = [
   "in_progress",
   "done",
   "pending",
+  "canceled",
 ];
 
 const ISSUE_PROJECT_STATUS_SET = new Set(ISSUE_PROJECT_STATUS_VALUES);
@@ -542,6 +543,10 @@ function mapIssueProjectStatus(
     return "pending";
   }
 
+  if (normalized === "canceled" || normalized === "cancelled") {
+    return "canceled";
+  }
+
   return "no_status";
 }
 
@@ -660,6 +665,7 @@ function resolveWorkTimestamps(info: IssueStatusInfo | null) {
           completedAt = null;
           break;
         case "done":
+        case "canceled":
           if (startedAt && !completedAt) {
             completedAt = event.occurredAt;
           }
@@ -686,7 +692,7 @@ function resolveWorkTimestamps(info: IssueStatusInfo | null) {
         completedAt = null;
         return;
       }
-      if (mapped === "done") {
+      if (mapped === "done" || mapped === "canceled") {
         if (startedAt && !completedAt) {
           completedAt = entry.occurredAt;
         }
@@ -1173,6 +1179,7 @@ function buildQueryFilters(
       WHEN ${valueExpr} LIKE '%progress%' OR ${valueExpr} = 'doing' OR ${valueExpr} = 'in-progress' THEN 'in_progress'
       WHEN ${valueExpr} IN ('done', 'completed', 'complete', 'finished', 'closed') THEN 'done'
       WHEN ${valueExpr} LIKE 'pending%' OR ${valueExpr} = 'waiting' THEN 'pending'
+      WHEN ${valueExpr} IN ('canceled', 'cancelled') THEN 'canceled'
       ELSE 'no_status'
     END)`;
   };
@@ -1494,6 +1501,7 @@ function buildBaseQuery(targetProject: string | null): string {
     WHEN ${valueExpr} LIKE 'in_progress%' OR ${valueExpr} = 'doing' OR ${valueExpr} = 'in-progress' THEN 'in_progress'
     WHEN ${valueExpr} IN ('done', 'completed', 'complete', 'finished', 'closed') THEN 'done'
     WHEN ${valueExpr} LIKE 'pending%' OR ${valueExpr} = 'waiting' THEN 'pending'
+    WHEN ${valueExpr} IN ('canceled', 'cancelled') THEN 'canceled'
     ELSE NULL
   END)`;
 
@@ -2507,7 +2515,12 @@ export async function getActivityItemDetail(
     const entries = extractProjectStatusEntries(rawIssue, targetProject);
     entries.forEach((entry) => {
       const mapped = mapIssueProjectStatus(entry.status);
-      if (mapped === "todo" || mapped === "in_progress" || mapped === "done") {
+      if (
+        mapped === "todo" ||
+        mapped === "in_progress" ||
+        mapped === "done" ||
+        mapped === "canceled"
+      ) {
         const iso = toIso(entry.occurredAt);
         if (iso) {
           todoMap[mapped] = iso;
@@ -2524,7 +2537,8 @@ export async function getActivityItemDetail(
       if (
         event.status === "todo" ||
         event.status === "in_progress" ||
-        event.status === "done"
+        event.status === "done" ||
+        event.status === "canceled"
       ) {
         const iso = toIso(event.occurredAt);
         if (iso) {

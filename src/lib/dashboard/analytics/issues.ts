@@ -335,6 +335,10 @@ function mapIssueProjectStatus(
     return "pending";
   }
 
+  if (normalized === "canceled" || normalized === "cancelled") {
+    return "canceled";
+  }
+
   return "no_status";
 }
 
@@ -661,6 +665,7 @@ function resolveWorkTimestamps(info: IssueStatusInfo | null): WorkTimestamps {
           completedAt = null;
           break;
         case "done":
+        case "canceled":
           if (startedAt && !completedAt) {
             completedAt = event.occurredAt;
           }
@@ -687,7 +692,7 @@ function resolveWorkTimestamps(info: IssueStatusInfo | null): WorkTimestamps {
         completedAt = null;
         return;
       }
-      if (mapped === "done") {
+      if (mapped === "done" || mapped === "canceled") {
         if (startedAt && !completedAt) {
           completedAt = event.occurredAt;
         }

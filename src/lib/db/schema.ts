@@ -211,13 +211,15 @@ const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS activity_issue_status_history (
     id SERIAL PRIMARY KEY,
     issue_id TEXT NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
-    status TEXT NOT NULL CHECK (status IN ('no_status', 'todo', 'in_progress', 'done', 'pending')),
+    status TEXT NOT NULL CHECK (status IN ('no_status', 'todo', 'in_progress', 'done', 'pending', 'canceled')),
     occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     source TEXT NOT NULL DEFAULT 'activity',
     inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
   `CREATE INDEX IF NOT EXISTS activity_issue_status_history_issue_idx ON activity_issue_status_history(issue_id)`,
   `CREATE INDEX IF NOT EXISTS activity_issue_status_history_issue_occurred_idx ON activity_issue_status_history(issue_id, occurred_at DESC)`,
+  `ALTER TABLE activity_issue_status_history DROP CONSTRAINT IF EXISTS activity_issue_status_history_status_check`,
+  `ALTER TABLE activity_issue_status_history ADD CONSTRAINT activity_issue_status_history_status_check CHECK (status IN ('no_status', 'todo', 'in_progress', 'done', 'pending', 'canceled'))`,
   `CREATE TABLE IF NOT EXISTS activity_issue_project_overrides (
     issue_id TEXT PRIMARY KEY REFERENCES issues(id) ON DELETE CASCADE,
     priority_value TEXT,

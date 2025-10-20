@@ -447,7 +447,9 @@ function isDoneStatus(status: string) {
     normalized === "completed" ||
     normalized === "complete" ||
     normalized === "finished" ||
-    normalized === "closed"
+    normalized === "closed" ||
+    normalized === "canceled" ||
+    normalized === "cancelled"
   );
 }
 
@@ -497,6 +499,10 @@ function mapIssueProjectStatus(
 
   if (normalized.startsWith("pending") || normalized === "waiting") {
     return "pending";
+  }
+
+  if (normalized === "canceled" || normalized === "cancelled") {
+    return "canceled";
   }
 
   return "no_status";

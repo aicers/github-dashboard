@@ -7,7 +7,8 @@ export type IssueProjectStatus =
   | "todo"
   | "in_progress"
   | "done"
-  | "pending";
+  | "pending"
+  | "canceled";
 
 export type ActivityStatusFilter =
   | "open"
