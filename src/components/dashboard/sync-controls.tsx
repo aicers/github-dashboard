@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import type { ActivityCacheRefreshResult } from "@/lib/activity/cache";
 import {
   formatDateTime as formatDateTimeDisplay,
   normalizeDateTimeDisplayFormat,
@@ -277,18 +278,81 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
   const [prLinkEndDate, setPrLinkEndDate] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [backfillHistory, setBackfillHistory] = useState<BackfillResult[]>([]);
+  const [activityCacheSummary, setActivityCacheSummary] =
+    useState<ActivityCacheRefreshResult | null>(null);
 
   const [isRunningBackfill, setIsRunningBackfill] = useState(false);
   const [isRunningPrLinkBackfill, setIsRunningPrLinkBackfill] = useState(false);
   const [isTogglingAuto, setIsTogglingAuto] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [isCleaning, setIsCleaning] = useState(false);
+  const [isRefreshingActivityCache, setIsRefreshingActivityCache] =
+    useState(false);
+  const activityCacheFilterCounts = activityCacheSummary
+    ? parseFilterCounts(activityCacheSummary.filterOptions.metadata)
+    : null;
+  const activityCacheIssueLinkCount = activityCacheSummary
+    ? parseLinkCount(activityCacheSummary.issueLinks.metadata)
+    : null;
+  const activityCachePrLinkCount = activityCacheSummary
+    ? parseLinkCount(activityCacheSummary.pullRequestLinks.metadata)
+    : null;
 
   const canManageSync = isAdmin;
 
   useEffect(() => {
     setAutoEnabled(config?.auto_sync_enabled ?? false);
   }, [config?.auto_sync_enabled]);
+
+  useEffect(() => {
+    if (!canManageSync) {
+      setActivityCacheSummary(null);
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+
+    const loadSummary = async () => {
+      try {
+        const response = await fetch("/api/activity/cache/refresh", {
+          method: "GET",
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          return;
+        }
+
+        const data =
+          await parseApiResponse<ActivityCacheRefreshResult>(response);
+        if (!data.success) {
+          return;
+        }
+
+        const caches =
+          data.result ??
+          (data as unknown as { caches?: ActivityCacheRefreshResult }).caches ??
+          null;
+        if (!cancelled) {
+          setActivityCacheSummary(caches);
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.warn(
+            "[sync-controls] Failed to load Activity cache summary",
+            error,
+          );
+        }
+      }
+    };
+
+    void loadSummary();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [canManageSync]);
 
   const runGroups = useMemo(() => buildRunGroups(status), [status]);
   const primaryLatestRun = useMemo(
@@ -319,6 +383,32 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
     }
 
     return "-";
+  }
+
+  function parseFilterCounts(metadata: unknown) {
+    if (!metadata || typeof metadata !== "object") {
+      return null;
+    }
+    const rawCounts = (metadata as { counts?: unknown }).counts;
+    if (!rawCounts || typeof rawCounts !== "object") {
+      return null;
+    }
+    const counts = rawCounts as Record<string, unknown>;
+    return {
+      repositories: Number(counts.repositories) || 0,
+      labels: Number(counts.labels) || 0,
+      users: Number(counts.users) || 0,
+      issueTypes: Number(counts.issueTypes) || 0,
+      milestones: Number(counts.milestones) || 0,
+    };
+  }
+
+  function parseLinkCount(metadata: unknown) {
+    if (!metadata || typeof metadata !== "object") {
+      return 0;
+    }
+    const linkCount = (metadata as { linkCount?: unknown }).linkCount;
+    return typeof linkCount === "number" ? linkCount : 0;
   }
 
   const fallbackSuccessfulSyncStartedAt = useMemo(() => {
@@ -577,6 +667,59 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
     }
   }
 
+  async function handleActivityCacheRefresh() {
+    if (!canManageSync) {
+      setFeedback(ADMIN_ONLY_MESSAGE);
+      return;
+    }
+
+    setIsRefreshingActivityCache(true);
+    try {
+      const response = await fetch("/api/activity/cache/refresh", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ reason: "sync-controls" }),
+      });
+      const data = await parseApiResponse<ActivityCacheRefreshResult>(response);
+      if (!data.success) {
+        throw new Error(
+          data.message ?? "Activity 캐시 새로고침에 실패했습니다.",
+        );
+      }
+      const caches =
+        data.result ??
+        (data as unknown as { caches?: ActivityCacheRefreshResult }).caches ??
+        null;
+
+      if (caches) {
+        setActivityCacheSummary(caches);
+        const filterCounts = parseFilterCounts(caches.filterOptions.metadata);
+        const issueLinkCount = parseLinkCount(caches.issueLinks.metadata);
+        const prLinkCount = parseLinkCount(caches.pullRequestLinks.metadata);
+        const filterLabel = filterCounts
+          ? `필터 ${caches.filterOptions.itemCount.toLocaleString()}건 (저장소 ${filterCounts.repositories.toLocaleString()}개)`
+          : `필터 ${caches.filterOptions.itemCount.toLocaleString()}건`;
+        setFeedback(
+          `Activity 캐시를 새로 고쳤습니다. (${filterLabel}, 이슈 링크 ${issueLinkCount.toLocaleString()}건, PR 링크 ${prLinkCount.toLocaleString()}건)`,
+        );
+      } else {
+        setFeedback("Activity 캐시 새로고침 요청이 완료되었습니다.");
+      }
+
+      router.refresh();
+    } catch (error) {
+      setFeedback(
+        error instanceof Error
+          ? error.message
+          : "Activity 캐시 새로고침 중 오류가 발생했습니다.",
+      );
+    } finally {
+      setIsRefreshingActivityCache(false);
+    }
+  }
+
   async function handlePrLinkBackfill() {
     if (!canManageSync) {
       setFeedback(ADMIN_ONLY_MESSAGE);
@@ -715,6 +858,68 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
               {isRunningPrLinkBackfill
                 ? "PR 링크 백필 실행 중..."
                 : "PR 링크 백필 실행"}
+            </Button>
+          </CardFooter>
+        </Card>
+
+        <Card className="border-primary/40">
+          <CardHeader>
+            <CardTitle>Activity 캐시 새로고침</CardTitle>
+            <CardDescription>
+              Activity 필터 옵션과 PR↔이슈 연결 정보를 미리 계산하여 페이지
+              로딩을 빠르게 유지합니다.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              최근 생성 시각:{" "}
+              <span>
+                {activityCacheSummary?.filterOptions.generatedAt
+                  ? formatDateTime(
+                      activityCacheSummary.filterOptions.generatedAt,
+                    )
+                  : "-"}
+              </span>
+            </p>
+            {activityCacheSummary ? (
+              <ul className="space-y-1">
+                <li>
+                  필터 항목{" "}
+                  {activityCacheSummary.filterOptions.itemCount.toLocaleString()}
+                  건
+                  {activityCacheFilterCounts ? (
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      (저장소{" "}
+                      {activityCacheFilterCounts.repositories.toLocaleString()}
+                      개, 라벨{" "}
+                      {activityCacheFilterCounts.labels.toLocaleString()}개,
+                      사용자 {activityCacheFilterCounts.users.toLocaleString()}
+                      명)
+                    </span>
+                  ) : null}
+                </li>
+                <li>
+                  이슈↔PR 링크{" "}
+                  {(activityCacheIssueLinkCount ?? 0).toLocaleString()}건
+                </li>
+                <li>
+                  PR↔이슈 링크{" "}
+                  {(activityCachePrLinkCount ?? 0).toLocaleString()}건
+                </li>
+              </ul>
+            ) : (
+              <p>아직 실행된 Activity 캐시 새로고침 기록이 없습니다.</p>
+            )}
+          </CardContent>
+          <CardFooter>
+            <Button
+              onClick={handleActivityCacheRefresh}
+              disabled={isRefreshingActivityCache || !canManageSync}
+              title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+            >
+              {isRefreshingActivityCache
+                ? "Activity 캐시 새로 고치는 중..."
+                : "Activity 캐시 새로고침"}
             </Button>
           </CardFooter>
         </Card>

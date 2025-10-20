@@ -70,6 +70,35 @@ type PullRequestLinksCacheRow = {
   links: unknown;
 };
 
+export async function ensureActivityCaches(params?: {
+  runId?: number | null;
+  reason?: string;
+  force?: boolean;
+}): Promise<ActivityCacheRefreshResult | null> {
+  await ensureSchema();
+  const runId = params?.runId ?? null;
+  const reason = params?.reason ?? (runId ? "sync" : "manual");
+  const force = params?.force ?? false;
+  const config = await getSyncConfig();
+  const lastSuccessfulSyncAt = config?.last_successful_sync_at ?? null;
+  const states = (await Promise.all([
+    getCacheState(FILTER_CACHE_KEY),
+    getCacheState(ISSUE_LINKS_CACHE_KEY),
+    getCacheState(PULL_REQUEST_LINKS_CACHE_KEY),
+  ])) as [CacheStatus | null, CacheStatus | null, CacheStatus | null];
+  const summary = buildSummaryFromStates(states);
+  const isFresh =
+    summary !== null &&
+    states.every((state) => isCacheFresh(state, lastSuccessfulSyncAt));
+
+  if (!force && isFresh && summary) {
+    return summary;
+  }
+
+  const refreshed = await refreshActivityCaches({ runId, reason });
+  return refreshed;
+}
+
 export async function refreshActivityCaches(params?: {
   runId?: number | null;
   reason?: string;
@@ -91,33 +120,13 @@ export async function refreshActivityCaches(params?: {
   });
 }
 
-export async function ensureActivityCaches(params?: {
-  runId?: number | null;
-  reason?: string;
-  force?: boolean;
-}): Promise<ActivityCacheRefreshResult | null> {
-  await ensureSchema();
-  const runId = params?.runId ?? null;
-  const reason = params?.reason ?? (runId ? "sync" : "manual");
-  const force = params?.force ?? false;
-
-  if (!force) {
-    const config = await getSyncConfig();
-    const lastSuccessfulSyncAt = config?.last_successful_sync_at ?? null;
-    const states = await Promise.all([
-      getCacheState(FILTER_CACHE_KEY),
-      getCacheState(ISSUE_LINKS_CACHE_KEY),
-      getCacheState(PULL_REQUEST_LINKS_CACHE_KEY),
-    ]);
-    const isFresh = states.every((state) =>
-      isCacheFresh(state, lastSuccessfulSyncAt),
-    );
-    if (isFresh) {
-      return null;
-    }
-  }
-
-  return refreshActivityCaches({ runId, reason });
+export async function getActivityCacheSummary(): Promise<ActivityCacheRefreshResult | null> {
+  const states = (await Promise.all([
+    getCacheState(FILTER_CACHE_KEY),
+    getCacheState(ISSUE_LINKS_CACHE_KEY),
+    getCacheState(PULL_REQUEST_LINKS_CACHE_KEY),
+  ])) as [CacheStatus | null, CacheStatus | null, CacheStatus | null];
+  return buildSummaryFromStates(states);
 }
 
 function scheduleCacheRefresh(reason: string) {
@@ -160,6 +169,48 @@ async function executeCacheRefresh(params: {
       pullRequestLinks,
     };
   });
+}
+
+function buildSummaryFromStates(
+  states: [CacheStatus | null, CacheStatus | null, CacheStatus | null],
+): ActivityCacheRefreshResult | null {
+  const [filterState, issueState, prState] = states;
+  const filterSummary = toCacheRefreshSummary(filterState, FILTER_CACHE_KEY);
+  const issueSummary = toCacheRefreshSummary(issueState, ISSUE_LINKS_CACHE_KEY);
+  const prSummary = toCacheRefreshSummary(
+    prState,
+    PULL_REQUEST_LINKS_CACHE_KEY,
+  );
+
+  if (!filterSummary || !issueSummary || !prSummary) {
+    return null;
+  }
+
+  return {
+    filterOptions: filterSummary,
+    issueLinks: issueSummary,
+    pullRequestLinks: prSummary,
+  };
+}
+
+function toCacheRefreshSummary(
+  state: CacheStatus | null,
+  cacheKey: string,
+): CacheRefreshSummary | null {
+  if (!state?.generated_at) {
+    return null;
+  }
+
+  return {
+    cacheKey,
+    generatedAt: state.generated_at,
+    syncRunId: state.sync_run_id ?? null,
+    itemCount: state.item_count ?? 0,
+    metadata:
+      state.metadata && typeof state.metadata === "object"
+        ? (state.metadata as Record<string, unknown>)
+        : {},
+  };
 }
 
 export async function getCachedActivityFilterOptions(): Promise<ActivityFilterOptions> {
