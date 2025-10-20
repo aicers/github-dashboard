@@ -70,6 +70,18 @@ describe("parseActivityListParams", () => {
     expect(result.issueBaseStatuses).toEqual(["issue_open"]);
   });
 
+  it("parses issue project statuses including canceled", () => {
+    const params = new URLSearchParams();
+    params.append("status", "open");
+    params.append("status", "canceled");
+    params.append("status", "canceled");
+    params.append("status", "unknown");
+
+    const result = parseActivityListParams(params);
+
+    expect(result.statuses).toEqual(["open", "canceled"]);
+  });
+
   it("ignores unknown linked issue values", () => {
     const params = new URLSearchParams();
     params.append("linkedIssue", "has_parent");

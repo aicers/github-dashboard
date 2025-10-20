@@ -150,6 +150,7 @@ export function parseActivityListParams(
       "in_progress",
       "done",
       "pending",
+      "canceled",
     ]),
     attention: parseEnumValues<ActivityAttentionFilter>(
       searchParams,

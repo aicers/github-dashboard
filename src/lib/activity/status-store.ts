@@ -13,6 +13,7 @@ function mapRowStatus(rowStatus: string): IssueProjectStatus | null {
     case "in_progress":
     case "done":
     case "pending":
+    case "canceled":
       return rowStatus;
     default:
       return null;

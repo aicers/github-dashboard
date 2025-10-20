@@ -18,6 +18,7 @@ const ALLOWED_STATUSES: IssueProjectStatus[] = [
   "in_progress",
   "done",
   "pending",
+  "canceled",
 ];
 
 const STATUS_SET = new Set<IssueProjectStatus>(ALLOWED_STATUSES);

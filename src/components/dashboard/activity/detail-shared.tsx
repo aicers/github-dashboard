@@ -54,6 +54,7 @@ export const ISSUE_STATUS_OPTIONS: Array<{
   { value: "in_progress", label: "In Progress" },
   { value: "done", label: "Done" },
   { value: "pending", label: "Pending" },
+  { value: "canceled", label: "Canceled" },
 ];
 
 export const ISSUE_STATUS_LABEL_MAP = new Map(
@@ -68,6 +69,7 @@ export const SOURCE_STATUS_KEYS: IssueProjectStatus[] = [
   "todo",
   "in_progress",
   "done",
+  "canceled",
 ];
 
 function escapeHtml(value: string) {

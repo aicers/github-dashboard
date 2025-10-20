@@ -152,6 +152,33 @@ describe("PATCH /api/activity/[id]/status", () => {
     expect(clearProjectFieldOverridesMock).not.toHaveBeenCalled();
   });
 
+  it("allows updating the issue status to canceled", async () => {
+    getActivityItemDetailMock.mockResolvedValueOnce(
+      createDetail({ issueProjectStatus: "todo" }),
+    );
+    getActivityItemDetailMock.mockResolvedValueOnce(
+      createDetail({ issueProjectStatus: "canceled" }),
+    );
+
+    const response = await handlers.PATCH(
+      new Request("http://localhost/api/activity/issue-1/status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "canceled" }),
+      }),
+      buildContext("issue-1"),
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { item: ActivityItem };
+    expect(body.item.issueProjectStatus).toBe("canceled");
+    expect(recordActivityStatusMock).toHaveBeenCalledWith(
+      "issue-1",
+      "canceled",
+    );
+    expect(clearActivityStatusesMock).not.toHaveBeenCalled();
+  });
+
   it("clears the issue status when requesting no_status", async () => {
     getActivityItemDetailMock.mockResolvedValueOnce(
       createDetail({ issueProjectStatus: "todo" }),

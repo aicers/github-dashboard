@@ -392,6 +392,63 @@ describe("activity service integration", () => {
     expect(result.items.map((item) => item.id)).toEqual([issueAlpha.id]);
   });
 
+  it("allows filtering issues by canceled status and records timeline entries", async () => {
+    const { issueAlpha } = await seedBasicActivityData();
+
+    const rawIssue = issueAlpha.raw as { projectStatusHistory?: unknown[] };
+    const projectHistory = [
+      ...(Array.isArray(rawIssue.projectStatusHistory)
+        ? [...rawIssue.projectStatusHistory]
+        : []),
+      {
+        status: "Canceled",
+        occurredAt: "2024-01-22T00:00:00.000Z",
+        project: { title: "Acme Project" },
+        projectTitle: "Acme Project",
+      },
+    ];
+
+    await query(
+      `UPDATE issues
+         SET data = jsonb_set(data, '{projectStatusHistory}', $1::jsonb)
+       WHERE id = $2`,
+      [JSON.stringify(projectHistory), issueAlpha.id],
+    );
+
+    await insertIssueStatusHistory([
+      {
+        issueId: issueAlpha.id,
+        status: "todo",
+        occurredAt: "2024-01-06T00:00:00.000Z",
+      },
+      {
+        issueId: issueAlpha.id,
+        status: "in_progress",
+        occurredAt: "2024-01-08T00:00:00.000Z",
+      },
+      {
+        issueId: issueAlpha.id,
+        status: "canceled",
+        occurredAt: "2024-01-25T00:00:00.000Z",
+      },
+    ]);
+
+    const result = await getActivityItems({
+      types: ["issue"],
+      statuses: ["canceled"],
+    });
+
+    expect(result.items.map((item) => item.id)).toEqual([issueAlpha.id]);
+    expect(result.items[0]?.issueProjectStatus).toBe("canceled");
+
+    const detail = await getActivityItemDetail(issueAlpha.id);
+    expect(detail?.item.issueProjectStatus).toBe("canceled");
+    expect(detail?.todoStatusTimes?.canceled).toBe("2024-01-22T00:00:00.000Z");
+    expect(detail?.activityStatusTimes?.canceled).toBe(
+      "2024-01-25T00:00:00.000Z",
+    );
+  });
+
   it("returns paginated activity items filtered by repository with attention flags applied", async () => {
     const { repoAlpha, repoBeta, issueAlpha, pullRequestBeta, userAlice } =
       await seedBasicActivityData();
