@@ -4308,7 +4308,7 @@ export function ActivityView({
                                               href={linked.url}
                                               target="_blank"
                                               rel="noreferrer"
-                                              className="text-primary hover:underline"
+                                              className="reference-link"
                                             >
                                               {summary.label}
                                             </a>
@@ -4343,7 +4343,7 @@ export function ActivityView({
                                               href={linked.url}
                                               target="_blank"
                                               rel="noreferrer"
-                                              className="text-primary hover:underline"
+                                              className="reference-link"
                                             >
                                               {summary.label}
                                             </a>
@@ -4402,7 +4402,7 @@ export function ActivityView({
                                                   href={linked.url}
                                                   target="_blank"
                                                   rel="noreferrer"
-                                                  className="text-primary hover:underline"
+                                                  className="reference-link"
                                                 >
                                                   {displayLabel ?? linked.id}
                                                 </a>
@@ -4455,7 +4455,7 @@ export function ActivityView({
                                                   href={linked.url}
                                                   target="_blank"
                                                   rel="noreferrer"
-                                                  className="text-primary hover:underline"
+                                                  className="reference-link"
                                                 >
                                                   {displayLabel ?? linked.id}
                                                 </a>
