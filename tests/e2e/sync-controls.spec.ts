@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./harness/test";
 
 const SYNC_PATH = "/test-harness/sync";
 

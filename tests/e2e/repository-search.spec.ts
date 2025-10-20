@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./harness/test";
 
 const GITHUB_TEST_PATH = "/github-test";
 

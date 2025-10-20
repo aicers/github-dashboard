@@ -4,6 +4,7 @@ import "../../../tests/helpers/postgres-container";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ensureActivityCaches } from "@/lib/activity/cache";
 import {
   getActivityFilterOptions,
   getActivityItemDetail,
@@ -518,6 +519,11 @@ describe("activity service integration", () => {
         repoAlpha.nameWithOwner,
       ],
     );
+
+    await ensureActivityCaches({
+      force: true,
+      reason: "test:activity-service:linked-items",
+    });
 
     const issueResult = await getActivityItems({ types: ["issue"] });
     const linkedIssue = issueResult.items.find(

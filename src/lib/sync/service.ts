@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { refreshActivityCaches } from "@/lib/activity/cache";
 import { isValidDateTimeDisplayFormat } from "@/lib/date-time-format";
 import { ensureSchema } from "@/lib/db";
 import {
@@ -349,6 +350,22 @@ async function executeSync(params: {
         completedAt,
         summary: toRunSummaryEvent(summary),
       });
+
+      try {
+        const cacheSummary = await refreshActivityCaches({
+          runId,
+          reason: "sync",
+        });
+        console.info("[activity-cache] Refreshed caches after sync run", {
+          runId,
+          caches: cacheSummary,
+        });
+      } catch (cacheError) {
+        console.error(
+          "[activity-cache] Failed to refresh caches after sync run",
+          cacheError,
+        );
+      }
 
       return {
         since,

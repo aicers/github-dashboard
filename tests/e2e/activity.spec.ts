@@ -1,11 +1,10 @@
-import { expect, test } from "@playwright/test";
-
 import {
   buildActivityItemDetailFixture,
   buildActivityItemFixture,
   buildActivityListResultFixture,
 } from "@/components/test-harness/activity-fixtures";
 import type { ActivitySavedFilter } from "@/lib/activity/types";
+import { expect, test } from "./harness/test";
 
 const ACTIVITY_PATH = "/test-harness/activity";
 

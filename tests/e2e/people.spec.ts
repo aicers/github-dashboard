@@ -1,9 +1,8 @@
-import { expect, test } from "@playwright/test";
-
 import {
   buildDashboardAnalyticsFixture,
   buildDashboardAnalyticsForPerson,
 } from "@/components/test-harness/dashboard-fixtures";
+import { expect, test } from "./harness/test";
 
 const PEOPLE_PATH = "/test-harness/people";
 

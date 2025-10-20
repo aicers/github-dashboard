@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./harness/test";
 
 const DASHBOARD_ROOT = "/dashboard";
 const DASHBOARD_TABS_PATH = "/test-harness/dashboard-tabs";
