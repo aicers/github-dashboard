@@ -113,6 +113,8 @@ export function buildActivityItem(
       rest.issueTodoProjectStartDateUpdatedAt ?? null,
     issueActivityStatus: rest.issueActivityStatus ?? DEFAULT_PROJECT_STATUS,
     issueActivityStatusAt: rest.issueActivityStatusAt ?? null,
+    linkedPullRequests: rest.linkedPullRequests ?? [],
+    linkedIssues: rest.linkedIssues ?? [],
     repository: repository
       ? buildActivityRepository(repository)
       : buildActivityRepository(),
@@ -168,6 +170,9 @@ export function buildActivityItemDetail(
     raw: overrides.raw ?? {},
     parentIssues: overrides.parentIssues ?? [],
     subIssues: overrides.subIssues ?? [],
+    linkedPullRequests:
+      overrides.linkedPullRequests ?? baseItem.linkedPullRequests,
+    linkedIssues: overrides.linkedIssues ?? baseItem.linkedIssues,
     todoStatusTimes: overrides.todoStatusTimes ?? {},
     activityStatusTimes: overrides.activityStatusTimes ?? {},
     comments: baseComments,

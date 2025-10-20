@@ -410,6 +410,7 @@ describe("activity service integration", () => {
           },
           author: null,
           reviewers: [],
+          linkedIssues: [],
           createdAt: pullRequestBeta.createdAt,
           updatedAt: pullRequestBeta.updatedAt,
           ageDays: 25,
@@ -428,6 +429,7 @@ describe("activity service integration", () => {
           },
           author: null,
           assignees: [],
+          linkedPullRequests: [],
           createdAt: issueAlpha.createdAt,
           updatedAt: issueAlpha.updatedAt,
           ageDays: 45,
@@ -455,6 +457,7 @@ describe("activity service integration", () => {
             },
             author: null,
             reviewers: [],
+            linkedIssues: [],
           },
         },
       ],
@@ -486,6 +489,58 @@ describe("activity service integration", () => {
     expect(issueItem.type).toBe("issue");
     expect(issueItem.attention.backlogIssue).toBe(true);
     expect(issueItems.pageInfo.totalCount).toBe(1);
+  });
+
+  it("populates linked pull requests and issues for activity items", async () => {
+    const { repoAlpha, issueAlpha, pullRequestBeta } =
+      await seedBasicActivityData();
+
+    await query(
+      `INSERT INTO pull_request_issues (
+         pull_request_id,
+         issue_id,
+         issue_number,
+         issue_title,
+         issue_state,
+         issue_url,
+         issue_repository,
+         inserted_at,
+         updated_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())`,
+      [
+        pullRequestBeta.id,
+        issueAlpha.id,
+        issueAlpha.number,
+        issueAlpha.title ?? null,
+        issueAlpha.state ?? "OPEN",
+        `https://github.com/${repoAlpha.nameWithOwner}/issues/${issueAlpha.number}`,
+        repoAlpha.nameWithOwner,
+      ],
+    );
+
+    const issueResult = await getActivityItems({ types: ["issue"] });
+    const linkedIssue = issueResult.items.find(
+      (entry) => entry.id === issueAlpha.id,
+    );
+    expect(linkedIssue?.linkedPullRequests).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: pullRequestBeta.id, status: "open" }),
+      ]),
+    );
+
+    const prResult = await getActivityItems({ types: ["pull_request"] });
+    const linkedPr = prResult.items.find(
+      (entry) => entry.id === pullRequestBeta.id,
+    );
+    expect(linkedPr?.linkedIssues).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: issueAlpha.id })]),
+    );
+
+    const detail = await getActivityItemDetail(issueAlpha.id);
+    expect(detail?.linkedPullRequests).toEqual(
+      linkedIssue?.linkedPullRequests ?? [],
+    );
   });
 
   it("does not apply issue attention badges to discussions", async () => {
@@ -529,6 +584,7 @@ describe("activity service integration", () => {
           },
           author: null,
           assignees: [],
+          linkedPullRequests: [],
           createdAt: discussion.createdAt,
           updatedAt: discussion.updatedAt,
           ageDays: 60,
@@ -547,6 +603,7 @@ describe("activity service integration", () => {
           },
           author: null,
           assignees: [],
+          linkedPullRequests: [],
           createdAt: discussion.createdAt,
           updatedAt: discussion.updatedAt,
           ageDays: 60,

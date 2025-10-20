@@ -6,10 +6,16 @@ import {
   type IconProps,
   IssueClosedIcon,
   IssueOpenedIcon,
+  LinkIcon,
 } from "@primer/octicons-react";
 import { type ComponentType, Fragment, type ReactNode } from "react";
 
-import type { ActivityItem } from "@/lib/activity/types";
+import type {
+  ActivityItem,
+  ActivityLinkedIssue,
+  ActivityLinkedPullRequest,
+  ActivityLinkedPullRequestStatus,
+} from "@/lib/activity/types";
 
 export type ActivityIconInfo = {
   Icon: ComponentType<IconProps>;
@@ -28,6 +34,129 @@ export const STATUS_LABELS: Record<ActivityItem["status"], string> = {
   closed: "닫힘",
   merged: "병합됨",
 };
+
+const LINKED_PR_STATUS_LABELS: Record<ActivityLinkedPullRequestStatus, string> =
+  {
+    open: "열림",
+    closed: "닫힘",
+    merged: "병합됨",
+  };
+
+function formatRepositoryReference(
+  repositoryNameWithOwner: string | null,
+  number: number | null,
+) {
+  const repoLabel = repositoryNameWithOwner?.trim();
+  if (!repoLabel?.length) {
+    if (typeof number === "number") {
+      return `#${number}`;
+    }
+    return null;
+  }
+  if (number === null || number === undefined) {
+    return repoLabel;
+  }
+  return `${repoLabel}#${number}`;
+}
+
+function mapIssueStateLabel(state: string | null) {
+  if (!state) {
+    return null;
+  }
+  const lowered = state.toLowerCase();
+  if (lowered === "open") {
+    return "열림";
+  }
+  if (lowered === "closed") {
+    return "닫힘";
+  }
+  if (lowered === "merged") {
+    return "병합됨";
+  }
+  return state;
+}
+
+export function buildLinkedPullRequestSummary(pr: ActivityLinkedPullRequest): {
+  id: string;
+  url: string | null;
+  label: string;
+  status: string | null;
+} {
+  const label =
+    formatRepositoryReference(pr.repositoryNameWithOwner, pr.number) ?? pr.id;
+  const status = LINKED_PR_STATUS_LABELS[pr.status] ?? pr.status ?? null;
+  return { id: pr.id, url: pr.url ?? null, label, status };
+}
+
+export function buildLinkedIssueSummary(issue: ActivityLinkedIssue): {
+  id: string;
+  url: string | null;
+  label: string;
+  status: string | null;
+} {
+  const label =
+    formatRepositoryReference(issue.repositoryNameWithOwner, issue.number) ??
+    issue.id;
+  const status = mapIssueStateLabel(issue.state);
+  return { id: issue.id, url: issue.url ?? null, label, status };
+}
+
+export function renderLinkedReferenceInline({
+  label,
+  type,
+  entries,
+  maxItems = 2,
+}: {
+  label: string;
+  type: "issue" | "pull_request";
+  entries: Array<{
+    id: string;
+    url: string | null;
+    label: string;
+    status: string | null;
+  }>;
+  maxItems?: number;
+}): ReactNode {
+  if (!entries.length) {
+    return null;
+  }
+
+  const limited = entries.slice(0, Math.max(1, maxItems));
+  const remaining = entries.length - limited.length;
+  const EntryIcon = type === "issue" ? IssueOpenedIcon : GitPullRequestIcon;
+
+  return (
+    <span className="inline-flex flex-wrap items-center gap-2">
+      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-muted text-muted-foreground">
+        <LinkIcon size={12} />
+        <span className="sr-only">{label}</span>
+      </span>
+      {limited.map((entry) => (
+        <span
+          key={entry.id}
+          className="inline-flex items-center gap-1 text-foreground/90"
+        >
+          <EntryIcon size={12} className="text-muted-foreground" />
+          {entry.url ? (
+            <a
+              href={entry.url}
+              target="_blank"
+              rel="noreferrer"
+              className="text-primary hover:underline"
+            >
+              {entry.label}
+            </a>
+          ) : (
+            <span>{entry.label}</span>
+          )}
+        </span>
+      ))}
+      {remaining > 0 ? (
+        <span className="text-muted-foreground">외 {remaining}건</span>
+      ) : null}
+    </span>
+  );
+}
 
 export function resolveActivityIcon(
   item: Pick<ActivityItem, "type" | "status">,

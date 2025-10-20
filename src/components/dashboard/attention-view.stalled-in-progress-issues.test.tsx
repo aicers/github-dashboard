@@ -46,6 +46,7 @@ function buildIssueItem(params: {
   repository: RepositoryReference;
   author: UserReference;
   assignees: UserReference[];
+  linkedPullRequests?: IssueAttentionItem["linkedPullRequests"];
   createdAt: string;
   updatedAt: string | null;
   ageDays: number;
@@ -60,6 +61,7 @@ function buildIssueItem(params: {
     repository,
     author,
     assignees,
+    linkedPullRequests = [],
     createdAt,
     updatedAt,
     ageDays,
@@ -75,6 +77,7 @@ function buildIssueItem(params: {
     repository,
     author,
     assignees,
+    linkedPullRequests,
     createdAt,
     updatedAt,
     ageDays,

@@ -57,6 +57,8 @@ function createDetail(
     labels: [],
     issueType: null,
     milestone: null,
+    linkedPullRequests: [],
+    linkedIssues: [],
     hasParentIssue: false,
     hasSubIssues: false,
     createdAt: null,
@@ -87,6 +89,8 @@ function createDetail(
     subIssues: [],
     comments: [],
     commentCount: 0,
+    linkedPullRequests: baseItem.linkedPullRequests,
+    linkedIssues: baseItem.linkedIssues,
     todoStatusTimes: {},
     activityStatusTimes: {},
   };

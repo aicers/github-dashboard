@@ -75,7 +75,10 @@ import {
 } from "./activity/detail-shared";
 import {
   buildActivityMetricEntries,
+  buildLinkedIssueSummary,
+  buildLinkedPullRequestSummary,
   formatRelative,
+  renderLinkedReferenceInline,
   resolveActivityIcon,
 } from "./activity/shared";
 
@@ -3953,6 +3956,28 @@ export function ActivityView({
                     },
                   );
                   const metrics = buildActivityMetricEntries(item);
+                  const linkedPullRequestsInline =
+                    item.linkedPullRequests.length > 0
+                      ? renderLinkedReferenceInline({
+                          label: "연결된 PR",
+                          type: "pull_request",
+                          entries: item.linkedPullRequests.map((pr) =>
+                            buildLinkedPullRequestSummary(pr),
+                          ),
+                          maxItems: 2,
+                        })
+                      : null;
+                  const linkedIssuesInline =
+                    item.linkedIssues.length > 0
+                      ? renderLinkedReferenceInline({
+                          label: "연결된 이슈",
+                          type: "issue",
+                          entries: item.linkedIssues.map((issue) =>
+                            buildLinkedIssueSummary(issue),
+                          ),
+                          maxItems: 2,
+                        })
+                      : null;
                   const updatedRelativeLabel = item.updatedAt
                     ? formatRelative(item.updatedAt)
                     : null;
@@ -3990,66 +4015,83 @@ export function ActivityView({
                             referenceUrl={item.url ?? undefined}
                             title={item.title}
                             metadata={
-                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-foreground/90">
-                                {metrics.map((metric) => (
-                                  <span key={metric.key}>{metric.content}</span>
-                                ))}
-                                {item.author && (
-                                  <span>
-                                    작성자 {avatarFallback(item.author) ?? "-"}
-                                  </span>
-                                )}
-                                {item.reviewers.length > 0 && (
-                                  <span>
-                                    리뷰어{" "}
-                                    {item.reviewers
-                                      .map(
-                                        (reviewer) =>
-                                          avatarFallback(reviewer) ??
-                                          reviewer.id,
-                                      )
-                                      .join(", ")}
-                                  </span>
-                                )}
-                                {item.issueType && (
-                                  <span className="rounded-md bg-sky-100 px-2 py-0.5 text-sky-700">
-                                    {item.issueType.name ?? item.issueType.id}
-                                  </span>
-                                )}
-                                {item.milestone && (
-                                  <span>
-                                    Milestone{" "}
-                                    {item.milestone.title ?? item.milestone.id}
-                                  </span>
-                                )}
-                                {item.type === "issue" &&
-                                  todoStatusLabel !== "-" && (
-                                    <span className={PROJECT_FIELD_BADGE_CLASS}>
-                                      {todoStatusLabel}
+                              <div className="flex flex-col gap-1 text-xs text-foreground/90">
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                  {metrics.map((metric) => (
+                                    <span key={metric.key}>
+                                      {metric.content}
+                                    </span>
+                                  ))}
+                                  {item.author && (
+                                    <span>
+                                      작성자{" "}
+                                      {avatarFallback(item.author) ?? "-"}
                                     </span>
                                   )}
-                                {item.type === "issue" &&
-                                  todoPriorityLabel !== "-" && (
-                                    <span className={PROJECT_FIELD_BADGE_CLASS}>
-                                      {todoPriorityLabel}
+                                  {item.reviewers.length > 0 && (
+                                    <span>
+                                      리뷰어{" "}
+                                      {item.reviewers
+                                        .map(
+                                          (reviewer) =>
+                                            avatarFallback(reviewer) ??
+                                            reviewer.id,
+                                        )
+                                        .join(", ")}
                                     </span>
                                   )}
-                                {badges.map((badge) => (
-                                  <span
-                                    key={badge}
-                                    className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-700"
-                                  >
-                                    {badge}
-                                  </span>
-                                ))}
-                                {item.labels.slice(0, 2).map((label) => (
-                                  <span
-                                    key={label.key}
-                                    className="rounded-md bg-muted px-2 py-0.5"
-                                  >
-                                    {label.key}
-                                  </span>
-                                ))}
+                                  {item.issueType && (
+                                    <span className="rounded-md bg-sky-100 px-2 py-0.5 text-sky-700">
+                                      {item.issueType.name ?? item.issueType.id}
+                                    </span>
+                                  )}
+                                  {item.milestone && (
+                                    <span>
+                                      Milestone{" "}
+                                      {item.milestone.title ??
+                                        item.milestone.id}
+                                    </span>
+                                  )}
+                                  {item.type === "issue" &&
+                                    todoStatusLabel !== "-" && (
+                                      <span
+                                        className={PROJECT_FIELD_BADGE_CLASS}
+                                      >
+                                        {todoStatusLabel}
+                                      </span>
+                                    )}
+                                  {item.type === "issue" &&
+                                    todoPriorityLabel !== "-" && (
+                                      <span
+                                        className={PROJECT_FIELD_BADGE_CLASS}
+                                      >
+                                        {todoPriorityLabel}
+                                      </span>
+                                    )}
+                                  {badges.map((badge) => (
+                                    <span
+                                      key={badge}
+                                      className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-700"
+                                    >
+                                      {badge}
+                                    </span>
+                                  ))}
+                                  {item.labels.slice(0, 2).map((label) => (
+                                    <span
+                                      key={label.key}
+                                      className="rounded-md bg-muted px-2 py-0.5"
+                                    >
+                                      {label.key}
+                                    </span>
+                                  ))}
+                                </div>
+                                {linkedPullRequestsInline ||
+                                linkedIssuesInline ? (
+                                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                    {linkedPullRequestsInline}
+                                    {linkedIssuesInline}
+                                  </div>
+                                ) : null}
                               </div>
                             }
                           />
@@ -4249,6 +4291,76 @@ export function ActivityView({
                                 timezone={data.timezone}
                                 dateTimeFormat={data.dateTimeFormat}
                               />
+                              {item.type === "issue" &&
+                              item.linkedPullRequests.length > 0 ? (
+                                <div className="space-y-2 text-xs">
+                                  <h4 className="font-semibold text-muted-foreground/85">
+                                    연결된 PR
+                                  </h4>
+                                  <ul className="space-y-1">
+                                    {item.linkedPullRequests.map((linked) => {
+                                      const summary =
+                                        buildLinkedPullRequestSummary(linked);
+                                      return (
+                                        <li key={`linked-pr-${linked.id}`}>
+                                          {linked.url ? (
+                                            <a
+                                              href={linked.url}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="text-primary hover:underline"
+                                            >
+                                              {summary.label}
+                                            </a>
+                                          ) : (
+                                            <span>{summary.label}</span>
+                                          )}
+                                          {summary.status ? (
+                                            <span className="text-muted-foreground/70">
+                                              {` · ${summary.status}`}
+                                            </span>
+                                          ) : null}
+                                        </li>
+                                      );
+                                    })}
+                                  </ul>
+                                </div>
+                              ) : null}
+                              {item.type === "pull_request" &&
+                              item.linkedIssues.length > 0 ? (
+                                <div className="space-y-2 text-xs">
+                                  <h4 className="font-semibold text-muted-foreground/85">
+                                    연결된 이슈
+                                  </h4>
+                                  <ul className="space-y-1">
+                                    {item.linkedIssues.map((linked) => {
+                                      const summary =
+                                        buildLinkedIssueSummary(linked);
+                                      return (
+                                        <li key={`linked-issue-${linked.id}`}>
+                                          {linked.url ? (
+                                            <a
+                                              href={linked.url}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="text-primary hover:underline"
+                                            >
+                                              {summary.label}
+                                            </a>
+                                          ) : (
+                                            <span>{summary.label}</span>
+                                          )}
+                                          {summary.status ? (
+                                            <span className="text-muted-foreground/70">
+                                              {` · ${summary.status}`}
+                                            </span>
+                                          ) : null}
+                                        </li>
+                                      );
+                                    })}
+                                  </ul>
+                                </div>
+                              ) : null}
                               {(detail.parentIssues.length > 0 ||
                                 detail.subIssues.length > 0) && (
                                 <div className="space-y-4 text-xs">

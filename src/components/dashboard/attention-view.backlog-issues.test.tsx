@@ -71,6 +71,7 @@ function buildIssueItem(params: {
     repository,
     author,
     assignees,
+    linkedPullRequests: [],
     createdAt,
     updatedAt,
     ageDays,

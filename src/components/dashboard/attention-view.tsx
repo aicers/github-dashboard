@@ -77,7 +77,10 @@ import {
 } from "./activity/detail-shared";
 import {
   buildActivityMetricEntries,
+  buildLinkedIssueSummary,
+  buildLinkedPullRequestSummary,
   formatRelative,
+  renderLinkedReferenceInline,
   resolveActivityIcon,
 } from "./activity/shared";
 
@@ -243,6 +246,8 @@ function createBaseActivityItem({
     issueTodoProjectStartDateUpdatedAt: null,
     issueActivityStatus: null,
     issueActivityStatusAt: null,
+    linkedPullRequests: [],
+    linkedIssues: [],
     repository: toActivityRepository(repository),
     author: toActivityUser(author),
     assignees: [],
@@ -431,7 +436,7 @@ function useActivityDetailState() {
   };
 }
 
-function FollowUpDetailContent({
+export function FollowUpDetailContent({
   item,
   detail,
   isLoading,
@@ -672,6 +677,72 @@ function FollowUpDetailContent({
         timezone={timezone}
         dateTimeFormat={dateTimeFormat}
       />
+      {detailItem.type === "issue" &&
+      detailItem.linkedPullRequests.length > 0 ? (
+        <div className="space-y-2 text-xs">
+          <h4 className="font-semibold text-muted-foreground/85">연결된 PR</h4>
+          <ul className="space-y-1">
+            {detailItem.linkedPullRequests.map((linked) => {
+              const summary = buildLinkedPullRequestSummary(linked);
+              return (
+                <li key={`follow-up-linked-pr-${linked.id}`}>
+                  {linked.url ? (
+                    <a
+                      href={linked.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      {summary.label}
+                    </a>
+                  ) : (
+                    <span>{summary.label}</span>
+                  )}
+                  {summary.status ? (
+                    <span className="text-muted-foreground/70">
+                      {` · ${summary.status}`}
+                    </span>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
+      {detailItem.type === "pull_request" &&
+      detailItem.linkedIssues.length > 0 ? (
+        <div className="space-y-2 text-xs">
+          <h4 className="font-semibold text-muted-foreground/85">
+            연결된 이슈
+          </h4>
+          <ul className="space-y-1">
+            {detailItem.linkedIssues.map((linked) => {
+              const summary = buildLinkedIssueSummary(linked);
+              return (
+                <li key={`follow-up-linked-issue-${linked.id}`}>
+                  {linked.url ? (
+                    <a
+                      href={linked.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      {summary.label}
+                    </a>
+                  ) : (
+                    <span>{summary.label}</span>
+                  )}
+                  {summary.status ? (
+                    <span className="text-muted-foreground/70">
+                      {` · ${summary.status}`}
+                    </span>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
       {(detail.parentIssues.length > 0 || detail.subIssues.length > 0) && (
         <div className="space-y-4 text-xs">
           {detail.parentIssues.length > 0 && (
@@ -1111,6 +1182,7 @@ function PullRequestList({
         if (item.inactivityDays !== undefined) {
           activityItem.businessDaysIdle = item.inactivityDays ?? null;
         }
+        activityItem.linkedIssues = item.linkedIssues ?? [];
         const reviewWaitDetails = reviewWaitMap.get(item.id) ?? [];
         if (reviewWaitDetails.length) {
           activityItem.reviewRequestWaits =
@@ -1120,6 +1192,17 @@ function PullRequestList({
         if (mentionDetails.length) {
           activityItem.mentionWaits = toActivityMentionWaits(mentionDetails);
         }
+        const linkedPullRequestsInline =
+          activityItem.linkedPullRequests.length > 0
+            ? renderLinkedReferenceInline({
+                label: "연결된 PR",
+                type: "pull_request",
+                entries: activityItem.linkedPullRequests.map((pr) =>
+                  buildLinkedPullRequestSummary(pr),
+                ),
+                maxItems: 2,
+              })
+            : null;
 
         const detail = detailMap[item.id] ?? undefined;
         const overlayItem = detail?.item ?? activityItem;
@@ -1138,15 +1221,36 @@ function PullRequestList({
         const updatedAbsoluteLabel = item.updatedAt
           ? formatTimestamp(item.updatedAt, timezone, dateTimeFormat)
           : "-";
+        const linkedIssuesInline =
+          activityItem.linkedIssues.length > 0
+            ? renderLinkedReferenceInline({
+                label: "연결된 이슈",
+                type: "issue",
+                entries: activityItem.linkedIssues.map((issue) =>
+                  buildLinkedIssueSummary(issue),
+                ),
+                maxItems: 2,
+              })
+            : null;
+        const referenceLine =
+          linkedPullRequestsInline || linkedIssuesInline ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              {linkedPullRequestsInline}
+              {linkedIssuesInline}
+            </div>
+          ) : null;
         const metadata = (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-foreground/90">
-            {metrics.map((metric) => (
-              <span key={metric.key}>{metric.content}</span>
-            ))}
-            {item.author && <span>작성자 {formatUser(item.author)}</span>}
-            {item.reviewers.length > 0 && (
-              <span>리뷰어 {formatUserList(item.reviewers)}</span>
-            )}
+          <div className="flex flex-col gap-1 text-xs text-foreground/90">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              {metrics.map((metric) => (
+                <span key={metric.key}>{metric.content}</span>
+              ))}
+              {item.author && <span>작성자 {formatUser(item.author)}</span>}
+              {item.reviewers.length > 0 && (
+                <span>리뷰어 {formatUserList(item.reviewers)}</span>
+              )}
+            </div>
+            {referenceLine}
           </div>
         );
 
@@ -1449,6 +1553,7 @@ function ReviewRequestList({
         activityItem.businessDaysOpen = item.pullRequestAgeDays ?? null;
         activityItem.businessDaysIdle =
           item.pullRequestInactivityDays ?? item.waitingDays ?? null;
+        activityItem.linkedIssues = item.pullRequest.linkedIssues ?? [];
         const reviewWaitDetails = reviewWaitMap.get(item.pullRequest.id) ?? [];
         if (reviewWaitDetails.length) {
           activityItem.reviewRequestWaits =
@@ -1472,20 +1577,39 @@ function ReviewRequestList({
         const isDetailLoading = loadingDetailIds.has(selectionId);
         const badges = ["응답 없는 리뷰 요청"];
         const metrics = buildActivityMetricEntries(activityItem);
+        const linkedIssuesInline =
+          activityItem.linkedIssues.length > 0
+            ? renderLinkedReferenceInline({
+                label: "연결된 이슈",
+                type: "issue",
+                entries: activityItem.linkedIssues.map((issue) =>
+                  buildLinkedIssueSummary(issue),
+                ),
+                maxItems: 2,
+              })
+            : null;
         const updatedRelativeLabel = item.pullRequestUpdatedAt
           ? formatRelative(item.pullRequestUpdatedAt)
           : null;
         const updatedAbsoluteLabel = item.pullRequestUpdatedAt
           ? formatTimestamp(item.pullRequestUpdatedAt, timezone, dateTimeFormat)
           : "-";
+        const referenceLine = linkedIssuesInline ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {linkedIssuesInline}
+          </div>
+        ) : null;
         const metadata = (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-foreground/90">
-            {metrics.map((metric) => (
-              <span key={metric.key}>{metric.content}</span>
-            ))}
-            {item.pullRequest.author && (
-              <span>생성자 {formatUser(item.pullRequest.author)}</span>
-            )}
+          <div className="flex flex-col gap-1 text-xs text-foreground/90">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              {metrics.map((metric) => (
+                <span key={metric.key}>{metric.content}</span>
+              ))}
+              {item.pullRequest.author && (
+                <span>생성자 {formatUser(item.pullRequest.author)}</span>
+              )}
+            </div>
+            {referenceLine}
           </div>
         );
 
@@ -2019,6 +2143,7 @@ function IssueList({
           attention: attentionFlags,
         });
         activityItem.assignees = toActivityUsers(item.assignees);
+        activityItem.linkedPullRequests = item.linkedPullRequests ?? [];
         activityItem.businessDaysOpen = item.ageDays ?? null;
         if (item.inProgressAgeDays !== undefined) {
           activityItem.businessDaysSinceInProgress =
@@ -2079,6 +2204,17 @@ function IssueList({
           ? formatTimestamp(item.updatedAt, timezone, dateTimeFormat)
           : "-";
         const displayItem = overlayItem;
+        const linkedPullRequestsInline =
+          displayItem.linkedPullRequests.length > 0
+            ? renderLinkedReferenceInline({
+                label: "연결된 PR",
+                type: "pull_request",
+                entries: displayItem.linkedPullRequests.map((pr) =>
+                  buildLinkedPullRequestSummary(pr),
+                ),
+                maxItems: 2,
+              })
+            : null;
         const todoStatusLabel = displayItem.issueTodoProjectStatus
           ? (ISSUE_STATUS_LABEL_MAP.get(displayItem.issueTodoProjectStatus) ??
             displayItem.issueTodoProjectStatus)
@@ -2086,25 +2222,33 @@ function IssueList({
         const todoPriorityLabel = formatProjectField(
           displayItem.issueTodoProjectPriority,
         );
+        const referenceLine = linkedPullRequestsInline ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {linkedPullRequestsInline}
+          </div>
+        ) : null;
         const metadata = (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-foreground/90">
-            {metrics.map((metric) => (
-              <span key={metric.key}>{metric.content}</span>
-            ))}
-            {item.author && <span>생성자 {formatUser(item.author)}</span>}
-            {item.assignees.length > 0 && (
-              <span>담당자 {formatUserList(item.assignees)}</span>
-            )}
-            {displayItem.type === "issue" && todoStatusLabel ? (
-              <span className={PROJECT_FIELD_BADGE_CLASS}>
-                {todoStatusLabel}
-              </span>
-            ) : null}
-            {displayItem.type === "issue" && todoPriorityLabel !== "-" ? (
-              <span className={PROJECT_FIELD_BADGE_CLASS}>
-                {todoPriorityLabel}
-              </span>
-            ) : null}
+          <div className="flex flex-col gap-1 text-xs text-foreground/90">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              {metrics.map((metric) => (
+                <span key={metric.key}>{metric.content}</span>
+              ))}
+              {item.author && <span>생성자 {formatUser(item.author)}</span>}
+              {item.assignees.length > 0 && (
+                <span>담당자 {formatUserList(item.assignees)}</span>
+              )}
+              {displayItem.type === "issue" && todoStatusLabel ? (
+                <span className={PROJECT_FIELD_BADGE_CLASS}>
+                  {todoStatusLabel}
+                </span>
+              ) : null}
+              {displayItem.type === "issue" && todoPriorityLabel !== "-" ? (
+                <span className={PROJECT_FIELD_BADGE_CLASS}>
+                  {todoPriorityLabel}
+                </span>
+              ) : null}
+            </div>
+            {referenceLine}
           </div>
         );
 
