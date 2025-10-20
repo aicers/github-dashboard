@@ -126,6 +126,21 @@ export type ActivityLinkedIssue = {
   url: string | null;
 };
 
+export type ActivityLinkedPullRequestStatus = "open" | "closed" | "merged";
+
+export type ActivityLinkedPullRequest = {
+  id: string;
+  number: number | null;
+  title: string | null;
+  state: string | null;
+  status: ActivityLinkedPullRequestStatus;
+  repositoryNameWithOwner: string | null;
+  url: string | null;
+  mergedAt: string | null;
+  closedAt: string | null;
+  updatedAt: string | null;
+};
+
 export type ActivityItemComment = {
   id: string;
   author: ActivityUser | null;
@@ -187,6 +202,8 @@ export type ActivityItem = {
   labels: ActivityLabel[];
   issueType: ActivityIssueType | null;
   milestone: ActivityMilestone | null;
+  linkedPullRequests: ActivityLinkedPullRequest[];
+  linkedIssues: ActivityLinkedIssue[];
   hasParentIssue: boolean;
   hasSubIssues: boolean;
   createdAt: string | null;
@@ -226,6 +243,8 @@ export type ActivityItemDetail = {
   subIssues: ActivityLinkedIssue[];
   comments: ActivityItemComment[];
   commentCount: number;
+  linkedPullRequests: ActivityLinkedPullRequest[];
+  linkedIssues: ActivityLinkedIssue[];
   todoStatusTimes?: Partial<Record<IssueProjectStatus, string | null>>;
   activityStatusTimes?: Partial<Record<IssueProjectStatus, string | null>>;
 };

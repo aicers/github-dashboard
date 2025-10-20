@@ -71,6 +71,7 @@ function buildPullRequestItem(params: {
     repository,
     author,
     reviewers,
+    linkedIssues: [],
     createdAt,
     updatedAt,
     ageDays,

@@ -99,6 +99,8 @@ export function buildActivityItemFixture(
       dueOn: "2024-05-01",
       url: "https://example.com/acme/alpha/milestones/1",
     },
+    linkedPullRequests: [],
+    linkedIssues: [],
     hasParentIssue: false,
     hasSubIssues: false,
     createdAt: "2024-03-20T12:00:00.000Z",
@@ -145,6 +147,8 @@ export function buildActivityItemDetailFixture(
     raw: {},
     parentIssues: [],
     subIssues: [],
+    linkedPullRequests: [],
+    linkedIssues: [],
     comments: [],
     commentCount: 0,
     todoStatusTimes: {

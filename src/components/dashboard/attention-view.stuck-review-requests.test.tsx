@@ -47,8 +47,18 @@ function buildPullRequestReference(params: {
   repository: RepositoryReference;
   author: UserReference;
   reviewers: UserReference[];
+  linkedIssues?: PullRequestReference["linkedIssues"];
 }): PullRequestReference {
-  const { id, number, title, url, repository, author, reviewers } = params;
+  const {
+    id,
+    number,
+    title,
+    url,
+    repository,
+    author,
+    reviewers,
+    linkedIssues = [],
+  } = params;
   return {
     id,
     number,
@@ -57,6 +67,7 @@ function buildPullRequestReference(params: {
     repository,
     author,
     reviewers,
+    linkedIssues,
   } satisfies PullRequestReference;
 }
 

@@ -18,6 +18,8 @@ import type {
   ActivityItemDetail,
   ActivityLabel,
   ActivityLinkedIssue,
+  ActivityLinkedPullRequest,
+  ActivityLinkedPullRequestStatus,
   ActivityListParams,
   ActivityListResult,
   ActivityPullRequestStatusFilter,
@@ -224,6 +226,151 @@ type AttentionSets = {
   reviewRequestDetails: Map<string, ReviewRequestAttentionItem[]>;
   mentionDetails: Map<string, MentionAttentionItem[]>;
 };
+
+type PullRequestLinkRow = {
+  issue_id: string;
+  pull_request_id: string;
+  pull_request_number: number | null;
+  pull_request_title: string | null;
+  pull_request_state: string | null;
+  pull_request_merged: boolean | null;
+  pull_request_closed_at: string | null;
+  pull_request_merged_at: string | null;
+  pull_request_updated_at: string | null;
+  pull_request_url: string | null;
+  pull_request_repository_name_with_owner: string | null;
+};
+
+type IssueLinkRow = {
+  pull_request_id: string;
+  issue_id: string;
+  issue_number: number | null;
+  issue_title: string | null;
+  issue_state: string | null;
+  issue_url: string | null;
+  issue_repository_name_with_owner: string | null;
+};
+
+function resolveLinkedPullRequestStatus(
+  merged: boolean | null,
+  state: string | null,
+  closedAt: string | null,
+): ActivityLinkedPullRequestStatus {
+  if (merged) {
+    return "merged";
+  }
+  const lowered = state?.toLowerCase() ?? "";
+  if (lowered === "closed" || closedAt) {
+    return "closed";
+  }
+  if (lowered === "merged") {
+    return "merged";
+  }
+  return "open";
+}
+
+async function fetchLinkedPullRequests(
+  issueIds: string[],
+): Promise<Map<string, ActivityLinkedPullRequest[]>> {
+  if (!issueIds.length) {
+    return new Map();
+  }
+
+  const result = await query<PullRequestLinkRow>(
+    `SELECT
+       pri.issue_id,
+       pr.id AS pull_request_id,
+       pr.number AS pull_request_number,
+       pr.title AS pull_request_title,
+       pr.state AS pull_request_state,
+       pr.merged AS pull_request_merged,
+       pr.github_closed_at AS pull_request_closed_at,
+       pr.github_merged_at AS pull_request_merged_at,
+       pr.github_updated_at AS pull_request_updated_at,
+       pr.data->>'url' AS pull_request_url,
+       repo.name_with_owner AS pull_request_repository_name_with_owner
+     FROM pull_request_issues pri
+     JOIN pull_requests pr ON pr.id = pri.pull_request_id
+     JOIN repositories repo ON repo.id = pr.repository_id
+     WHERE pri.issue_id = ANY($1::text[])
+     ORDER BY pri.issue_id, pr.github_updated_at DESC NULLS LAST, pr.github_created_at DESC`,
+    [issueIds],
+  );
+
+  const map = new Map<string, ActivityLinkedPullRequest[]>();
+  result.rows.forEach((row) => {
+    const status = resolveLinkedPullRequestStatus(
+      row.pull_request_merged,
+      row.pull_request_state,
+      row.pull_request_closed_at,
+    );
+    const entry: ActivityLinkedPullRequest = {
+      id: row.pull_request_id,
+      number: row.pull_request_number,
+      title: row.pull_request_title,
+      state: row.pull_request_state,
+      status,
+      repositoryNameWithOwner: row.pull_request_repository_name_with_owner,
+      url: row.pull_request_url,
+      mergedAt: toIso(row.pull_request_merged_at),
+      closedAt: toIso(row.pull_request_closed_at),
+      updatedAt: toIso(row.pull_request_updated_at),
+    };
+    const list = map.get(row.issue_id);
+    if (list) {
+      list.push(entry);
+    } else {
+      map.set(row.issue_id, [entry]);
+    }
+  });
+
+  return map;
+}
+
+async function fetchLinkedIssues(
+  pullRequestIds: string[],
+): Promise<Map<string, ActivityLinkedIssue[]>> {
+  if (!pullRequestIds.length) {
+    return new Map();
+  }
+
+  const result = await query<IssueLinkRow>(
+    `SELECT
+       pri.pull_request_id,
+       COALESCE(i.id, pri.issue_id) AS issue_id,
+       COALESCE(i.number, pri.issue_number) AS issue_number,
+       COALESCE(i.title, pri.issue_title) AS issue_title,
+       COALESCE(i.state, pri.issue_state) AS issue_state,
+       COALESCE(i.data->>'url', pri.issue_url) AS issue_url,
+       COALESCE(repo.name_with_owner, pri.issue_repository) AS issue_repository_name_with_owner
+     FROM pull_request_issues pri
+     LEFT JOIN issues i ON i.id = pri.issue_id
+     LEFT JOIN repositories repo ON repo.id = i.repository_id
+     WHERE pri.pull_request_id = ANY($1::text[])
+     ORDER BY pri.pull_request_id, pri.updated_at DESC NULLS LAST`,
+    [pullRequestIds],
+  );
+
+  const map = new Map<string, ActivityLinkedIssue[]>();
+  result.rows.forEach((row) => {
+    const entry: ActivityLinkedIssue = {
+      id: row.issue_id,
+      number: row.issue_number,
+      title: row.issue_title,
+      state: row.issue_state,
+      repositoryNameWithOwner: row.issue_repository_name_with_owner,
+      url: row.issue_url,
+    };
+    const list = map.get(row.pull_request_id);
+    if (list) {
+      list.push(entry);
+    } else {
+      map.set(row.pull_request_id, [entry]);
+    }
+  });
+
+  return map;
+}
 
 type AttentionFilterSelection = {
   includeIds: string[];
@@ -1963,6 +2110,8 @@ function buildActivityItem(
   now: Date,
   projectOverrides: Map<string, ProjectFieldOverrides>,
   activityStatusHistory: Map<string, ActivityStatusEvent[]>,
+  linkedIssuesMap: Map<string, ActivityLinkedIssue[]>,
+  linkedPullRequestsMap: Map<string, ActivityLinkedPullRequest[]>,
 ): ActivityItem {
   const status = toStatus(row.status);
   let issueProjectStatus: IssueProjectStatus | null = null;
@@ -2142,6 +2291,10 @@ function buildActivityItem(
         businessDaysWaiting: detail.waitingDays ?? null,
       }))
     : undefined;
+  const linkedPullRequests =
+    linkedPullRequestsMap.get(row.id) ?? ([] as ActivityLinkedPullRequest[]);
+  const linkedIssues =
+    linkedIssuesMap.get(row.id) ?? ([] as ActivityLinkedIssue[]);
 
   return {
     id: row.id,
@@ -2196,6 +2349,8 @@ function buildActivityItem(
     labels,
     issueType,
     milestone,
+    linkedPullRequests,
+    linkedIssues,
     hasParentIssue,
     hasSubIssues,
     createdAt: toIso(row.created_at),
@@ -2550,9 +2705,19 @@ export async function getActivityItems(
   const issueIds = rows
     .filter((row) => row.item_type === "issue")
     .map((row) => row.id);
-  const [activityStatusHistory, projectOverrides] = await Promise.all([
+  const pullRequestIds = rows
+    .filter((row) => row.item_type === "pull_request")
+    .map((row) => row.id);
+  const [
+    activityStatusHistory,
+    projectOverrides,
+    linkedPullRequestsMap,
+    linkedIssuesMap,
+  ] = await Promise.all([
     getActivityStatusHistory(issueIds),
     getProjectFieldOverrides(issueIds),
+    fetchLinkedPullRequests(issueIds),
+    fetchLinkedIssues(pullRequestIds),
   ]);
   const totalCount = rows.length > 0 ? Number(rows[0]?.total_count ?? 0) : 0;
   const totalPages =
@@ -2594,6 +2759,8 @@ export async function getActivityItems(
       now,
       projectOverrides,
       activityStatusHistory,
+      linkedIssuesMap,
+      linkedPullRequestsMap,
     ),
   );
 
@@ -2668,14 +2835,19 @@ export async function getActivityItemDetail(
   const profiles = await getUserProfiles(Array.from(userIds));
   const users = toUserMap(profiles);
   const now = new Date();
-  const activityStatusHistory =
-    row.item_type === "issue"
-      ? await getActivityStatusHistory([row.id])
-      : new Map<string, ActivityStatusEvent[]>();
-  const projectOverrides =
-    row.item_type === "issue"
-      ? await getProjectFieldOverrides([row.id])
-      : new Map<string, ProjectFieldOverrides>();
+  const issueIds = row.item_type === "issue" ? [row.id] : [];
+  const pullRequestIds = row.item_type === "pull_request" ? [row.id] : [];
+  const [
+    activityStatusHistory,
+    projectOverrides,
+    linkedPullRequestsMap,
+    linkedIssuesMap,
+  ] = await Promise.all([
+    getActivityStatusHistory(issueIds),
+    getProjectFieldOverrides(issueIds),
+    fetchLinkedPullRequests(issueIds),
+    fetchLinkedIssues(pullRequestIds),
+  ]);
   const item = buildActivityItem(
     row,
     users,
@@ -2684,6 +2856,8 @@ export async function getActivityItemDetail(
     now,
     projectOverrides,
     activityStatusHistory,
+    linkedIssuesMap,
+    linkedPullRequestsMap,
   );
   const rawIssue = parseIssueRaw(row.raw_data);
   let todoStatusTimes: Partial<
@@ -2902,6 +3076,8 @@ export async function getActivityItemDetail(
     subIssues,
     comments,
     commentCount: comments.length,
+    linkedPullRequests: item.linkedPullRequests,
+    linkedIssues: item.linkedIssues,
     todoStatusTimes: todoStatusTimes ?? undefined,
     activityStatusTimes: activityStatusTimes ?? undefined,
   };

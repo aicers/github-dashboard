@@ -2,7 +2,10 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { AttentionView } from "@/components/dashboard/attention-view";
+import {
+  AttentionView,
+  FollowUpDetailContent,
+} from "@/components/dashboard/attention-view";
 import type {
   AttentionInsights,
   IssueAttentionItem,
@@ -12,6 +15,10 @@ import type {
   ReviewRequestAttentionItem,
   UserReference,
 } from "@/lib/dashboard/attention";
+import {
+  buildActivityItem,
+  buildActivityItemDetail,
+} from "../../../tests/helpers/activity-items";
 
 const refreshMock = vi.fn();
 
@@ -49,6 +56,7 @@ function buildPullRequestItem(params: {
   repository: RepositoryReference;
   author: UserReference;
   reviewers: UserReference[];
+  linkedIssues?: PullRequestAttentionItem["linkedIssues"];
   createdAt: string;
   updatedAt: string | null;
   ageDays: number;
@@ -62,6 +70,7 @@ function buildPullRequestItem(params: {
     repository,
     author,
     reviewers,
+    linkedIssues = [],
     createdAt,
     updatedAt,
     ageDays,
@@ -76,6 +85,7 @@ function buildPullRequestItem(params: {
     repository,
     author,
     reviewers,
+    linkedIssues,
     createdAt,
     updatedAt,
     ageDays,
@@ -108,6 +118,7 @@ function buildIssueItem(params: {
   repository: RepositoryReference;
   author: UserReference | null;
   assignees: UserReference[];
+  linkedPullRequests?: IssueAttentionItem["linkedPullRequests"];
   createdAt: string;
   updatedAt: string;
   ageDays: number;
@@ -122,6 +133,7 @@ function buildIssueItem(params: {
     repository,
     author,
     assignees,
+    linkedPullRequests = [],
     createdAt,
     updatedAt,
     ageDays,
@@ -137,6 +149,7 @@ function buildIssueItem(params: {
     repository,
     author,
     assignees,
+    linkedPullRequests,
     createdAt,
     updatedAt,
     ageDays,
@@ -209,6 +222,16 @@ describe("Follow-up overview", () => {
       updatedAt: "2024-02-10T00:00:00.000Z",
       ageDays: 40,
     });
+    staleOne.linkedIssues = [
+      {
+        id: "issue-link-1",
+        number: 901,
+        title: "Linked backlog issue",
+        state: "OPEN",
+        repositoryNameWithOwner: repoMain.nameWithOwner,
+        url: "https://github.com/acme/main/issues/901",
+      },
+    ];
     const staleTwo = buildPullRequestItem({
       id: "pr-stale-2",
       number: 102,
@@ -277,6 +300,20 @@ describe("Follow-up overview", () => {
       ageDays: 55,
       startedAt: null,
     });
+    backlogOne.linkedPullRequests = [
+      {
+        id: "pr-link-1",
+        number: 777,
+        title: "Follow-up refactor",
+        state: "OPEN",
+        status: "open",
+        repositoryNameWithOwner: repoMain.nameWithOwner,
+        url: "https://github.com/acme/main/pull/777",
+        mergedAt: null,
+        closedAt: null,
+        updatedAt: null,
+      },
+    ];
     const backlogTwo = buildIssueItem({
       id: "issue-backlog-2",
       number: 402,
@@ -429,5 +466,48 @@ describe("Follow-up overview", () => {
 
     await user.click(overviewButton);
     expect(overviewButton).toHaveAttribute("aria-current", "true");
+  });
+});
+
+describe("FollowUpDetailContent", () => {
+  it("renders linked references", () => {
+    const item = buildActivityItem({
+      id: "issue-linked",
+      type: "issue",
+      linkedPullRequests: [
+        {
+          id: "pr-linked",
+          number: 123,
+          title: "Linked PR",
+          state: "OPEN",
+          status: "open",
+          repositoryNameWithOwner: "acme/repo-two",
+          url: "https://example.com/acme/repo-two/pull/123",
+          mergedAt: null,
+          closedAt: null,
+          updatedAt: null,
+        },
+      ],
+    });
+    const detail = buildActivityItemDetail({ item });
+
+    render(
+      <FollowUpDetailContent
+        item={item}
+        detail={detail}
+        isLoading={false}
+        timezone="UTC"
+        dateTimeFormat="auto"
+        isUpdatingStatus={false}
+        isUpdatingProjectFields={false}
+        onUpdateStatus={() => {}}
+        onUpdateProjectField={async () => false}
+      />,
+    );
+
+    expect(screen.getByText("연결된 PR")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "acme/repo-two#123" }),
+    ).toBeInTheDocument();
   });
 });

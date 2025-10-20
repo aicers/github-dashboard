@@ -185,6 +185,8 @@ describe("GET /api/activity/[id]", () => {
         labels: [],
         issueType: null,
         milestone: null,
+        linkedPullRequests: [],
+        linkedIssues: [],
         hasParentIssue: false,
         hasSubIssues: false,
         createdAt: null,
@@ -211,6 +213,8 @@ describe("GET /api/activity/[id]", () => {
       subIssues: [],
       comments: [],
       commentCount: 0,
+      linkedPullRequests: [],
+      linkedIssues: [],
     };
 
     getActivityItemDetail.mockResolvedValue(detail);

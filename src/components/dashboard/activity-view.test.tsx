@@ -212,6 +212,65 @@ describe("ActivityView", () => {
     expect(issueCategory).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("shows linked pull requests in list metadata and overlay", async () => {
+    const linkedRepository = buildActivityRepository({
+      id: "repo-two",
+      name: "repo-two",
+      nameWithOwner: "acme/repo-two",
+    });
+    const linkedPullRequest = {
+      id: "pr-linked",
+      number: 42,
+      title: "Fix related issue",
+      state: "OPEN",
+      status: "open" as const,
+      repositoryNameWithOwner: linkedRepository.nameWithOwner,
+      url: "https://example.com/acme/repo-two/pull/42",
+      mergedAt: null,
+      closedAt: null,
+      updatedAt: null,
+    };
+
+    const props = createDefaultProps({
+      initialData: buildActivityListResult({
+        items: [
+          buildActivityItem({
+            title: "Linked Issue",
+            repository: linkedRepository,
+            linkedPullRequests: [linkedPullRequest],
+          }),
+        ],
+      }),
+    });
+
+    mockFetchJsonOnce({ filters: [], limit: 30 });
+    mockFetchJsonOnce(
+      buildActivityItemDetail({
+        item: props.initialData.items[0],
+      }),
+    );
+
+    render(<ActivityView {...props} />);
+
+    expect(
+      await screen.findByRole("link", { name: "acme/repo-two#42" }),
+    ).toBeInTheDocument();
+
+    const itemButton = screen.getByRole("button", {
+      name: /Linked Issue/i,
+    });
+
+    await act(async () => {
+      fireEvent.click(itemButton);
+    });
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("연결된 PR")).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("link", { name: "acme/repo-two#42" }),
+    ).toBeInTheDocument();
+  });
+
   it("adds and prunes categories based on attention selections", async () => {
     const props = createDefaultProps();
     mockFetchJsonOnce({ filters: [], limit: 30 });
