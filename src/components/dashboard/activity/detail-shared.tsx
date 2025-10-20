@@ -39,7 +39,7 @@ export const PROJECT_FIELD_LABELS: Record<ProjectFieldKey, string> = {
 };
 
 export const PROJECT_FIELD_BADGE_CLASS =
-  "inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary";
+  "inline-flex items-center rounded-md bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-700";
 
 const PRIORITY_OPTIONS = ["P0", "P1", "P2"] as const;
 const WEIGHT_OPTIONS = ["Heavy", "Medium", "Light"] as const;
