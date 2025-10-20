@@ -122,7 +122,7 @@ export function ActivityDetailOverlay({
             </span>
             <div className="space-y-2">
               {referenceLabel ? (
-                <div className="text-xs font-semibold tracking-wide text-muted-foreground/70">
+                <div className="text-xs font-semibold tracking-wide text-[color:var(--activity-reference-link)]">
                   {referenceLabel}
                 </div>
               ) : null}

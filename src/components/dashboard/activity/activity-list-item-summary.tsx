@@ -40,7 +40,7 @@ export function ActivityListItemSummary({
               href={referenceUrl}
               target="_blank"
               rel="noreferrer"
-              className="text-primary hover:underline"
+              className="reference-link"
             >
               {referenceLabel}
             </a>
