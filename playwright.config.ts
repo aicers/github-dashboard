@@ -30,6 +30,7 @@ export default defineConfig({
     env: {
       ...process.env,
       PLAYWRIGHT_SKIP_DB: "1",
+      NEXT_PUBLIC_E2E: "1",
     },
   },
   projects: [

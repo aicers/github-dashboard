@@ -12,6 +12,8 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const isE2E = process.env.NEXT_PUBLIC_E2E === "1";
+
 export const metadata: Metadata = {
   title: {
     default: "GitHub Dashboard",
@@ -31,7 +33,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" data-e2e={isE2E ? "true" : undefined}>
       <body
         className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-background text-foreground antialiased`}
       >

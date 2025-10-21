@@ -141,3 +141,13 @@ body {
     @apply text-[color:var(--activity-reference-link)] hover:underline;
   }
 }
+
+[data-e2e="true"] .e2e-chart {
+  min-width: 32rem;
+  min-height: 18rem;
+}
+
+[data-e2e="true"] .e2e-chart-sm {
+  min-width: 16rem;
+  min-height: 8rem;
+}
