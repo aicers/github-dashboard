@@ -64,6 +64,10 @@ type AnalyticsViewProps = {
   orgName?: string | null;
 };
 
+const isE2E = process.env.NEXT_PUBLIC_E2E === "1";
+const chartWidth: number | `${number}%` = isE2E ? 640 : "100%";
+const chartHeight: number | `${number}%` = isE2E ? 320 : "100%";
+
 const MAIN_BRANCH_SORT_OPTIONS: Array<{
   key: MainBranchSortKey;
   label: string;
@@ -455,8 +459,8 @@ function TrendSection({
               선택한 기간 동안 일별 이슈 생성 대비 종료(생성-종료) 변화량
             </CardDescription>
           </CardHeader>
-          <CardContent className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
+          <CardContent className="h-72 e2e-chart">
+            <ResponsiveContainer width={chartWidth} height={chartHeight}>
               <LineChart data={issuesNetTrend}>
                 <CartesianGrid
                   strokeDasharray="3 3"
@@ -501,8 +505,8 @@ function TrendSection({
               기간 중 일별 PR 생성 대비 머지(생성-머지) 변화량
             </CardDescription>
           </CardHeader>
-          <CardContent className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
+          <CardContent className="h-72 e2e-chart">
+            <ResponsiveContainer width={chartWidth} height={chartHeight}>
               <LineChart data={prNetTrend}>
                 <CartesianGrid
                   strokeDasharray="3 3"
@@ -713,8 +717,8 @@ function IndividualSection({ individual }: IndividualSectionProps) {
               월별 기여 추이
             </CardTitle>
           </CardHeader>
-          <CardContent className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
+          <CardContent className="h-72 e2e-chart">
+            <ResponsiveContainer width={chartWidth} height={chartHeight}>
               <LineChart data={individual.trends.monthly}>
                 <CartesianGrid
                   strokeDasharray="3 3"

@@ -31,6 +31,10 @@ import type {
   PeriodKey,
 } from "@/lib/dashboard/types";
 
+const isE2E = process.env.NEXT_PUBLIC_E2E === "1";
+const sparklineWidth: number | `${number}%` = isE2E ? 320 : "100%";
+const sparklineHeight: number | `${number}%` = isE2E ? 160 : "100%";
+
 const HISTORY_COLORS: Record<PeriodKey, string> = {
   previous4: "var(--color-chart-5)",
   previous3: "var(--color-chart-4)",
@@ -186,8 +190,11 @@ export function MetricCard({
           {changeLabel} ({percentLabel})
         </span>
         {hasHistory && (
-          <div className="h-32 pt-1">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-32 pt-1 e2e-chart-sm">
+            <ResponsiveContainer
+              width={sparklineWidth}
+              height={sparklineHeight}
+            >
               <LineChart
                 data={historyData}
                 margin={{ top: 28, right: 16, left: 16, bottom: 0 }}
