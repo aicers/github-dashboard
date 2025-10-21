@@ -113,7 +113,7 @@ export function ActivityDetailOverlay({
           <div className="flex flex-1 items-start gap-3">
             <span
               className={cn(
-                "mt-1 inline-flex items-center justify-center rounded-full border border-border/60 bg-background p-2",
+                "mt-1 inline-flex items-center justify-center leading-none",
                 iconInfo.className,
               )}
             >

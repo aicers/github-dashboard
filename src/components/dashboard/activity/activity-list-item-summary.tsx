@@ -26,7 +26,7 @@ export function ActivityListItemSummary({
       <div className="flex items-center gap-2 text-sm text-foreground">
         <span
           className={cn(
-            "inline-flex items-center justify-center rounded-full border border-border/60 bg-background p-1",
+            "inline-flex items-center justify-center leading-none",
             iconInfo.className,
           )}
           title={iconInfo.label}
