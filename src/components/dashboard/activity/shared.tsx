@@ -81,11 +81,18 @@ export function buildLinkedPullRequestSummary(pr: ActivityLinkedPullRequest): {
   url: string | null;
   label: string;
   status: string | null;
+  statusKey: ActivityLinkedPullRequestStatus;
 } {
   const label =
     formatRepositoryReference(pr.repositoryNameWithOwner, pr.number) ?? pr.id;
   const status = LINKED_PR_STATUS_LABELS[pr.status] ?? pr.status ?? null;
-  return { id: pr.id, url: pr.url ?? null, label, status };
+  return {
+    id: pr.id,
+    url: pr.url ?? null,
+    label,
+    status,
+    statusKey: pr.status,
+  };
 }
 
 export function buildLinkedIssueSummary(issue: ActivityLinkedIssue): {
@@ -93,12 +100,14 @@ export function buildLinkedIssueSummary(issue: ActivityLinkedIssue): {
   url: string | null;
   label: string;
   status: string | null;
+  statusKey: string | null;
 } {
   const label =
     formatRepositoryReference(issue.repositoryNameWithOwner, issue.number) ??
     issue.id;
   const status = mapIssueStateLabel(issue.state);
-  return { id: issue.id, url: issue.url ?? null, label, status };
+  const statusKey = issue.state ? issue.state.toLowerCase() : null;
+  return { id: issue.id, url: issue.url ?? null, label, status, statusKey };
 }
 
 export function renderLinkedReferenceInline({
@@ -114,6 +123,7 @@ export function renderLinkedReferenceInline({
     url: string | null;
     label: string;
     status: string | null;
+    statusKey?: string | null;
   }>;
   maxItems?: number;
 }): ReactNode {
@@ -123,34 +133,65 @@ export function renderLinkedReferenceInline({
 
   const limited = entries.slice(0, Math.max(1, maxItems));
   const remaining = entries.length - limited.length;
-  const EntryIcon = type === "issue" ? IssueOpenedIcon : GitPullRequestIcon;
-
+  const resolveStatusIcon = (
+    statusKey: string | null | undefined,
+  ): { Icon: ComponentType<IconProps>; className: string } => {
+    const normalized = statusKey?.toLowerCase() ?? null;
+    if (type === "pull_request") {
+      if (normalized === "merged") {
+        return { Icon: GitMergeIcon, className: "text-github-merged" };
+      }
+      if (normalized === "closed") {
+        return {
+          Icon: GitPullRequestClosedIcon,
+          className: "text-github-closed",
+        };
+      }
+      if (normalized === "draft") {
+        return { Icon: GitPullRequestIcon, className: "text-github-draft" };
+      }
+      return { Icon: GitPullRequestIcon, className: "text-github-open" };
+    }
+    if (normalized === "closed" || normalized === "merged") {
+      return { Icon: IssueClosedIcon, className: "text-github-merged" };
+    }
+    return { Icon: IssueOpenedIcon, className: "text-github-open" };
+  };
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
-      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-muted text-muted-foreground">
-        <LinkIcon size={12} />
+      <span className="inline-flex items-center justify-center leading-none text-muted-foreground">
+        <LinkIcon size={12} aria-hidden="true" />
         <span className="sr-only">{label}</span>
       </span>
-      {limited.map((entry) => (
-        <span
-          key={entry.id}
-          className="inline-flex items-center gap-1 text-foreground/90"
-        >
-          <EntryIcon size={12} className="text-muted-foreground" />
-          {entry.url ? (
-            <a
-              href={entry.url}
-              target="_blank"
-              rel="noreferrer"
-              className="reference-link"
-            >
-              {entry.label}
-            </a>
-          ) : (
-            <span>{entry.label}</span>
-          )}
-        </span>
-      ))}
+      {limited.map((entry) => {
+        const { Icon: EntryStatusIcon, className } = resolveStatusIcon(
+          entry.statusKey,
+        );
+        return (
+          <span
+            key={entry.id}
+            className="inline-flex items-center gap-1 text-foreground/90"
+          >
+            <EntryStatusIcon
+              size={12}
+              className={className}
+              aria-hidden="true"
+            />
+            {entry.url ? (
+              <a
+                href={entry.url}
+                target="_blank"
+                rel="noreferrer"
+                className="reference-link"
+              >
+                {entry.label}
+              </a>
+            ) : (
+              <span>{entry.label}</span>
+            )}
+          </span>
+        );
+      })}
       {remaining > 0 ? (
         <span className="text-muted-foreground">외 {remaining}건</span>
       ) : null}
@@ -168,20 +209,20 @@ export function resolveActivityIcon(
     if (item.status === "merged") {
       return {
         Icon: GitMergeIcon,
-        className: "text-purple-500",
+        className: "text-github-merged",
         label: `${typeLabel} ${statusLabel}`,
       };
     }
     if (item.status === "closed") {
       return {
         Icon: GitPullRequestClosedIcon,
-        className: "text-rose-500",
+        className: "text-github-closed",
         label: `${typeLabel} ${statusLabel}`,
       };
     }
     return {
       Icon: GitPullRequestIcon,
-      className: "text-emerald-500",
+      className: "text-github-open",
       label: `${typeLabel} ${statusLabel}`,
     };
   }
@@ -190,21 +231,21 @@ export function resolveActivityIcon(
     if (item.status === "closed" || item.status === "merged") {
       return {
         Icon: IssueClosedIcon,
-        className:
-          item.status === "merged" ? "text-purple-500" : "text-rose-500",
+        className: "text-github-merged",
         label: `${typeLabel} ${statusLabel}`,
       };
     }
     return {
       Icon: IssueOpenedIcon,
-      className: "text-emerald-500",
+      className: "text-github-open",
       label: `${typeLabel} ${statusLabel}`,
     };
   }
 
   return {
     Icon: CommentDiscussionIcon,
-    className: item.status === "closed" ? "text-rose-500" : "text-sky-500",
+    className:
+      item.status === "closed" ? "text-github-closed" : "text-github-open",
     label: `${typeLabel} ${statusLabel}`,
   };
 }
