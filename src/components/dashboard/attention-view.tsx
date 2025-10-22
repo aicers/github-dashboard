@@ -2215,14 +2215,8 @@ function IssueList({
                 maxItems: 2,
               })
             : null;
-        const usesActivityFallback =
-          (!displayItem.issueProjectStatus ||
-            displayItem.issueProjectStatus === "no_status") &&
-          displayItem.issueActivityStatus &&
-          displayItem.issueActivityStatus !== "no_status";
-        const displayStatusValue = usesActivityFallback
-          ? (displayItem.issueActivityStatus ?? "no_status")
-          : (displayItem.issueProjectStatus ?? "no_status");
+        const displayStatusValue =
+          displayItem.issueProjectStatus ?? "no_status";
         const displayStatusLabel =
           displayStatusValue !== "no_status"
             ? (ISSUE_STATUS_LABEL_MAP.get(displayStatusValue) ??

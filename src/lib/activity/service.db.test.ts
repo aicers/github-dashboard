@@ -453,6 +453,50 @@ describe("activity service integration", () => {
     expect(doneResult.items.map((item) => item.id)).toEqual([issueAlpha.id]);
   });
 
+  it("prefers the most recent activity status when the project status is older", async () => {
+    const { issueAlpha } = await seedBasicActivityData();
+
+    const projectHistory = [
+      {
+        status: "Todo",
+        occurredAt: "2024-01-01T00:00:00.000Z",
+        project: { title: "Acme Project" },
+        projectTitle: "Acme Project",
+      },
+    ];
+
+    await query(
+      `UPDATE issues
+         SET data = jsonb_set(data, '{projectStatusHistory}', $1::jsonb)
+       WHERE id = $2`,
+      [JSON.stringify(projectHistory), issueAlpha.id],
+    );
+
+    await insertIssueStatusHistory([
+      {
+        issueId: issueAlpha.id,
+        status: "todo",
+        occurredAt: "2024-01-01T00:00:00.000Z",
+      },
+      {
+        issueId: issueAlpha.id,
+        status: "done",
+        occurredAt: "2024-01-10T00:00:00.000Z",
+      },
+    ]);
+
+    const result = await getActivityItems({
+      types: ["issue"],
+      statuses: ["done"],
+    });
+
+    expect(result.items.map((item) => item.id)).toEqual([issueAlpha.id]);
+    expect(result.items[0]?.issueProjectStatus).toBe("done");
+
+    const detail = await getActivityItemDetail(issueAlpha.id);
+    expect(detail?.item.issueProjectStatus).toBe("done");
+  });
+
   it("allows filtering issues by canceled status and records timeline entries", async () => {
     const { issueAlpha } = await seedBasicActivityData();
 

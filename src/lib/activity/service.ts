@@ -204,6 +204,9 @@ type ActivityRow = {
   raw_data: unknown;
   project_history: unknown;
   issue_project_status: string | null;
+  issue_project_status_at: string | null;
+  issue_project_status_locked: boolean | null;
+  issue_display_status: string | null;
   issue_priority_value: string | null;
   issue_weight_value: string | null;
   activity_status: string | null;
@@ -614,27 +617,55 @@ function resolveIssueStatusInfo(
   const locked =
     todoStatus != null && ISSUE_PROJECT_STATUS_LOCKED.has(todoStatus);
 
+  const parseTimestamp = (value: string | null | undefined) => {
+    if (!value) {
+      return null;
+    }
+    const time = Date.parse(value);
+    return Number.isNaN(time) ? null : time;
+  };
+
+  const todoTimestamp = parseTimestamp(todoStatusAt);
+  const activityTimestamp = parseTimestamp(activityStatusAt);
+
   let displayStatus: IssueProjectStatus = "no_status";
   let source: IssueStatusInfo["source"] = "none";
 
-  if (todoStatus && (locked || !activityStatus)) {
+  if (locked && todoStatus) {
     displayStatus = todoStatus;
     source = "todo_project";
-  } else if (activityStatus && !locked) {
-    displayStatus = activityStatus;
-    source = "activity";
-  } else if (todoStatus) {
-    displayStatus = todoStatus;
-    source = "todo_project";
+  } else {
+    const hasTodoStatus = todoStatus !== null;
+    const hasActivityStatus = activityStatus !== null;
+
+    if (hasTodoStatus && hasActivityStatus) {
+      if (
+        activityTimestamp !== null &&
+        (todoTimestamp === null || activityTimestamp >= todoTimestamp)
+      ) {
+        displayStatus = activityStatus ?? "no_status";
+        source = "activity";
+      } else {
+        displayStatus = todoStatus ?? "no_status";
+        source = "todo_project";
+      }
+    } else if (hasActivityStatus) {
+      displayStatus = activityStatus ?? "no_status";
+      source = "activity";
+    } else if (hasTodoStatus) {
+      displayStatus = todoStatus ?? "no_status";
+      source = "todo_project";
+    }
   }
 
   let timelineSource: IssueStatusInfo["timelineSource"] = "none";
-  if (locked) {
-    timelineSource = "todo_project";
-  } else if (activityEvents.length > 0) {
+  if (source === "activity" && activityEvents.length > 0) {
     timelineSource = "activity";
   } else if (projectEntries.length > 0) {
     timelineSource = "todo_project";
+  }
+  if (timelineSource === "none" && activityEvents.length > 0) {
+    timelineSource = "activity";
   }
 
   return {
@@ -1164,17 +1195,11 @@ function buildQueryFilters(
   const clauses: string[] = [];
   const values: unknown[] = [];
   const issueProjectStatuses: IssueProjectStatus[] = [];
-  const todoProjectEnabled = Boolean(normalizeText(env.TODO_PROJECT_NAME));
-
   const buildNormalizedStatusExpr = (alias: string) => {
-    if (!todoProjectEnabled) {
-      return "'no_status'";
-    }
-
-    const valueExpr = `LOWER(TRIM(${alias}.issue_project_status))`;
+    const valueExpr = `LOWER(TRIM(${alias}.issue_display_status))`;
     return `(CASE
       WHEN ${alias}.item_type <> 'issue' THEN NULL
-      WHEN ${alias}.issue_project_status IS NULL THEN 'no_status'
+      WHEN ${alias}.issue_display_status IS NULL THEN 'no_status'
       WHEN ${valueExpr} = '' THEN 'no_status'
       WHEN ${valueExpr} IN ('todo', 'to do', 'to_do') THEN 'todo'
       WHEN ${valueExpr} LIKE '%progress%' OR ${valueExpr} = 'doing' OR ${valueExpr} = 'in-progress' THEN 'in_progress'
@@ -1461,10 +1486,8 @@ function buildQueryFilters(
       values.push(uniqueIssueStatuses);
       const issueStatusParamIndex = values.length;
       const normalizedStatusExpr = buildNormalizedStatusExpr("items");
-      const activityStatusExpr = "items.activity_status";
-      const activityFallbackExpr = `(${normalizedStatusExpr} IN ('no_status', 'todo'))`;
       clauses.push(
-        `(items.item_type <> 'issue' OR ${normalizedStatusExpr} = ANY($${issueStatusParamIndex}::text[]) OR (${activityStatusExpr} IS NOT NULL AND ${activityFallbackExpr} AND ${activityStatusExpr} = ANY($${issueStatusParamIndex}::text[])))`,
+        `(items.item_type <> 'issue' OR ${normalizedStatusExpr} = ANY($${issueStatusParamIndex}::text[]))`,
       );
       issueProjectStatuses.splice(
         0,
@@ -1533,11 +1556,41 @@ function buildBaseQuery(targetProject: string | null): string {
           WHERE mapped.status_value IS NOT NULL
           ORDER BY COALESCE(mapped.occurred_at, '') DESC NULLS LAST
           LIMIT 1)`;
+  const todoProjectStatusAtSelection =
+    targetProject === null
+      ? "NULL"
+      : `(SELECT mapped.occurred_at
+          FROM (
+            SELECT ${mapProjectStatus(
+              "normalized.normalized_status",
+            )} AS status_value,
+                   normalized.occurred_at AS occurred_at
+            FROM (
+              SELECT
+                REGEXP_REPLACE(LOWER(COALESCE(entry->>'status', '')), '[^a-z0-9]+', '_', 'g') AS normalized_status,
+                entry->>'occurredAt' AS occurred_at,
+                LOWER(TRIM(COALESCE(
+                  entry->>'projectTitle',
+                  entry->'project'->>'title',
+                  entry->'project'->>'name',
+                  ''
+                ))) AS project_name
+              FROM jsonb_array_elements(COALESCE(i.data->'projectStatusHistory', '[]'::jsonb)) AS entry
+            ) AS normalized
+            WHERE normalized.project_name = '${escapeSqlLiteral(targetProject)}'
+          ) AS mapped
+          WHERE mapped.status_value IS NOT NULL
+          ORDER BY COALESCE(mapped.occurred_at, '') DESC NULLS LAST
+          LIMIT 1)`;
 
   const issueProjectStatusExpr =
     targetProject === null
       ? "'no_status'"
       : `COALESCE(${todoProjectStatusSelection}, 'no_status')`;
+  const issueProjectStatusAtExpr =
+    targetProject === null
+      ? "NULL::timestamptz"
+      : `${todoProjectStatusAtSelection}::timestamptz`;
 
   const projectMatchExpr =
     targetProject === null
@@ -1645,6 +1698,8 @@ issue_items AS (
     i.data AS raw_data,
     COALESCE(i.data->'projectStatusHistory', '[]'::jsonb) AS project_history,
     ${issueProjectStatusExpr} AS issue_project_status,
+    ${issueProjectStatusAtExpr} AS issue_project_status_at,
+    ${lockedStatusExpr} AS issue_project_status_locked,
     ${normalizePrioritySql(`CASE
       WHEN ${lockedStatusExpr}
         THEN priority_fields.priority_value
@@ -1755,6 +1810,8 @@ pr_items AS (
     pr.data AS raw_data,
     '[]'::jsonb AS project_history,
     NULL::text AS issue_project_status,
+    NULL::timestamptz AS issue_project_status_at,
+    FALSE AS issue_project_status_locked,
     NULL::text AS issue_priority_value,
     NULL::text AS issue_weight_value,
     COALESCE(pr.data->>'body', '') AS body_text,
@@ -1834,10 +1891,22 @@ combined AS (
     raw_data,
     project_history,
     issue_project_status,
+    issue_project_status_at,
+    issue_project_status_locked,
     issue_priority_value,
     issue_weight_value,
     activity_status,
     activity_status_at,
+    (CASE
+      WHEN issue_project_status_locked AND issue_project_status IS NOT NULL THEN issue_project_status
+      WHEN activity_status IS NOT NULL
+        AND activity_status_at IS NOT NULL
+        AND (issue_project_status_at IS NULL OR activity_status_at >= issue_project_status_at)
+        THEN COALESCE(activity_status, issue_project_status, 'no_status')
+      WHEN issue_project_status_at IS NOT NULL THEN COALESCE(issue_project_status, 'no_status')
+      WHEN activity_status_at IS NOT NULL THEN COALESCE(activity_status, issue_project_status, 'no_status')
+      ELSE COALESCE(activity_status, issue_project_status, 'no_status')
+    END) AS issue_display_status,
     body_text,
     CASE
       WHEN item_type = 'pull_request' AND is_merged THEN 'merged'
@@ -1872,10 +1941,13 @@ combined AS (
     raw_data,
     project_history,
     issue_project_status,
+    issue_project_status_at,
+    issue_project_status_locked,
     issue_priority_value,
     issue_weight_value,
     activity_status,
     activity_status_at,
+    NULL::text AS issue_display_status,
     body_text,
     CASE
       WHEN is_merged THEN 'merged'
