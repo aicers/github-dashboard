@@ -89,6 +89,31 @@ curl -X POST http://localhost:3000/api/sync/reset -d '{"preserveLogs":true}' \
   -H "Content-Type: application/json"
 ```
 
+### Index maintenance script
+
+Use the interactive helper to apply and validate dashboard-specific indexes on
+an existing dataset (ensure `CREATE EXTENSION IF NOT EXISTS pg_trgm;` has been
+run on the target database so trigram GIN indexes can build successfully):
+
+```bash
+node scripts/db/apply-indexes.mjs
+```
+
+Flags:
+
+- `--concurrently` — build each index with `CREATE INDEX CONCURRENTLY` to avoid
+  long-lived locks (slower but safe for live traffic)
+- `--yes` — auto-confirm prompts while still respecting default answers
+  (optional indexes and verification queries remain skipped unless explicitly
+  enabled)
+- `--include-optional` — include optional indexes (JSONB-wide GIN indexes used
+  for experimentation) alongside the default set
+
+Each step prints the DDL statement, runs `ANALYZE` on the affected table, and
+offers to execute representative `EXPLAIN (ANALYZE, BUFFERS)` queries. After
+verifying the impact, capture the same statements in a migration or schema
+update so fresh environments do not need the interactive script.
+
 ### Data collection flows
 
 - **Manual backfill** — choose a start date on the dashboard or call

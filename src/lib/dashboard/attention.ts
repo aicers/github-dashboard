@@ -981,9 +981,9 @@ async function fetchStalePullRequests(
        pr.data->>'url' AS url,
        repo.name AS repository_name,
        repo.name_with_owner AS repository_name_with_owner
-     FROM pull_requests pr
-     JOIN repositories repo ON repo.id = pr.repository_id
-     WHERE (COALESCE(LOWER(pr.state), '') = 'open' OR pr.github_closed_at IS NULL)
+    FROM pull_requests pr
+    JOIN repositories repo ON repo.id = pr.repository_id
+    WHERE pr.github_closed_at IS NULL
        AND pr.github_created_at <= NOW() - INTERVAL '26 days'
        AND NOT (pr.repository_id = ANY($1::text[]))
        AND (pr.author_id IS NULL OR NOT (pr.author_id = ANY($2::text[])))
@@ -1054,9 +1054,9 @@ async function fetchIdlePullRequests(
        pr.data->>'url' AS url,
        repo.name AS repository_name,
        repo.name_with_owner AS repository_name_with_owner
-     FROM pull_requests pr
-     JOIN repositories repo ON repo.id = pr.repository_id
-     WHERE (COALESCE(LOWER(pr.state), '') = 'open' OR pr.github_closed_at IS NULL)
+    FROM pull_requests pr
+    JOIN repositories repo ON repo.id = pr.repository_id
+    WHERE pr.github_closed_at IS NULL
        AND pr.github_updated_at <= NOW() - INTERVAL '12 days'
        AND pr.github_created_at <= NOW() - INTERVAL '12 days'
        AND NOT (pr.repository_id = ANY($1::text[]))
@@ -1139,7 +1139,7 @@ async function fetchStuckReviewRequests(
        WHERE rr.reviewer_id IS NOT NULL
          AND rr.removed_at IS NULL
          AND rr.requested_at <= NOW() - INTERVAL '5 days'
-         AND (COALESCE(LOWER(pr.state), '') = 'open' OR pr.github_closed_at IS NULL)
+         AND pr.github_closed_at IS NULL
          AND NOT (pr.repository_id = ANY($1::text[]))
          AND (pr.author_id IS NULL OR NOT (pr.author_id = ANY($2::text[])))
          AND NOT (rr.reviewer_id = ANY($2::text[]))
@@ -1163,12 +1163,12 @@ async function fetchStuckReviewRequests(
            FROM reactions reac
            LEFT JOIN comments comment ON comment.id = reac.subject_id
            LEFT JOIN reviews review ON review.id = reac.subject_id
-           WHERE reac.user_id = rr.reviewer_id
-             AND (
-               (reac.subject_type ILIKE 'pullrequest%' AND reac.subject_id = rr.pull_request_id) OR
-               (comment.pull_request_id = rr.pull_request_id) OR
-               (review.pull_request_id = rr.pull_request_id)
-             )
+            WHERE reac.user_id = rr.reviewer_id
+              AND (
+                (LOWER(reac.subject_type) LIKE 'pullrequest%' AND reac.subject_id = rr.pull_request_id) OR
+                (comment.pull_request_id = rr.pull_request_id) OR
+                (review.pull_request_id = rr.pull_request_id)
+              )
              AND COALESCE(reac.github_created_at, NOW()) >= rr.requested_at
          )
      )
@@ -1296,7 +1296,7 @@ async function fetchIssueInsights(
        repo.name_with_owner AS repository_name_with_owner
      FROM issues i
      JOIN repositories repo ON repo.id = i.repository_id
-     WHERE (COALESCE(LOWER(i.state), '') = 'open' OR i.github_closed_at IS NULL)
+     WHERE i.github_closed_at IS NULL
        AND i.github_created_at <= NOW() - INTERVAL '26 days'
        AND NOT (i.repository_id = ANY($1::text[]))
        AND (i.author_id IS NULL OR NOT (i.author_id = ANY($2::text[])))
@@ -1468,7 +1468,13 @@ async function fetchUnansweredMentions(
          SELECT 1
          FROM reactions reac
          WHERE reac.subject_id = mc.comment_id
-           AND reac.subject_type ILIKE '%comment%'
+           AND LOWER(reac.subject_type) IN (
+             'issuecomment',
+             'pullrequestreviewcomment',
+             'commitcomment',
+             'discussioncomment',
+             'teamdiscussioncomment'
+           )
            AND reac.user_id = mc.mentioned_user_id
            AND COALESCE(reac.github_created_at, NOW()) >= mc.mentioned_at
        )

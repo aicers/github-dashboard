@@ -4,6 +4,7 @@ import { env } from "@/lib/env";
 const SCHEMA_LOCK_ID = BigInt("8764321987654321");
 
 const SCHEMA_STATEMENTS = [
+  `CREATE EXTENSION IF NOT EXISTS pg_trgm`,
   `CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     login TEXT NOT NULL,
@@ -16,6 +17,7 @@ const SCHEMA_STATEMENTS = [
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
   `CREATE INDEX IF NOT EXISTS users_login_idx ON users(login)`,
+  `CREATE INDEX IF NOT EXISTS users_login_lower_idx ON users ((LOWER(login)))`,
   `CREATE TABLE IF NOT EXISTS auth_sessions (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -62,6 +64,11 @@ const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS issues_author_idx ON issues(author_id)`,
   `CREATE INDEX IF NOT EXISTS issues_created_idx ON issues(github_created_at)`,
   `CREATE INDEX IF NOT EXISTS issues_updated_idx ON issues(github_updated_at)`,
+  `CREATE INDEX IF NOT EXISTS issues_repo_created_idx ON issues(repository_id, github_created_at)`,
+  `CREATE INDEX IF NOT EXISTS issues_repo_closed_idx ON issues(repository_id, github_closed_at)`,
+  `CREATE INDEX IF NOT EXISTS issues_open_created_idx ON issues(github_created_at) WHERE github_closed_at IS NULL`,
+  `CREATE INDEX IF NOT EXISTS issues_title_body_trgm_idx ON issues USING gin (title gin_trgm_ops, (data->>'body') gin_trgm_ops)`,
+  `CREATE INDEX IF NOT EXISTS issues_data_gin_idx ON issues USING gin (data)`,
   `CREATE TABLE IF NOT EXISTS pull_requests (
     id TEXT PRIMARY KEY,
     number INTEGER NOT NULL,
@@ -82,6 +89,12 @@ const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS pull_requests_author_idx ON pull_requests(author_id)`,
   `CREATE INDEX IF NOT EXISTS pull_requests_created_idx ON pull_requests(github_created_at)`,
   `CREATE INDEX IF NOT EXISTS pull_requests_updated_idx ON pull_requests(github_updated_at)`,
+  `CREATE INDEX IF NOT EXISTS prs_repo_created_idx ON pull_requests(repository_id, github_created_at)`,
+  `CREATE INDEX IF NOT EXISTS prs_repo_merged_idx ON pull_requests(repository_id, github_merged_at)`,
+  `CREATE INDEX IF NOT EXISTS pull_requests_open_created_idx ON pull_requests(github_created_at) WHERE github_closed_at IS NULL`,
+  `CREATE INDEX IF NOT EXISTS pull_requests_open_updated_idx ON pull_requests(github_updated_at) WHERE github_closed_at IS NULL`,
+  `CREATE INDEX IF NOT EXISTS prs_title_body_trgm_idx ON pull_requests USING gin (title gin_trgm_ops, (data->>'body') gin_trgm_ops)`,
+  `CREATE INDEX IF NOT EXISTS pull_requests_data_gin_idx ON pull_requests USING gin (data)`,
   `CREATE TABLE IF NOT EXISTS pull_request_issues (
     pull_request_id TEXT NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
     issue_id TEXT NOT NULL,
@@ -108,6 +121,8 @@ const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS reviews_pull_request_idx ON reviews(pull_request_id)`,
   `CREATE INDEX IF NOT EXISTS reviews_author_idx ON reviews(author_id)`,
   `CREATE INDEX IF NOT EXISTS reviews_submitted_idx ON reviews(github_submitted_at)`,
+  `CREATE INDEX IF NOT EXISTS reviews_pr_author_submitted_idx ON reviews(pull_request_id, author_id, github_submitted_at)`,
+  `CREATE INDEX IF NOT EXISTS reviews_pr_submitted_idx ON reviews(pull_request_id, github_submitted_at)`,
   `CREATE TABLE IF NOT EXISTS comments (
     id TEXT PRIMARY KEY,
     issue_id TEXT REFERENCES issues(id) ON DELETE CASCADE,
@@ -124,6 +139,9 @@ const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS comments_pull_request_idx ON comments(pull_request_id)`,
   `CREATE INDEX IF NOT EXISTS comments_author_idx ON comments(author_id)`,
   `CREATE INDEX IF NOT EXISTS comments_created_idx ON comments(github_created_at)`,
+  `CREATE INDEX IF NOT EXISTS comments_pr_author_created_idx ON comments(pull_request_id, author_id, github_created_at)`,
+  `CREATE INDEX IF NOT EXISTS comments_issue_author_created_idx ON comments(issue_id, author_id, github_created_at)`,
+  `CREATE INDEX IF NOT EXISTS comments_body_trgm_idx ON comments USING gin ((data->>'body') gin_trgm_ops)`,
   `CREATE TABLE IF NOT EXISTS reactions (
     id TEXT PRIMARY KEY,
     subject_type TEXT NOT NULL,
@@ -136,6 +154,7 @@ const SCHEMA_STATEMENTS = [
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
   `CREATE INDEX IF NOT EXISTS reactions_subject_idx ON reactions(subject_type, subject_id)`,
+  `CREATE INDEX IF NOT EXISTS reactions_subject_idx_normalized ON reactions ((LOWER(subject_type)), subject_id, user_id, github_created_at)`,
   `CREATE INDEX IF NOT EXISTS reactions_user_idx ON reactions(user_id)`,
   `CREATE INDEX IF NOT EXISTS reactions_created_idx ON reactions(github_created_at)`,
   `CREATE TABLE IF NOT EXISTS review_requests (
@@ -152,6 +171,7 @@ const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS review_requests_pull_request_idx ON review_requests(pull_request_id)`,
   `CREATE INDEX IF NOT EXISTS review_requests_reviewer_idx ON review_requests(reviewer_id)`,
   `CREATE INDEX IF NOT EXISTS review_requests_requested_idx ON review_requests(requested_at)`,
+  `CREATE INDEX IF NOT EXISTS review_requests_pending_idx ON review_requests(pull_request_id, reviewer_id) WHERE removed_at IS NULL`,
   `CREATE TABLE IF NOT EXISTS sync_config (
     id TEXT PRIMARY KEY DEFAULT 'default',
     org_name TEXT NOT NULL,
