@@ -1187,6 +1187,7 @@ function buildQueryFilters(
   params: ActivityListParams,
   attentionSelection: AttentionFilterSelection | null,
   attentionSets: AttentionSets,
+  excludedRepositoryIds: string[] = [],
 ): {
   clauses: string[];
   values: unknown[];
@@ -1195,6 +1196,16 @@ function buildQueryFilters(
   const clauses: string[] = [];
   const values: unknown[] = [];
   const issueProjectStatuses: IssueProjectStatus[] = [];
+  const excludedRepoIds = excludedRepositoryIds.filter(
+    (id) => typeof id === "string" && id.length > 0,
+  );
+
+  if (excludedRepoIds.length > 0) {
+    values.push(excludedRepoIds);
+    clauses.push(
+      `(items.repository_id IS NULL OR items.repository_id <> ALL($${values.length}::text[]))`,
+    );
+  }
   const buildNormalizedStatusExpr = (alias: string) => {
     const valueExpr = `LOWER(TRIM(${alias}.issue_display_status))`;
     return `(CASE
@@ -2359,12 +2370,22 @@ export async function getActivityItems(
     params.attention,
     attentionSets,
   );
+  const config = await getSyncConfig();
+  const excludedRepositoryIds = Array.from(
+    new Set(
+      Array.isArray(config?.excluded_repository_ids)
+        ? (config.excluded_repository_ids as unknown[])
+            .filter((value): value is string => typeof value === "string")
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0)
+        : [],
+    ),
+  );
   if (
     attentionSelection &&
     !attentionSelection.includeNone &&
     attentionSelection.includeIds.length === 0
   ) {
-    const config = await getSyncConfig();
     const dateTimeFormat = normalizeDateTimeDisplayFormat(
       typeof config?.date_time_format === "string"
         ? config.date_time_format
@@ -2391,6 +2412,7 @@ export async function getActivityItems(
     params,
     attentionSelection,
     attentionSets,
+    excludedRepositoryIds,
   );
 
   let page = Math.max(1, params.page ?? 1);
@@ -2491,7 +2513,6 @@ export async function getActivityItems(
     ),
   );
 
-  const config = await getSyncConfig();
   const dateTimeFormat = normalizeDateTimeDisplayFormat(
     typeof config?.date_time_format === "string"
       ? config.date_time_format
