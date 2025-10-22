@@ -1527,6 +1527,7 @@ function buildBaseQuery(targetProject: string | null): string {
     WHEN ${valueExpr} IN ('done', 'completed', 'complete', 'finished', 'closed') THEN 'done'
     WHEN ${valueExpr} LIKE 'pending%' OR ${valueExpr} = 'waiting' THEN 'pending'
     WHEN ${valueExpr} IN ('canceled', 'cancelled') THEN 'canceled'
+    WHEN ${valueExpr} LIKE '%project_removed%' THEN 'no_status'
     ELSE NULL
   END)`;
 
