@@ -12,6 +12,7 @@ import { SyncControls } from "@/components/dashboard/sync-controls";
 import type { ActivityCacheRefreshResult } from "@/lib/activity/cache";
 import type { BackfillChunkSuccess, SyncStatus } from "@/lib/sync/service";
 import {
+  createJsonResponse,
   fetchMock,
   mockFetchJsonOnce,
   mockFetchOnce,
@@ -53,6 +54,11 @@ const mockActivityCacheSummary: ActivityCacheRefreshResult = {
 const mockActivityCacheResponse = {
   success: true,
   caches: mockActivityCacheSummary,
+};
+
+const mockIssueStatusAutomationResponse = {
+  success: true,
+  summary: null,
 };
 
 function findRequest(substring: string, method?: string): Request | null {
@@ -134,8 +140,18 @@ describe("SyncControls", () => {
   beforeEach(() => {
     routerRefreshMock.mockReset();
     fetchMock.mockReset();
-    setDefaultFetchHandler({ json: mockActivityCacheResponse });
+    setDefaultFetchHandler((request) => {
+      if (request.url.includes("/api/activity/cache/refresh")) {
+        return createJsonResponse(mockActivityCacheResponse);
+      }
+      if (request.url.includes("/api/activity/status-automation")) {
+        return createJsonResponse(mockIssueStatusAutomationResponse);
+      }
+      return createJsonResponse({ success: true });
+    });
+
     mockFetchJsonOnce(mockActivityCacheResponse);
+    mockFetchJsonOnce(mockIssueStatusAutomationResponse);
   });
 
   it("renders primary sections and the latest sync logs", () => {

@@ -23,6 +23,66 @@ type AutomationOptions = {
   logger?: (message: string) => void;
 };
 
+export type IssueStatusAutomationRunResult = {
+  processed: boolean;
+  insertedInProgress: number;
+  insertedDone: number;
+};
+
+export type IssueStatusAutomationSummary = {
+  cacheKey: string;
+  generatedAt: string | null;
+  updatedAt: string | null;
+  syncRunId: number | null;
+  runId: number | null;
+  status: AutomationState["status"] | null;
+  trigger: string | null;
+  lastSuccessfulSyncAt: string | null;
+  insertedInProgress: number;
+  insertedDone: number;
+  itemCount: number;
+  error: string | null;
+};
+
+type AutomationStateRow = {
+  cache_key: string;
+  generated_at: string | null;
+  updated_at: string | null;
+  sync_run_id: number | null;
+  item_count: number | null;
+  metadata: AutomationState | null;
+};
+
+function toStatus(value: unknown): AutomationState["status"] | null {
+  if (value === "running" || value === "success" || value === "failed") {
+    return value;
+  }
+  return null;
+}
+
+function toStringOrNull(value: unknown): string | null {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  return null;
+}
+
+function toNumberOrZero(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim().length) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return 0;
+}
+
 async function fetchCurrentState(client: PoolClient) {
   const result = await client.query<{
     metadata: AutomationState | null;
@@ -108,9 +168,10 @@ async function insertInProgressStatuses(client: PoolClient) {
        SELECT
          pri.issue_id,
          MIN(pr.github_created_at) AS occurred_at
-       FROM pull_request_issues pri
-       JOIN pull_requests pr ON pr.id = pri.pull_request_id
-       WHERE pr.github_created_at IS NOT NULL
+      FROM pull_request_issues pri
+      JOIN issues i ON i.id = pri.issue_id
+      JOIN pull_requests pr ON pr.id = pri.pull_request_id
+      WHERE pr.github_created_at IS NOT NULL
          AND NOT EXISTS (
            SELECT 1
            FROM activity_issue_status_history h
@@ -189,7 +250,7 @@ async function insertDoneStatuses(client: PoolClient) {
 
 export async function ensureIssueStatusAutomation(
   options: AutomationOptions = {},
-) {
+): Promise<IssueStatusAutomationRunResult> {
   const { force = false, runId = null, trigger, logger } = options;
   const config = await getSyncConfig();
   const lastSuccessfulSyncAt =
@@ -239,16 +300,16 @@ export async function ensureIssueStatusAutomation(
       trigger,
     });
 
-    const insertedInProgress = await insertInProgressStatuses(client);
-    const insertedDone = await insertDoneStatuses(client);
+    const insertedInProgress = (await insertInProgressStatuses(client)) ?? 0;
+    const insertedDone = (await insertDoneStatuses(client)) ?? 0;
 
     await upsertAutomationState(client, {
       status: "success",
       runId,
       lastSuccessfulSyncAt,
       trigger,
-      insertedInProgress: insertedInProgress ?? 0,
-      insertedDone: insertedDone ?? 0,
+      insertedInProgress,
+      insertedDone,
     });
 
     await client.query("COMMIT");
@@ -307,4 +368,59 @@ export async function ensureIssueStatusAutomation(
   } finally {
     client.release();
   }
+}
+
+export async function getIssueStatusAutomationSummary(): Promise<IssueStatusAutomationSummary | null> {
+  const pool = getPool();
+  const result = await pool.query<AutomationStateRow>(
+    `SELECT cache_key,
+            generated_at,
+            updated_at,
+            sync_run_id,
+            item_count,
+            metadata
+       FROM activity_cache_state
+       WHERE cache_key = $1`,
+    [AUTOMATION_CACHE_KEY],
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    return null;
+  }
+
+  const metadata = row.metadata ?? null;
+  const status = toStatus(metadata?.status);
+  const trigger =
+    typeof metadata?.trigger === "string" && metadata.trigger.trim().length
+      ? metadata.trigger
+      : null;
+
+  const lastSuccessfulSyncAt = toStringOrNull(metadata?.lastSuccessfulSyncAt);
+  const insertedInProgress = toNumberOrZero(metadata?.insertedInProgress);
+  const insertedDone = toNumberOrZero(metadata?.insertedDone);
+  const error =
+    typeof metadata?.error === "string" && metadata.error.trim().length
+      ? metadata.error
+      : null;
+
+  const runId =
+    typeof metadata?.runId === "number" && Number.isFinite(metadata.runId)
+      ? metadata.runId
+      : (row.sync_run_id ?? null);
+
+  return {
+    cacheKey: row.cache_key,
+    generatedAt: row.generated_at ?? null,
+    updatedAt: row.updated_at ?? null,
+    syncRunId: row.sync_run_id ?? null,
+    runId,
+    status,
+    trigger,
+    lastSuccessfulSyncAt,
+    insertedInProgress,
+    insertedDone,
+    itemCount: row.item_count ?? 0,
+    error,
+  };
 }

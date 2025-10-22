@@ -15,6 +15,10 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import type { ActivityCacheRefreshResult } from "@/lib/activity/cache";
+import type {
+  IssueStatusAutomationRunResult,
+  IssueStatusAutomationSummary,
+} from "@/lib/activity/status-automation";
 import {
   formatDateTime as formatDateTimeDisplay,
   normalizeDateTimeDisplayFormat,
@@ -34,6 +38,11 @@ type ApiResponse<T> = {
   success: boolean;
   message?: string;
   result?: T;
+};
+
+type IssueStatusAutomationPostResult = {
+  run: IssueStatusAutomationRunResult;
+  summary: IssueStatusAutomationSummary | null;
 };
 
 async function parseApiResponse<T>(
@@ -280,6 +289,8 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
   const [backfillHistory, setBackfillHistory] = useState<BackfillResult[]>([]);
   const [activityCacheSummary, setActivityCacheSummary] =
     useState<ActivityCacheRefreshResult | null>(null);
+  const [issueStatusAutomationSummary, setIssueStatusAutomationSummary] =
+    useState<IssueStatusAutomationSummary | null>(null);
 
   const [isRunningBackfill, setIsRunningBackfill] = useState(false);
   const [isRunningPrLinkBackfill, setIsRunningPrLinkBackfill] = useState(false);
@@ -287,6 +298,8 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
   const [isResetting, setIsResetting] = useState(false);
   const [isCleaning, setIsCleaning] = useState(false);
   const [isRefreshingActivityCache, setIsRefreshingActivityCache] =
+    useState(false);
+  const [isRunningStatusAutomation, setIsRunningStatusAutomation] =
     useState(false);
   const activityCacheFilterCounts = activityCacheSummary
     ? parseFilterCounts(activityCacheSummary.filterOptions.metadata)
@@ -297,6 +310,11 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
   const activityCachePrLinkCount = activityCacheSummary
     ? parseLinkCount(activityCacheSummary.pullRequestLinks.metadata)
     : null;
+  const automationStatus = issueStatusAutomationSummary?.status ?? null;
+  const automationStatusClass =
+    automationStatus && statusColors[automationStatus]
+      ? statusColors[automationStatus]
+      : "";
 
   const canManageSync = isAdmin;
 
@@ -307,6 +325,7 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
   useEffect(() => {
     if (!canManageSync) {
       setActivityCacheSummary(null);
+      setIssueStatusAutomationSummary(null);
       return;
     }
 
@@ -347,6 +366,61 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
     };
 
     void loadSummary();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [canManageSync]);
+
+  useEffect(() => {
+    if (!canManageSync) {
+      setIssueStatusAutomationSummary(null);
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+
+    const loadAutomationSummary = async () => {
+      try {
+        const response = await fetch("/api/activity/status-automation", {
+          method: "GET",
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          return;
+        }
+
+        const data =
+          await parseApiResponse<IssueStatusAutomationSummary | null>(response);
+        if (!data.success) {
+          return;
+        }
+
+        const summary =
+          data.result ??
+          (
+            data as unknown as {
+              summary?: IssueStatusAutomationSummary | null;
+            }
+          ).summary ??
+          null;
+
+        if (!cancelled) {
+          setIssueStatusAutomationSummary(summary);
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.warn(
+            "[sync-controls] Failed to load issue status automation summary",
+            error,
+          );
+        }
+      }
+    };
+
+    void loadAutomationSummary();
 
     return () => {
       cancelled = true;
@@ -720,6 +794,71 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
     }
   }
 
+  async function handleIssueStatusAutomation() {
+    if (!canManageSync) {
+      setFeedback(ADMIN_ONLY_MESSAGE);
+      return;
+    }
+
+    setIsRunningStatusAutomation(true);
+    try {
+      const response = await fetch("/api/activity/status-automation", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ trigger: "sync-controls" }),
+      });
+      const data =
+        await parseApiResponse<IssueStatusAutomationPostResult>(response);
+      if (!data.success) {
+        throw new Error(
+          data.message ?? "이슈 상태 자동 설정 실행에 실패했습니다.",
+        );
+      }
+
+      const payload = data.result ?? null;
+      const run =
+        payload?.run ??
+        (data as unknown as { run?: IssueStatusAutomationRunResult }).run ??
+        null;
+      const summary =
+        payload?.summary ??
+        (
+          data as unknown as {
+            summary?: IssueStatusAutomationSummary | null;
+          }
+        ).summary ??
+        null;
+
+      if (summary) {
+        setIssueStatusAutomationSummary(summary);
+      }
+
+      if (run) {
+        if (run.processed) {
+          setFeedback(
+            `이슈 상태 자동 설정을 완료했습니다. (진행 ${run.insertedInProgress.toLocaleString()}건, 완료 ${run.insertedDone.toLocaleString()}건)`,
+          );
+        } else {
+          setFeedback("이슈 상태가 이미 최신입니다.");
+        }
+      } else {
+        setFeedback("이슈 상태 자동 설정 요청이 완료되었습니다.");
+      }
+
+      router.refresh();
+    } catch (error) {
+      setFeedback(
+        error instanceof Error
+          ? error.message
+          : "이슈 상태 자동 설정 중 오류가 발생했습니다.",
+      );
+    } finally {
+      setIsRunningStatusAutomation(false);
+    }
+  }
+
   async function handlePrLinkBackfill() {
     if (!canManageSync) {
       setFeedback(ADMIN_ONLY_MESSAGE);
@@ -920,6 +1059,84 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
               {isRefreshingActivityCache
                 ? "Activity 캐시 새로 고치는 중..."
                 : "Activity 캐시 새로고침"}
+            </Button>
+          </CardFooter>
+        </Card>
+
+        <Card className="border-primary/40">
+          <CardHeader>
+            <CardTitle>이슈 상태 자동 설정</CardTitle>
+            <CardDescription>
+              연결된 PR의 진행 상황을 기준으로 Activity 상태를 즉시 갱신합니다.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-muted-foreground">
+            {issueStatusAutomationSummary ? (
+              <>
+                <p>
+                  현재 상태:{" "}
+                  {automationStatus ? (
+                    <span className={`font-semibold ${automationStatusClass}`}>
+                      {capitalize(automationStatus)}
+                    </span>
+                  ) : (
+                    "-"
+                  )}
+                </p>
+                <p>
+                  최근 실행 시각:{" "}
+                  <span>
+                    {formatDateTime(issueStatusAutomationSummary.generatedAt) ??
+                      "-"}
+                  </span>
+                </p>
+                <p>
+                  대상 동기화 시각:{" "}
+                  <span>
+                    {formatDateTime(
+                      issueStatusAutomationSummary.lastSuccessfulSyncAt,
+                    ) ?? "-"}
+                  </span>
+                </p>
+                <p>
+                  최근 실행 결과:{" "}
+                  <span>
+                    진행{" "}
+                    {Number(
+                      issueStatusAutomationSummary.insertedInProgress ?? 0,
+                    ).toLocaleString()}
+                    건, 완료{" "}
+                    {Number(
+                      issueStatusAutomationSummary.insertedDone ?? 0,
+                    ).toLocaleString()}
+                    건
+                  </span>
+                </p>
+                {issueStatusAutomationSummary.trigger ? (
+                  <p>
+                    최근 트리거:{" "}
+                    <span>{issueStatusAutomationSummary.trigger}</span>
+                  </p>
+                ) : null}
+                {issueStatusAutomationSummary.error ? (
+                  <p className="text-sm text-red-600">
+                    최근 오류: {issueStatusAutomationSummary.error}
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <p>아직 실행된 이슈 상태 자동 설정 기록이 없습니다.</p>
+            )}
+          </CardContent>
+          <CardFooter>
+            <Button
+              onClick={handleIssueStatusAutomation}
+              disabled={isRunningStatusAutomation || !canManageSync}
+              title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+            >
+              {isRunningStatusAutomation
+                ? "이슈 상태 자동 설정 중..."
+                : "이슈 상태 자동 설정"}
             </Button>
           </CardFooter>
         </Card>
