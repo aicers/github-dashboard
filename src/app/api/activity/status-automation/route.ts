@@ -13,6 +13,18 @@ const requestSchema = z
   .object({
     trigger: z.string().trim().min(1).max(120).optional(),
     force: z.boolean().optional(),
+    startAt: z
+      .string()
+      .trim()
+      .min(1)
+      .refine(
+        (value) => {
+          const date = new Date(value);
+          return !Number.isNaN(date.getTime());
+        },
+        { message: "Invalid startAt value." },
+      )
+      .optional(),
   })
   .optional();
 
@@ -46,10 +58,14 @@ export async function POST(request: Request) {
       await request.json().catch(() => undefined),
     );
 
+    const startAtIso =
+      payload?.startAt != null ? new Date(payload.startAt).toISOString() : null;
+
     const runResult = await ensureIssueStatusAutomation({
       runId: null,
       trigger: payload?.trigger ?? "manual",
       force: payload?.force ?? true,
+      overrideSyncAt: startAtIso,
     });
     const summary = await getIssueStatusAutomationSummary();
 
