@@ -288,9 +288,6 @@ function normalizeText(value: string | null | undefined) {
 
 async function insertCanceledStatuses(client: PoolClient) {
   const targetProject = normalizeText(env.TODO_PROJECT_NAME);
-  if (!targetProject) {
-    return 0;
-  }
 
   const result = await client.query<{ issue_id: string }>(
     `WITH latest_status AS (
@@ -309,7 +306,7 @@ async function insertCanceledStatuses(client: PoolClient) {
          AND source = 'todo_project'
          AND status = 'in_progress'
      ),
-     candidate AS (
+     removed_from_todo AS (
        SELECT
          i.id AS issue_id,
          COALESCE(
@@ -320,16 +317,57 @@ async function insertCanceledStatuses(client: PoolClient) {
          ) AS occurred_at
        FROM issues i
        JOIN latest_todo_in_progress ON latest_todo_in_progress.issue_id = i.id
-       WHERE NOT EXISTS (
-         SELECT 1
-         FROM jsonb_array_elements(COALESCE(i.data->'projectItems'->'nodes', '[]'::jsonb)) AS node
-         WHERE LOWER(TRIM(COALESCE(
-           node->'project'->>'title',
-           node->'project'->>'name',
-           node->>'projectTitle',
-           ''
-         ))) = $1
-       )
+       WHERE $1::text IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1
+           FROM jsonb_array_elements(COALESCE(i.data->'projectItems'->'nodes', '[]'::jsonb)) AS node
+           WHERE LOWER(TRIM(COALESCE(
+             node->'project'->>'title',
+             node->'project'->>'name',
+             node->>'projectTitle',
+             ''
+           ))) = $1::text
+         )
+     ),
+     closed_with_unmerged_pr AS (
+       SELECT
+         i.id AS issue_id,
+         COALESCE(
+           i.github_closed_at,
+           i.github_updated_at,
+           NOW()
+         ) AS occurred_at
+       FROM issues i
+       WHERE i.state = 'CLOSED'
+         AND EXISTS (
+           SELECT 1
+           FROM pull_request_issues pri
+           JOIN pull_requests pr ON pr.id = pri.pull_request_id
+           WHERE pri.issue_id = i.id
+             AND (pr.merged IS DISTINCT FROM TRUE OR pr.github_merged_at IS NULL)
+         )
+         AND NOT EXISTS (
+           SELECT 1
+           FROM pull_request_issues pri
+           JOIN pull_requests pr ON pr.id = pri.pull_request_id
+           WHERE pri.issue_id = i.id
+             AND pr.merged IS TRUE
+             AND pr.github_merged_at IS NOT NULL
+         )
+     ),
+     combined_candidates AS (
+       SELECT issue_id, occurred_at
+       FROM removed_from_todo
+       UNION ALL
+       SELECT issue_id, occurred_at
+       FROM closed_with_unmerged_pr
+     ),
+     candidate AS (
+       SELECT DISTINCT ON (issue_id)
+         issue_id,
+         occurred_at
+       FROM combined_candidates
+       ORDER BY issue_id, occurred_at
      )
      INSERT INTO activity_issue_status_history (
        issue_id,
