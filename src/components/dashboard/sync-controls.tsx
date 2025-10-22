@@ -310,11 +310,6 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
   const activityCachePrLinkCount = activityCacheSummary
     ? parseLinkCount(activityCacheSummary.pullRequestLinks.metadata)
     : null;
-  const automationStatus = issueStatusAutomationSummary?.status ?? null;
-  const automationStatusClass =
-    automationStatus && statusColors[automationStatus]
-      ? statusColors[automationStatus]
-      : "";
 
   const canManageSync = isAdmin;
 
@@ -813,7 +808,7 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
         await parseApiResponse<IssueStatusAutomationPostResult>(response);
       if (!data.success) {
         throw new Error(
-          data.message ?? "이슈 상태 자동 설정 실행에 실패했습니다.",
+          data.message ?? "진행 상태 자동 설정 실행에 실패했습니다.",
         );
       }
 
@@ -838,13 +833,13 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
       if (run) {
         if (run.processed) {
           setFeedback(
-            `이슈 상태 자동 설정을 완료했습니다. (진행 ${run.insertedInProgress.toLocaleString()}건, 완료 ${run.insertedDone.toLocaleString()}건)`,
+            `진행 상태 자동 설정을 완료했습니다. (진행 ${run.insertedInProgress.toLocaleString()}건, 완료 ${run.insertedDone.toLocaleString()}건)`,
           );
         } else {
           setFeedback("이슈 상태가 이미 최신입니다.");
         }
       } else {
-        setFeedback("이슈 상태 자동 설정 요청이 완료되었습니다.");
+        setFeedback("진행 상태 자동 설정 요청이 완료되었습니다.");
       }
 
       router.refresh();
@@ -852,7 +847,7 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
       setFeedback(
         error instanceof Error
           ? error.message
-          : "이슈 상태 자동 설정 중 오류가 발생했습니다.",
+          : "진행 상태 자동 설정 중 오류가 발생했습니다.",
       );
     } finally {
       setIsRunningStatusAutomation(false);
@@ -956,47 +951,107 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
 
         <Card className="border-border/70">
           <CardHeader>
-            <CardTitle>PR 링크 백필 (임시)</CardTitle>
+            <CardTitle>자동 동기화</CardTitle>
             <CardDescription>
-              지정한 날짜 이후의 PR을 다시 수집해 연결된 이슈 정보를 갱신합니다.
-              실행 결과는 동기화 히스토리에서 확인하세요.
+              {autoEnabled
+                ? "자동 동기화가 활성화되어 있습니다."
+                : "필요 시 자동으로 데이터를 가져오도록 설정할 수 있습니다."}
+            </CardDescription>
+            <CardAction>
+              <span className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
+                {autoEnabled ? "활성" : "비활성"}
+              </span>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              최근 동기화:{" "}
+              <span>
+                {formatRange(latestSyncStartedAt, latestSyncCompletedAt)}
+              </span>
+            </p>
+            <p>
+              마지막 성공:{" "}
+              <span>
+                {formatRange(
+                  lastSuccessfulSyncStartedAt,
+                  lastSuccessfulSyncCompletedAt,
+                )}
+              </span>
+            </p>
+            <p>
+              간격: {(config?.sync_interval_minutes ?? 60).toLocaleString()}분
+            </p>
+            <p>
+              다음 동기화 예정:{" "}
+              <span>
+                {nextAutomaticSyncAt
+                  ? formatDateTime(nextAutomaticSyncAt)
+                  : "-"}
+              </span>
+            </p>
+          </CardContent>
+          <CardFooter className="gap-3">
+            <Button
+              variant={autoEnabled ? "secondary" : "default"}
+              onClick={() => handleAutoToggle(!autoEnabled)}
+              disabled={isTogglingAuto || !canManageSync}
+              title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+            >
+              {isTogglingAuto
+                ? "처리 중..."
+                : autoEnabled
+                  ? "자동 동기화 중단"
+                  : "자동 동기화 시작"}
+            </Button>
+          </CardFooter>
+        </Card>
+
+        <Card className="border-primary/40">
+          <CardHeader>
+            <CardTitle>멈춰 있는 동기화 정리</CardTitle>
+            <CardDescription>
+              중단된 백필이나 자동 동기화가 계속 &ldquo;진행 중&rdquo;으로 보일
+              때 실패 처리하여 상태를 정리합니다.
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <label
-              className="flex flex-col gap-2 text-sm"
-              htmlFor={prLinkBackfillInputId}
-            >
-              <span className="text-muted-foreground">시작 날짜</span>
-              <Input
-                id={prLinkBackfillInputId}
-                value={prLinkStartDate}
-                onChange={(event) => setPrLinkStartDate(event.target.value)}
-                type="date"
-              />
-            </label>
-            <label
-              className="flex flex-col gap-2 text-sm"
-              htmlFor={prLinkBackfillEndInputId}
-            >
-              <span className="text-muted-foreground">종료 날짜 (선택)</span>
-              <Input
-                id={prLinkBackfillEndInputId}
-                value={prLinkEndDate}
-                onChange={(event) => setPrLinkEndDate(event.target.value)}
-                type="date"
-              />
-            </label>
+          <CardContent className="text-sm text-muted-foreground">
+            <p>
+              실패 처리된 런과 로그는 다시 실행되지 않으며, 필요 시 새로
+              동기화를 시작해야 합니다.
+            </p>
           </CardContent>
           <CardFooter>
             <Button
-              onClick={handlePrLinkBackfill}
-              disabled={isRunningPrLinkBackfill || !canManageSync}
+              variant="outline"
+              onClick={handleCleanup}
+              disabled={isCleaning || !canManageSync}
               title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
             >
-              {isRunningPrLinkBackfill
-                ? "PR 링크 백필 실행 중..."
-                : "PR 링크 백필 실행"}
+              {isCleaning ? "정리 중..." : "멈춘 동기화 정리"}
+            </Button>
+          </CardFooter>
+        </Card>
+
+        <Card className="border-destructive/30">
+          <CardHeader>
+            <CardTitle>데이터 초기화</CardTitle>
+            <CardDescription>
+              문제 발생 시 저장된 GitHub 데이터를 모두 삭제합니다. 로그는
+              유지됩니다.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            <p>이 작업은 되돌릴 수 없습니다. 실행 전 반드시 확인하세요.</p>
+          </CardContent>
+          <CardFooter>
+            <Button
+              variant="destructive"
+              onClick={handleReset}
+              disabled={isResetting || !canManageSync}
+              title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+            >
+              {isResetting ? "삭제 중..." : "모든 데이터 삭제"}
             </Button>
           </CardFooter>
         </Card>
@@ -1065,24 +1120,15 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
 
         <Card className="border-primary/40">
           <CardHeader>
-            <CardTitle>이슈 상태 자동 설정</CardTitle>
+            <CardTitle>진행 상태 자동 설정</CardTitle>
             <CardDescription>
-              연결된 PR의 진행 상황을 기준으로 Activity 상태를 즉시 갱신합니다.
+              연결된 PR의 생성과 머지를 기준으로 이슈의 진행 상태를 즉시
+              갱신합니다.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-muted-foreground">
             {issueStatusAutomationSummary ? (
               <>
-                <p>
-                  현재 상태:{" "}
-                  {automationStatus ? (
-                    <span className={`font-semibold ${automationStatusClass}`}>
-                      {capitalize(automationStatus)}
-                    </span>
-                  ) : (
-                    "-"
-                  )}
-                </p>
                 <p>
                   최근 실행 시각:{" "}
                   <span>
@@ -1091,10 +1137,26 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
                   </span>
                 </p>
                 <p>
-                  대상 동기화 시각:{" "}
+                  최근 성공 시각:{" "}
+                  <span>
+                    {formatDateTime(
+                      issueStatusAutomationSummary.lastSuccessAt,
+                    ) ?? "-"}
+                  </span>
+                </p>
+                <p>
+                  대상 동기화 시각 (최근 실행):{" "}
                   <span>
                     {formatDateTime(
                       issueStatusAutomationSummary.lastSuccessfulSyncAt,
+                    ) ?? "-"}
+                  </span>
+                </p>
+                <p>
+                  대상 동기화 시각 (최근 성공):{" "}
+                  <span>
+                    {formatDateTime(
+                      issueStatusAutomationSummary.lastSuccessSyncAt,
                     ) ?? "-"}
                   </span>
                 </p>
@@ -1125,7 +1187,7 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
                 ) : null}
               </>
             ) : (
-              <p>아직 실행된 이슈 상태 자동 설정 기록이 없습니다.</p>
+              <p>아직 실행된 진행 상태 자동 설정 기록이 없습니다.</p>
             )}
           </CardContent>
           <CardFooter>
@@ -1135,115 +1197,55 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
               title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
             >
               {isRunningStatusAutomation
-                ? "이슈 상태 자동 설정 중..."
-                : "이슈 상태 자동 설정"}
+                ? "진행 상태 자동 설정 중..."
+                : "진행 상태 자동 설정"}
             </Button>
           </CardFooter>
         </Card>
 
         <Card className="border-border/70">
           <CardHeader>
-            <CardTitle>자동 동기화</CardTitle>
+            <CardTitle>PR 링크 백필 (임시)</CardTitle>
             <CardDescription>
-              {autoEnabled
-                ? "자동 동기화가 활성화되어 있습니다."
-                : "필요 시 자동으로 데이터를 가져오도록 설정할 수 있습니다."}
+              지정한 날짜 이후의 PR을 다시 수집해 연결된 이슈 정보를 갱신합니다.
+              실행 결과는 동기화 히스토리에서 확인하세요.
             </CardDescription>
-            <CardAction>
-              <span className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
-                {autoEnabled ? "활성" : "비활성"}
-              </span>
-            </CardAction>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <p>
-              최근 동기화:{" "}
-              <span>
-                {formatRange(latestSyncStartedAt, latestSyncCompletedAt)}
-              </span>
-            </p>
-            <p>
-              마지막 성공:{" "}
-              <span>
-                {formatRange(
-                  lastSuccessfulSyncStartedAt,
-                  lastSuccessfulSyncCompletedAt,
-                )}
-              </span>
-            </p>
-            <p>
-              간격: {(config?.sync_interval_minutes ?? 60).toLocaleString()}분
-            </p>
-            <p>
-              다음 동기화 예정:{" "}
-              <span>
-                {nextAutomaticSyncAt
-                  ? formatDateTime(nextAutomaticSyncAt)
-                  : "-"}
-              </span>
-            </p>
-          </CardContent>
-          <CardFooter className="gap-3">
-            <Button
-              variant={autoEnabled ? "secondary" : "default"}
-              onClick={() => handleAutoToggle(!autoEnabled)}
-              disabled={isTogglingAuto || !canManageSync}
-              title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+          <CardContent className="flex flex-col gap-4">
+            <label
+              className="flex flex-col gap-2 text-sm"
+              htmlFor={prLinkBackfillInputId}
             >
-              {isTogglingAuto
-                ? "처리 중..."
-                : autoEnabled
-                  ? "자동 동기화 중단"
-                  : "자동 동기화 시작"}
-            </Button>
-          </CardFooter>
-        </Card>
-
-        <Card className="border-destructive/30">
-          <CardHeader>
-            <CardTitle>데이터 초기화</CardTitle>
-            <CardDescription>
-              문제 발생 시 저장된 GitHub 데이터를 모두 삭제합니다. 로그는
-              유지됩니다.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            <p>이 작업은 되돌릴 수 없습니다. 실행 전 반드시 확인하세요.</p>
+              <span className="text-muted-foreground">시작 날짜</span>
+              <Input
+                id={prLinkBackfillInputId}
+                value={prLinkStartDate}
+                onChange={(event) => setPrLinkStartDate(event.target.value)}
+                type="date"
+              />
+            </label>
+            <label
+              className="flex flex-col gap-2 text-sm"
+              htmlFor={prLinkBackfillEndInputId}
+            >
+              <span className="text-muted-foreground">종료 날짜 (선택)</span>
+              <Input
+                id={prLinkBackfillEndInputId}
+                value={prLinkEndDate}
+                onChange={(event) => setPrLinkEndDate(event.target.value)}
+                type="date"
+              />
+            </label>
           </CardContent>
           <CardFooter>
             <Button
-              variant="destructive"
-              onClick={handleReset}
-              disabled={isResetting || !canManageSync}
+              onClick={handlePrLinkBackfill}
+              disabled={isRunningPrLinkBackfill || !canManageSync}
               title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
             >
-              {isResetting ? "삭제 중..." : "모든 데이터 삭제"}
-            </Button>
-          </CardFooter>
-        </Card>
-
-        <Card className="border-primary/40">
-          <CardHeader>
-            <CardTitle>멈춰 있는 동기화 정리</CardTitle>
-            <CardDescription>
-              중단된 백필이나 자동 동기화가 계속 &ldquo;진행 중&rdquo;으로 보일
-              때 실패 처리하여 상태를 정리합니다.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            <p>
-              실패 처리된 런과 로그는 다시 실행되지 않으며, 필요 시 새로
-              동기화를 시작해야 합니다.
-            </p>
-          </CardContent>
-          <CardFooter>
-            <Button
-              variant="outline"
-              onClick={handleCleanup}
-              disabled={isCleaning || !canManageSync}
-              title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
-            >
-              {isCleaning ? "정리 중..." : "멈춘 동기화 정리"}
+              {isRunningPrLinkBackfill
+                ? "PR 링크 백필 실행 중..."
+                : "PR 링크 백필 실행"}
             </Button>
           </CardFooter>
         </Card>
