@@ -4,7 +4,10 @@ import "../../../tests/helpers/postgres-container";
 
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { ensureIssueStatusAutomation } from "@/lib/activity/status-automation";
+import {
+  ensureIssueStatusAutomation,
+  getIssueStatusAutomationSummary,
+} from "@/lib/activity/status-automation";
 import { ensureSchema } from "@/lib/db";
 import { query } from "@/lib/db/client";
 import {
@@ -165,6 +168,20 @@ const PULL_REQUESTS: DbPullRequest[] = [
     mergedAt: null,
     raw: { url: "https://github.com/acme/alpha/pull/203" },
   },
+  {
+    id: "pr-missing",
+    number: 205,
+    repositoryId: "repo-1",
+    authorId: "user-2",
+    title: "Link to missing issue",
+    state: "OPEN",
+    merged: false,
+    createdAt: "2024-05-06T18:00:00.000Z",
+    updatedAt: "2024-05-06T19:00:00.000Z",
+    closedAt: null,
+    mergedAt: null,
+    raw: { url: "https://github.com/acme/alpha/pull/205" },
+  },
 ];
 
 describe("ensureIssueStatusAutomation", () => {
@@ -216,6 +233,16 @@ describe("ensureIssueStatusAutomation", () => {
         issueTitle: "Handle failed rollout",
         issueState: "CLOSED",
         issueUrl: "https://github.com/acme/alpha/issues/104",
+        issueRepository: "acme/alpha",
+      },
+    ]);
+    await replacePullRequestIssues("pr-missing", [
+      {
+        issueId: "issue-missing",
+        issueNumber: 999,
+        issueTitle: "Ghost issue",
+        issueState: "OPEN",
+        issueUrl: "https://github.com/acme/alpha/issues/999",
         issueRepository: "acme/alpha",
       },
     ]);
@@ -314,6 +341,18 @@ describe("ensureIssueStatusAutomation", () => {
       insertedDone: 1,
       trigger: "test",
     });
+
+    const summary = await getIssueStatusAutomationSummary();
+    expect(summary).not.toBeNull();
+    expect(summary?.status).toBe("success");
+    expect(summary?.runId).toBe(42);
+    expect(summary?.syncRunId).toBe(42);
+    expect(summary?.trigger).toBe("test");
+    expect(summary?.lastSuccessfulSyncAt).toBe("2024-05-10T12:00:00.000Z");
+    expect(summary?.insertedInProgress).toBe(3);
+    expect(summary?.insertedDone).toBe(1);
+    expect(summary?.itemCount).toBe(4);
+    expect(summary?.generatedAt).not.toBeNull();
   });
 
   it("skips re-processing when automation is up-to-date", async () => {
