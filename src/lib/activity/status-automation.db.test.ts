@@ -99,6 +99,18 @@ const ISSUES: DbIssue[] = [
     raw: { url: "https://github.com/acme/alpha/issues/104" },
   },
   {
+    id: "issue-partial",
+    number: 106,
+    repositoryId: "repo-1",
+    authorId: "user-2",
+    title: "Partially merged work",
+    state: "CLOSED",
+    createdAt: "2024-05-07T07:30:00.000Z",
+    updatedAt: "2024-05-09T16:00:00.000Z",
+    closedAt: "2024-05-09T16:00:00.000Z",
+    raw: { url: "https://github.com/acme/alpha/issues/106" },
+  },
+  {
     id: "issue-removed",
     number: 105,
     repositoryId: "repo-1",
@@ -211,6 +223,34 @@ const PULL_REQUESTS: DbPullRequest[] = [
     mergedAt: null,
     raw: { url: "https://github.com/acme/alpha/pull/205" },
   },
+  {
+    id: "pr-partial-merged",
+    number: 206,
+    repositoryId: "repo-1",
+    authorId: "user-1",
+    title: "Partial fix",
+    state: "MERGED",
+    merged: true,
+    createdAt: "2024-05-08T11:00:00.000Z",
+    updatedAt: "2024-05-09T16:00:00.000Z",
+    closedAt: "2024-05-09T16:00:00.000Z",
+    mergedAt: "2024-05-09T16:00:00.000Z",
+    raw: { url: "https://github.com/acme/alpha/pull/206" },
+  },
+  {
+    id: "pr-partial-open",
+    number: 207,
+    repositoryId: "repo-1",
+    authorId: "user-1",
+    title: "Unfinished work",
+    state: "OPEN",
+    merged: false,
+    createdAt: "2024-05-08T10:00:00.000Z",
+    updatedAt: "2024-05-09T12:00:00.000Z",
+    closedAt: null,
+    mergedAt: null,
+    raw: { url: "https://github.com/acme/alpha/pull/207" },
+  },
 ];
 
 describe("ensureIssueStatusAutomation", () => {
@@ -266,6 +306,26 @@ describe("ensureIssueStatusAutomation", () => {
         issueRepository: "acme/alpha",
       },
     ]);
+    await replacePullRequestIssues("pr-partial-merged", [
+      {
+        issueId: "issue-partial",
+        issueNumber: 106,
+        issueTitle: "Partially merged work",
+        issueState: "CLOSED",
+        issueUrl: "https://github.com/acme/alpha/issues/106",
+        issueRepository: "acme/alpha",
+      },
+    ]);
+    await replacePullRequestIssues("pr-partial-open", [
+      {
+        issueId: "issue-partial",
+        issueNumber: 106,
+        issueTitle: "Partially merged work",
+        issueState: "CLOSED",
+        issueUrl: "https://github.com/acme/alpha/issues/106",
+        issueRepository: "acme/alpha",
+      },
+    ]);
     await replacePullRequestIssues("pr-missing", [
       {
         issueId: "issue-missing",
@@ -310,7 +370,7 @@ describe("ensureIssueStatusAutomation", () => {
     });
 
     expect(result.processed).toBe(true);
-    expect(result.insertedInProgress).toBe(3);
+    expect(result.insertedInProgress).toBe(4);
     expect(result.insertedDone).toBe(1);
     expect(result.insertedCanceled).toBe(2);
 
@@ -358,6 +418,12 @@ describe("ensureIssueStatusAutomation", () => {
         source: "activity",
       },
       {
+        issueId: "issue-partial",
+        status: "in_progress",
+        occurredAt: "2024-05-08T10:00:00.000Z",
+        source: "activity",
+      },
+      {
         issueId: "issue-removed",
         status: "in_progress",
         occurredAt: "2024-05-02T12:00:00.000Z",
@@ -400,7 +466,7 @@ describe("ensureIssueStatusAutomation", () => {
       status: "success",
       runId: 42,
       lastSuccessfulSyncAt: "2024-05-10T12:00:00.000Z",
-      insertedInProgress: 3,
+      insertedInProgress: 4,
       insertedDone: 1,
       insertedCanceled: 2,
       trigger: "test",
@@ -417,10 +483,10 @@ describe("ensureIssueStatusAutomation", () => {
     expect(summary?.lastSuccessfulSyncAt).toBe("2024-05-10T12:00:00.000Z");
     expect(summary?.lastSuccessSyncAt).toBe("2024-05-10T12:00:00.000Z");
     expect(summary?.lastSuccessAt).not.toBeNull();
-    expect(summary?.insertedInProgress).toBe(3);
+    expect(summary?.insertedInProgress).toBe(4);
     expect(summary?.insertedDone).toBe(1);
     expect(summary?.insertedCanceled).toBe(2);
-    expect(summary?.itemCount).toBe(6);
+    expect(summary?.itemCount).toBe(7);
     expect(summary?.generatedAt).not.toBeNull();
   });
 
@@ -433,7 +499,7 @@ describe("ensureIssueStatusAutomation", () => {
     const historyCount = await query<{ count: string }>(
       `SELECT COUNT(*)::text AS count FROM activity_issue_status_history`,
     );
-    expect(historyCount.rows[0]?.count).toBe("8");
+    expect(historyCount.rows[0]?.count).toBe("9");
   });
 
   it("re-runs when last successful sync timestamp changes", async () => {
@@ -447,7 +513,7 @@ describe("ensureIssueStatusAutomation", () => {
     expect(result.processed).toBe(true);
   });
 
-  it("does not mark done when closing pull request was not merged", async () => {
+  it("does not mark done when any linked pull request was not merged", async () => {
     await ensureIssueStatusAutomation({ force: true });
     const history = await query<{
       issue_id: string;
@@ -455,11 +521,22 @@ describe("ensureIssueStatusAutomation", () => {
     }>(
       `SELECT issue_id, status
          FROM activity_issue_status_history
-         WHERE issue_id = 'issue-unmerged'`,
+         WHERE issue_id IN ('issue-unmerged', 'issue-partial')
+         ORDER BY issue_id, status`,
     );
 
-    const statuses = history.rows.map((row) => row.status);
-    expect(statuses).toContain("in_progress");
-    expect(statuses).not.toContain("done");
+    const grouped = history.rows.reduce<Record<string, string[]>>(
+      (acc, row) => {
+        acc[row.issue_id] ??= [];
+        acc[row.issue_id].push(row.status);
+        return acc;
+      },
+      {},
+    );
+
+    expect(grouped["issue-unmerged"]).toContain("in_progress");
+    expect(grouped["issue-unmerged"]).not.toContain("done");
+    expect(grouped["issue-partial"]).toContain("in_progress");
+    expect(grouped["issue-partial"]).not.toContain("done");
   });
 });
