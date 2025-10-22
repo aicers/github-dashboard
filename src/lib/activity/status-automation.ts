@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 
 import { getPool } from "@/lib/db/client";
 import { getSyncConfig } from "@/lib/db/operations";
+import { env } from "@/lib/env";
 
 const AUTOMATION_CACHE_KEY = "issue-status-automation";
 const AUTOMATION_LOCK_ID = BigInt("4422100313370042");
@@ -13,6 +14,7 @@ type AutomationState = {
   trigger?: string;
   insertedInProgress?: number;
   insertedDone?: number;
+  insertedCanceled?: number;
   error?: string;
   lastSuccessAt?: string | null;
   lastSuccessSyncAt?: string | null;
@@ -29,6 +31,7 @@ export type IssueStatusAutomationRunResult = {
   processed: boolean;
   insertedInProgress: number;
   insertedDone: number;
+  insertedCanceled: number;
 };
 
 export type IssueStatusAutomationSummary = {
@@ -44,6 +47,7 @@ export type IssueStatusAutomationSummary = {
   lastSuccessSyncAt: string | null;
   insertedInProgress: number;
   insertedDone: number;
+  insertedCanceled: number;
   itemCount: number;
   error: string | null;
 };
@@ -111,6 +115,7 @@ async function upsertAutomationState(
     trigger?: string;
     insertedInProgress?: number;
     insertedDone?: number;
+    insertedCanceled?: number;
     error?: string | null;
     lastSuccessAt?: string | null;
     lastSuccessSyncAt?: string | null;
@@ -123,6 +128,7 @@ async function upsertAutomationState(
     trigger,
     insertedInProgress = 0,
     insertedDone = 0,
+    insertedCanceled = 0,
     error = null,
     lastSuccessAt = null,
     lastSuccessSyncAt = null,
@@ -135,6 +141,7 @@ async function upsertAutomationState(
     trigger,
     insertedInProgress,
     insertedDone,
+    insertedCanceled,
     error: error ?? undefined,
     lastSuccessAt,
     lastSuccessSyncAt,
@@ -159,7 +166,7 @@ async function upsertAutomationState(
     [
       AUTOMATION_CACHE_KEY,
       runId,
-      insertedInProgress + insertedDone,
+      insertedInProgress + insertedDone + insertedCanceled,
       JSON.stringify(metadata),
     ],
   );
@@ -227,15 +234,27 @@ async function insertDoneStatuses(client: PoolClient) {
      FROM (
        SELECT
          i.id AS issue_id,
-         i.github_closed_at AS occurred_at
+         GREATEST(
+           i.github_closed_at,
+           merged_data.latest_merged_at
+         ) AS occurred_at
        FROM issues i
        JOIN pull_request_issues pri ON pri.issue_id = i.id
        JOIN pull_requests pr ON pr.id = pri.pull_request_id
+       JOIN LATERAL (
+         SELECT
+           MAX(pr_inner.github_merged_at) AS latest_merged_at
+         FROM pull_request_issues pri_inner
+         JOIN pull_requests pr_inner ON pr_inner.id = pri_inner.pull_request_id
+         WHERE pri_inner.issue_id = i.id
+           AND pr_inner.merged IS TRUE
+           AND pr_inner.github_merged_at IS NOT NULL
+       ) AS merged_data ON TRUE
        WHERE i.state = 'CLOSED'
          AND i.github_closed_at IS NOT NULL
          AND pr.merged IS TRUE
          AND pr.github_merged_at IS NOT NULL
-         AND pr.github_merged_at = i.github_closed_at
+         AND merged_data.latest_merged_at IS NOT NULL
          AND NOT EXISTS (
            SELECT 1
            FROM activity_issue_status_history h
@@ -250,9 +269,88 @@ async function insertDoneStatuses(client: PoolClient) {
          WHERE existing.issue_id = candidate.issue_id
            AND existing.source = 'activity'
            AND existing.status = 'done'
-           AND existing.occurred_at = candidate.occurred_at
        )
      RETURNING issue_id`,
+  );
+
+  return result.rowCount;
+}
+
+function normalizeText(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const trimmed = value.trim().toLowerCase();
+  return trimmed.length ? trimmed : null;
+}
+
+async function insertCanceledStatuses(client: PoolClient) {
+  const targetProject = normalizeText(env.TODO_PROJECT_NAME);
+  if (!targetProject) {
+    return 0;
+  }
+
+  const result = await client.query<{ issue_id: string }>(
+    `WITH latest_status AS (
+       SELECT
+         issue_id,
+         status,
+         source,
+         occurred_at,
+         ROW_NUMBER() OVER (PARTITION BY issue_id ORDER BY occurred_at DESC) AS row_number
+       FROM activity_issue_status_history
+     ),
+     latest_todo_in_progress AS (
+       SELECT issue_id, occurred_at
+       FROM latest_status
+       WHERE row_number = 1
+         AND source = 'todo_project'
+         AND status = 'in_progress'
+     ),
+     candidate AS (
+       SELECT
+         i.id AS issue_id,
+         COALESCE(
+           i.github_updated_at,
+           i.github_closed_at,
+           latest_todo_in_progress.occurred_at,
+           NOW()
+         ) AS occurred_at
+       FROM issues i
+       JOIN latest_todo_in_progress ON latest_todo_in_progress.issue_id = i.id
+       WHERE NOT EXISTS (
+         SELECT 1
+         FROM jsonb_array_elements(COALESCE(i.data->'projectItems'->'nodes', '[]'::jsonb)) AS node
+         WHERE LOWER(TRIM(COALESCE(
+           node->'project'->>'title',
+           node->'project'->>'name',
+           node->>'projectTitle',
+           ''
+         ))) = $1
+       )
+     )
+     INSERT INTO activity_issue_status_history (
+       issue_id,
+       status,
+       occurred_at,
+       source
+     )
+     SELECT
+       candidate.issue_id,
+       'canceled',
+       candidate.occurred_at,
+       'activity'
+     FROM candidate
+     WHERE NOT EXISTS (
+       SELECT 1
+       FROM activity_issue_status_history existing
+       WHERE existing.issue_id = candidate.issue_id
+         AND existing.source = 'activity'
+         AND existing.status = 'canceled'
+     )
+     RETURNING issue_id`,
+    [targetProject],
   );
 
   return result.rowCount;
@@ -304,6 +402,7 @@ export async function ensureIssueStatusAutomation(
         processed: false,
         insertedInProgress: 0,
         insertedDone: 0,
+        insertedCanceled: 0,
       };
     }
 
@@ -318,6 +417,7 @@ export async function ensureIssueStatusAutomation(
 
     const insertedInProgress = (await insertInProgressStatuses(client)) ?? 0;
     const insertedDone = (await insertDoneStatuses(client)) ?? 0;
+    const insertedCanceled = (await insertCanceledStatuses(client)) ?? 0;
     const successAt = new Date().toISOString();
 
     await upsertAutomationState(client, {
@@ -327,6 +427,7 @@ export async function ensureIssueStatusAutomation(
       trigger,
       insertedInProgress,
       insertedDone,
+      insertedCanceled,
       lastSuccessAt: successAt,
       lastSuccessSyncAt: lastSuccessfulSyncAt,
     });
@@ -334,13 +435,14 @@ export async function ensureIssueStatusAutomation(
     await client.query("COMMIT");
 
     logger?.(
-      `[status-automation] Inserted ${insertedInProgress} in-progress and ${insertedDone} done statuses.`,
+      `[status-automation] Inserted ${insertedInProgress} in-progress, ${insertedDone} done, and ${insertedCanceled} canceled statuses.`,
     );
 
     return {
       processed: true,
       insertedInProgress,
       insertedDone,
+      insertedCanceled,
     };
   } catch (error) {
     const message =
@@ -365,6 +467,7 @@ export async function ensureIssueStatusAutomation(
         error: message,
         insertedInProgress: 0,
         insertedDone: 0,
+        insertedCanceled: 0,
         lastSuccessAt: previousSuccessAt,
         lastSuccessSyncAt: previousSuccessSyncAt,
       });
@@ -422,6 +525,7 @@ export async function getIssueStatusAutomationSummary(): Promise<IssueStatusAuto
   const lastSuccessSyncAt = toStringOrNull(metadata?.lastSuccessSyncAt);
   const insertedInProgress = toNumberOrZero(metadata?.insertedInProgress);
   const insertedDone = toNumberOrZero(metadata?.insertedDone);
+  const insertedCanceled = toNumberOrZero(metadata?.insertedCanceled);
   const error =
     typeof metadata?.error === "string" && metadata.error.trim().length
       ? metadata.error
@@ -445,6 +549,7 @@ export async function getIssueStatusAutomationSummary(): Promise<IssueStatusAuto
     lastSuccessSyncAt,
     insertedInProgress,
     insertedDone,
+    insertedCanceled,
     itemCount: row.item_count ?? 0,
     error,
   };

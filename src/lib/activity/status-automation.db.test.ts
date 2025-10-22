@@ -2,7 +2,7 @@
 
 import "../../../tests/helpers/postgres-container";
 
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import {
   ensureIssueStatusAutomation,
@@ -18,6 +18,7 @@ import {
   replacePullRequestIssues,
   updateSyncConfig,
 } from "@/lib/db/operations";
+import { env } from "@/lib/env";
 import {
   insertIssueStatusHistory,
   resetActivityTables,
@@ -81,8 +82,8 @@ const ISSUES: DbIssue[] = [
     title: "Ship release",
     state: "CLOSED",
     createdAt: "2024-05-01T10:00:00.000Z",
-    updatedAt: "2024-05-09T15:00:00.000Z",
-    closedAt: "2024-05-09T15:00:00.000Z",
+    updatedAt: "2024-05-09T15:05:00.000Z",
+    closedAt: "2024-05-09T15:05:00.000Z",
     raw: { url: "https://github.com/acme/alpha/issues/102" },
   },
   {
@@ -98,6 +99,21 @@ const ISSUES: DbIssue[] = [
     raw: { url: "https://github.com/acme/alpha/issues/104" },
   },
   {
+    id: "issue-removed",
+    number: 105,
+    repositoryId: "repo-1",
+    authorId: "user-2",
+    title: "Retire experiment",
+    state: "OPEN",
+    createdAt: "2024-05-02T10:00:00.000Z",
+    updatedAt: "2024-05-10T16:00:00.000Z",
+    closedAt: null,
+    raw: {
+      url: "https://github.com/acme/alpha/issues/105",
+      projectItems: { nodes: [] },
+    },
+  },
+  {
     id: "issue-locked",
     number: 103,
     repositoryId: "repo-1",
@@ -107,9 +123,22 @@ const ISSUES: DbIssue[] = [
     createdAt: "2024-05-03T08:00:00.000Z",
     updatedAt: "2024-05-03T09:00:00.000Z",
     closedAt: null,
-    raw: { url: "https://github.com/acme/alpha/issues/103" },
+    raw: {
+      url: "https://github.com/acme/alpha/issues/103",
+      projectItems: {
+        nodes: [
+          {
+            project: { title: "Acme Project" },
+            status: { name: "In Progress" },
+            updatedAt: "2024-05-05T14:00:00.000Z",
+          },
+        ],
+      },
+    },
   },
 ];
+
+const originalTodoProjectName = env.TODO_PROJECT_NAME;
 
 const PULL_REQUESTS: DbPullRequest[] = [
   {
@@ -135,9 +164,9 @@ const PULL_REQUESTS: DbPullRequest[] = [
     state: "MERGED",
     merged: true,
     createdAt: "2024-05-07T09:30:00.000Z",
-    updatedAt: "2024-05-09T15:00:00.000Z",
-    closedAt: "2024-05-09T15:00:00.000Z",
-    mergedAt: "2024-05-09T15:00:00.000Z",
+    updatedAt: "2024-05-09T15:30:00.000Z",
+    closedAt: "2024-05-09T15:30:00.000Z",
+    mergedAt: "2024-05-09T15:30:00.000Z",
     raw: { url: "https://github.com/acme/alpha/pull/202" },
   },
   {
@@ -192,6 +221,7 @@ describe("ensureIssueStatusAutomation", () => {
   beforeEach(async () => {
     await resetActivityTables();
     await query(`TRUNCATE TABLE activity_cache_state`);
+    env.TODO_PROJECT_NAME = "Acme Project";
     await seedActivityUsers(USERS);
     await seedActivityRepositories(REPOSITORIES);
     await seedActivityIssues(ISSUES);
@@ -254,12 +284,22 @@ describe("ensureIssueStatusAutomation", () => {
         occurredAt: "2024-05-05T14:00:00.000Z",
         source: "todo_project",
       },
+      {
+        issueId: "issue-removed",
+        status: "in_progress",
+        occurredAt: "2024-05-02T12:00:00.000Z",
+        source: "todo_project",
+      },
     ]);
 
     await updateSyncConfig({
       lastSyncCompletedAt: "2024-05-10T12:00:00.000Z",
       lastSuccessfulSyncAt: "2024-05-10T12:00:00.000Z",
     });
+  });
+
+  afterAll(() => {
+    env.TODO_PROJECT_NAME = originalTodoProjectName;
   });
 
   it("applies in-progress and done statuses for synced issues", async () => {
@@ -272,6 +312,7 @@ describe("ensureIssueStatusAutomation", () => {
     expect(result.processed).toBe(true);
     expect(result.insertedInProgress).toBe(3);
     expect(result.insertedDone).toBe(1);
+    expect(result.insertedCanceled).toBe(1);
 
     const history = await query<{
       issue_id: string;
@@ -301,7 +342,7 @@ describe("ensureIssueStatusAutomation", () => {
       {
         issueId: "issue-closed",
         status: "done",
-        occurredAt: "2024-05-09T15:00:00.000Z",
+        occurredAt: "2024-05-09T15:30:00.000Z",
         source: "activity",
       },
       {
@@ -314,6 +355,18 @@ describe("ensureIssueStatusAutomation", () => {
         issueId: "issue-open",
         status: "in_progress",
         occurredAt: "2024-05-04T11:00:00.000Z",
+        source: "activity",
+      },
+      {
+        issueId: "issue-removed",
+        status: "in_progress",
+        occurredAt: "2024-05-02T12:00:00.000Z",
+        source: "todo_project",
+      },
+      {
+        issueId: "issue-removed",
+        status: "canceled",
+        occurredAt: "2024-05-10T16:00:00.000Z",
         source: "activity",
       },
       {
@@ -343,6 +396,7 @@ describe("ensureIssueStatusAutomation", () => {
       lastSuccessfulSyncAt: "2024-05-10T12:00:00.000Z",
       insertedInProgress: 3,
       insertedDone: 1,
+      insertedCanceled: 1,
       trigger: "test",
       lastSuccessSyncAt: "2024-05-10T12:00:00.000Z",
     });
@@ -359,7 +413,8 @@ describe("ensureIssueStatusAutomation", () => {
     expect(summary?.lastSuccessAt).not.toBeNull();
     expect(summary?.insertedInProgress).toBe(3);
     expect(summary?.insertedDone).toBe(1);
-    expect(summary?.itemCount).toBe(4);
+    expect(summary?.insertedCanceled).toBe(1);
+    expect(summary?.itemCount).toBe(5);
     expect(summary?.generatedAt).not.toBeNull();
   });
 
@@ -372,7 +427,7 @@ describe("ensureIssueStatusAutomation", () => {
     const historyCount = await query<{ count: string }>(
       `SELECT COUNT(*)::text AS count FROM activity_issue_status_history`,
     );
-    expect(historyCount.rows[0]?.count).toBe("5");
+    expect(historyCount.rows[0]?.count).toBe("7");
   });
 
   it("re-runs when last successful sync timestamp changes", async () => {
