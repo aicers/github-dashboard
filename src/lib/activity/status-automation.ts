@@ -258,6 +258,16 @@ async function insertDoneStatuses(client: PoolClient) {
          AND merged_data.latest_merged_at IS NOT NULL
          AND NOT EXISTS (
            SELECT 1
+           FROM pull_request_issues pri_unmerged
+           JOIN pull_requests pr_unmerged ON pr_unmerged.id = pri_unmerged.pull_request_id
+           WHERE pri_unmerged.issue_id = i.id
+             AND (
+               pr_unmerged.merged IS DISTINCT FROM TRUE
+               OR pr_unmerged.github_merged_at IS NULL
+             )
+         )
+         AND NOT EXISTS (
+           SELECT 1
            FROM activity_issue_status_history h
            WHERE h.issue_id = i.id
              AND h.source = 'todo_project'
