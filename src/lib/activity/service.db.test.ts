@@ -26,6 +26,7 @@ import type {
   DbReview,
   DbReviewRequest,
 } from "@/lib/db/operations";
+import { updateSyncConfig } from "@/lib/db/operations";
 import { env } from "@/lib/env";
 import {
   insertIssueProjectOverrides,
@@ -272,12 +273,14 @@ describe("activity service integration", () => {
     mockedAttentionInsights.mockResolvedValue(emptyInsights());
     env.TODO_PROJECT_NAME = "Acme Project";
     await resetActivityTables();
+    await updateSyncConfig({ excludedRepositories: [] });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     env.TODO_PROJECT_NAME = originalProjectName;
     vi.useRealTimers();
     vi.clearAllMocks();
+    await updateSyncConfig({ excludedRepositories: [] });
   });
 
   it("returns filter options with normalized ordering and deduplicated values", async () => {
@@ -322,6 +325,29 @@ describe("activity service integration", () => {
       "user-alice",
       "user-bob",
     ]);
+  });
+
+  it("omits repositories that were excluded in sync settings", async () => {
+    const { repoAlpha, repoBeta } = await seedBasicActivityData();
+
+    await updateSyncConfig({ excludedRepositories: [repoAlpha.id] });
+    await ensureActivityCaches({ force: true });
+
+    const options = await getActivityFilterOptions();
+
+    expect(options.repositories.map((repo) => repo.id)).toEqual([repoBeta.id]);
+    expect(
+      options.labels.every((label) => label.repositoryId !== repoAlpha.id),
+    ).toBe(true);
+
+    const result = await getActivityItems();
+
+    expect(
+      result.items.every(
+        (item) =>
+          item.repository === null || item.repository.id !== repoAlpha.id,
+      ),
+    ).toBe(true);
   });
 
   it("filters issues by to-do project status when other project history entries exist", async () => {

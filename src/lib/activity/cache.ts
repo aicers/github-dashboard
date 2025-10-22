@@ -70,6 +70,42 @@ type PullRequestLinksCacheRow = {
   links: unknown;
 };
 
+function normalizeExcludedRepositoryIds(
+  config: Awaited<ReturnType<typeof getSyncConfig>> | null,
+): Set<string> {
+  return new Set<string>(
+    Array.isArray(config?.excluded_repository_ids)
+      ? (config.excluded_repository_ids as unknown[])
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0)
+      : [],
+  );
+}
+
+function filterOptionsByExcludedRepositories(
+  options: ActivityFilterOptions,
+  excludedRepositoryIds: Set<string>,
+): ActivityFilterOptions {
+  if (!excludedRepositoryIds.size) {
+    return options;
+  }
+
+  const filteredRepositories = options.repositories.filter(
+    (repo) => !excludedRepositoryIds.has(repo.id),
+  );
+
+  const filteredLabels = options.labels.filter(
+    (label) => !excludedRepositoryIds.has(label.repositoryId),
+  );
+
+  return {
+    ...options,
+    repositories: filteredRepositories,
+    labels: filteredLabels,
+  };
+}
+
 export async function ensureActivityCaches(params?: {
   runId?: number | null;
   reason?: string;
@@ -217,6 +253,7 @@ export async function getCachedActivityFilterOptions(): Promise<ActivityFilterOp
   const config = await getSyncConfig();
   const lastSuccessfulSyncAt = config?.last_successful_sync_at ?? null;
   const state = await getCacheState(FILTER_CACHE_KEY);
+  const excludedRepositoryIds = normalizeExcludedRepositoryIds(config);
 
   if (isCacheFresh(state, lastSuccessfulSyncAt)) {
     const cached = await query<FilterOptionsCacheRow>(
@@ -228,7 +265,10 @@ export async function getCachedActivityFilterOptions(): Promise<ActivityFilterOp
     const row = cached.rows[0];
     const payload = parseJson<ActivityFilterOptions>(row?.payload ?? null);
     if (payload) {
-      return payload;
+      return filterOptionsByExcludedRepositories(
+        payload,
+        excludedRepositoryIds,
+      );
     }
     logCacheFallback(
       FILTER_CACHE_KEY,
@@ -249,7 +289,10 @@ export async function getCachedActivityFilterOptions(): Promise<ActivityFilterOp
 
   const snapshot = await computeFilterOptionsSnapshot(config);
   scheduleCacheRefresh("fallback:filter-options:computed");
-  return snapshot.options;
+  return filterOptionsByExcludedRepositories(
+    snapshot.options,
+    excludedRepositoryIds,
+  );
 }
 
 export async function getLinkedPullRequestsMap(
@@ -805,19 +848,25 @@ async function computeFilterOptionsSnapshot(
     ),
   ]);
 
-  const repositories: ActivityFilterOptions["repositories"] =
-    repositoriesResult.rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      nameWithOwner: row.name_with_owner,
-    }));
+  const excludedRepositoryIds = normalizeExcludedRepositoryIds(config);
 
-  const labels: ActivityLabel[] = labelsResult.rows.map((row) => ({
-    key: `${row.repository_name_with_owner ?? row.repository_id}:${row.label_name}`,
-    name: row.label_name,
-    repositoryId: row.repository_id,
-    repositoryNameWithOwner: row.repository_name_with_owner,
-  }));
+  const repositories: ActivityFilterOptions["repositories"] =
+    repositoriesResult.rows
+      .filter((row) => !excludedRepositoryIds.has(row.id))
+      .map((row) => ({
+        id: row.id,
+        name: row.name,
+        nameWithOwner: row.name_with_owner,
+      }));
+
+  const labels: ActivityLabel[] = labelsResult.rows
+    .map((row) => ({
+      key: `${row.repository_name_with_owner ?? row.repository_id}:${row.label_name}`,
+      name: row.label_name,
+      repositoryId: row.repository_id,
+      repositoryNameWithOwner: row.repository_name_with_owner,
+    }))
+    .filter((label) => !excludedRepositoryIds.has(label.repositoryId));
 
   const issueTypes = issueTypesResult.rows
     .filter((row) => typeof row.id === "string" && row.id.length > 0)
