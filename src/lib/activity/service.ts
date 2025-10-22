@@ -7,6 +7,7 @@ import {
   getProjectFieldOverrides,
   type ProjectFieldOverrides,
 } from "@/lib/activity/project-field-store";
+import { ensureIssueStatusAutomation } from "@/lib/activity/status-automation";
 import {
   type ActivityStatusEvent,
   getActivityStatusHistory,
@@ -2256,6 +2257,15 @@ export async function getActivityItems(
   params: ActivityListParams = {},
 ): Promise<ActivityListResult> {
   await ensureSchema();
+
+  try {
+    await ensureIssueStatusAutomation({ trigger: "activity:view" });
+  } catch (error) {
+    console.error(
+      "[status-automation] Verification failed while loading activity items",
+      error,
+    );
+  }
 
   const thresholds: Required<ActivityThresholds> = {
     ...DEFAULT_THRESHOLDS,

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { refreshActivityCaches } from "@/lib/activity/cache";
+import { ensureIssueStatusAutomation } from "@/lib/activity/status-automation";
 import { isValidDateTimeDisplayFormat } from "@/lib/date-time-format";
 import { ensureSchema } from "@/lib/db";
 import {
@@ -350,6 +351,19 @@ async function executeSync(params: {
         completedAt,
         summary: toRunSummaryEvent(summary),
       });
+
+      try {
+        await ensureIssueStatusAutomation({
+          runId,
+          trigger: `sync:${actualRunType}`,
+          logger,
+        });
+      } catch (automationError) {
+        console.error(
+          "[status-automation] Failed to apply automation after sync run",
+          automationError,
+        );
+      }
 
       try {
         const cacheSummary = await refreshActivityCaches({
