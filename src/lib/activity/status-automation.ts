@@ -14,6 +14,8 @@ type AutomationState = {
   insertedInProgress?: number;
   insertedDone?: number;
   error?: string;
+  lastSuccessAt?: string | null;
+  lastSuccessSyncAt?: string | null;
 };
 
 type AutomationOptions = {
@@ -38,6 +40,8 @@ export type IssueStatusAutomationSummary = {
   status: AutomationState["status"] | null;
   trigger: string | null;
   lastSuccessfulSyncAt: string | null;
+  lastSuccessAt: string | null;
+  lastSuccessSyncAt: string | null;
   insertedInProgress: number;
   insertedDone: number;
   itemCount: number;
@@ -108,6 +112,8 @@ async function upsertAutomationState(
     insertedInProgress?: number;
     insertedDone?: number;
     error?: string | null;
+    lastSuccessAt?: string | null;
+    lastSuccessSyncAt?: string | null;
   },
 ) {
   const {
@@ -118,6 +124,8 @@ async function upsertAutomationState(
     insertedInProgress = 0,
     insertedDone = 0,
     error = null,
+    lastSuccessAt = null,
+    lastSuccessSyncAt = null,
   } = params;
 
   const metadata: AutomationState = {
@@ -128,6 +136,8 @@ async function upsertAutomationState(
     insertedInProgress,
     insertedDone,
     error: error ?? undefined,
+    lastSuccessAt,
+    lastSuccessSyncAt,
   };
 
   await client.query(
@@ -262,6 +272,8 @@ export async function ensureIssueStatusAutomation(
 
   const pool = getPool();
   const client = await pool.connect();
+  let previousSuccessAt: string | null = null;
+  let previousSuccessSyncAt: string | null = null;
   try {
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock($1)", [
@@ -270,6 +282,8 @@ export async function ensureIssueStatusAutomation(
 
     let shouldRun = force;
     const currentState = await fetchCurrentState(client);
+    previousSuccessAt = currentState?.lastSuccessAt ?? null;
+    previousSuccessSyncAt = currentState?.lastSuccessSyncAt ?? null;
     if (!shouldRun) {
       if (lastSuccessfulSyncAt === null) {
         const alreadyProcessed =
@@ -298,10 +312,13 @@ export async function ensureIssueStatusAutomation(
       runId,
       lastSuccessfulSyncAt,
       trigger,
+      lastSuccessAt: previousSuccessAt,
+      lastSuccessSyncAt: previousSuccessSyncAt,
     });
 
     const insertedInProgress = (await insertInProgressStatuses(client)) ?? 0;
     const insertedDone = (await insertDoneStatuses(client)) ?? 0;
+    const successAt = new Date().toISOString();
 
     await upsertAutomationState(client, {
       status: "success",
@@ -310,6 +327,8 @@ export async function ensureIssueStatusAutomation(
       trigger,
       insertedInProgress,
       insertedDone,
+      lastSuccessAt: successAt,
+      lastSuccessSyncAt: lastSuccessfulSyncAt,
     });
 
     await client.query("COMMIT");
@@ -346,6 +365,8 @@ export async function ensureIssueStatusAutomation(
         error: message,
         insertedInProgress: 0,
         insertedDone: 0,
+        lastSuccessAt: previousSuccessAt,
+        lastSuccessSyncAt: previousSuccessSyncAt,
       });
       await client.query("COMMIT");
     } catch (loggingError) {
@@ -397,6 +418,8 @@ export async function getIssueStatusAutomationSummary(): Promise<IssueStatusAuto
       : null;
 
   const lastSuccessfulSyncAt = toStringOrNull(metadata?.lastSuccessfulSyncAt);
+  const lastSuccessAt = toStringOrNull(metadata?.lastSuccessAt);
+  const lastSuccessSyncAt = toStringOrNull(metadata?.lastSuccessSyncAt);
   const insertedInProgress = toNumberOrZero(metadata?.insertedInProgress);
   const insertedDone = toNumberOrZero(metadata?.insertedDone);
   const error =
@@ -418,6 +441,8 @@ export async function getIssueStatusAutomationSummary(): Promise<IssueStatusAuto
     status,
     trigger,
     lastSuccessfulSyncAt,
+    lastSuccessAt,
+    lastSuccessSyncAt,
     insertedInProgress,
     insertedDone,
     itemCount: row.item_count ?? 0,

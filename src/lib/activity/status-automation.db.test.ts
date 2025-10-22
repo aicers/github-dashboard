@@ -333,14 +333,20 @@ describe("ensureIssueStatusAutomation", () => {
     );
 
     expect(automationState.rowCount).toBe(1);
-    expect(automationState.rows[0]?.metadata).toMatchObject({
+    const metadata = automationState.rows[0]?.metadata as Record<
+      string,
+      unknown
+    >;
+    expect(metadata).toMatchObject({
       status: "success",
       runId: 42,
       lastSuccessfulSyncAt: "2024-05-10T12:00:00.000Z",
       insertedInProgress: 3,
       insertedDone: 1,
       trigger: "test",
+      lastSuccessSyncAt: "2024-05-10T12:00:00.000Z",
     });
+    expect(typeof metadata.lastSuccessAt).toBe("string");
 
     const summary = await getIssueStatusAutomationSummary();
     expect(summary).not.toBeNull();
@@ -349,6 +355,8 @@ describe("ensureIssueStatusAutomation", () => {
     expect(summary?.syncRunId).toBe(42);
     expect(summary?.trigger).toBe("test");
     expect(summary?.lastSuccessfulSyncAt).toBe("2024-05-10T12:00:00.000Z");
+    expect(summary?.lastSuccessSyncAt).toBe("2024-05-10T12:00:00.000Z");
+    expect(summary?.lastSuccessAt).not.toBeNull();
     expect(summary?.insertedInProgress).toBe(3);
     expect(summary?.insertedDone).toBe(1);
     expect(summary?.itemCount).toBe(4);
