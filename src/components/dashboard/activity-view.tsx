@@ -3910,6 +3910,11 @@ export function ActivityView({
                       : item.issueProjectStatusSource === "activity"
                         ? "Activity"
                         : "없음";
+                  const displayStatusLabel =
+                    currentIssueStatus !== "no_status"
+                      ? (ISSUE_STATUS_LABEL_MAP.get(currentIssueStatus) ??
+                        currentIssueStatus)
+                      : null;
                   const todoStatusLabel = item.issueTodoProjectStatus
                     ? (ISSUE_STATUS_LABEL_MAP.get(
                         item.issueTodoProjectStatus,
@@ -4053,11 +4058,11 @@ export function ActivityView({
                                     </span>
                                   )}
                                   {item.type === "issue" &&
-                                    todoStatusLabel !== "-" && (
+                                    displayStatusLabel && (
                                       <span
                                         className={PROJECT_FIELD_BADGE_CLASS}
                                       >
-                                        {todoStatusLabel}
+                                        {displayStatusLabel}
                                       </span>
                                     )}
                                   {item.type === "issue" &&

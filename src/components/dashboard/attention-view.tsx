@@ -2215,10 +2215,13 @@ function IssueList({
                 maxItems: 2,
               })
             : null;
-        const todoStatusLabel = displayItem.issueTodoProjectStatus
-          ? (ISSUE_STATUS_LABEL_MAP.get(displayItem.issueTodoProjectStatus) ??
-            displayItem.issueTodoProjectStatus)
-          : null;
+        const displayStatusValue =
+          displayItem.issueProjectStatus ?? "no_status";
+        const displayStatusLabel =
+          displayStatusValue !== "no_status"
+            ? (ISSUE_STATUS_LABEL_MAP.get(displayStatusValue) ??
+              displayStatusValue)
+            : null;
         const todoPriorityLabel = formatProjectField(
           displayItem.issueTodoProjectPriority,
         );
@@ -2237,9 +2240,9 @@ function IssueList({
               {item.assignees.length > 0 && (
                 <span>담당자 {formatUserList(item.assignees)}</span>
               )}
-              {displayItem.type === "issue" && todoStatusLabel ? (
+              {displayItem.type === "issue" && displayStatusLabel ? (
                 <span className={PROJECT_FIELD_BADGE_CLASS}>
-                  {todoStatusLabel}
+                  {displayStatusLabel}
                 </span>
               ) : null}
               {displayItem.type === "issue" && todoPriorityLabel !== "-" ? (

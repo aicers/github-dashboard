@@ -392,6 +392,67 @@ describe("activity service integration", () => {
     expect(result.items.map((item) => item.id)).toEqual([issueAlpha.id]);
   });
 
+  it("does not include issues in progress filter when the to-do project locks a different status", async () => {
+    const { issueAlpha } = await seedBasicActivityData();
+
+    const projectHistory = [
+      {
+        status: "Todo",
+        occurredAt: "2024-01-06T00:00:00.000Z",
+        project: { title: "Acme Project" },
+        projectTitle: "Acme Project",
+      },
+      {
+        status: "In Progress",
+        occurredAt: "2024-01-08T00:00:00.000Z",
+        project: { title: "Acme Project" },
+        projectTitle: "Acme Project",
+      },
+      {
+        status: "Done",
+        occurredAt: "2024-01-15T00:00:00.000Z",
+        project: { title: "Acme Project" },
+        projectTitle: "Acme Project",
+      },
+    ];
+
+    await query(
+      `UPDATE issues
+         SET data = jsonb_set(data, '{projectStatusHistory}', $1::jsonb)
+       WHERE id = $2`,
+      [JSON.stringify(projectHistory), issueAlpha.id],
+    );
+
+    await insertIssueStatusHistory([
+      {
+        issueId: issueAlpha.id,
+        status: "todo",
+        occurredAt: "2024-01-06T00:00:00.000Z",
+      },
+      {
+        issueId: issueAlpha.id,
+        status: "in_progress",
+        occurredAt: "2024-01-20T00:00:00.000Z",
+      },
+    ]);
+
+    const inProgressResult = await getActivityItems({
+      types: ["issue"],
+      statuses: ["in_progress"],
+    });
+
+    expect(inProgressResult.items.map((item) => item.id)).not.toContain(
+      issueAlpha.id,
+    );
+
+    const doneResult = await getActivityItems({
+      types: ["issue"],
+      statuses: ["done"],
+    });
+
+    expect(doneResult.items.map((item) => item.id)).toEqual([issueAlpha.id]);
+  });
+
   it("allows filtering issues by canceled status and records timeline entries", async () => {
     const { issueAlpha } = await seedBasicActivityData();
 
