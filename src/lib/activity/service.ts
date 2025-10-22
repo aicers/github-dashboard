@@ -1462,8 +1462,9 @@ function buildQueryFilters(
       const issueStatusParamIndex = values.length;
       const normalizedStatusExpr = buildNormalizedStatusExpr("items");
       const activityStatusExpr = "items.activity_status";
+      const activityFallbackExpr = `(${normalizedStatusExpr} IN ('no_status', 'todo'))`;
       clauses.push(
-        `(items.item_type <> 'issue' OR ${normalizedStatusExpr} = ANY($${issueStatusParamIndex}::text[]) OR (${activityStatusExpr} IS NOT NULL AND ${activityStatusExpr} = ANY($${issueStatusParamIndex}::text[])))`,
+        `(items.item_type <> 'issue' OR ${normalizedStatusExpr} = ANY($${issueStatusParamIndex}::text[]) OR (${activityStatusExpr} IS NOT NULL AND ${activityFallbackExpr} AND ${activityStatusExpr} = ANY($${issueStatusParamIndex}::text[])))`,
       );
       issueProjectStatuses.splice(
         0,
