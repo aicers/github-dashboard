@@ -312,7 +312,7 @@ describe("ensureIssueStatusAutomation", () => {
     expect(result.processed).toBe(true);
     expect(result.insertedInProgress).toBe(3);
     expect(result.insertedDone).toBe(1);
-    expect(result.insertedCanceled).toBe(1);
+    expect(result.insertedCanceled).toBe(2);
 
     const history = await query<{
       issue_id: string;
@@ -375,6 +375,12 @@ describe("ensureIssueStatusAutomation", () => {
         occurredAt: "2024-05-07T10:00:00.000Z",
         source: "activity",
       },
+      {
+        issueId: "issue-unmerged",
+        status: "canceled",
+        occurredAt: "2024-05-08T13:00:00.000Z",
+        source: "activity",
+      },
     ]);
 
     const automationState = await query<{
@@ -396,7 +402,7 @@ describe("ensureIssueStatusAutomation", () => {
       lastSuccessfulSyncAt: "2024-05-10T12:00:00.000Z",
       insertedInProgress: 3,
       insertedDone: 1,
-      insertedCanceled: 1,
+      insertedCanceled: 2,
       trigger: "test",
       lastSuccessSyncAt: "2024-05-10T12:00:00.000Z",
     });
@@ -413,8 +419,8 @@ describe("ensureIssueStatusAutomation", () => {
     expect(summary?.lastSuccessAt).not.toBeNull();
     expect(summary?.insertedInProgress).toBe(3);
     expect(summary?.insertedDone).toBe(1);
-    expect(summary?.insertedCanceled).toBe(1);
-    expect(summary?.itemCount).toBe(5);
+    expect(summary?.insertedCanceled).toBe(2);
+    expect(summary?.itemCount).toBe(6);
     expect(summary?.generatedAt).not.toBeNull();
   });
 
@@ -427,7 +433,7 @@ describe("ensureIssueStatusAutomation", () => {
     const historyCount = await query<{ count: string }>(
       `SELECT COUNT(*)::text AS count FROM activity_issue_status_history`,
     );
-    expect(historyCount.rows[0]?.count).toBe("7");
+    expect(historyCount.rows[0]?.count).toBe("8");
   });
 
   it("re-runs when last successful sync timestamp changes", async () => {
