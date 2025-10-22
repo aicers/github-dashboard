@@ -40,6 +40,7 @@ describe("POST /api/activity/status-automation", () => {
       processed: true,
       insertedInProgress: 3,
       insertedDone: 1,
+      insertedCanceled: 0,
     };
     const summary = {
       cacheKey: "issue-status-automation",
@@ -54,6 +55,7 @@ describe("POST /api/activity/status-automation", () => {
       lastSuccessSyncAt: "2024-05-10T11:55:00.000Z",
       insertedInProgress: 3,
       insertedDone: 1,
+      insertedCanceled: 0,
       itemCount: 4,
       error: null,
     } satisfies IssueStatusAutomationSummary;
@@ -151,6 +153,7 @@ describe("GET /api/activity/status-automation", () => {
       lastSuccessSyncAt: "2024-05-10T11:55:00.000Z",
       insertedInProgress: 2,
       insertedDone: 1,
+      insertedCanceled: 0,
       itemCount: 3,
       error: null,
     } satisfies IssueStatusAutomationSummary;
