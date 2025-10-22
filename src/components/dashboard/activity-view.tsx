@@ -3902,17 +3902,9 @@ export function ActivityView({
                   const isUpdatingProjectFields = updatingProjectFieldIds.has(
                     item.id,
                   );
-                  const usesActivityFallback =
-                    (!item.issueProjectStatus ||
-                      item.issueProjectStatus === "no_status") &&
-                    item.issueActivityStatus &&
-                    item.issueActivityStatus !== "no_status";
-                  const currentIssueStatus = usesActivityFallback
-                    ? (item.issueActivityStatus ?? "no_status")
-                    : (item.issueProjectStatus ?? "no_status");
-                  const statusSourceKey = usesActivityFallback
-                    ? "activity"
-                    : item.issueProjectStatusSource;
+                  const currentIssueStatus =
+                    item.issueProjectStatus ?? "no_status";
+                  const statusSourceKey = item.issueProjectStatusSource;
                   const statusSourceLabel =
                     statusSourceKey === "todo_project"
                       ? "To-do 프로젝트"
