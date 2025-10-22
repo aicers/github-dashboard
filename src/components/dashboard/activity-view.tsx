@@ -3902,12 +3902,21 @@ export function ActivityView({
                   const isUpdatingProjectFields = updatingProjectFieldIds.has(
                     item.id,
                   );
-                  const currentIssueStatus =
-                    item.issueProjectStatus ?? "no_status";
+                  const usesActivityFallback =
+                    (!item.issueProjectStatus ||
+                      item.issueProjectStatus === "no_status") &&
+                    item.issueActivityStatus &&
+                    item.issueActivityStatus !== "no_status";
+                  const currentIssueStatus = usesActivityFallback
+                    ? (item.issueActivityStatus ?? "no_status")
+                    : (item.issueProjectStatus ?? "no_status");
+                  const statusSourceKey = usesActivityFallback
+                    ? "activity"
+                    : item.issueProjectStatusSource;
                   const statusSourceLabel =
-                    item.issueProjectStatusSource === "todo_project"
+                    statusSourceKey === "todo_project"
                       ? "To-do 프로젝트"
-                      : item.issueProjectStatusSource === "activity"
+                      : statusSourceKey === "activity"
                         ? "Activity"
                         : "없음";
                   const displayStatusLabel =
@@ -3945,9 +3954,9 @@ export function ActivityView({
                   const canEditStatus =
                     item.type === "issue" && !item.issueProjectStatusLocked;
                   const sourceStatusTimes =
-                    item.issueProjectStatusSource === "todo_project"
+                    statusSourceKey === "todo_project"
                       ? (detail?.todoStatusTimes ?? null)
-                      : item.issueProjectStatusSource === "activity"
+                      : statusSourceKey === "activity"
                         ? (detail?.activityStatusTimes ?? null)
                         : null;
                   const sourceStatusEntries = SOURCE_STATUS_KEYS.map(
