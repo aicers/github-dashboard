@@ -291,6 +291,7 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
     useState<ActivityCacheRefreshResult | null>(null);
   const [issueStatusAutomationSummary, setIssueStatusAutomationSummary] =
     useState<IssueStatusAutomationSummary | null>(null);
+  const [statusAutomationStart, setStatusAutomationStart] = useState("");
 
   const [isRunningBackfill, setIsRunningBackfill] = useState(false);
   const [isRunningPrLinkBackfill, setIsRunningPrLinkBackfill] = useState(false);
@@ -795,21 +796,36 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
       return;
     }
 
+    let overrideStartAt: string | undefined;
+    if (statusAutomationStart.trim().length) {
+      const parsed = new Date(statusAutomationStart);
+      if (Number.isNaN(parsed.getTime())) {
+        setFeedback("유효한 시작 시각을 입력하세요.");
+        return;
+      }
+      overrideStartAt = parsed.toISOString();
+    }
+
     setIsRunningStatusAutomation(true);
     try {
+      const requestPayload: Record<string, unknown> = {
+        trigger: "sync-controls",
+      };
+      if (overrideStartAt) {
+        requestPayload.startAt = overrideStartAt;
+      }
+
       const response = await fetch("/api/activity/status-automation", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ trigger: "sync-controls" }),
+        body: JSON.stringify(requestPayload),
       });
       const data =
         await parseApiResponse<IssueStatusAutomationPostResult>(response);
       if (!data.success) {
-        throw new Error(
-          data.message ?? "진행 상태 자동 설정 실행에 실패했습니다.",
-        );
+        throw new Error(data.message ?? "진행 상태 설정 실행에 실패했습니다.");
       }
 
       const payload = data.result ?? null;
@@ -833,13 +849,13 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
       if (run) {
         if (run.processed) {
           setFeedback(
-            `진행 상태 자동 설정을 완료했습니다. (진행 ${run.insertedInProgress.toLocaleString()}건, 완료 ${run.insertedDone.toLocaleString()}건)`,
+            `진행 상태 설정을 완료했습니다. (진행 ${run.insertedInProgress.toLocaleString()}건, 완료 ${run.insertedDone.toLocaleString()}건, 취소 ${Number(run.insertedCanceled ?? 0).toLocaleString()}건)`,
           );
         } else {
           setFeedback("이슈 상태가 이미 최신입니다.");
         }
       } else {
-        setFeedback("진행 상태 자동 설정 요청이 완료되었습니다.");
+        setFeedback("진행 상태 설정 요청이 완료되었습니다.");
       }
 
       router.refresh();
@@ -847,7 +863,7 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
       setFeedback(
         error instanceof Error
           ? error.message
-          : "진행 상태 자동 설정 중 오류가 발생했습니다.",
+          : "진행 상태 설정 중 오류가 발생했습니다.",
       );
     } finally {
       setIsRunningStatusAutomation(false);
@@ -1120,75 +1136,118 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
 
         <Card className="border-primary/40">
           <CardHeader>
-            <CardTitle>진행 상태 자동 설정</CardTitle>
+            <CardTitle>진행 상태 설정</CardTitle>
             <CardDescription>
               연결된 PR의 생성과 머지를 기준으로 이슈의 진행 상태를 즉시
               갱신합니다.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm text-muted-foreground">
-            {issueStatusAutomationSummary ? (
-              <>
-                <p>
-                  최근 실행 시각:{" "}
-                  <span>
-                    {formatDateTime(issueStatusAutomationSummary.generatedAt) ??
-                      "-"}
-                  </span>
-                </p>
-                <p>
-                  최근 성공 시각:{" "}
-                  <span>
-                    {formatDateTime(
-                      issueStatusAutomationSummary.lastSuccessAt,
-                    ) ?? "-"}
-                  </span>
-                </p>
-                <p>
-                  대상 동기화 시각 (최근 실행):{" "}
-                  <span>
-                    {formatDateTime(
-                      issueStatusAutomationSummary.lastSuccessfulSyncAt,
-                    ) ?? "-"}
-                  </span>
-                </p>
-                <p>
-                  대상 동기화 시각 (최근 성공):{" "}
-                  <span>
-                    {formatDateTime(
-                      issueStatusAutomationSummary.lastSuccessSyncAt,
-                    ) ?? "-"}
-                  </span>
-                </p>
-                <p>
-                  최근 실행 결과:{" "}
-                  <span>
-                    진행{" "}
-                    {Number(
-                      issueStatusAutomationSummary.insertedInProgress ?? 0,
-                    ).toLocaleString()}
-                    건, 완료{" "}
-                    {Number(
-                      issueStatusAutomationSummary.insertedDone ?? 0,
-                    ).toLocaleString()}
-                    건
-                  </span>
-                </p>
-                {issueStatusAutomationSummary.trigger ? (
+          <CardContent className="space-y-4 text-sm text-muted-foreground">
+            <div className="space-y-3">
+              {issueStatusAutomationSummary ? (
+                <>
                   <p>
-                    최근 트리거:{" "}
-                    <span>{issueStatusAutomationSummary.trigger}</span>
+                    최근 실행 시각:{" "}
+                    <span>
+                      {formatDateTime(
+                        issueStatusAutomationSummary.generatedAt,
+                      ) ?? "-"}
+                    </span>
                   </p>
-                ) : null}
-                {issueStatusAutomationSummary.error ? (
-                  <p className="text-sm text-red-600">
-                    최근 오류: {issueStatusAutomationSummary.error}
+                  <p>
+                    최근 성공 시각:{" "}
+                    <span>
+                      {formatDateTime(
+                        issueStatusAutomationSummary.lastSuccessAt,
+                      ) ?? "-"}
+                    </span>
                   </p>
-                ) : null}
-              </>
-            ) : (
-              <p>아직 실행된 진행 상태 자동 설정 기록이 없습니다.</p>
-            )}
+                  <p>
+                    대상 동기화 시각 (최근 실행):{" "}
+                    <span>
+                      {formatDateTime(
+                        issueStatusAutomationSummary.lastSuccessfulSyncAt,
+                      ) ?? "-"}
+                    </span>
+                  </p>
+                  <p>
+                    대상 동기화 시각 (최근 성공):{" "}
+                    <span>
+                      {formatDateTime(
+                        issueStatusAutomationSummary.lastSuccessSyncAt,
+                      ) ?? "-"}
+                    </span>
+                  </p>
+                  <p>
+                    최근 실행 결과:{" "}
+                    <span>
+                      진행{" "}
+                      {Number(
+                        issueStatusAutomationSummary.insertedInProgress ?? 0,
+                      ).toLocaleString()}
+                      건, 완료{" "}
+                      {Number(
+                        issueStatusAutomationSummary.insertedDone ?? 0,
+                      ).toLocaleString()}
+                      건, 취소{" "}
+                      {Number(
+                        issueStatusAutomationSummary.insertedCanceled ?? 0,
+                      ).toLocaleString()}
+                      건
+                    </span>
+                  </p>
+                  {issueStatusAutomationSummary.trigger ? (
+                    <p>
+                      최근 트리거:{" "}
+                      <span>{issueStatusAutomationSummary.trigger}</span>
+                    </p>
+                  ) : null}
+                  {issueStatusAutomationSummary.error ? (
+                    <p className="text-sm text-red-600">
+                      최근 오류: {issueStatusAutomationSummary.error}
+                    </p>
+                  ) : null}
+                </>
+              ) : (
+                <p>아직 실행된 진행 상태 설정 기록이 없습니다.</p>
+              )}
+            </div>
+            <div className="flex flex-col gap-2">
+              <span className="text-muted-foreground">
+                대상 동기화 시각 (선택)
+              </span>
+              <Input
+                type="datetime-local"
+                value={statusAutomationStart}
+                onChange={(event) =>
+                  setStatusAutomationStart(event.target.value)
+                }
+              />
+              {statusAutomationStart.trim().length ? (
+                (() => {
+                  const parsed = new Date(statusAutomationStart);
+                  if (Number.isNaN(parsed.getTime())) {
+                    return (
+                      <p className="text-xs text-destructive">
+                        유효하지 않은 시각입니다. 다시 입력해주세요.
+                      </p>
+                    );
+                  }
+                  const display =
+                    formatDateTime(parsed.toISOString()) ??
+                    parsed.toISOString();
+                  return (
+                    <p className="text-xs text-muted-foreground">
+                      선택된 시각: {display}
+                    </p>
+                  );
+                })()
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  비워 두면 마지막 성공 시각을 기준으로 실행합니다.
+                </p>
+              )}
+            </div>
           </CardContent>
           <CardFooter>
             <Button
@@ -1197,8 +1256,8 @@ export function SyncControls({ status, isAdmin }: SyncControlsProps) {
               title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
             >
               {isRunningStatusAutomation
-                ? "진행 상태 자동 설정 중..."
-                : "진행 상태 자동 설정"}
+                ? "진행 상태 설정 중..."
+                : "진행 상태 설정"}
             </Button>
           </CardFooter>
         </Card>

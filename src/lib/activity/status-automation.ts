@@ -25,6 +25,7 @@ type AutomationOptions = {
   trigger?: string;
   force?: boolean;
   logger?: (message: string) => void;
+  overrideSyncAt?: string | null;
 };
 
 export type IssueStatusAutomationRunResult = {
@@ -359,14 +360,28 @@ async function insertCanceledStatuses(client: PoolClient) {
 export async function ensureIssueStatusAutomation(
   options: AutomationOptions = {},
 ): Promise<IssueStatusAutomationRunResult> {
-  const { force = false, runId = null, trigger, logger } = options;
+  const {
+    force = false,
+    runId = null,
+    trigger,
+    logger,
+    overrideSyncAt = null,
+  } = options;
   const config = await getSyncConfig();
-  const lastSuccessfulSyncAt =
+  let normalizedOverride: string | null = null;
+  if (typeof overrideSyncAt === "string" && overrideSyncAt.trim().length) {
+    const parsed = new Date(overrideSyncAt);
+    if (!Number.isNaN(parsed.getTime())) {
+      normalizedOverride = parsed.toISOString();
+    }
+  }
+  const configSuccessfulSyncAt =
     typeof config?.last_successful_sync_at === "string"
       ? config.last_successful_sync_at
       : config?.last_successful_sync_at instanceof Date
         ? config.last_successful_sync_at.toISOString()
         : null;
+  const lastSuccessfulSyncAt = normalizedOverride ?? configSuccessfulSyncAt;
 
   const pool = getPool();
   const client = await pool.connect();
@@ -378,7 +393,7 @@ export async function ensureIssueStatusAutomation(
       AUTOMATION_LOCK_ID,
     ]);
 
-    let shouldRun = force;
+    let shouldRun = force || normalizedOverride !== null;
     const currentState = await fetchCurrentState(client);
     previousSuccessAt = currentState?.lastSuccessAt ?? null;
     previousSuccessSyncAt = currentState?.lastSuccessSyncAt ?? null;

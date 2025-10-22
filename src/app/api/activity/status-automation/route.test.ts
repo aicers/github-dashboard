@@ -80,8 +80,56 @@ describe("POST /api/activity/status-automation", () => {
       runId: null,
       trigger: "sync-controls",
       force: true,
+      overrideSyncAt: null,
     });
     expect(getIssueStatusAutomationSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts a manual start timestamp", async () => {
+    const runResult = {
+      processed: true,
+      insertedInProgress: 1,
+      insertedDone: 0,
+      insertedCanceled: 0,
+    };
+    const summary = {
+      cacheKey: "issue-status-automation",
+      generatedAt: "2024-05-10T12:00:00.000Z",
+      updatedAt: "2024-05-10T12:01:00.000Z",
+      syncRunId: 42,
+      runId: 42,
+      status: "success",
+      trigger: "sync-controls",
+      lastSuccessfulSyncAt: "2024-05-10T11:55:00.000Z",
+      lastSuccessAt: "2024-05-10T12:01:30.000Z",
+      lastSuccessSyncAt: "2024-05-10T11:55:00.000Z",
+      insertedInProgress: 1,
+      insertedDone: 0,
+      insertedCanceled: 0,
+      itemCount: 1,
+      error: null,
+    } satisfies IssueStatusAutomationSummary;
+    vi.mocked(ensureIssueStatusAutomation).mockResolvedValueOnce(runResult);
+    vi.mocked(getIssueStatusAutomationSummary).mockResolvedValueOnce(summary);
+
+    const response = await POST(
+      new Request("http://localhost/api/activity/status-automation", {
+        method: "POST",
+        body: JSON.stringify({
+          trigger: "sync-controls",
+          startAt: "2024-05-09T10:00:00",
+        }),
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(ensureIssueStatusAutomation).toHaveBeenCalledWith({
+      runId: null,
+      trigger: "sync-controls",
+      force: true,
+      overrideSyncAt: new Date("2024-05-09T10:00:00").toISOString(),
+    });
   });
 
   it("returns 400 when payload validation fails", async () => {
