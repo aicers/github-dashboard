@@ -14,10 +14,12 @@ import {
   getLatestSyncRuns,
   getSyncConfig,
   getSyncState,
+  recordSyncLog,
   resetData as resetDatabase,
   type SyncRunSummary,
   type SyncRunType,
   updateSyncConfig,
+  updateSyncLog,
   updateSyncRunStatus,
 } from "@/lib/db/operations";
 import { env } from "@/lib/env";
@@ -59,6 +61,29 @@ type SyncRunResult = {
 };
 
 type SyncCounts = SyncRunResult["summary"]["counts"];
+
+async function logSyncStep(params: {
+  runId: number;
+  resource: string;
+  message: string;
+  step: () => Promise<void>;
+}) {
+  const { runId, resource, message, step } = params;
+  const logId = await recordSyncLog(resource, "running", message, runId);
+  try {
+    await step();
+    if (logId !== undefined) {
+      await updateSyncLog(logId, "success", message);
+    }
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : "Unexpected error";
+    if (logId !== undefined) {
+      await updateSyncLog(logId, "failed", errorMessage);
+    }
+    throw error;
+  }
+}
 
 export type BackfillChunkSuccess = SyncRunResult & {
   status: "success";
@@ -353,43 +378,57 @@ async function executeSync(params: {
         summary: toRunSummaryEvent(summary),
       });
 
-      try {
-        await ensureIssueStatusAutomation({
-          runId,
-          trigger: `sync:${actualRunType}`,
-          logger,
-        });
-      } catch (automationError) {
-        console.error(
-          "[status-automation] Failed to apply automation after sync run",
-          automationError,
-        );
-      }
+      await logSyncStep({
+        runId,
+        resource: "status-automation",
+        message: "Applying issue status automation",
+        step: async () => {
+          await ensureIssueStatusAutomation({
+            runId,
+            trigger: `sync:${actualRunType}`,
+            logger,
+          });
+          console.info(
+            "[status-automation] Applied automation after sync run",
+            {
+              runId,
+              trigger: `sync:${actualRunType}`,
+            },
+          );
+        },
+      });
 
-      try {
-        await refreshActivityItemsSnapshot({ truncate: true });
-      } catch (snapshotError) {
-        console.error(
-          "[activity-snapshot] Failed to refresh activity snapshot after sync",
-          snapshotError,
-        );
-      }
+      await logSyncStep({
+        runId,
+        resource: "activity-snapshot",
+        message: "Refreshing activity snapshot",
+        step: async () => {
+          await refreshActivityItemsSnapshot({ truncate: true });
+          console.info(
+            "[activity-snapshot] Refreshed activity snapshot after sync",
+            {
+              runId,
+              mode: "full",
+            },
+          );
+        },
+      });
 
-      try {
-        const cacheSummary = await refreshActivityCaches({
-          runId,
-          reason: "sync",
-        });
-        console.info("[activity-cache] Refreshed caches after sync run", {
-          runId,
-          caches: cacheSummary,
-        });
-      } catch (cacheError) {
-        console.error(
-          "[activity-cache] Failed to refresh caches after sync run",
-          cacheError,
-        );
-      }
+      await logSyncStep({
+        runId,
+        resource: "activity-cache",
+        message: "Refreshing activity caches",
+        step: async () => {
+          const cacheSummary = await refreshActivityCaches({
+            runId,
+            reason: "sync",
+          });
+          console.info("[activity-cache] Refreshed caches after sync run", {
+            runId,
+            caches: cacheSummary,
+          });
+        },
+      });
 
       return {
         since,
