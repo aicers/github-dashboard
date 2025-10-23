@@ -2,6 +2,7 @@ import {
   buildActivityBaseQuery,
   normalizeProjectTarget,
 } from "@/lib/activity/base-query";
+import { refreshActivitySocialSignals } from "@/lib/activity/social-signals";
 import { ensureSchema } from "@/lib/db";
 import { query } from "@/lib/db/client";
 import { env } from "@/lib/env";
@@ -172,15 +173,52 @@ export async function refreshActivityItemsSnapshot(options?: {
 }): Promise<void> {
   await ensureSchema();
   const targetProject = normalizeProjectTarget(env.TODO_PROJECT_NAME);
+  const hasIdFilter = Array.isArray(options?.ids);
+  const normalizedIds = hasIdFilter
+    ? Array.from(
+        new Set(
+          (options?.ids ?? []).filter(
+            (id): id is string =>
+              typeof id === "string" && id.trim().length > 0,
+          ),
+        ),
+      )
+    : undefined;
+
   if (options?.truncate) {
+    await refreshActivitySocialSignals({ truncate: true });
     await query("TRUNCATE activity_items");
+  } else if (normalizedIds && normalizedIds.length > 0) {
+    const issueResult = await query<{ id: string }>(
+      `SELECT id FROM issues WHERE id = ANY($1::text[])`,
+      [normalizedIds],
+    );
+    const pullRequestResult = await query<{ id: string }>(
+      `SELECT id FROM pull_requests WHERE id = ANY($1::text[])`,
+      [normalizedIds],
+    );
+    const issueIds = Array.from(new Set(issueResult.rows.map((row) => row.id)));
+    const pullRequestIds = Array.from(
+      new Set(pullRequestResult.rows.map((row) => row.id)),
+    );
+    if (issueIds.length || pullRequestIds.length) {
+      await refreshActivitySocialSignals({
+        issueIds: issueIds.length ? issueIds : undefined,
+        pullRequestIds: pullRequestIds.length ? pullRequestIds : undefined,
+      });
+    }
   }
-  if (options?.ids && options.ids.length === 0 && !options.truncate) {
+  if (
+    hasIdFilter &&
+    normalizedIds &&
+    normalizedIds.length === 0 &&
+    !options?.truncate
+  ) {
     return;
   }
-  const { text, params } = buildSnapshotUpsertQuery(
-    targetProject,
-    options?.ids,
-  );
+
+  const idsForQuery =
+    normalizedIds && normalizedIds.length > 0 ? normalizedIds : options?.ids;
+  const { text, params } = buildSnapshotUpsertQuery(targetProject, idsForQuery);
   await query(text, params);
 }

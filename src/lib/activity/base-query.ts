@@ -168,9 +168,49 @@ issue_items AS (
     i.author_id,
     COALESCE(assignees.assignee_ids, ARRAY[]::text[]) AS assignee_ids,
     ARRAY[]::text[] AS reviewer_ids,
-    COALESCE(mentions.mentioned_ids, ARRAY[]::text[]) AS mentioned_ids,
-    COALESCE(commenters.commenter_ids, ARRAY[]::text[]) AS commenter_ids,
-    COALESCE(reactors.reactor_ids, ARRAY[]::text[]) AS reactor_ids,
+    COALESCE(
+      issue_comment_mentions.mentioned_ids,
+      CASE
+        WHEN issue_comment_mentions.item_id IS NULL THEN (
+          SELECT ARRAY_AGG(DISTINCT u.id) FILTER (WHERE u.id IS NOT NULL)
+          FROM comments c
+          CROSS JOIN LATERAL regexp_matches(
+            COALESCE(c.data->>'body', ''),
+            '@([A-Za-z0-9_-]+)',
+            'g'
+          ) AS match(captures)
+          LEFT JOIN users u ON LOWER(u.login) = LOWER(match.captures[1])
+          WHERE c.issue_id = i.id
+        )
+        ELSE NULL
+      END,
+      ARRAY[]::text[]
+    ) AS mentioned_ids,
+    COALESCE(
+      issue_comment_participants.participant_ids,
+      CASE
+        WHEN issue_comment_participants.item_id IS NULL THEN (
+          SELECT ARRAY_AGG(DISTINCT c.author_id) FILTER (WHERE c.author_id IS NOT NULL)
+          FROM comments c
+          WHERE c.issue_id = i.id
+        )
+        ELSE NULL
+      END,
+      ARRAY[]::text[]
+    ) AS commenter_ids,
+    COALESCE(
+      issue_reaction_users.reactor_ids,
+      CASE
+        WHEN issue_reaction_users.item_id IS NULL THEN (
+          SELECT ARRAY_AGG(DISTINCT r.user_id) FILTER (WHERE r.user_id IS NOT NULL)
+          FROM reactions r
+          WHERE r.subject_id = i.id
+            AND LOWER(r.subject_type) IN ('issue', 'discussion')
+        )
+        ELSE NULL
+      END,
+      ARRAY[]::text[]
+    ) AS reactor_ids,
     COALESCE(labels.label_keys, ARRAY[]::text[]) AS label_keys,
     COALESCE(labels.label_names, ARRAY[]::text[]) AS label_names,
     NULLIF(i.data->'issueType'->>'id', '') AS issue_type_id,
@@ -232,23 +272,15 @@ issue_items AS (
       BOOL_OR(LOWER(label_node->>'name') IN ('task', 'todo', 'chore')) AS has_task_label
     FROM jsonb_array_elements(COALESCE(i.data->'labels'->'nodes', '[]'::jsonb)) AS label_node
   ) labels ON TRUE
-  LEFT JOIN LATERAL (
-    SELECT ARRAY_AGG(DISTINCT c.author_id) FILTER (WHERE c.author_id IS NOT NULL) AS commenter_ids
-    FROM comments c
-    WHERE c.issue_id = i.id
-  ) commenters ON TRUE
-  LEFT JOIN LATERAL (
-    SELECT ARRAY_AGG(DISTINCT u.id) FILTER (WHERE u.id IS NOT NULL) AS mentioned_ids
-    FROM comments c
-    CROSS JOIN LATERAL regexp_matches(COALESCE(c.data->>'body', ''), '@([A-Za-z0-9_-]+)', 'g') AS match(captures)
-    LEFT JOIN users u ON LOWER(u.login) = LOWER(match.captures[1])
-    WHERE c.issue_id = i.id
-  ) mentions ON TRUE
-  LEFT JOIN LATERAL (
-    SELECT ARRAY_AGG(DISTINCT r.user_id) FILTER (WHERE r.user_id IS NOT NULL) AS reactor_ids
-    FROM reactions r
-    WHERE r.subject_type IN ('Issue', 'Discussion') AND r.subject_id = i.id
-  ) reactors ON TRUE
+  LEFT JOIN activity_comment_participants issue_comment_participants
+    ON issue_comment_participants.item_id = i.id
+   AND issue_comment_participants.item_type IN ('issue', 'discussion')
+  LEFT JOIN activity_comment_mentions issue_comment_mentions
+    ON issue_comment_mentions.item_id = i.id
+   AND issue_comment_mentions.item_type IN ('issue', 'discussion')
+  LEFT JOIN activity_reaction_users issue_reaction_users
+    ON issue_reaction_users.item_id = i.id
+   AND issue_reaction_users.item_type IN ('issue', 'discussion')
   LEFT JOIN LATERAL (
     SELECT
       ${priorityValueExpr} AS priority_value,
@@ -286,9 +318,49 @@ pr_items AS (
     pr.author_id,
     COALESCE(assignees.assignee_ids, ARRAY[]::text[]) AS assignee_ids,
     COALESCE(reviewers.reviewer_ids, ARRAY[]::text[]) AS reviewer_ids,
-    COALESCE(mentions.mentioned_ids, ARRAY[]::text[]) AS mentioned_ids,
-    COALESCE(commenters.commenter_ids, ARRAY[]::text[]) AS commenter_ids,
-    COALESCE(reactors.reactor_ids, ARRAY[]::text[]) AS reactor_ids,
+    COALESCE(
+      pr_comment_mentions.mentioned_ids,
+      CASE
+        WHEN pr_comment_mentions.item_id IS NULL THEN (
+          SELECT ARRAY_AGG(DISTINCT u.id) FILTER (WHERE u.id IS NOT NULL)
+          FROM comments c
+          CROSS JOIN LATERAL regexp_matches(
+            COALESCE(c.data->>'body', ''),
+            '@([A-Za-z0-9_-]+)',
+            'g'
+          ) AS match(captures)
+          LEFT JOIN users u ON LOWER(u.login) = LOWER(match.captures[1])
+          WHERE c.pull_request_id = pr.id
+        )
+        ELSE NULL
+      END,
+      ARRAY[]::text[]
+    ) AS mentioned_ids,
+    COALESCE(
+      pr_comment_participants.participant_ids,
+      CASE
+        WHEN pr_comment_participants.item_id IS NULL THEN (
+          SELECT ARRAY_AGG(DISTINCT c.author_id) FILTER (WHERE c.author_id IS NOT NULL)
+          FROM comments c
+          WHERE c.pull_request_id = pr.id
+        )
+        ELSE NULL
+      END,
+      ARRAY[]::text[]
+    ) AS commenter_ids,
+    COALESCE(
+      pr_reaction_users.reactor_ids,
+      CASE
+        WHEN pr_reaction_users.item_id IS NULL THEN (
+          SELECT ARRAY_AGG(DISTINCT r.user_id) FILTER (WHERE r.user_id IS NOT NULL)
+          FROM reactions r
+          WHERE r.subject_id = pr.id
+            AND LOWER(r.subject_type) = 'pullrequest'
+        )
+        ELSE NULL
+      END,
+      ARRAY[]::text[]
+    ) AS reactor_ids,
     COALESCE(labels.label_keys, ARRAY[]::text[]) AS label_keys,
     COALESCE(labels.label_names, ARRAY[]::text[]) AS label_names,
     NULL::text AS issue_type_id,
@@ -344,23 +416,15 @@ pr_items AS (
       ARRAY_AGG(DISTINCT label_node->>'name') FILTER (WHERE label_node->>'name' IS NOT NULL) AS label_names
     FROM jsonb_array_elements(COALESCE(pr.data->'labels'->'nodes', '[]'::jsonb)) AS label_node
   ) labels ON TRUE
-  LEFT JOIN LATERAL (
-    SELECT ARRAY_AGG(DISTINCT c.author_id) FILTER (WHERE c.author_id IS NOT NULL) AS commenter_ids
-    FROM comments c
-    WHERE c.pull_request_id = pr.id
-  ) commenters ON TRUE
-  LEFT JOIN LATERAL (
-    SELECT ARRAY_AGG(DISTINCT u.id) FILTER (WHERE u.id IS NOT NULL) AS mentioned_ids
-    FROM comments c
-    CROSS JOIN LATERAL regexp_matches(COALESCE(c.data->>'body', ''), '@([A-Za-z0-9_-]+)', 'g') AS match(captures)
-    LEFT JOIN users u ON LOWER(u.login) = LOWER(match.captures[1])
-    WHERE c.pull_request_id = pr.id
-  ) mentions ON TRUE
-  LEFT JOIN LATERAL (
-    SELECT ARRAY_AGG(DISTINCT r.user_id) FILTER (WHERE r.user_id IS NOT NULL) AS reactor_ids
-    FROM reactions r
-    WHERE r.subject_type = 'PullRequest' AND r.subject_id = pr.id
-  ) reactors ON TRUE
+  LEFT JOIN activity_comment_participants pr_comment_participants
+    ON pr_comment_participants.item_id = pr.id
+   AND pr_comment_participants.item_type = 'pull_request'
+  LEFT JOIN activity_comment_mentions pr_comment_mentions
+    ON pr_comment_mentions.item_id = pr.id
+   AND pr_comment_mentions.item_type = 'pull_request'
+  LEFT JOIN activity_reaction_users pr_reaction_users
+    ON pr_reaction_users.item_id = pr.id
+   AND pr_reaction_users.item_type = 'pull_request'
 ),
 combined AS (
   SELECT

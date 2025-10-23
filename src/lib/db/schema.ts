@@ -211,6 +211,24 @@ const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS activity_items_updated_idx ON activity_items(updated_at DESC NULLS LAST)`,
   `CREATE INDEX IF NOT EXISTS activity_items_status_idx ON activity_items(status)`,
   `CREATE INDEX IF NOT EXISTS activity_items_repository_idx ON activity_items(repository_id, updated_at DESC NULLS LAST)`,
+  `CREATE TABLE IF NOT EXISTS activity_comment_participants (
+    item_id TEXT PRIMARY KEY,
+    item_type TEXT NOT NULL,
+    participant_ids TEXT[] NOT NULL DEFAULT '{}',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE TABLE IF NOT EXISTS activity_comment_mentions (
+    item_id TEXT PRIMARY KEY,
+    item_type TEXT NOT NULL,
+    mentioned_ids TEXT[] NOT NULL DEFAULT '{}',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE TABLE IF NOT EXISTS activity_reaction_users (
+    item_id TEXT PRIMARY KEY,
+    item_type TEXT NOT NULL,
+    reactor_ids TEXT[] NOT NULL DEFAULT '{}',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
   `CREATE TABLE IF NOT EXISTS reactions (
     id TEXT PRIMARY KEY,
     subject_type TEXT NOT NULL,

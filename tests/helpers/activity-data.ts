@@ -28,6 +28,9 @@ export async function resetActivityTables() {
     `
       TRUNCATE TABLE
         activity_items,
+        activity_comment_participants,
+        activity_comment_mentions,
+        activity_reaction_users,
         activity_issue_status_history,
         activity_issue_project_overrides,
         review_requests,
