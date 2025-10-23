@@ -77,6 +77,8 @@ const cleanupRunningSyncRunsMock = vi.fn<
   }>
 >(async () => ({ runs: [], logs: [] }));
 const emitSyncEventMock = vi.fn<(event: SyncStreamEvent) => void>();
+const recordSyncLogMock = vi.fn(async () => 42);
+const updateSyncLogMock = vi.fn(async () => undefined);
 
 type RunCollectionResult = {
   repositoriesProcessed: number;
@@ -150,6 +152,8 @@ const refreshActivityCachesMock = vi.fn(
   async () => activityCacheRefreshResultMock,
 );
 const ensureActivityCachesMock = vi.fn(async () => null);
+const ensureIssueStatusAutomationMock = vi.fn(async () => {});
+const refreshActivityItemsSnapshotMock = vi.fn(async () => {});
 
 vi.mock("@/lib/db", () => ({
   ensureSchema: ensureSchemaMock,
@@ -167,6 +171,8 @@ vi.mock("@/lib/db/operations", () => ({
   getDataFreshness: getDataFreshnessMock,
   getDashboardStats: getDashboardStatsMock,
   cleanupRunningSyncRuns: cleanupRunningSyncRunsMock,
+  recordSyncLog: recordSyncLogMock,
+  updateSyncLog: updateSyncLogMock,
 }));
 
 vi.mock("@/lib/github/collectors", () => ({
@@ -185,6 +191,12 @@ vi.mock("@/lib/github/collectors", () => ({
 vi.mock("@/lib/activity/cache", () => ({
   refreshActivityCaches: refreshActivityCachesMock,
   ensureActivityCaches: ensureActivityCachesMock,
+}));
+vi.mock("@/lib/activity/status-automation", () => ({
+  ensureIssueStatusAutomation: ensureIssueStatusAutomationMock,
+}));
+vi.mock("@/lib/activity/snapshot", () => ({
+  refreshActivityItemsSnapshot: refreshActivityItemsSnapshotMock,
 }));
 vi.mock("@/lib/env", () => ({
   env: {
@@ -231,6 +243,10 @@ describe("sync service (unit)", () => {
     getLatestSyncRunsMock.mockResolvedValue([]);
     refreshActivityCachesMock.mockResolvedValue(activityCacheRefreshResultMock);
     ensureActivityCachesMock.mockResolvedValue(null);
+    recordSyncLogMock.mockResolvedValue(99);
+    updateSyncLogMock.mockResolvedValue(undefined);
+    ensureIssueStatusAutomationMock.mockResolvedValue(undefined);
+    refreshActivityItemsSnapshotMock.mockResolvedValue(undefined);
     getSyncConfigMock.mockImplementation(async () => ({
       org_name: "acme",
       auto_sync_enabled: false,
