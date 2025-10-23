@@ -1,3 +1,4 @@
+import { refreshActivitySocialSignals } from "@/lib/activity/social-signals";
 import { query, withTransaction } from "@/lib/db/client";
 import { emitSyncEvent } from "@/lib/sync/event-bus";
 
@@ -514,6 +515,24 @@ export async function upsertReaction(reaction: DbReaction) {
       toJsonb(reaction.raw),
     ],
   );
+
+  const normalizedType =
+    typeof reaction.subjectType === "string"
+      ? reaction.subjectType.trim().toLowerCase()
+      : "";
+
+  if (normalizedType === "issue" || normalizedType === "discussion") {
+    await refreshActivitySocialSignals({
+      issueIds: [reaction.subjectId],
+    });
+  } else if (
+    normalizedType === "pullrequest" ||
+    normalizedType === "pull_request"
+  ) {
+    await refreshActivitySocialSignals({
+      pullRequestIds: [reaction.subjectId],
+    });
+  }
 }
 
 export async function upsertReviewRequest(request: DbReviewRequest) {
@@ -647,6 +666,15 @@ export async function upsertComment(comment: DbComment) {
       toJsonb(comment.raw),
     ],
   );
+
+  if (comment.issueId || comment.pullRequestId) {
+    await refreshActivitySocialSignals({
+      issueIds: comment.issueId ? [comment.issueId] : undefined,
+      pullRequestIds: comment.pullRequestId
+        ? [comment.pullRequestId]
+        : undefined,
+    });
+  }
 }
 
 export async function recordSyncLog(
