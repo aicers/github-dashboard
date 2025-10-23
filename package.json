@@ -37,7 +37,6 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.2.6",
     "@playwright/test": "^1.56.1",
     "@tailwindcss/postcss": "^4.1.15",
     "@testcontainers/postgresql": "^11.7.1",

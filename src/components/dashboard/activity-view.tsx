@@ -4087,7 +4087,7 @@ export function ActivityView({
                                       key={label.key}
                                       className="rounded-md bg-muted px-2 py-0.5"
                                     >
-                                      {label.key}
+                                      {label.name ?? label.key}
                                     </span>
                                   ))}
                                 </div>
