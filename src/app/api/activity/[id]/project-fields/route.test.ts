@@ -19,6 +19,14 @@ vi.mock("@/lib/activity/project-field-store", () => ({
   clearProjectFieldOverrides: clearProjectFieldOverridesMock,
 }));
 
+const refreshActivityItemsSnapshotMock =
+  vi.fn<
+    (options?: { truncate?: boolean; ids?: readonly string[] }) => Promise<void>
+  >();
+vi.mock("@/lib/activity/snapshot", () => ({
+  refreshActivityItemsSnapshot: refreshActivityItemsSnapshotMock,
+}));
+
 type RouteHandlers = typeof import("./route");
 
 function createDetail(
@@ -107,6 +115,7 @@ describe("PATCH /api/activity/[id]/project-fields", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    refreshActivityItemsSnapshotMock.mockResolvedValue(undefined);
     handlers = await import("./route");
   });
 
@@ -153,6 +162,9 @@ describe("PATCH /api/activity/[id]/project-fields", () => {
       weight: "Heavy",
       initiationOptions: "Open to Start",
       startDate: "2024-06-01",
+    });
+    expect(refreshActivityItemsSnapshotMock).toHaveBeenCalledWith({
+      ids: ["issue-1"],
     });
   });
 
@@ -229,6 +241,7 @@ describe("PATCH /api/activity/[id]/project-fields", () => {
     const body = (await response.json()) as { item: ActivityItem };
     expect(body.item.issueTodoProjectPriority).toBe("P0");
     expect(applyProjectFieldOverridesMock).not.toHaveBeenCalled();
+    expect(refreshActivityItemsSnapshotMock).not.toHaveBeenCalled();
   });
 
   it("returns 400 when the issue id is invalid", async () => {
@@ -245,6 +258,7 @@ describe("PATCH /api/activity/[id]/project-fields", () => {
     const body = await response.json();
     expect(body.error).toBe("Invalid issue id.");
     expect(applyProjectFieldOverridesMock).not.toHaveBeenCalled();
+    expect(refreshActivityItemsSnapshotMock).not.toHaveBeenCalled();
   });
 
   it("returns 404 when the issue cannot be found", async () => {
@@ -263,6 +277,7 @@ describe("PATCH /api/activity/[id]/project-fields", () => {
     const body = await response.json();
     expect(body.error).toBe("Issue not found.");
     expect(applyProjectFieldOverridesMock).not.toHaveBeenCalled();
+    expect(refreshActivityItemsSnapshotMock).not.toHaveBeenCalled();
   });
 
   it("returns 404 when the target detail is not an issue", async () => {
@@ -285,6 +300,7 @@ describe("PATCH /api/activity/[id]/project-fields", () => {
     const body = await response.json();
     expect(body.error).toBe("Issue not found.");
     expect(applyProjectFieldOverridesMock).not.toHaveBeenCalled();
+    expect(refreshActivityItemsSnapshotMock).not.toHaveBeenCalled();
   });
 });
 
@@ -293,6 +309,7 @@ describe("DELETE /api/activity/[id]/project-fields", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    refreshActivityItemsSnapshotMock.mockResolvedValue(undefined);
     handlers = await import("./route");
   });
 
@@ -321,6 +338,9 @@ describe("DELETE /api/activity/[id]/project-fields", () => {
     const body = (await response.json()) as { item: ActivityItem };
     expect(body.item.issueTodoProjectPriority).toBeNull();
     expect(clearProjectFieldOverridesMock).toHaveBeenCalledWith("issue-1");
+    expect(refreshActivityItemsSnapshotMock).toHaveBeenCalledWith({
+      ids: ["issue-1"],
+    });
   });
 
   it("returns conflict when to-do project locks the fields", async () => {
@@ -341,6 +361,7 @@ describe("DELETE /api/activity/[id]/project-fields", () => {
     const body = await response.json();
     expect(body.todoStatus).toBe("in_progress");
     expect(clearProjectFieldOverridesMock).not.toHaveBeenCalled();
+    expect(refreshActivityItemsSnapshotMock).not.toHaveBeenCalled();
   });
 
   it("returns 400 when the issue id is invalid", async () => {
@@ -355,6 +376,7 @@ describe("DELETE /api/activity/[id]/project-fields", () => {
     const body = await response.json();
     expect(body.error).toBe("Invalid issue id.");
     expect(clearProjectFieldOverridesMock).not.toHaveBeenCalled();
+    expect(refreshActivityItemsSnapshotMock).not.toHaveBeenCalled();
   });
 
   it("returns 404 when the issue cannot be found", async () => {
@@ -371,5 +393,6 @@ describe("DELETE /api/activity/[id]/project-fields", () => {
     const body = await response.json();
     expect(body.error).toBe("Issue not found.");
     expect(clearProjectFieldOverridesMock).not.toHaveBeenCalled();
+    expect(refreshActivityItemsSnapshotMock).not.toHaveBeenCalled();
   });
 });

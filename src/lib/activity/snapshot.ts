@@ -6,9 +6,22 @@ import { ensureSchema } from "@/lib/db";
 import { query } from "@/lib/db/client";
 import { env } from "@/lib/env";
 
-function buildSnapshotUpsertSql(targetProject: string | null): string {
+type SnapshotQuery = {
+  text: string;
+  params: unknown[];
+};
+
+function buildSnapshotUpsertQuery(
+  targetProject: string | null,
+  ids?: readonly string[],
+): SnapshotQuery {
   const baseQuery = buildActivityBaseQuery(targetProject);
-  return `
+  const filteredIds =
+    Array.isArray(ids) && ids.length
+      ? Array.from(new Set(ids.filter((id) => typeof id === "string" && id)))
+      : undefined;
+  const filterClause = filteredIds ? "WHERE items.id = ANY($1::text[])" : "";
+  const text = `
 ${baseQuery}
 INSERT INTO activity_items (
   id,
@@ -100,6 +113,7 @@ SELECT
   items.raw_data,
   items.project_history
 FROM combined AS items
+${filterClause}
 ON CONFLICT (id) DO UPDATE SET
   item_type = EXCLUDED.item_type,
   number = EXCLUDED.number,
@@ -145,16 +159,28 @@ ON CONFLICT (id) DO UPDATE SET
   project_history = EXCLUDED.project_history,
   snapshot_updated_at = NOW();
 `;
+
+  return {
+    text,
+    params: filteredIds ? [filteredIds] : [],
+  };
 }
 
 export async function refreshActivityItemsSnapshot(options?: {
   truncate?: boolean;
+  ids?: readonly string[];
 }): Promise<void> {
   await ensureSchema();
   const targetProject = normalizeProjectTarget(env.TODO_PROJECT_NAME);
-  const upsertSql = buildSnapshotUpsertSql(targetProject);
   if (options?.truncate) {
     await query("TRUNCATE activity_items");
   }
-  await query(upsertSql);
+  if (options?.ids && options.ids.length === 0 && !options.truncate) {
+    return;
+  }
+  const { text, params } = buildSnapshotUpsertQuery(
+    targetProject,
+    options?.ids,
+  );
+  await query(text, params);
 }

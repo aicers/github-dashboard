@@ -35,6 +35,14 @@ vi.mock("@/lib/activity/project-field-store", () => ({
   clearProjectFieldOverrides: clearProjectFieldOverridesMock,
 }));
 
+const refreshActivityItemsSnapshotMock =
+  vi.fn<
+    (options?: { truncate?: boolean; ids?: readonly string[] }) => Promise<void>
+  >();
+vi.mock("@/lib/activity/snapshot", () => ({
+  refreshActivityItemsSnapshot: refreshActivityItemsSnapshotMock,
+}));
+
 type RouteHandlers = typeof import("./route");
 
 function createDetail(
@@ -124,6 +132,7 @@ describe("PATCH /api/activity/[id]/status", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     ensureSchemaMock.mockResolvedValue(undefined);
+    refreshActivityItemsSnapshotMock.mockResolvedValue(undefined);
     handlers = await import("./route");
   });
 
@@ -150,6 +159,9 @@ describe("PATCH /api/activity/[id]/status", () => {
     expect(recordActivityStatusMock).toHaveBeenCalledWith("issue-1", "done");
     expect(clearActivityStatusesMock).not.toHaveBeenCalled();
     expect(clearProjectFieldOverridesMock).not.toHaveBeenCalled();
+    expect(refreshActivityItemsSnapshotMock).toHaveBeenCalledWith({
+      ids: ["issue-1"],
+    });
   });
 
   it("allows updating the issue status to canceled", async () => {
@@ -177,6 +189,9 @@ describe("PATCH /api/activity/[id]/status", () => {
       "canceled",
     );
     expect(clearActivityStatusesMock).not.toHaveBeenCalled();
+    expect(refreshActivityItemsSnapshotMock).toHaveBeenCalledWith({
+      ids: ["issue-1"],
+    });
   });
 
   it("clears the issue status when requesting no_status", async () => {
@@ -201,6 +216,9 @@ describe("PATCH /api/activity/[id]/status", () => {
     expect(body.item.issueProjectStatus).toBe("no_status");
     expect(clearActivityStatusesMock).toHaveBeenCalledWith("issue-1");
     expect(recordActivityStatusMock).not.toHaveBeenCalled();
+    expect(refreshActivityItemsSnapshotMock).toHaveBeenCalledWith({
+      ids: ["issue-1"],
+    });
   });
 
   it("returns a conflict when the expected status does not match the current status", async () => {
@@ -228,6 +246,7 @@ describe("PATCH /api/activity/[id]/status", () => {
     expect(body.item.issueProjectStatus).toBe("in_progress");
     expect(recordActivityStatusMock).not.toHaveBeenCalled();
     expect(clearActivityStatusesMock).not.toHaveBeenCalled();
+    expect(refreshActivityItemsSnapshotMock).not.toHaveBeenCalled();
   });
 
   it("returns a conflict when the status is locked by the to-do project", async () => {
@@ -255,6 +274,7 @@ describe("PATCH /api/activity/[id]/status", () => {
     expect(body.todoStatus).toBe("done");
     expect(recordActivityStatusMock).not.toHaveBeenCalled();
     expect(clearActivityStatusesMock).not.toHaveBeenCalled();
+    expect(refreshActivityItemsSnapshotMock).not.toHaveBeenCalled();
   });
 
   it("returns 400 when the request body cannot be parsed", async () => {
@@ -269,6 +289,7 @@ describe("PATCH /api/activity/[id]/status", () => {
     expect(response.status).toBe(400);
     const body = await response.json();
     expect(body.error).toBe("Invalid request body.");
+    expect(refreshActivityItemsSnapshotMock).not.toHaveBeenCalled();
   });
 
   it("returns 400 when the status value is missing or invalid", async () => {
@@ -285,6 +306,7 @@ describe("PATCH /api/activity/[id]/status", () => {
     const body = await response.json();
     expect(body.error).toBe("Missing or invalid status value.");
     expect(getActivityItemDetailMock).not.toHaveBeenCalled();
+    expect(refreshActivityItemsSnapshotMock).not.toHaveBeenCalled();
   });
 
   it("returns 400 when the expected status value is invalid", async () => {
@@ -301,6 +323,7 @@ describe("PATCH /api/activity/[id]/status", () => {
     const body = await response.json();
     expect(body.error).toBe("Missing or invalid expected status value.");
     expect(getActivityItemDetailMock).not.toHaveBeenCalled();
+    expect(refreshActivityItemsSnapshotMock).not.toHaveBeenCalled();
   });
 
   it("returns 404 when the issue cannot be found", async () => {
@@ -318,6 +341,7 @@ describe("PATCH /api/activity/[id]/status", () => {
     expect(response.status).toBe(404);
     const body = await response.json();
     expect(body.error).toBe("Issue not found.");
+    expect(refreshActivityItemsSnapshotMock).not.toHaveBeenCalled();
   });
 
   it("returns 404 when the target is not an issue", async () => {
@@ -339,6 +363,7 @@ describe("PATCH /api/activity/[id]/status", () => {
     expect(response.status).toBe(404);
     const body = await response.json();
     expect(body.error).toBe("Issue not found.");
+    expect(refreshActivityItemsSnapshotMock).not.toHaveBeenCalled();
   });
 
   it("returns 400 when the issue id is invalid", async () => {
@@ -354,6 +379,7 @@ describe("PATCH /api/activity/[id]/status", () => {
     expect(response.status).toBe(400);
     const body = await response.json();
     expect(body.error).toBe("Invalid issue id.");
+    expect(refreshActivityItemsSnapshotMock).not.toHaveBeenCalled();
   });
 });
 
@@ -363,6 +389,7 @@ describe("DELETE /api/activity/[id]/status", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     ensureSchemaMock.mockResolvedValue(undefined);
+    refreshActivityItemsSnapshotMock.mockResolvedValue(undefined);
     handlers = await import("./route");
   });
 
@@ -385,6 +412,9 @@ describe("DELETE /api/activity/[id]/status", () => {
     const body = (await response.json()) as { item: ActivityItem };
     expect(body.item.issueProjectStatus).toBe("no_status");
     expect(clearActivityStatusesMock).toHaveBeenCalledWith("issue-1");
+    expect(refreshActivityItemsSnapshotMock).toHaveBeenCalledWith({
+      ids: ["issue-1"],
+    });
   });
 
   it("returns 400 when the issue id is invalid", async () => {
@@ -399,6 +429,7 @@ describe("DELETE /api/activity/[id]/status", () => {
     const body = await response.json();
     expect(body.error).toBe("Invalid issue id.");
     expect(clearActivityStatusesMock).not.toHaveBeenCalled();
+    expect(refreshActivityItemsSnapshotMock).not.toHaveBeenCalled();
   });
 
   it("returns 404 when the issue does not exist", async () => {
@@ -415,5 +446,6 @@ describe("DELETE /api/activity/[id]/status", () => {
     const body = await response.json();
     expect(body.error).toBe("Issue not found.");
     expect(clearActivityStatusesMock).not.toHaveBeenCalled();
+    expect(refreshActivityItemsSnapshotMock).not.toHaveBeenCalled();
   });
 });
