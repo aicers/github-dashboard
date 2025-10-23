@@ -217,11 +217,14 @@ test.describe("ActivityView (Playwright)", () => {
         }),
       ],
       pageInfo: {
+        page: 1,
         perPage: 25,
-        requestedPages: 1,
-        bufferedPages: 1,
-        bufferedUntilPage: 1,
-        hasMore: true,
+        totalCount: 2,
+        totalPages: 2,
+        isPrefetch: false,
+        requestToken: "",
+        issuedAt: new Date().toISOString(),
+        expiresAt: null,
       },
     });
 
@@ -234,11 +237,14 @@ test.describe("ActivityView (Playwright)", () => {
         }),
       ],
       pageInfo: {
+        page: 1,
         perPage: 25,
-        requestedPages: 1,
-        bufferedPages: 1,
-        bufferedUntilPage: 1,
-        hasMore: true,
+        totalCount: 2,
+        totalPages: 2,
+        isPrefetch: false,
+        requestToken: "",
+        issuedAt: new Date().toISOString(),
+        expiresAt: null,
       },
     });
 
@@ -247,10 +253,12 @@ test.describe("ActivityView (Playwright)", () => {
       pageInfo: {
         page: 2,
         perPage: 25,
-        requestedPages: 1,
-        bufferedPages: 0,
-        bufferedUntilPage: 2,
-        hasMore: false,
+        totalCount: 2,
+        totalPages: 2,
+        isPrefetch: false,
+        requestToken: "",
+        issuedAt: new Date().toISOString(),
+        expiresAt: null,
       },
     });
 
@@ -327,7 +335,7 @@ test.describe("ActivityView (Playwright)", () => {
     await expect(
       page.getByText("필터 조건에 맞는 활동이 없습니다."),
     ).toBeVisible();
-    await expect(page.getByText("페이지 2 / 2 (총 —건)")).toBeVisible();
+    await expect(page.getByText("페이지 2 / 2 (총 2건)")).toBeVisible();
     await expect(page.getByRole("button", { name: "다음" })).toBeDisabled();
   });
 });

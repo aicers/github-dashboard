@@ -128,7 +128,22 @@ describe("ActivityView", () => {
     const consoleError = vi
       .spyOn(console, "error")
       .mockImplementation(() => {});
-    const props = createDefaultProps();
+    const props = createDefaultProps({
+      initialData: buildActivityListResult({
+        pageInfo: {
+          page: 1,
+          perPage: 25,
+          requestedPages: 3,
+          bufferedPages: 1,
+          bufferedUntilPage: 1,
+          hasMore: true,
+          isPrefetch: true,
+          requestToken: "prefetch-token",
+          issuedAt: "2024-01-01T00:00:00.000Z",
+          expiresAt: "2024-01-01T00:05:00.000Z",
+        },
+      }),
+    });
 
     mockFetchJsonOnce({ filters: [], limit: 30 });
 
@@ -184,7 +199,22 @@ describe("ActivityView", () => {
   });
 
   it("activating an attention while categories are unset enables the matching category", async () => {
-    const props = createDefaultProps();
+    const props = createDefaultProps({
+      initialData: buildActivityListResult({
+        pageInfo: {
+          page: 1,
+          perPage: 25,
+          requestedPages: 3,
+          bufferedPages: 1,
+          bufferedUntilPage: 1,
+          hasMore: true,
+          isPrefetch: true,
+          requestToken: "prefetch-token",
+          issuedAt: "2024-01-01T00:00:00.000Z",
+          expiresAt: "2024-01-01T00:05:00.000Z",
+        },
+      }),
+    });
     mockFetchJsonOnce({ filters: [], limit: 30 });
 
     render(<ActivityView {...props} />);
@@ -1256,6 +1286,10 @@ describe("ActivityView", () => {
         bufferedPages: 1,
         bufferedUntilPage: 1,
         hasMore: true,
+        isPrefetch: true,
+        requestToken: "prefetch-token",
+        issuedAt: "2024-01-01T00:00:00.000Z",
+        expiresAt: "2024-01-01T00:05:00.000Z",
       },
     });
 
@@ -1272,6 +1306,10 @@ describe("ActivityView", () => {
         bufferedPages: 0,
         bufferedUntilPage: 2,
         hasMore: false,
+        isPrefetch: true,
+        requestToken: "prefetch-token",
+        issuedAt: "2024-01-01T00:00:00.000Z",
+        expiresAt: "2024-01-01T00:05:00.000Z",
       },
     });
     mockFetchJsonOnce(emptyResult);
@@ -1615,41 +1653,18 @@ describe("ActivityView", () => {
     await act(async () => {});
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    const metadataButton = screen.getByRole("button", {
-      name: "전체 현황 불러오기",
-    });
-    const jumpButton = screen.getByRole("button", { name: "이동" });
-    expect(jumpButton).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "전체 현황 불러오기" }),
+    ).not.toBeInTheDocument();
 
     const dateInput =
       document.querySelector<HTMLInputElement>('input[type="date"]');
     expect(dateInput).not.toBeNull();
     const inputElement = dateInput as HTMLInputElement;
-    expect(inputElement).toBeDisabled();
-
-    const metadataResponse = {
-      pageInfo: {
-        page: 1,
-        perPage: 25,
-        totalCount: 40,
-        totalPages: 2,
-        isPrefetch: false,
-        requestToken: "prefetch-token",
-        issuedAt: "2024-01-01T00:00:00.000Z",
-        expiresAt: "2024-01-01T00:05:00.000Z",
-      },
-      jumpTo: [],
-      lastSyncCompletedAt: props.initialData.lastSyncCompletedAt,
-      timezone: props.initialData.timezone,
-      dateTimeFormat: props.initialData.dateTimeFormat,
-    } satisfies ActivityMetadataResult;
-
-    mockFetchJsonOnce(metadataResponse);
-    fireEvent.click(metadataButton);
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(jumpButton).not.toBeDisabled());
     expect(inputElement).not.toBeDisabled();
+
+    const jumpButton = screen.getByRole("button", { name: "이동" });
+    expect(jumpButton).not.toBeDisabled();
 
     fetchMock.mockClear();
 
@@ -1660,13 +1675,19 @@ describe("ActivityView", () => {
           title: "Jump result",
         }),
       ],
-      pageInfo: { perPage: 25 },
+      pageInfo: {
+        page: 1,
+        perPage: 25,
+        totalCount: 1,
+        totalPages: 1,
+        isPrefetch: false,
+      },
     });
 
     mockFetchJsonOnce(jumpResult);
 
     fireEvent.change(inputElement, { target: { value: "2024-04-01" } });
-    fireEvent.click(screen.getByRole("button", { name: "이동" }));
+    fireEvent.click(jumpButton);
 
     await act(async () => {});
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -1682,7 +1703,22 @@ describe("ActivityView", () => {
   });
 
   it("fetches pagination metadata on demand", async () => {
-    const props = createDefaultProps();
+    const props = createDefaultProps({
+      initialData: buildActivityListResult({
+        pageInfo: {
+          page: 1,
+          perPage: 25,
+          requestedPages: 3,
+          bufferedPages: 1,
+          bufferedUntilPage: 1,
+          hasMore: true,
+          isPrefetch: true,
+          requestToken: "prefetch-token",
+          issuedAt: "2024-01-01T00:00:00.000Z",
+          expiresAt: "2024-01-01T00:05:00.000Z",
+        },
+      }),
+    });
 
     mockFetchJsonOnce({ filters: [], limit: 30 });
 
@@ -1735,7 +1771,22 @@ describe("ActivityView", () => {
   });
 
   it("ignores stale metadata responses", async () => {
-    const props = createDefaultProps();
+    const props = createDefaultProps({
+      initialData: buildActivityListResult({
+        pageInfo: {
+          page: 1,
+          perPage: 25,
+          requestedPages: 3,
+          bufferedPages: 1,
+          bufferedUntilPage: 1,
+          hasMore: true,
+          isPrefetch: true,
+          requestToken: "prefetch-token",
+          issuedAt: "2024-01-01T00:00:00.000Z",
+          expiresAt: "2024-01-01T00:05:00.000Z",
+        },
+      }),
+    });
 
     mockFetchJsonOnce({ filters: [], limit: 30 });
 

@@ -255,15 +255,13 @@ export type ActivityPageInfo =
   | ActivityPrefetchPageInfo
   | ActivitySummaryPageInfo;
 
-export type ActivityPrefetchResult = {
+export type ActivityListResult = {
   items: ActivityItem[];
-  pageInfo: ActivityPrefetchPageInfo;
+  pageInfo: ActivityPageInfo;
   lastSyncCompletedAt: string | null;
   timezone: string | null;
   dateTimeFormat: DateTimeDisplayFormat;
 };
-
-export type ActivityListResult = ActivityPrefetchResult;
 
 export type ActivityJumpToCoordinate = {
   page: number;

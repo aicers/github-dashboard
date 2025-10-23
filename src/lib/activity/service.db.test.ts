@@ -2,7 +2,16 @@
 
 import "../../../tests/helpers/postgres-container";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 import { ensureActivityCaches } from "@/lib/activity/cache";
 import {
@@ -14,6 +23,7 @@ import {
 import type {
   ActivityListParams,
   ActivityListResult,
+  ActivityPrefetchPageInfo,
 } from "@/lib/activity/types";
 import type {
   AttentionInsights,
@@ -56,6 +66,22 @@ import { getAttentionInsights } from "@/lib/dashboard/attention";
 const mockedAttentionInsights = vi.mocked(getAttentionInsights);
 
 const BASE_TIME = "2024-01-01T00:00:00.000Z";
+
+const originalPrefetchPages = env.ACTIVITY_PREFETCH_PAGES;
+
+beforeAll(() => {
+  env.ACTIVITY_PREFETCH_PAGES = 3;
+});
+
+afterAll(() => {
+  env.ACTIVITY_PREFETCH_PAGES = originalPrefetchPages;
+});
+
+function expectPrefetchPageInfo(
+  pageInfo: ActivityListResult["pageInfo"],
+): asserts pageInfo is ActivityPrefetchPageInfo {
+  expect(pageInfo.isPrefetch).toBe(true);
+}
 
 const emptyInsights = (): AttentionInsights => ({
   generatedAt: BASE_TIME,
@@ -275,13 +301,15 @@ async function fetchActivitySummary(
   params: ActivityListParams,
   prefetch: ActivityListResult,
 ) {
+  expectPrefetchPageInfo(prefetch.pageInfo);
+  const pageInfo = prefetch.pageInfo;
   return getActivityMetadata({
     ...params,
     mode: "summary",
-    token: prefetch.pageInfo.requestToken,
-    page: prefetch.pageInfo.page,
-    perPage: prefetch.pageInfo.perPage,
-    prefetchPages: prefetch.pageInfo.requestedPages,
+    token: pageInfo.requestToken,
+    page: pageInfo.page,
+    perPage: pageInfo.perPage,
+    prefetchPages: pageInfo.requestedPages,
   });
 }
 
@@ -375,6 +403,7 @@ describe("activity service integration", () => {
     const prefetch = await getActivityItems({ perPage: 1, prefetchPages: 1 });
 
     expect(prefetch.items).toHaveLength(1);
+    expectPrefetchPageInfo(prefetch.pageInfo);
     expect(prefetch.pageInfo.requestedPages).toBe(1);
     expect(prefetch.pageInfo.bufferedPages).toBe(1);
     expect(prefetch.pageInfo.hasMore).toBe(true);
@@ -386,6 +415,7 @@ describe("activity service integration", () => {
     const prefetch = await getActivityItems({ perPage: 1, prefetchPages: 3 });
 
     expect(prefetch.items).toHaveLength(2);
+    expectPrefetchPageInfo(prefetch.pageInfo);
     expect(prefetch.pageInfo.bufferedPages).toBe(2);
     expect(prefetch.pageInfo.hasMore).toBe(false);
   });
@@ -395,6 +425,7 @@ describe("activity service integration", () => {
 
     const prefetch = await getActivityItems({ perPage: 1, prefetchPages: 25 });
 
+    expectPrefetchPageInfo(prefetch.pageInfo);
     expect(prefetch.pageInfo.requestedPages).toBe(10);
     expect(prefetch.pageInfo.bufferedPages).toBeGreaterThan(0);
   });
@@ -403,6 +434,7 @@ describe("activity service integration", () => {
     await seedBasicActivityData();
 
     const prefetch = await getActivityItems({ perPage: 1, prefetchPages: 3 });
+    expectPrefetchPageInfo(prefetch.pageInfo);
     const metadata = await fetchActivitySummary({ perPage: 1 }, prefetch);
 
     expect(metadata.pageInfo.totalCount).toBe(2);
@@ -416,6 +448,7 @@ describe("activity service integration", () => {
 
     const prefetch = await getActivityItems({ repositoryIds: [repoAlpha.id] });
 
+    expectPrefetchPageInfo(prefetch.pageInfo);
     await expect(
       getActivityMetadata({
         repositoryIds: [repoBeta.id],
@@ -431,6 +464,7 @@ describe("activity service integration", () => {
   it("rejects metadata after the token expires", async () => {
     await seedBasicActivityData();
     const prefetch = await getActivityItems();
+    expectPrefetchPageInfo(prefetch.pageInfo);
 
     const now = Date.now();
     vi.useFakeTimers();
@@ -767,6 +801,7 @@ describe("activity service integration", () => {
     expect(pullRequestItem.type).toBe("pull_request");
     expect(pullRequestItem.attention.staleOpenPr).toBeTruthy();
     expect(pullRequestItem.attention.reviewRequestPending).toBeTruthy();
+    expectPrefetchPageInfo(repoItems.pageInfo);
     expect(repoItems.pageInfo.bufferedPages).toBe(1);
     expect(repoItems.pageInfo.hasMore).toBe(false);
 
@@ -787,6 +822,7 @@ describe("activity service integration", () => {
     expect(issueItem.id).toBe(issueAlpha.id);
     expect(issueItem.type).toBe("issue");
     expect(issueItem.attention.backlogIssue).toBe(true);
+    expectPrefetchPageInfo(issueItems.pageInfo);
     const issueSummary = await fetchActivitySummary(
       { repositoryIds: [repoAlpha.id], perPage: 5 },
       issueItems,
