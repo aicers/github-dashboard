@@ -48,6 +48,7 @@ import type {
   ActivityLinkedIssueFilter,
   ActivityListParams,
   ActivityListResult,
+  ActivityMetadataResult,
   ActivityPullRequestStatusFilter,
   ActivitySavedFilter,
   IssueProjectStatus,
@@ -1152,9 +1153,14 @@ export function ActivityView({
 
   const [draft, setDraft] = useState<FilterState>(initialState);
   const [applied, setApplied] = useState<FilterState>(initialState);
-  const [data, setData] = useState<ActivityListResult>(initialData);
+  const [prefetchData, setPrefetchData] =
+    useState<ActivityListResult>(initialData);
+  const [metadata, setMetadata] = useState<ActivityMetadataResult | null>(null);
+  const requestedPrefetchPages = prefetchData.pageInfo.requestedPages;
   const [isLoading, setIsLoading] = useState(false);
+  const [isMetadataLoading, setIsMetadataLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [metadataError, setMetadataError] = useState<string | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
   const [detailMap, setDetailMap] = useState<
@@ -1197,7 +1203,10 @@ export function ActivityView({
     string | null
   >(null);
   const savedFilterSelectId = useId();
-  const trimmedTimezone = data.timezone?.trim() ?? "";
+  const activeTimezone = metadata?.timezone ?? prefetchData.timezone ?? null;
+  const activeDateTimeFormat =
+    metadata?.dateTimeFormat ?? prefetchData.dateTimeFormat;
+  const trimmedTimezone = activeTimezone?.trim() ?? "";
   const timezoneTitle = trimmedTimezone.length ? trimmedTimezone : undefined;
   const formatDateTimeWithSettings = useCallback(
     (value: string | null | undefined) => {
@@ -1207,22 +1216,55 @@ export function ActivityView({
 
       return formatDateTime(
         value,
-        data.timezone ?? undefined,
-        data.dateTimeFormat,
+        activeTimezone ?? undefined,
+        activeDateTimeFormat,
       );
     },
-    [data.timezone, data.dateTimeFormat],
+    [activeTimezone, activeDateTimeFormat],
   );
+  const lastSyncCompletedAt =
+    metadata?.lastSyncCompletedAt ?? prefetchData.lastSyncCompletedAt;
+  const currentPage = applied.page;
+  const perPage = applied.perPage;
+  const bufferStartPage = prefetchData.pageInfo.page;
+  const bufferEndPage = prefetchData.pageInfo.bufferedUntilPage;
+  const hasMoreBuffered = prefetchData.pageInfo.hasMore;
+  const bufferedItems = prefetchData.items;
+  const visibleItems = useMemo(() => {
+    const startIndex = (currentPage - bufferStartPage) * perPage;
+    if (startIndex < 0 || startIndex >= bufferedItems.length) {
+      return [] as ActivityItem[];
+    }
+    return bufferedItems.slice(startIndex, startIndex + perPage);
+  }, [bufferStartPage, bufferedItems, currentPage, perPage]);
+  const totalPages = metadata?.pageInfo.totalPages ?? null;
+  const totalCount = metadata?.pageInfo.totalCount ?? null;
+  const metadataAvailable = metadata !== null;
+  const totalPagesDisplay =
+    totalPages !== null
+      ? totalPages
+      : hasMoreBuffered
+        ? `${bufferEndPage}+`
+        : bufferEndPage;
+  const totalCountDisplay =
+    totalCount !== null ? totalCount.toLocaleString() : "—";
+  const canGoPrev = currentPage > 1;
+  const canGoNext = metadata
+    ? currentPage < metadata.pageInfo.totalPages
+    : currentPage < bufferEndPage || hasMoreBuffered;
 
   const fetchControllerRef = useRef<AbortController | null>(null);
+  const metadataControllerRef = useRef<AbortController | null>(null);
   const detailControllersRef = useRef(new Map<string, AbortController>());
   const requestCounterRef = useRef(0);
+  const metadataRequestCounterRef = useRef(0);
   const notificationTimerRef = useRef<NodeJS.Timeout | null>(null);
   const appliedQuickParamRef = useRef<string | null>(null);
 
   useEffect(() => {
     return () => {
       fetchControllerRef.current?.abort();
+      metadataControllerRef.current?.abort();
       detailControllersRef.current.forEach((controller) => {
         controller.abort();
       });
@@ -1245,7 +1287,7 @@ export function ActivityView({
   }, [filtersManagerOpen]);
 
   useEffect(() => {
-    const validIds = new Set(data.items.map((item) => item.id));
+    const validIds = new Set(prefetchData.items.map((item) => item.id));
 
     if (openItemId && !validIds.has(openItemId)) {
       const controller = detailControllersRef.current.get(openItemId);
@@ -1292,7 +1334,7 @@ export function ActivityView({
 
       return changed ? next : current;
     });
-  }, [data.items, openItemId]);
+  }, [openItemId, prefetchData.items]);
 
   const repositoryOptions = useMemo<MultiSelectOption[]>(
     () =>
@@ -1860,14 +1902,20 @@ export function ActivityView({
     void loadSavedFilters();
   }, [loadSavedFilters]);
 
-  const fetchFeed = useCallback(
+  const fetchPrefetch = useCallback(
     async (
       nextFilters: FilterState,
-      jumpToDate?: string | null,
-      previousSync?: string | null,
+      options: {
+        jumpToDate?: string | null;
+        previousSync?: string | null;
+        prefetchPages?: number;
+      } = {},
     ) => {
       setIsLoading(true);
       setError(null);
+      metadataControllerRef.current?.abort();
+      setIsMetadataLoading(false);
+      setMetadataError(null);
       requestCounterRef.current += 1;
       const requestId = requestCounterRef.current;
 
@@ -1876,8 +1924,10 @@ export function ActivityView({
       fetchControllerRef.current = controller;
 
       const params = normalizeSearchParams(nextFilters, perPageDefault);
-      if (jumpToDate) {
-        params.set("jumpTo", jumpToDate);
+      const prefetchWindow = options.prefetchPages ?? requestedPrefetchPages;
+      params.set("prefetchPages", String(prefetchWindow));
+      if (options.jumpToDate) {
+        params.set("jumpTo", options.jumpToDate);
       }
 
       try {
@@ -1892,7 +1942,8 @@ export function ActivityView({
           return;
         }
 
-        setData(result);
+        setPrefetchData(result);
+        setMetadata(null);
         const nextState: FilterState = {
           ...nextFilters,
           page: result.pageInfo.page,
@@ -1903,9 +1954,9 @@ export function ActivityView({
         applyFiltersToQuery(router, nextState, perPageDefault);
 
         if (
-          previousSync &&
+          options.previousSync &&
           result.lastSyncCompletedAt &&
-          previousSync === result.lastSyncCompletedAt
+          options.previousSync === result.lastSyncCompletedAt
         ) {
           showNotification("Feed is already up to date.");
         }
@@ -1921,8 +1972,76 @@ export function ActivityView({
         }
       }
     },
-    [perPageDefault, router, showNotification],
+    [perPageDefault, requestedPrefetchPages, router, showNotification],
   );
+
+  const fetchMetadata = useCallback(async () => {
+    const token = prefetchData.pageInfo.requestToken?.trim();
+    if (!token) {
+      setMetadataError("요청 토큰이 없어요.");
+      return;
+    }
+
+    setIsMetadataLoading(true);
+    setMetadataError(null);
+    metadataRequestCounterRef.current += 1;
+    const requestId = metadataRequestCounterRef.current;
+
+    metadataControllerRef.current?.abort();
+    const controller = new AbortController();
+    metadataControllerRef.current = controller;
+
+    const params = normalizeSearchParams(applied, perPageDefault);
+    params.set("mode", "summary");
+    params.set("token", token);
+    params.set("prefetchPages", String(requestedPrefetchPages));
+
+    try {
+      const response = await fetch(`/api/activity?${params.toString()}`, {
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        let message = "Failed to load pagination metadata.";
+        try {
+          const payload = (await response.json()) as { error?: string };
+          if (typeof payload?.error === "string") {
+            message = payload.error;
+          }
+        } catch {
+          // ignore parse errors
+        }
+        throw new Error(message);
+      }
+
+      const result = (await response.json()) as ActivityMetadataResult;
+      if (
+        requestId !== metadataRequestCounterRef.current ||
+        result.pageInfo.requestToken !== prefetchData.pageInfo.requestToken
+      ) {
+        return;
+      }
+      setMetadata(result);
+    } catch (metadataFetchError) {
+      if ((metadataFetchError as Error).name === "AbortError") {
+        return;
+      }
+      setMetadataError(
+        metadataFetchError instanceof Error
+          ? metadataFetchError.message
+          : "Failed to load pagination metadata.",
+      );
+    } finally {
+      if (requestId === metadataRequestCounterRef.current) {
+        setIsMetadataLoading(false);
+      }
+    }
+  }, [
+    applied,
+    perPageDefault,
+    prefetchData.pageInfo.requestToken,
+    requestedPrefetchPages,
+  ]);
 
   const handleApplyQuickFilter = useCallback(
     (definition: QuickFilterDefinition) => {
@@ -1942,9 +2061,9 @@ export function ActivityView({
       setSelectedSavedFilterId("");
       setSaveFilterError(null);
       setJumpDate("");
-      void fetchFeed(nextState);
+      void fetchPrefetch(nextState);
     },
-    [canonicalDraftKey, draft.perPage, fetchFeed],
+    [canonicalDraftKey, draft.perPage, fetchPrefetch],
   );
 
   useEffect(() => {
@@ -2022,9 +2141,9 @@ export function ActivityView({
       setSelectedSavedFilterId(filter.id);
       setSaveFilterError(null);
       setJumpDate("");
-      void fetchFeed(nextState);
+      void fetchPrefetch(nextState);
     },
-    [fetchFeed, perPageDefault],
+    [fetchPrefetch, perPageDefault],
   );
 
   const saveCurrentFilters = useCallback(async () => {
@@ -2363,8 +2482,8 @@ export function ActivityView({
       return;
     }
     const nextState = { ...draft, page: 1 };
-    fetchFeed(nextState);
-  }, [draft, fetchFeed, hasPendingChanges]);
+    fetchPrefetch(nextState);
+  }, [draft, fetchPrefetch, hasPendingChanges]);
 
   const changePage = useCallback(
     (page: number) => {
@@ -2372,27 +2491,46 @@ export function ActivityView({
         return;
       }
 
+      const bufferStart = prefetchData.pageInfo.page;
+      const bufferEnd = prefetchData.pageInfo.bufferedUntilPage;
+
+      if (page >= bufferStart && page <= bufferEnd) {
+        const nextState = { ...applied, page };
+        setApplied(nextState);
+        setDraft(nextState);
+        applyFiltersToQuery(router, nextState, perPageDefault);
+        return;
+      }
+
       const nextState = { ...applied, page };
-      fetchFeed(nextState);
+      fetchPrefetch(nextState, { prefetchPages: requestedPrefetchPages });
     },
-    [applied, fetchFeed],
+    [
+      applied,
+      fetchPrefetch,
+      perPageDefault,
+      prefetchData.pageInfo.bufferedUntilPage,
+      prefetchData.pageInfo.page,
+      requestedPrefetchPages,
+      router,
+    ],
   );
 
   const changePerPage = useCallback(
     (perPage: number) => {
       const nextState = { ...applied, perPage, page: 1 };
       setDraft(nextState);
-      fetchFeed(nextState);
+      fetchPrefetch(nextState, { prefetchPages: requestedPrefetchPages });
     },
-    [applied, fetchFeed],
+    [applied, fetchPrefetch, requestedPrefetchPages],
   );
 
   const jumpToDate = useCallback(() => {
-    if (!jumpDate) {
+    if (!metadata || isMetadataLoading || !jumpDate) {
       return;
     }
 
-    const trimmedZone = data.timezone?.trim();
+    const trimmedZone = activeTimezone?.trim();
     let effectiveJump = jumpDate;
 
     if (trimmedZone?.length) {
@@ -2409,8 +2547,15 @@ export function ActivityView({
       }
     }
 
-    fetchFeed({ ...applied }, effectiveJump);
-  }, [applied, data.timezone, fetchFeed, jumpDate]);
+    fetchPrefetch({ ...applied }, { jumpToDate: effectiveJump });
+  }, [
+    activeTimezone,
+    applied,
+    fetchPrefetch,
+    isMetadataLoading,
+    jumpDate,
+    metadata,
+  ]);
 
   const loadDetail = useCallback(async (id: string) => {
     if (!id) {
@@ -2506,7 +2651,7 @@ export function ActivityView({
         if (!response.ok) {
           if (payload.item) {
             const conflictItem = payload.item;
-            setData((current) => ({
+            setPrefetchData((current) => ({
               ...current,
               items: current.items.map((existing) =>
                 existing.id === conflictItem.id ? conflictItem : existing,
@@ -2542,7 +2687,7 @@ export function ActivityView({
 
         const updatedItem = payload.item ?? item;
 
-        setData((current) => ({
+        setPrefetchData((current) => ({
           ...current,
           items: current.items.map((existing) =>
             existing.id === updatedItem.id ? updatedItem : existing,
@@ -2672,7 +2817,7 @@ export function ActivityView({
         if (!response.ok) {
           if (payloadResponse.item) {
             const conflictItem = payloadResponse.item;
-            setData((current) => ({
+            setPrefetchData((current) => ({
               ...current,
               items: current.items.map((existing) =>
                 existing.id === conflictItem.id ? conflictItem : existing,
@@ -2708,7 +2853,7 @@ export function ActivityView({
 
         const updatedItem = payloadResponse.item ?? item;
 
-        setData((current) => ({
+        setPrefetchData((current) => ({
           ...current,
           items: current.items.map((existing) =>
             existing.id === updatedItem.id ? updatedItem : existing,
@@ -2851,7 +2996,7 @@ export function ActivityView({
               className="font-semibold text-foreground/80"
               title={timezoneTitle}
             >
-              {formatDateTimeWithSettings(data.lastSyncCompletedAt) ??
+              {formatDateTimeWithSettings(lastSyncCompletedAt) ??
                 "Not available"}
             </span>
           </span>
@@ -3821,9 +3966,25 @@ export function ActivityView({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3 text-sm text-foreground">
             <span className="font-semibold">
-              페이지 {data.pageInfo.page} / {data.pageInfo.totalPages} (총{" "}
-              {data.pageInfo.totalCount}건)
+              페이지 {currentPage} / {totalPagesDisplay} (총 {totalCountDisplay}
+              건)
             </span>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => fetchMetadata()}
+              disabled={isLoading || isMetadataLoading}
+              className="h-8 px-3 text-xs"
+            >
+              {isMetadataLoading
+                ? "현황 불러오는 중..."
+                : metadataAvailable
+                  ? "전체 현황 새로고침"
+                  : "전체 현황 불러오기"}
+            </Button>
+            {metadataError && (
+              <span className="text-xs text-destructive">{metadataError}</span>
+            )}
             <div className="flex items-center gap-2 text-xs uppercase text-foreground">
               <Label className="font-medium">날짜 이동</Label>
               <Input
@@ -3831,24 +3992,29 @@ export function ActivityView({
                 value={jumpDate}
                 onChange={(event) => setJumpDate(event.target.value)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") {
+                  if (
+                    event.key === "Enter" &&
+                    metadataAvailable &&
+                    !isMetadataLoading
+                  ) {
                     jumpToDate();
                   }
                 }}
                 className="h-8 w-auto"
+                disabled={isLoading || !metadataAvailable || isMetadataLoading}
               />
               <Button
                 type="button"
                 variant="outline"
                 onClick={jumpToDate}
-                disabled={isLoading}
+                disabled={isLoading || !metadataAvailable || isMetadataLoading}
                 className="h-8 px-3 text-xs"
               >
                 이동
               </Button>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs uppercase text-foreground">Rows</span>
             <select
               className="rounded-md border border-border bg-background px-2 py-1 text-sm"
@@ -3871,15 +4037,15 @@ export function ActivityView({
               Loading activity feed...
             </div>
           )}
-          {!isLoading && data.items.length === 0 && (
+          {!isLoading && visibleItems.length === 0 && (
             <div className="rounded-md border border-border bg-muted/20 px-4 py-12 text-center text-sm text-muted-foreground/80">
               필터 조건에 맞는 활동이 없습니다.
             </div>
           )}
-          {!isLoading && data.items.length > 0 && (
+          {!isLoading && visibleItems.length > 0 && (
             <div className="rounded-2xl border border-border/70 bg-card/80 p-4 shadow-sm">
               <div className="space-y-3">
-                {data.items.map((item) => {
+                {visibleItems.map((item) => {
                   const isSelected = openItemId === item.id;
                   const detail = detailMap[item.id] ?? undefined;
                   const isDetailLoading = loadingDetailIds.has(item.id);
@@ -3938,7 +4104,7 @@ export function ActivityView({
                   );
                   const todoStartDateLabel = formatDateOnly(
                     item.issueTodoProjectStartDate,
-                    data.timezone,
+                    activeTimezone ?? undefined,
                   );
                   const todoStartDateTimestamp = formatDateTimeWithSettings(
                     item.issueTodoProjectStartDateUpdatedAt,
@@ -4294,8 +4460,8 @@ export function ActivityView({
                               </div>
                               <ActivityCommentSection
                                 comments={detail.comments}
-                                timezone={data.timezone}
-                                dateTimeFormat={data.dateTimeFormat}
+                                timezone={activeTimezone}
+                                dateTimeFormat={activeDateTimeFormat}
                               />
                               {item.type === "issue" &&
                               item.linkedPullRequests.length > 0 ? (
@@ -4499,22 +4665,20 @@ export function ActivityView({
         </div>
         <div className="flex flex-col items-center gap-3 border-t border-border pt-3">
           <span className="text-sm font-semibold text-foreground">
-            페이지 {data.pageInfo.page} / {data.pageInfo.totalPages}
+            페이지 {currentPage} / {totalPagesDisplay}
           </span>
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
-              onClick={() => changePage(data.pageInfo.page - 1)}
-              disabled={isLoading || data.pageInfo.page <= 1}
+              onClick={() => changePage(currentPage - 1)}
+              disabled={isLoading || !canGoPrev}
             >
               이전
             </Button>
             <Button
               variant="outline"
-              onClick={() => changePage(data.pageInfo.page + 1)}
-              disabled={
-                isLoading || data.pageInfo.page >= data.pageInfo.totalPages
-              }
+              onClick={() => changePage(currentPage + 1)}
+              disabled={isLoading || !canGoNext}
             >
               다음
             </Button>
@@ -4542,8 +4706,8 @@ export function ActivityView({
           onRename={renameSavedFilter}
           onReplace={replaceSavedFilter}
           onDelete={deleteSavedFilter}
-          timezone={data.timezone ?? null}
-          dateTimeFormat={data.dateTimeFormat}
+          timezone={activeTimezone ?? null}
+          dateTimeFormat={activeDateTimeFormat}
         />
       ) : null}
     </div>

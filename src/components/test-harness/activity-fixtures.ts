@@ -4,6 +4,7 @@ import type {
   ActivityItemDetail,
   ActivityListParams,
   ActivityListResult,
+  ActivityPrefetchPageInfo,
   ActivitySavedFilter,
   ActivityUser,
 } from "@/lib/activity/types";
@@ -173,21 +174,49 @@ export function buildActivityItemDetailFixture(
   };
 }
 
+type ActivityListResultFixtureOverrides = Partial<
+  Omit<ActivityListResult, "pageInfo">
+> & {
+  pageInfo?: Partial<ActivityPrefetchPageInfo>;
+};
+
 export function buildActivityListResultFixture(
-  overrides: Partial<ActivityListResult> = {},
+  overrides: ActivityListResultFixtureOverrides = {},
 ): ActivityListResult {
   const items = overrides.items?.map((item) =>
     buildActivityItemFixture(item),
   ) ?? [buildActivityItemFixture()];
+  const pageInfoOverride: Partial<ActivityPrefetchPageInfo> =
+    overrides.pageInfo ?? {};
+  const perPage = pageInfoOverride.perPage ?? 25;
+  const page = pageInfoOverride.page ?? 1;
+  const requestedPages = pageInfoOverride.requestedPages ?? 3;
+  const bufferedPages =
+    pageInfoOverride.bufferedPages ??
+    (items.length
+      ? Math.min(requestedPages, Math.ceil(items.length / perPage))
+      : 0);
+  const bufferedUntilPage =
+    pageInfoOverride.bufferedUntilPage ??
+    (bufferedPages > 0 ? page + bufferedPages - 1 : page);
+  const hasMore = pageInfoOverride.hasMore ?? false;
+  const expiresAtDefault = new Date(
+    new Date(NOW).getTime() + 5 * 60 * 1000,
+  ).toISOString();
 
   return {
     items,
     pageInfo: {
-      page: 1,
-      perPage: 25,
-      totalCount: items.length,
-      totalPages: 1,
-      ...(overrides.pageInfo ?? {}),
+      page,
+      perPage,
+      bufferedPages,
+      bufferedUntilPage,
+      requestedPages,
+      hasMore,
+      isPrefetch: true,
+      requestToken: pageInfoOverride.requestToken ?? "prefetch-token",
+      issuedAt: pageInfoOverride.issuedAt ?? NOW,
+      expiresAt: pageInfoOverride.expiresAt ?? expiresAtDefault,
     },
     lastSyncCompletedAt: overrides.lastSyncCompletedAt ?? NOW,
     timezone: overrides.timezone ?? "UTC",

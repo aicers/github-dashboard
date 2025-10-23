@@ -9,7 +9,12 @@ import {
   getActivityFilterOptions,
   getActivityItemDetail,
   getActivityItems,
+  getActivityMetadata,
 } from "@/lib/activity/service";
+import type {
+  ActivityListParams,
+  ActivityListResult,
+} from "@/lib/activity/types";
 import type {
   AttentionInsights,
   IssueAttentionItem,
@@ -266,6 +271,20 @@ async function seedBasicActivityData(): Promise<SeededData> {
   };
 }
 
+async function fetchActivitySummary(
+  params: ActivityListParams,
+  prefetch: ActivityListResult,
+) {
+  return getActivityMetadata({
+    ...params,
+    mode: "summary",
+    token: prefetch.pageInfo.requestToken,
+    page: prefetch.pageInfo.page,
+    perPage: prefetch.pageInfo.perPage,
+    prefetchPages: prefetch.pageInfo.requestedPages,
+  });
+}
+
 describe("activity service integration", () => {
   const originalProjectName = env.TODO_PROJECT_NAME;
 
@@ -348,6 +367,90 @@ describe("activity service integration", () => {
           item.repository === null || item.repository.id !== repoAlpha.id,
       ),
     ).toBe(true);
+  });
+
+  it("limits prefetched results to the requested page window", async () => {
+    await seedBasicActivityData();
+
+    const prefetch = await getActivityItems({ perPage: 1, prefetchPages: 1 });
+
+    expect(prefetch.items).toHaveLength(1);
+    expect(prefetch.pageInfo.requestedPages).toBe(1);
+    expect(prefetch.pageInfo.bufferedPages).toBe(1);
+    expect(prefetch.pageInfo.hasMore).toBe(true);
+  });
+
+  it("buffers multiple pages when the window exceeds remaining results", async () => {
+    await seedBasicActivityData();
+
+    const prefetch = await getActivityItems({ perPage: 1, prefetchPages: 3 });
+
+    expect(prefetch.items).toHaveLength(2);
+    expect(prefetch.pageInfo.bufferedPages).toBe(2);
+    expect(prefetch.pageInfo.hasMore).toBe(false);
+  });
+
+  it("clamps the prefetch window to ten pages", async () => {
+    await seedBasicActivityData();
+
+    const prefetch = await getActivityItems({ perPage: 1, prefetchPages: 25 });
+
+    expect(prefetch.pageInfo.requestedPages).toBe(10);
+    expect(prefetch.pageInfo.bufferedPages).toBeGreaterThan(0);
+  });
+
+  it("returns matching metadata totals for prefetched results", async () => {
+    await seedBasicActivityData();
+
+    const prefetch = await getActivityItems({ perPage: 1, prefetchPages: 3 });
+    const metadata = await fetchActivitySummary({ perPage: 1 }, prefetch);
+
+    expect(metadata.pageInfo.totalCount).toBe(2);
+    expect(metadata.pageInfo.totalPages).toBe(2);
+    expect(metadata.pageInfo.requestToken).toBe(prefetch.pageInfo.requestToken);
+    expect(metadata.jumpTo.map((entry) => entry.page)).toEqual([1, 2]);
+  });
+
+  it("rejects metadata when filters change before the summary call", async () => {
+    const { repoAlpha, repoBeta } = await seedBasicActivityData();
+
+    const prefetch = await getActivityItems({ repositoryIds: [repoAlpha.id] });
+
+    await expect(
+      getActivityMetadata({
+        repositoryIds: [repoBeta.id],
+        mode: "summary",
+        token: prefetch.pageInfo.requestToken,
+        page: prefetch.pageInfo.page,
+        perPage: prefetch.pageInfo.perPage,
+        prefetchPages: prefetch.pageInfo.requestedPages,
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("rejects metadata after the token expires", async () => {
+    await seedBasicActivityData();
+    const prefetch = await getActivityItems();
+
+    const now = Date.now();
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(
+        new Date(now + (env.ACTIVITY_PREFETCH_TOKEN_TTL_SECONDS + 5) * 1000),
+      );
+
+      await expect(
+        getActivityMetadata({
+          mode: "summary",
+          token: prefetch.pageInfo.requestToken,
+          page: prefetch.pageInfo.page,
+          perPage: prefetch.pageInfo.perPage,
+          prefetchPages: prefetch.pageInfo.requestedPages,
+        }),
+      ).rejects.toMatchObject({ status: 410 });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("filters issues by to-do project status when other project history entries exist", async () => {
@@ -664,8 +767,15 @@ describe("activity service integration", () => {
     expect(pullRequestItem.type).toBe("pull_request");
     expect(pullRequestItem.attention.staleOpenPr).toBeTruthy();
     expect(pullRequestItem.attention.reviewRequestPending).toBeTruthy();
-    expect(repoItems.pageInfo.totalCount).toBe(1);
-    expect(repoItems.pageInfo.totalPages).toBe(1);
+    expect(repoItems.pageInfo.bufferedPages).toBe(1);
+    expect(repoItems.pageInfo.hasMore).toBe(false);
+
+    const repoSummary = await fetchActivitySummary(
+      { repositoryIds: [repoBeta.id], perPage: 1 },
+      repoItems,
+    );
+    expect(repoSummary.pageInfo.totalCount).toBe(1);
+    expect(repoSummary.pageInfo.totalPages).toBe(1);
 
     const issueItems = await getActivityItems({
       repositoryIds: [repoAlpha.id],
@@ -677,7 +787,12 @@ describe("activity service integration", () => {
     expect(issueItem.id).toBe(issueAlpha.id);
     expect(issueItem.type).toBe("issue");
     expect(issueItem.attention.backlogIssue).toBe(true);
-    expect(issueItems.pageInfo.totalCount).toBe(1);
+    const issueSummary = await fetchActivitySummary(
+      { repositoryIds: [repoAlpha.id], perPage: 5 },
+      issueItems,
+    );
+    expect(issueSummary.pageInfo.totalCount).toBe(1);
+    expect(issueSummary.pageInfo.totalPages).toBe(1);
   });
 
   it("populates linked pull requests and issues for activity items", async () => {

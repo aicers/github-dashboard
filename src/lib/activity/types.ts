@@ -74,7 +74,14 @@ export type ActivityPagination = {
   perPage?: number;
 };
 
-export type ActivityListParams = ActivityFilters & ActivityPagination;
+export type ActivityRequestMode = "prefetch" | "summary";
+
+export type ActivityListParams = ActivityFilters &
+  ActivityPagination & {
+    mode?: ActivityRequestMode;
+    prefetchPages?: number;
+    token?: string;
+  };
 
 export type ActivityUser = {
   id: string;
@@ -220,16 +227,52 @@ export type ActivityItem = {
   attention: ActivityAttentionFlags;
 };
 
-export type ActivityPageInfo = {
+export type ActivityPrefetchPageInfo = {
+  page: number;
+  perPage: number;
+  bufferedPages: number;
+  bufferedUntilPage: number;
+  requestedPages: number;
+  hasMore: boolean;
+  isPrefetch: true;
+  requestToken: string;
+  issuedAt: string;
+  expiresAt: string | null;
+};
+
+export type ActivitySummaryPageInfo = {
   page: number;
   perPage: number;
   totalCount: number;
   totalPages: number;
+  isPrefetch: false;
+  requestToken: string;
+  issuedAt: string;
+  expiresAt: string | null;
 };
 
-export type ActivityListResult = {
+export type ActivityPageInfo =
+  | ActivityPrefetchPageInfo
+  | ActivitySummaryPageInfo;
+
+export type ActivityPrefetchResult = {
   items: ActivityItem[];
-  pageInfo: ActivityPageInfo;
+  pageInfo: ActivityPrefetchPageInfo;
+  lastSyncCompletedAt: string | null;
+  timezone: string | null;
+  dateTimeFormat: DateTimeDisplayFormat;
+};
+
+export type ActivityListResult = ActivityPrefetchResult;
+
+export type ActivityJumpToCoordinate = {
+  page: number;
+  isoDate: string;
+};
+
+export type ActivityMetadataResult = {
+  pageInfo: ActivitySummaryPageInfo;
+  jumpTo: ActivityJumpToCoordinate[];
   lastSyncCompletedAt: string | null;
   timezone: string | null;
   dateTimeFormat: DateTimeDisplayFormat;
