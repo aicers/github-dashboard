@@ -6,6 +6,7 @@ import {
   type ProjectFieldOverrideUpdate,
 } from "@/lib/activity/project-field-store";
 import { getActivityItemDetail } from "@/lib/activity/service";
+import { refreshActivityItemsSnapshot } from "@/lib/activity/snapshot";
 import type { IssueProjectStatus } from "@/lib/activity/types";
 
 type RouteParams = {
@@ -336,6 +337,7 @@ export async function PATCH(request: Request, context: RouteParams) {
   }
 
   await applyProjectFieldOverrides(id, effectiveUpdates);
+  await refreshActivityItemsSnapshot({ ids: [id] });
   const updated = await resolveIssueItem(id);
   return NextResponse.json({ item: updated?.item ?? detail.item });
 }
@@ -364,6 +366,7 @@ export async function DELETE(_: Request, context: RouteParams) {
   }
 
   await clearProjectFieldOverrides(id);
+  await refreshActivityItemsSnapshot({ ids: [id] });
   const updated = await resolveIssueItem(id);
   return NextResponse.json({ item: updated?.item ?? detail.item });
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { clearProjectFieldOverrides } from "@/lib/activity/project-field-store";
 import { getActivityItemDetail } from "@/lib/activity/service";
+import { refreshActivityItemsSnapshot } from "@/lib/activity/snapshot";
 import {
   clearActivityStatuses,
   recordActivityStatus,
@@ -112,9 +113,12 @@ export async function PATCH(request: Request, context: RouteParams) {
     await recordActivityStatus(id, status);
   }
 
+  await refreshActivityItemsSnapshot({ ids: [id] });
+
   const updated = await resolveIssueItem(id);
   if (updated?.item.issueProjectStatusLocked) {
     await clearProjectFieldOverrides(id);
+    await refreshActivityItemsSnapshot({ ids: [id] });
     const refreshed = await resolveIssueItem(id);
     return NextResponse.json({ item: refreshed?.item ?? updated.item });
   }
@@ -136,6 +140,7 @@ export async function DELETE(_: Request, context: RouteParams) {
   }
 
   await clearActivityStatuses(id);
+  await refreshActivityItemsSnapshot({ ids: [id] });
   const updated = await resolveIssueItem(id);
   return NextResponse.json({ item: updated?.item ?? detail.item });
 }

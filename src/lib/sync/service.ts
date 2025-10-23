@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { refreshActivityCaches } from "@/lib/activity/cache";
+import { refreshActivityItemsSnapshot } from "@/lib/activity/snapshot";
 import { ensureIssueStatusAutomation } from "@/lib/activity/status-automation";
 import { isValidDateTimeDisplayFormat } from "@/lib/date-time-format";
 import { ensureSchema } from "@/lib/db";
@@ -362,6 +363,15 @@ async function executeSync(params: {
         console.error(
           "[status-automation] Failed to apply automation after sync run",
           automationError,
+        );
+      }
+
+      try {
+        await refreshActivityItemsSnapshot({ truncate: true });
+      } catch (snapshotError) {
+        console.error(
+          "[activity-snapshot] Failed to refresh activity snapshot after sync",
+          snapshotError,
         );
       }
 
