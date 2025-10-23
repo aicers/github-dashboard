@@ -252,7 +252,10 @@ export async function refreshActivitySocialSignals(
   options?: SocialSignalRefreshOptions,
 ) {
   const truncate = options?.truncate ?? false;
+  let startedAt: number | null = null;
   if (options?.truncate) {
+    startedAt = Date.now();
+    console.info("[social-signals] starting full backfill");
     await query(
       `
         TRUNCATE TABLE
@@ -323,5 +326,12 @@ export async function refreshActivitySocialSignals(
       `,
       [SOCIAL_SIGNALS_CACHE_KEY, participantRows, mentionRows, reactorRows],
     );
+
+    console.info("[social-signals] full backfill complete", {
+      durationMs: startedAt ? Date.now() - startedAt : null,
+      participantRows,
+      mentionRows,
+      reactorRows,
+    });
   }
 }
