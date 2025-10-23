@@ -85,6 +85,7 @@ export function ActivityDetailOverlay({
     ? item.title
     : `${CATEGORY_LABELS[item.type]} 상세`;
   const statusLabel = item.state ?? item.status ?? null;
+  const labelBadges = Array.isArray(item.labels) ? item.labels : [];
 
   return (
     <div className="fixed inset-0 z-[60] flex justify-end">
@@ -142,6 +143,24 @@ export function ActivityDetailOverlay({
                     {badge}
                   </span>
                 ))}
+                {labelBadges.map((label) => {
+                  const display =
+                    label.name ??
+                    (typeof label.key === "string"
+                      ? (label.key.split(":").pop() ?? label.key)
+                      : "");
+                  if (!display) {
+                    return null;
+                  }
+                  return (
+                    <span
+                      key={`detail-label-${label.key}`}
+                      className="rounded-md bg-muted px-2 py-0.5 text-foreground/85"
+                    >
+                      {display}
+                    </span>
+                  );
+                })}
               </div>
             </div>
           </div>
