@@ -118,10 +118,10 @@ export const env = {
         .map((value) => value.trim())
         .filter((value) => value.length > 0)
     : [],
-  ACTIVITY_PREFETCH_PAGES: Math.max(
-    1,
-    Math.min(10, parsed.ACTIVITY_PREFETCH_PAGES ?? 3),
-  ),
+  ACTIVITY_PREFETCH_PAGES:
+    typeof parsed.ACTIVITY_PREFETCH_PAGES === "number"
+      ? Math.max(1, Math.min(10, parsed.ACTIVITY_PREFETCH_PAGES))
+      : null,
   ACTIVITY_PREFETCH_TOKEN_TTL_SECONDS:
     parsed.ACTIVITY_PREFETCH_TOKEN_TTL_SECONDS ?? 300,
   ACTIVITY_PREFETCH_TOKEN_SECRET: coerceOptionalString(

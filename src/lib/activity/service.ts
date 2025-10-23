@@ -59,10 +59,6 @@ const MAX_PER_PAGE = 100;
 
 const PREFETCH_MIN_PAGES = 1;
 const PREFETCH_MAX_PAGES = 10;
-const PREFETCH_DEFAULT_PAGES = Math.max(
-  PREFETCH_MIN_PAGES,
-  Math.min(PREFETCH_MAX_PAGES, env.ACTIVITY_PREFETCH_PAGES),
-);
 const PREFETCH_TOKEN_VERSION = "v1";
 const PREFETCH_TOKEN_SECRET =
   env.ACTIVITY_PREFETCH_TOKEN_SECRET ??
@@ -282,13 +278,31 @@ type PrefetchTokenPayload = {
   issuedAt: number;
 };
 
+function getPrefetchDefaultPages() {
+  const value = env.ACTIVITY_PREFETCH_PAGES;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    if (value < PREFETCH_MIN_PAGES) {
+      return PREFETCH_MIN_PAGES;
+    }
+    if (value > PREFETCH_MAX_PAGES) {
+      return PREFETCH_MAX_PAGES;
+    }
+    return Math.floor(value);
+  }
+  return 0;
+}
+
 function resolvePrefetchPages(raw?: number) {
+  const defaultPages = getPrefetchDefaultPages();
+  if (!defaultPages) {
+    return 0;
+  }
   if (typeof raw !== "number" || !Number.isFinite(raw)) {
-    return PREFETCH_DEFAULT_PAGES;
+    return defaultPages;
   }
   const floored = Math.floor(raw);
   if (floored < PREFETCH_MIN_PAGES) {
-    return PREFETCH_MIN_PAGES;
+    return defaultPages;
   }
   if (floored > PREFETCH_MAX_PAGES) {
     return PREFETCH_MAX_PAGES;
@@ -2740,7 +2754,11 @@ export async function getActivityItems(
     MAX_PER_PAGE,
     Math.max(1, params.perPage ?? DEFAULT_PER_PAGE),
   );
-  const prefetchPages = resolvePrefetchPages(params.prefetchPages);
+  const defaultPrefetchPages = getPrefetchDefaultPages();
+  const prefetchEnabled = defaultPrefetchPages > 0;
+  const prefetchPages = prefetchEnabled
+    ? resolvePrefetchPages(params.prefetchPages)
+    : 0;
   let page = Math.max(1, params.page ?? 1);
 
   const attentionSets = await resolveAttentionSets(thresholds);
@@ -2775,6 +2793,25 @@ export async function getActivityItems(
     !attentionSelection.includeNone &&
     attentionSelection.includeIds.length === 0
   ) {
+    if (!prefetchEnabled) {
+      return {
+        items: [],
+        pageInfo: {
+          page,
+          perPage,
+          totalCount: 0,
+          totalPages: 0,
+          isPrefetch: false,
+          requestToken: "",
+          issuedAt: new Date().toISOString(),
+          expiresAt: null,
+        },
+        lastSyncCompletedAt,
+        timezone,
+        dateTimeFormat,
+      };
+    }
+
     const tokenInfo = createPrefetchToken(params, page, perPage, prefetchPages);
     return {
       items: [],
@@ -2822,7 +2859,7 @@ export async function getActivityItems(
     : "";
   const limitIndex = values.length + 1;
   const offsetIndex = values.length + 2;
-  const fetchLimit = perPage * prefetchPages + 1;
+  const fetchLimit = prefetchPages > 0 ? perPage * prefetchPages + 1 : perPage;
   const queryParams = [...values, fetchLimit, offset];
 
   const queryStart = performance.now();
@@ -2839,9 +2876,13 @@ export async function getActivityItems(
   const queryDurationMs = performance.now() - queryStart;
 
   const rawRows = result.rows;
-  const maxItems = perPage * prefetchPages;
-  const hasMore = rawRows.length > maxItems;
-  const rows = hasMore ? rawRows.slice(0, maxItems) : rawRows;
+  let hasMore = false;
+  let rows = rawRows;
+  if (prefetchPages > 0) {
+    const maxItems = perPage * prefetchPages;
+    hasMore = rawRows.length > maxItems;
+    rows = hasMore ? rawRows.slice(0, maxItems) : rawRows;
+  }
 
   const issueIds = rows
     .filter((row) => row.item_type === "issue")
@@ -2902,6 +2943,47 @@ export async function getActivityItems(
     ),
   );
 
+  if (prefetchPages === 0) {
+    const countResult = await query<{ count: string }>(
+      `${baseQuery}
+       SELECT COUNT(*) AS count
+       FROM combined AS items
+       WHERE 1 = 1${predicate}`,
+      values,
+    );
+
+    const totalCount = Number(countResult.rows[0]?.count ?? 0);
+    const totalPages =
+      totalCount > 0 && perPage > 0
+        ? Math.ceil(totalCount / perPage)
+        : totalCount > 0
+          ? 1
+          : 0;
+
+    if (process.env.NODE_ENV !== "test") {
+      console.log(
+        `[activity] summary latency=${queryDurationMs.toFixed(1)}ms page=${page} perPage=${perPage} total=${totalCount}`,
+      );
+    }
+
+    return {
+      items,
+      pageInfo: {
+        page,
+        perPage,
+        totalCount,
+        totalPages,
+        isPrefetch: false,
+        requestToken: "",
+        issuedAt: new Date().toISOString(),
+        expiresAt: null,
+      },
+      lastSyncCompletedAt,
+      timezone,
+      dateTimeFormat,
+    };
+  }
+
   const bufferedPages = rows.length ? Math.ceil(rows.length / perPage) : 0;
   const bufferedUntilPage = bufferedPages > 0 ? page + bufferedPages - 1 : page;
 
@@ -2947,6 +3029,11 @@ export async function getActivityMetadata(
 
   const targetProject = normalizeText(env.TODO_PROJECT_NAME);
   const baseQuery = buildBaseQuery(targetProject);
+
+  const defaultPrefetchPages = getPrefetchDefaultPages();
+  if (!defaultPrefetchPages) {
+    throw new ActivityMetadataError("Prefetch metadata is disabled.", 400);
+  }
 
   let perPage = Math.min(
     MAX_PER_PAGE,

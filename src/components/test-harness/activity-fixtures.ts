@@ -6,6 +6,7 @@ import type {
   ActivityListResult,
   ActivityPrefetchPageInfo,
   ActivitySavedFilter,
+  ActivitySummaryPageInfo,
   ActivityUser,
 } from "@/lib/activity/types";
 
@@ -177,7 +178,9 @@ export function buildActivityItemDetailFixture(
 type ActivityListResultFixtureOverrides = Partial<
   Omit<ActivityListResult, "pageInfo">
 > & {
-  pageInfo?: Partial<ActivityPrefetchPageInfo>;
+  pageInfo?:
+    | Partial<ActivityPrefetchPageInfo>
+    | Partial<ActivitySummaryPageInfo>;
 };
 
 export function buildActivityListResultFixture(
@@ -186,38 +189,68 @@ export function buildActivityListResultFixture(
   const items = overrides.items?.map((item) =>
     buildActivityItemFixture(item),
   ) ?? [buildActivityItemFixture()];
-  const pageInfoOverride: Partial<ActivityPrefetchPageInfo> =
-    overrides.pageInfo ?? {};
-  const perPage = pageInfoOverride.perPage ?? 25;
-  const page = pageInfoOverride.page ?? 1;
-  const requestedPages = pageInfoOverride.requestedPages ?? 3;
-  const bufferedPages =
-    pageInfoOverride.bufferedPages ??
-    (items.length
-      ? Math.min(requestedPages, Math.ceil(items.length / perPage))
-      : 0);
-  const bufferedUntilPage =
-    pageInfoOverride.bufferedUntilPage ??
-    (bufferedPages > 0 ? page + bufferedPages - 1 : page);
-  const hasMore = pageInfoOverride.hasMore ?? false;
+  const pageInfoOverride = overrides.pageInfo ?? {};
+  const perPage =
+    (pageInfoOverride as Partial<ActivityPrefetchPageInfo>).perPage ?? 25;
+  const page =
+    (pageInfoOverride as Partial<ActivityPrefetchPageInfo>).page ?? 1;
+  const isPrefetch =
+    (pageInfoOverride as Partial<ActivityPrefetchPageInfo>).isPrefetch ?? false;
   const expiresAtDefault = new Date(
     new Date(NOW).getTime() + 5 * 60 * 1000,
   ).toISOString();
 
+  const pageInfo: ActivityListResult["pageInfo"] = isPrefetch
+    ? (() => {
+        const override = pageInfoOverride as Partial<ActivityPrefetchPageInfo>;
+        const requestedPages = override.requestedPages ?? 3;
+        const bufferedPages =
+          override.bufferedPages ??
+          (items.length
+            ? Math.min(requestedPages, Math.ceil(items.length / perPage))
+            : 0);
+        const bufferedUntilPage =
+          override.bufferedUntilPage ??
+          (bufferedPages > 0 ? page + bufferedPages - 1 : page);
+        const hasMore = override.hasMore ?? false;
+        return {
+          page,
+          perPage,
+          bufferedPages,
+          bufferedUntilPage,
+          requestedPages,
+          hasMore,
+          isPrefetch: true,
+          requestToken: override.requestToken ?? "prefetch-token",
+          issuedAt: override.issuedAt ?? NOW,
+          expiresAt: override.expiresAt ?? expiresAtDefault,
+        } satisfies ActivityPrefetchPageInfo;
+      })()
+    : (() => {
+        const override = pageInfoOverride as Partial<ActivitySummaryPageInfo>;
+        const totalCount = override.totalCount ?? items.length;
+        const totalPages =
+          override.totalPages ??
+          (totalCount > 0 && perPage > 0
+            ? Math.ceil(totalCount / perPage)
+            : totalCount > 0
+              ? 1
+              : 0);
+        return {
+          page,
+          perPage,
+          totalCount,
+          totalPages,
+          isPrefetch: false,
+          requestToken: override.requestToken ?? "",
+          issuedAt: override.issuedAt ?? NOW,
+          expiresAt: override.expiresAt ?? null,
+        } satisfies ActivitySummaryPageInfo;
+      })();
+
   return {
     items,
-    pageInfo: {
-      page,
-      perPage,
-      bufferedPages,
-      bufferedUntilPage,
-      requestedPages,
-      hasMore,
-      isPrefetch: true,
-      requestToken: pageInfoOverride.requestToken ?? "prefetch-token",
-      issuedAt: pageInfoOverride.issuedAt ?? NOW,
-      expiresAt: pageInfoOverride.expiresAt ?? expiresAtDefault,
-    },
+    pageInfo,
     lastSyncCompletedAt: overrides.lastSyncCompletedAt ?? NOW,
     timezone: overrides.timezone ?? "UTC",
     dateTimeFormat: overrides.dateTimeFormat ?? "auto",

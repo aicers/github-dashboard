@@ -136,13 +136,13 @@ update so fresh environments do not need the interactive script.
 
 ### Activity prefetch & metadata
 
-- The activity feed buffers a sliding window of results so users can page
-  through recent updates without round-tripping to the database. Configure the
-  window size with `ACTIVITY_PREFETCH_PAGES` (1–10, default 3).
-- Full pagination metadata (total count, total pages, jump-to anchors) is
-  computed lazily via `GET /api/activity?mode=summary&token=<request token>`.
-  The dashboard only calls this endpoint when a user clicks “전체 현황
-  불러오기.”
+- Set `ACTIVITY_PREFETCH_PAGES` (1–10) to enable a buffered sliding window for
+  the activity feed. When unset, the feed always returns complete pagination
+  metadata on the initial request.
+- When prefetching is enabled, full pagination metadata (total count, total
+  pages, jump-to anchors) is computed lazily via
+  `GET /api/activity?mode=summary&token=<request token>`. The dashboard only
+  calls this endpoint when a user clicks “전체 현황 불러오기.”
 - Server logs now emit `[activity] prefetch latency=…` and
   `[activity] metadata latency=…` entries, including the configured window and
   observed duration. These logs help correlate configuration changes with query
