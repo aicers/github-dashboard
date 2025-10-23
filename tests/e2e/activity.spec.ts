@@ -216,7 +216,13 @@ test.describe("ActivityView (Playwright)", () => {
           title: "Initial issue",
         }),
       ],
-      pageInfo: { page: 1, perPage: 25, totalCount: 2, totalPages: 2 },
+      pageInfo: {
+        perPage: 25,
+        requestedPages: 1,
+        bufferedPages: 1,
+        bufferedUntilPage: 1,
+        hasMore: true,
+      },
     });
 
     const advancedList = buildActivityListResultFixture({
@@ -227,12 +233,25 @@ test.describe("ActivityView (Playwright)", () => {
           title: "Advanced filter match",
         }),
       ],
-      pageInfo: { page: 1, perPage: 25, totalCount: 2, totalPages: 2 },
+      pageInfo: {
+        perPage: 25,
+        requestedPages: 1,
+        bufferedPages: 1,
+        bufferedUntilPage: 1,
+        hasMore: true,
+      },
     });
 
     const emptySecondPage = buildActivityListResultFixture({
       items: [],
-      pageInfo: { page: 2, perPage: 25, totalCount: 2, totalPages: 2 },
+      pageInfo: {
+        page: 2,
+        perPage: 25,
+        requestedPages: 1,
+        bufferedPages: 0,
+        bufferedUntilPage: 2,
+        hasMore: false,
+      },
     });
 
     await page.route("**/api/activity?**", async (route) => {
@@ -308,7 +327,7 @@ test.describe("ActivityView (Playwright)", () => {
     await expect(
       page.getByText("필터 조건에 맞는 활동이 없습니다."),
     ).toBeVisible();
-    await expect(page.getByText("페이지 2 / 2 (총 2건)")).toBeVisible();
+    await expect(page.getByText("페이지 2 / 2 (총 —건)")).toBeVisible();
     await expect(page.getByRole("button", { name: "다음" })).toBeDisabled();
   });
 });

@@ -50,6 +50,7 @@ configuration, sync controls, and analytics through a Next.js dashboard.
    export DATABASE_URL=postgres://<user>:<password>@localhost:5432/<database>
    export SYNC_INTERVAL_MINUTES=60
    export TODO_PROJECT_NAME="to-do list"   # optional; see below for details
+   export ACTIVITY_PREFETCH_PAGES=3         # optional; buffer 1–10 pages per request
    ```
 
 1. Start the dev server:
@@ -132,6 +133,20 @@ update so fresh environments do not need the interactive script.
   `UPDATE sync_runs SET status = 'failed', completed_at = NOW(), updated_at = NOW() WHERE status = 'running';`
   (and similar for `sync_log`) via `psql` or a SQL client.
 <!-- markdownlint-enable MD013 -->
+
+### Activity prefetch & metadata
+
+- The activity feed buffers a sliding window of results so users can page
+  through recent updates without round-tripping to the database. Configure the
+  window size with `ACTIVITY_PREFETCH_PAGES` (1–10, default 3).
+- Full pagination metadata (total count, total pages, jump-to anchors) is
+  computed lazily via `GET /api/activity?mode=summary&token=<request token>`.
+  The dashboard only calls this endpoint when a user clicks “전체 현황
+  불러오기.”
+- Server logs now emit `[activity] prefetch latency=…` and
+  `[activity] metadata latency=…` entries, including the configured window and
+  observed duration. These logs help correlate configuration changes with query
+  cost.
 
 ### Real-time sync stream
 

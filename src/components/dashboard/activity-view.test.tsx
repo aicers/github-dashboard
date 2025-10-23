@@ -14,6 +14,7 @@ import { buildActivityFilterOptionsFixture } from "@/components/test-harness/act
 import { ATTENTION_OPTIONS } from "@/lib/activity/attention-options";
 import type {
   ActivityListParams,
+  ActivityMetadataResult,
   ActivitySavedFilter,
 } from "@/lib/activity/types";
 
@@ -778,7 +779,7 @@ describe("ActivityView", () => {
           title: "필터 적용 이슈",
         }),
       ],
-      pageInfo: { page: 1, perPage: 10, totalCount: 1, totalPages: 1 },
+      pageInfo: { perPage: 10 },
     });
     mockFetchJsonOnce(filteredResult);
 
@@ -854,7 +855,7 @@ describe("ActivityView", () => {
           title: "필터 적용 이슈",
         }),
       ],
-      pageInfo: { page: 1, perPage: 10, totalCount: 1, totalPages: 1 },
+      pageInfo: { perPage: 10 },
     });
     mockFetchJsonOnce(filteredResult);
 
@@ -1249,7 +1250,13 @@ describe("ActivityView", () => {
           title: "Initial activity",
         }),
       ],
-      pageInfo: { page: 1, perPage: 25, totalCount: 2, totalPages: 2 },
+      pageInfo: {
+        perPage: 25,
+        requestedPages: 1,
+        bufferedPages: 1,
+        bufferedUntilPage: 1,
+        hasMore: true,
+      },
     });
 
     const props = createDefaultProps({ initialData });
@@ -1258,7 +1265,14 @@ describe("ActivityView", () => {
 
     const emptyResult = buildActivityListResult({
       items: [],
-      pageInfo: { page: 2, perPage: 25, totalCount: 2, totalPages: 2 },
+      pageInfo: {
+        page: 2,
+        perPage: 25,
+        requestedPages: 1,
+        bufferedPages: 0,
+        bufferedUntilPage: 2,
+        hasMore: false,
+      },
     });
     mockFetchJsonOnce(emptyResult);
 
@@ -1266,7 +1280,7 @@ describe("ActivityView", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
-    expect(screen.getByText("페이지 1 / 2")).toBeInTheDocument();
+    expect(screen.getByText("페이지 1 / 1+")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "이전" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "다음" })).not.toBeDisabled();
 
@@ -1596,6 +1610,49 @@ describe("ActivityView", () => {
 
     mockFetchJsonOnce({ filters: [], limit: 30 });
 
+    render(<ActivityView {...props} />);
+
+    await act(async () => {});
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const metadataButton = screen.getByRole("button", {
+      name: "전체 현황 불러오기",
+    });
+    const jumpButton = screen.getByRole("button", { name: "이동" });
+    expect(jumpButton).toBeDisabled();
+
+    const dateInput =
+      document.querySelector<HTMLInputElement>('input[type="date"]');
+    expect(dateInput).not.toBeNull();
+    const inputElement = dateInput as HTMLInputElement;
+    expect(inputElement).toBeDisabled();
+
+    const metadataResponse = {
+      pageInfo: {
+        page: 1,
+        perPage: 25,
+        totalCount: 40,
+        totalPages: 2,
+        isPrefetch: false,
+        requestToken: "prefetch-token",
+        issuedAt: "2024-01-01T00:00:00.000Z",
+        expiresAt: "2024-01-01T00:05:00.000Z",
+      },
+      jumpTo: [],
+      lastSyncCompletedAt: props.initialData.lastSyncCompletedAt,
+      timezone: props.initialData.timezone,
+      dateTimeFormat: props.initialData.dateTimeFormat,
+    } satisfies ActivityMetadataResult;
+
+    mockFetchJsonOnce(metadataResponse);
+    fireEvent.click(metadataButton);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(jumpButton).not.toBeDisabled());
+    expect(inputElement).not.toBeDisabled();
+
+    fetchMock.mockClear();
+
     const jumpResult = buildActivityListResult({
       items: [
         buildActivityItem({
@@ -1603,28 +1660,18 @@ describe("ActivityView", () => {
           title: "Jump result",
         }),
       ],
-      pageInfo: { page: 1, perPage: 25, totalCount: 1, totalPages: 1 },
+      pageInfo: { perPage: 25 },
     });
 
     mockFetchJsonOnce(jumpResult);
 
-    render(<ActivityView {...props} />);
-
-    await act(async () => {});
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-
-    const dateInput =
-      document.querySelector<HTMLInputElement>('input[type="date"]');
-    expect(dateInput).not.toBeNull();
-
-    const inputElement = dateInput as HTMLInputElement;
     fireEvent.change(inputElement, { target: { value: "2024-04-01" } });
     fireEvent.click(screen.getByRole("button", { name: "이동" }));
 
     await act(async () => {});
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    const request = fetchMock.mock.calls[1][0];
+    const request = fetchMock.mock.calls[0][0];
     const url = new URL(request.url);
     expect(url.pathname).toBe("/api/activity");
 
@@ -1632,6 +1679,108 @@ describe("ActivityView", () => {
     expect(jumpTo).toBe("2024-04-01T00:00Z");
 
     expect(screen.getByText("Jump result")).toBeInTheDocument();
+  });
+
+  it("fetches pagination metadata on demand", async () => {
+    const props = createDefaultProps();
+
+    mockFetchJsonOnce({ filters: [], limit: 30 });
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    fetchMock.mockClear();
+
+    const metadataResponse = {
+      pageInfo: {
+        page: 1,
+        perPage: 25,
+        totalCount: 42,
+        totalPages: 3,
+        isPrefetch: false,
+        requestToken: "prefetch-token",
+        issuedAt: "2024-01-01T00:00:00.000Z",
+        expiresAt: "2024-01-01T00:05:00.000Z",
+      },
+      jumpTo: [],
+      lastSyncCompletedAt: props.initialData.lastSyncCompletedAt,
+      timezone: props.initialData.timezone,
+      dateTimeFormat: props.initialData.dateTimeFormat,
+    } satisfies ActivityMetadataResult;
+
+    mockFetchJsonOnce(metadataResponse);
+
+    const metadataButton = screen.getByRole("button", {
+      name: "전체 현황 불러오기",
+    });
+    const jumpButton = screen.getByRole("button", { name: "이동" });
+    expect(jumpButton).toBeDisabled();
+    fireEvent.click(metadataButton);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const request = fetchMock.mock.calls[0][0] as Request;
+    const url = new URL(request.url);
+    expect(url.searchParams.get("mode")).toBe("summary");
+    expect(url.searchParams.get("token")).toBe("prefetch-token");
+    expect(url.searchParams.get("prefetchPages")).toBe("3");
+
+    await waitFor(() =>
+      expect(screen.getByText("페이지 1 / 3 (총 42건)")).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("button", { name: "전체 현황 새로고침" }),
+    ).toBeInTheDocument();
+    expect(jumpButton).not.toBeDisabled();
+  });
+
+  it("ignores stale metadata responses", async () => {
+    const props = createDefaultProps();
+
+    mockFetchJsonOnce({ filters: [], limit: 30 });
+
+    render(<ActivityView {...props} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    fetchMock.mockClear();
+
+    const staleMetadata = {
+      pageInfo: {
+        page: 1,
+        perPage: 25,
+        totalCount: 99,
+        totalPages: 5,
+        isPrefetch: false,
+        requestToken: "stale-token",
+        issuedAt: "2024-01-01T00:00:00.000Z",
+        expiresAt: "2024-01-01T00:05:00.000Z",
+      },
+      jumpTo: [],
+      lastSyncCompletedAt: props.initialData.lastSyncCompletedAt,
+      timezone: props.initialData.timezone,
+      dateTimeFormat: props.initialData.dateTimeFormat,
+    } satisfies ActivityMetadataResult;
+
+    mockFetchJsonOnce(staleMetadata);
+
+    fireEvent.click(screen.getByRole("button", { name: "전체 현황 불러오기" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    await waitFor(() => {
+      const displays = screen.getAllByText((content) =>
+        content.includes("페이지 1 / 1"),
+      );
+      expect(displays.length).toBeGreaterThan(0);
+    });
+    await waitFor(() => {
+      const counts = screen.getAllByText((content) =>
+        content.includes("총 —건"),
+      );
+      expect(counts.length).toBeGreaterThan(0);
+    });
+    expect(screen.getByRole("button", { name: "이동" })).toBeDisabled();
   });
 
   it("shows an error when saved filters fail to load", async () => {

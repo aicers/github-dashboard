@@ -1,3 +1,6 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { performance } from "node:perf_hooks";
+
 import {
   getCachedActivityFilterOptions,
   getLinkedIssuesMap,
@@ -20,13 +23,17 @@ import type {
   ActivityItem,
   ActivityItemComment,
   ActivityItemDetail,
+  ActivityJumpToCoordinate,
   ActivityLabel,
   ActivityLinkedIssue,
   ActivityLinkedPullRequest,
   ActivityListParams,
   ActivityListResult,
+  ActivityMetadataResult,
+  ActivityPrefetchPageInfo,
   ActivityPullRequestStatusFilter,
   ActivityStatusFilter,
+  ActivitySummaryPageInfo,
   ActivityThresholds,
   ActivityUser,
   IssueProjectStatus,
@@ -49,6 +56,20 @@ import { env } from "@/lib/env";
 
 const DEFAULT_PER_PAGE = 25;
 const MAX_PER_PAGE = 100;
+
+const PREFETCH_MIN_PAGES = 1;
+const PREFETCH_MAX_PAGES = 10;
+const PREFETCH_DEFAULT_PAGES = Math.max(
+  PREFETCH_MIN_PAGES,
+  Math.min(PREFETCH_MAX_PAGES, env.ACTIVITY_PREFETCH_PAGES),
+);
+const PREFETCH_TOKEN_VERSION = "v1";
+const PREFETCH_TOKEN_SECRET =
+  env.ACTIVITY_PREFETCH_TOKEN_SECRET ??
+  env.SESSION_SECRET ??
+  "github-dashboard-prefetch-secret";
+const PREFETCH_TOKEN_TTL_MS =
+  Math.max(1, env.ACTIVITY_PREFETCH_TOKEN_TTL_SECONDS) * 1000;
 
 const DEFAULT_THRESHOLDS: Required<ActivityThresholds> = {
   unansweredMentionDays: 5,
@@ -212,7 +233,6 @@ type ActivityRow = {
   activity_status: string | null;
   activity_status_at: string | null;
   body_text: string | null;
-  total_count: string | number;
 };
 
 type AttentionSets = {
@@ -230,6 +250,362 @@ type AttentionFilterSelection = {
   includeIds: string[];
   includeNone: boolean;
 };
+
+type CanonicalFilters = {
+  types: string[];
+  repositoryIds: string[];
+  labelKeys: string[];
+  issueTypeIds: string[];
+  issuePriorities: string[];
+  issueWeights: string[];
+  milestoneIds: string[];
+  pullRequestStatuses: string[];
+  issueBaseStatuses: string[];
+  authorIds: string[];
+  assigneeIds: string[];
+  reviewerIds: string[];
+  mentionedUserIds: string[];
+  commenterIds: string[];
+  reactorIds: string[];
+  statuses: string[];
+  attention: string[];
+  linkedIssueStates: string[];
+  search: string | null;
+  thresholds: Record<string, number> | null;
+};
+
+type PrefetchTokenPayload = {
+  page: number;
+  perPage: number;
+  prefetchPages: number;
+  filters: CanonicalFilters;
+  issuedAt: number;
+};
+
+function resolvePrefetchPages(raw?: number) {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) {
+    return PREFETCH_DEFAULT_PAGES;
+  }
+  const floored = Math.floor(raw);
+  if (floored < PREFETCH_MIN_PAGES) {
+    return PREFETCH_MIN_PAGES;
+  }
+  if (floored > PREFETCH_MAX_PAGES) {
+    return PREFETCH_MAX_PAGES;
+  }
+  return floored;
+}
+
+function normalizeStringList(values?: readonly unknown[]) {
+  if (!Array.isArray(values)) {
+    return [] as string[];
+  }
+  const set = new Set<string>();
+  values.forEach((value) => {
+    if (typeof value !== "string") {
+      return;
+    }
+    const trimmed = value.trim();
+    if (trimmed.length > 0) {
+      set.add(trimmed);
+    }
+  });
+  return Array.from(set).sort();
+}
+
+function normalizeNullableString(value: string | null | undefined) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeThresholdsForToken(
+  thresholds?: ActivityThresholds,
+): Record<string, number> | null {
+  if (!thresholds) {
+    return null;
+  }
+  const entries = Object.entries(thresholds ?? {}).filter(
+    ([, value]) => typeof value === "number" && Number.isFinite(value),
+  );
+  if (!entries.length) {
+    return null;
+  }
+  entries.sort(([left], [right]) => {
+    if (left < right) {
+      return -1;
+    }
+    if (left > right) {
+      return 1;
+    }
+    return 0;
+  });
+  return entries.reduce<Record<string, number>>((acc, [key, value]) => {
+    acc[key] = Number(value);
+    return acc;
+  }, {});
+}
+
+function sanitizeFiltersForToken(params: ActivityListParams): CanonicalFilters {
+  return {
+    types: normalizeStringList(params.types),
+    repositoryIds: normalizeStringList(params.repositoryIds),
+    labelKeys: normalizeStringList(params.labelKeys),
+    issueTypeIds: normalizeStringList(params.issueTypeIds),
+    issuePriorities: normalizeStringList(params.issuePriorities),
+    issueWeights: normalizeStringList(params.issueWeights),
+    milestoneIds: normalizeStringList(params.milestoneIds),
+    pullRequestStatuses: normalizeStringList(params.pullRequestStatuses),
+    issueBaseStatuses: normalizeStringList(params.issueBaseStatuses),
+    authorIds: normalizeStringList(params.authorIds),
+    assigneeIds: normalizeStringList(params.assigneeIds),
+    reviewerIds: normalizeStringList(params.reviewerIds),
+    mentionedUserIds: normalizeStringList(params.mentionedUserIds),
+    commenterIds: normalizeStringList(params.commenterIds),
+    reactorIds: normalizeStringList(params.reactorIds),
+    statuses: normalizeStringList(params.statuses),
+    attention: normalizeStringList(params.attention),
+    linkedIssueStates: normalizeStringList(params.linkedIssueStates),
+    search: normalizeNullableString(params.search),
+    thresholds: normalizeThresholdsForToken(params.thresholds),
+  };
+}
+
+function arraysEqual(left: string[], right: string[]) {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function thresholdsEqual(
+  left: Record<string, number> | null,
+  right: Record<string, number> | null,
+) {
+  if (!left && !right) {
+    return true;
+  }
+  if (!left || !right) {
+    return false;
+  }
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) {
+    return false;
+  }
+  for (const key of leftKeys) {
+    if (!Object.hasOwn(right, key)) {
+      return false;
+    }
+    if (left[key] !== right[key]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function filtersEqual(left: CanonicalFilters, right: CanonicalFilters) {
+  return (
+    arraysEqual(left.types, right.types) &&
+    arraysEqual(left.repositoryIds, right.repositoryIds) &&
+    arraysEqual(left.labelKeys, right.labelKeys) &&
+    arraysEqual(left.issueTypeIds, right.issueTypeIds) &&
+    arraysEqual(left.issuePriorities, right.issuePriorities) &&
+    arraysEqual(left.issueWeights, right.issueWeights) &&
+    arraysEqual(left.milestoneIds, right.milestoneIds) &&
+    arraysEqual(left.pullRequestStatuses, right.pullRequestStatuses) &&
+    arraysEqual(left.issueBaseStatuses, right.issueBaseStatuses) &&
+    arraysEqual(left.authorIds, right.authorIds) &&
+    arraysEqual(left.assigneeIds, right.assigneeIds) &&
+    arraysEqual(left.reviewerIds, right.reviewerIds) &&
+    arraysEqual(left.mentionedUserIds, right.mentionedUserIds) &&
+    arraysEqual(left.commenterIds, right.commenterIds) &&
+    arraysEqual(left.reactorIds, right.reactorIds) &&
+    arraysEqual(left.statuses, right.statuses) &&
+    arraysEqual(left.attention, right.attention) &&
+    arraysEqual(left.linkedIssueStates, right.linkedIssueStates) &&
+    left.search === right.search &&
+    thresholdsEqual(left.thresholds, right.thresholds)
+  );
+}
+
+function isPrefetchTokenPayload(value: unknown): value is PrefetchTokenPayload {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as Partial<PrefetchTokenPayload>;
+  if (
+    typeof candidate.page !== "number" ||
+    !Number.isFinite(candidate.page) ||
+    typeof candidate.perPage !== "number" ||
+    !Number.isFinite(candidate.perPage) ||
+    typeof candidate.prefetchPages !== "number" ||
+    !Number.isFinite(candidate.prefetchPages) ||
+    typeof candidate.issuedAt !== "number" ||
+    !candidate.filters ||
+    typeof candidate.filters !== "object"
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function createPrefetchToken(
+  params: ActivityListParams,
+  page: number,
+  perPage: number,
+  prefetchPages: number,
+  now = Date.now(),
+) {
+  const filters = sanitizeFiltersForToken(params);
+  const payload: PrefetchTokenPayload = {
+    page,
+    perPage,
+    prefetchPages,
+    filters,
+    issuedAt: now,
+  };
+  const body = Buffer.from(JSON.stringify(payload), "utf8").toString(
+    "base64url",
+  );
+  const signature = createHmac("sha256", PREFETCH_TOKEN_SECRET)
+    .update(body)
+    .digest("base64url");
+  const expiresAt = new Date(payload.issuedAt + PREFETCH_TOKEN_TTL_MS);
+  return {
+    token: `${PREFETCH_TOKEN_VERSION}.${body}.${signature}`,
+    payload,
+    issuedAt: payload.issuedAt,
+    expiresAt: expiresAt.toISOString(),
+  };
+}
+
+function verifyPrefetchToken(
+  token: string,
+  params: ActivityListParams,
+  page: number,
+  perPage: number,
+  prefetchPages: number,
+  now = Date.now(),
+) {
+  if (!token) {
+    return {
+      valid: false,
+      expired: false,
+      payload: null,
+    } as const;
+  }
+
+  const parts = token.split(".");
+  if (parts.length !== 3) {
+    return {
+      valid: false,
+      expired: false,
+      payload: null,
+    } as const;
+  }
+
+  const [version, body, signature] = parts;
+  if (version !== PREFETCH_TOKEN_VERSION) {
+    return {
+      valid: false,
+      expired: false,
+      payload: null,
+    } as const;
+  }
+
+  let providedSignature: Buffer;
+  let expectedSignature: Buffer;
+  try {
+    providedSignature = Buffer.from(signature, "base64url");
+    expectedSignature = Buffer.from(
+      createHmac("sha256", PREFETCH_TOKEN_SECRET)
+        .update(body)
+        .digest("base64url"),
+      "base64url",
+    );
+  } catch {
+    return {
+      valid: false,
+      expired: false,
+      payload: null,
+    } as const;
+  }
+
+  if (
+    providedSignature.length !== expectedSignature.length ||
+    !timingSafeEqual(providedSignature, expectedSignature)
+  ) {
+    return {
+      valid: false,
+      expired: false,
+      payload: null,
+    } as const;
+  }
+
+  let payloadJson: string;
+  try {
+    payloadJson = Buffer.from(body, "base64url").toString("utf8");
+  } catch {
+    return {
+      valid: false,
+      expired: false,
+      payload: null,
+    } as const;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payloadJson) as PrefetchTokenPayload;
+  } catch {
+    return {
+      valid: false,
+      expired: false,
+      payload: null,
+    } as const;
+  }
+
+  if (!isPrefetchTokenPayload(parsed)) {
+    return {
+      valid: false,
+      expired: false,
+      payload: null,
+    } as const;
+  }
+
+  const filters = sanitizeFiltersForToken(params);
+  const matches =
+    parsed.page === page &&
+    parsed.perPage === perPage &&
+    parsed.prefetchPages === prefetchPages &&
+    filtersEqual(parsed.filters, filters);
+
+  const expiresAt = parsed.issuedAt + PREFETCH_TOKEN_TTL_MS;
+  const expired = now > expiresAt;
+
+  return {
+    valid: matches,
+    expired,
+    payload: parsed,
+    expiresAt,
+  } as const;
+}
+
+export class ActivityMetadataError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ActivityMetadataError";
+    this.status = status;
+  }
+}
 
 type IssueRaw = {
   projectStatusHistory?: unknown;
@@ -2364,6 +2740,8 @@ export async function getActivityItems(
     MAX_PER_PAGE,
     Math.max(1, params.perPage ?? DEFAULT_PER_PAGE),
   );
+  const prefetchPages = resolvePrefetchPages(params.prefetchPages);
+  let page = Math.max(1, params.page ?? 1);
 
   const attentionSets = await resolveAttentionSets(thresholds);
   const attentionSelection = collectAttentionFilterIds(
@@ -2381,29 +2759,39 @@ export async function getActivityItems(
         : [],
     ),
   );
+  const dateTimeFormat = normalizeDateTimeDisplayFormat(
+    typeof config?.date_time_format === "string"
+      ? config.date_time_format
+      : null,
+  );
+  const timezone =
+    typeof config?.timezone === "string" && config.timezone.trim().length
+      ? config.timezone
+      : null;
+  const lastSyncCompletedAt = toIso(config?.last_sync_completed_at ?? null);
+
   if (
     attentionSelection &&
     !attentionSelection.includeNone &&
     attentionSelection.includeIds.length === 0
   ) {
-    const dateTimeFormat = normalizeDateTimeDisplayFormat(
-      typeof config?.date_time_format === "string"
-        ? config.date_time_format
-        : null,
-    );
+    const tokenInfo = createPrefetchToken(params, page, perPage, prefetchPages);
     return {
       items: [],
       pageInfo: {
-        page: 1,
+        page,
         perPage,
-        totalCount: 0,
-        totalPages: 0,
+        bufferedPages: 0,
+        bufferedUntilPage: page,
+        requestedPages: prefetchPages,
+        hasMore: false,
+        isPrefetch: true,
+        requestToken: tokenInfo.token,
+        issuedAt: new Date(tokenInfo.issuedAt).toISOString(),
+        expiresAt: tokenInfo.expiresAt,
       },
-      lastSyncCompletedAt: toIso(config?.last_sync_completed_at ?? null),
-      timezone:
-        typeof config?.timezone === "string" && config.timezone.trim().length
-          ? config.timezone
-          : null,
+      lastSyncCompletedAt,
+      timezone,
       dateTimeFormat,
     };
   }
@@ -2414,8 +2802,6 @@ export async function getActivityItems(
     attentionSets,
     excludedRepositoryIds,
   );
-
-  let page = Math.max(1, params.page ?? 1);
 
   if (params.jumpToDate) {
     const jumpPage = await fetchJumpPage(
@@ -2436,21 +2822,27 @@ export async function getActivityItems(
     : "";
   const limitIndex = values.length + 1;
   const offsetIndex = values.length + 2;
-  const queryParams = [...values, perPage, offset];
+  const fetchLimit = perPage * prefetchPages + 1;
+  const queryParams = [...values, fetchLimit, offset];
 
+  const queryStart = performance.now();
   const result = await query<ActivityRow>(
     `${baseQuery}
      SELECT
-       items.*,
-       COUNT(*) OVER() AS total_count
+       items.*
      FROM combined AS items
      WHERE 1 = 1${predicate}
      ORDER BY items.updated_at DESC NULLS LAST, items.created_at DESC
      LIMIT $${limitIndex} OFFSET $${offsetIndex}`,
     queryParams,
   );
+  const queryDurationMs = performance.now() - queryStart;
 
-  const rows = result.rows;
+  const rawRows = result.rows;
+  const maxItems = perPage * prefetchPages;
+  const hasMore = rawRows.length > maxItems;
+  const rows = hasMore ? rawRows.slice(0, maxItems) : rawRows;
+
   const issueIds = rows
     .filter((row) => row.item_type === "issue")
     .map((row) => row.id);
@@ -2468,9 +2860,6 @@ export async function getActivityItems(
     getLinkedPullRequestsMap(issueIds),
     getLinkedIssuesMap(pullRequestIds),
   ]);
-  const totalCount = rows.length > 0 ? Number(rows[0]?.total_count ?? 0) : 0;
-  const totalPages =
-    perPage > 0 ? Math.max(1, Math.ceil(totalCount / perPage)) : 1;
 
   const userIds = new Set<string>();
   for (const row of rows) {
@@ -2513,25 +2902,235 @@ export async function getActivityItems(
     ),
   );
 
+  const bufferedPages = rows.length ? Math.ceil(rows.length / perPage) : 0;
+  const bufferedUntilPage = bufferedPages > 0 ? page + bufferedPages - 1 : page;
+
+  const tokenInfo = createPrefetchToken(params, page, perPage, prefetchPages);
+
+  const pageInfo: ActivityPrefetchPageInfo = {
+    page,
+    perPage,
+    bufferedPages,
+    bufferedUntilPage,
+    requestedPages: prefetchPages,
+    hasMore,
+    isPrefetch: true,
+    requestToken: tokenInfo.token,
+    issuedAt: new Date(tokenInfo.issuedAt).toISOString(),
+    expiresAt: tokenInfo.expiresAt,
+  };
+
+  if (process.env.NODE_ENV !== "test") {
+    console.log(
+      `[activity] prefetched pages latency=${queryDurationMs.toFixed(1)}ms window=${prefetchPages} bufferedPages=${bufferedPages} hasMore=${hasMore}`,
+    );
+  }
+
+  return {
+    items,
+    pageInfo,
+    lastSyncCompletedAt,
+    timezone,
+    dateTimeFormat,
+  };
+}
+
+export async function getActivityMetadata(
+  params: ActivityListParams = {},
+): Promise<ActivityMetadataResult> {
+  await ensureSchema();
+
+  const thresholds: Required<ActivityThresholds> = {
+    ...DEFAULT_THRESHOLDS,
+    ...params.thresholds,
+  };
+
+  const targetProject = normalizeText(env.TODO_PROJECT_NAME);
+  const baseQuery = buildBaseQuery(targetProject);
+
+  let perPage = Math.min(
+    MAX_PER_PAGE,
+    Math.max(1, params.perPage ?? DEFAULT_PER_PAGE),
+  );
+  let prefetchPages = resolvePrefetchPages(params.prefetchPages);
+  let page = Math.max(1, params.page ?? 1);
+
+  const attentionSets = await resolveAttentionSets(thresholds);
+  const attentionSelection = collectAttentionFilterIds(
+    params.attention,
+    attentionSets,
+  );
+  const config = await getSyncConfig();
+  const excludedRepositoryIds = Array.from(
+    new Set(
+      Array.isArray(config?.excluded_repository_ids)
+        ? (config.excluded_repository_ids as unknown[])
+            .filter((value): value is string => typeof value === "string")
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0)
+        : [],
+    ),
+  );
+
   const dateTimeFormat = normalizeDateTimeDisplayFormat(
     typeof config?.date_time_format === "string"
       ? config.date_time_format
       : null,
   );
+  const timezone =
+    typeof config?.timezone === "string" && config.timezone.trim().length
+      ? config.timezone
+      : null;
+  const lastSyncCompletedAt = toIso(config?.last_sync_completed_at ?? null);
+
+  const token = typeof params.token === "string" ? params.token.trim() : "";
+  if (!token) {
+    throw new ActivityMetadataError("Request token is required.", 400);
+  }
+
+  const verification = verifyPrefetchToken(
+    token,
+    params,
+    page,
+    perPage,
+    prefetchPages,
+  );
+
+  if (!verification.valid || !verification.payload) {
+    throw new ActivityMetadataError(
+      "Request token does not match the current filters.",
+      409,
+    );
+  }
+
+  if (verification.expired) {
+    throw new ActivityMetadataError("Request token has expired.", 410);
+  }
+
+  page = verification.payload.page;
+  perPage = verification.payload.perPage;
+  prefetchPages = verification.payload.prefetchPages;
+
+  const issuedAtIso = new Date(verification.payload.issuedAt).toISOString();
+  const expiresAtIso = verification.expiresAt
+    ? new Date(verification.expiresAt).toISOString()
+    : new Date(
+        verification.payload.issuedAt + PREFETCH_TOKEN_TTL_MS,
+      ).toISOString();
+
+  if (
+    attentionSelection &&
+    !attentionSelection.includeNone &&
+    attentionSelection.includeIds.length === 0
+  ) {
+    return {
+      pageInfo: {
+        page,
+        perPage,
+        totalCount: 0,
+        totalPages: 0,
+        isPrefetch: false,
+        requestToken: token,
+        issuedAt: issuedAtIso,
+        expiresAt: expiresAtIso,
+      },
+      jumpTo: [],
+      lastSyncCompletedAt,
+      timezone,
+      dateTimeFormat,
+    };
+  }
+
+  const { clauses, values } = buildQueryFilters(
+    params,
+    attentionSelection,
+    attentionSets,
+    excludedRepositoryIds,
+  );
+
+  const predicate = clauses.length
+    ? ` AND ${clauses.map((clause) => `(${clause})`).join(" AND ")}`
+    : "";
+
+  const metadataStart = performance.now();
+  const countResult = await query<{ count: string }>(
+    `${baseQuery}
+     SELECT COUNT(*) AS count
+     FROM combined AS items
+     WHERE 1 = 1${predicate}`,
+    values,
+  );
+
+  const totalCount = Number(countResult.rows[0]?.count ?? 0);
+  const totalPages =
+    totalCount > 0 && perPage > 0
+      ? Math.ceil(totalCount / perPage)
+      : totalCount > 0
+        ? 1
+        : 0;
+
+  let jumpTo: ActivityJumpToCoordinate[] = [];
+  if (totalCount > 0) {
+    const jumpResult = await query<{
+      page: string | number;
+      marker: string | null;
+    }>(
+      `${baseQuery}
+       SELECT
+         CEIL(rn / $${values.length + 1}::numeric) AS page,
+         COALESCE(ranked.updated_at, ranked.created_at) AS marker
+       FROM (
+         SELECT
+           items.*,
+           ROW_NUMBER() OVER (
+             ORDER BY items.updated_at DESC NULLS LAST, items.created_at DESC
+           ) AS rn
+         FROM combined AS items
+         WHERE 1 = 1${predicate}
+       ) AS ranked
+       WHERE (rn - 1) % $${values.length + 1} = 0
+       ORDER BY page ASC`,
+      [...values, perPage],
+    );
+
+    jumpTo = jumpResult.rows
+      .map((row) => {
+        const pageNumber = Number(row.page ?? 0);
+        const iso = toIso(row.marker);
+        if (!Number.isFinite(pageNumber) || pageNumber <= 0 || !iso) {
+          return null;
+        }
+        return {
+          page: pageNumber,
+          isoDate: iso,
+        };
+      })
+      .filter((value): value is ActivityJumpToCoordinate => value !== null);
+  }
+
+  const pageInfo: ActivitySummaryPageInfo = {
+    page,
+    perPage,
+    totalCount,
+    totalPages,
+    isPrefetch: false,
+    requestToken: token,
+    issuedAt: issuedAtIso,
+    expiresAt: expiresAtIso,
+  };
+
+  if (process.env.NODE_ENV !== "test") {
+    const metadataDuration = performance.now() - metadataStart;
+    console.log(
+      `[activity] metadata latency=${metadataDuration.toFixed(1)}ms page=${page} perPage=${perPage} total=${totalCount}`,
+    );
+  }
 
   return {
-    items,
-    pageInfo: {
-      page,
-      perPage,
-      totalCount,
-      totalPages,
-    },
-    lastSyncCompletedAt: toIso(config?.last_sync_completed_at ?? null),
-    timezone:
-      typeof config?.timezone === "string" && config.timezone.trim().length
-        ? config.timezone
-        : null,
+    pageInfo,
+    jumpTo,
+    lastSyncCompletedAt,
+    timezone,
     dateTimeFormat,
   };
 }
@@ -2548,7 +3147,7 @@ export async function getActivityItemDetail(
 
   const result = await query<ActivityRow>(
     `${baseQuery}
-     SELECT items.*, 0::bigint AS total_count
+     SELECT items.*
      FROM combined AS items
      WHERE items.id = $1
      LIMIT 1`,
