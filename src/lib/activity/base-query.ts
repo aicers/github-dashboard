@@ -173,24 +173,8 @@ issue_items AS (
     COALESCE(reactors.reactor_ids, ARRAY[]::text[]) AS reactor_ids,
     COALESCE(labels.label_keys, ARRAY[]::text[]) AS label_keys,
     COALESCE(labels.label_names, ARRAY[]::text[]) AS label_names,
-    COALESCE(
-      NULLIF(i.data->'issueType'->>'id', ''),
-      CASE
-        WHEN COALESCE(labels.has_bug_label, FALSE) THEN 'label:issue_type:bug'
-        WHEN COALESCE(labels.has_feature_label, FALSE) THEN 'label:issue_type:feature'
-        WHEN COALESCE(labels.has_task_label, FALSE) THEN 'label:issue_type:task'
-        ELSE NULL
-      END
-    ) AS issue_type_id,
-    COALESCE(
-      NULLIF(i.data->'issueType'->>'name', ''),
-      CASE
-        WHEN COALESCE(labels.has_bug_label, FALSE) THEN 'Bug'
-        WHEN COALESCE(labels.has_feature_label, FALSE) THEN 'Feature'
-        WHEN COALESCE(labels.has_task_label, FALSE) THEN 'Task'
-        ELSE NULL
-      END
-    ) AS issue_type_name,
+    NULLIF(i.data->'issueType'->>'id', '') AS issue_type_id,
+    NULLIF(i.data->'issueType'->>'name', '') AS issue_type_name,
     NULLIF(i.data->'milestone'->>'id', '') AS milestone_id,
     NULLIF(i.data->'milestone'->>'title', '') AS milestone_title,
     NULLIF(i.data->'milestone'->>'state', '') AS milestone_state,

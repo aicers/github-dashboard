@@ -777,51 +777,11 @@ async function computeFilterOptionsSnapshot(
       `SELECT id, name
          FROM (
            SELECT
-             COALESCE(
-               NULLIF(i.data->'issueType'->>'id', ''),
-               CASE
-                 WHEN EXISTS (
-                   SELECT 1
-                   FROM jsonb_array_elements(COALESCE(i.data->'labels'->'nodes', '[]'::jsonb)) AS label_node
-                   WHERE LOWER(label_node->>'name') = 'bug'
-                 ) THEN 'label:issue_type:bug'
-                 WHEN EXISTS (
-                   SELECT 1
-                   FROM jsonb_array_elements(COALESCE(i.data->'labels'->'nodes', '[]'::jsonb)) AS label_node
-                   WHERE LOWER(label_node->>'name') IN ('feature', 'feature request', 'enhancement')
-                 ) THEN 'label:issue_type:feature'
-                 WHEN EXISTS (
-                   SELECT 1
-                   FROM jsonb_array_elements(COALESCE(i.data->'labels'->'nodes', '[]'::jsonb)) AS label_node
-                   WHERE LOWER(label_node->>'name') IN ('task', 'todo', 'chore')
-                 ) THEN 'label:issue_type:task'
-                 ELSE NULL
-               END
-             ) AS id,
-             COALESCE(
-               NULLIF(i.data->'issueType'->>'name', ''),
-               CASE
-                 WHEN EXISTS (
-                   SELECT 1
-                   FROM jsonb_array_elements(COALESCE(i.data->'labels'->'nodes', '[]'::jsonb)) AS label_node
-                   WHERE LOWER(label_node->>'name') = 'bug'
-                 ) THEN 'Bug'
-                 WHEN EXISTS (
-                   SELECT 1
-                   FROM jsonb_array_elements(COALESCE(i.data->'labels'->'nodes', '[]'::jsonb)) AS label_node
-                   WHERE LOWER(label_node->>'name') IN ('feature', 'feature request', 'enhancement')
-                 ) THEN 'Feature'
-                 WHEN EXISTS (
-                   SELECT 1
-                   FROM jsonb_array_elements(COALESCE(i.data->'labels'->'nodes', '[]'::jsonb)) AS label_node
-                   WHERE LOWER(label_node->>'name') IN ('task', 'todo', 'chore')
-                 ) THEN 'Task'
-                 ELSE NULL
-               END
-             ) AS name
+             NULLIF(i.data->'issueType'->>'id', '') AS id,
+             NULLIF(i.data->'issueType'->>'name', '') AS name
            FROM issues i
          ) AS issue_types
-         WHERE id IS NOT NULL
+         WHERE id IS NOT NULL OR name IS NOT NULL
          GROUP BY id, name
          ORDER BY LOWER(COALESCE(NULLIF(name, ''), id))`,
     ),
