@@ -20,6 +20,7 @@ import {
   getActivityItems,
   getActivityMetadata,
 } from "@/lib/activity/service";
+import { refreshActivityItemsSnapshot } from "@/lib/activity/snapshot";
 import type {
   ActivityListParams,
   ActivityListResult,
@@ -286,6 +287,8 @@ async function seedBasicActivityData(): Promise<SeededData> {
   };
   await seedActivityReactions([reaction]);
 
+  await refreshActivityItemsSnapshot();
+
   return {
     repoAlpha,
     repoBeta,
@@ -513,10 +516,12 @@ describe("activity service integration", () => {
 
     await query(
       `UPDATE issues
-         SET data = jsonb_set(data, '{projectStatusHistory}', $1::jsonb)
-       WHERE id = $2`,
+       SET data = jsonb_set(data, '{projectStatusHistory}', $1::jsonb)
+     WHERE id = $2`,
       [JSON.stringify(updatedHistory), issueAlpha.id],
     );
+
+    await rebuildActivitySnapshot();
 
     const result = await getActivityItems({
       types: ["issue"],
@@ -546,6 +551,8 @@ describe("activity service integration", () => {
         occurredAt: "2024-01-20T00:00:00.000Z",
       },
     ]);
+
+    await rebuildActivitySnapshot();
 
     const result = await getActivityItems({
       types: ["issue"],
@@ -599,6 +606,8 @@ describe("activity service integration", () => {
       },
     ]);
 
+    await rebuildActivitySnapshot();
+
     const inProgressResult = await getActivityItems({
       types: ["issue"],
       statuses: ["in_progress"],
@@ -647,6 +656,8 @@ describe("activity service integration", () => {
         occurredAt: "2024-01-10T00:00:00.000Z",
       },
     ]);
+
+    await rebuildActivitySnapshot();
 
     const result = await getActivityItems({
       types: ["issue"],
@@ -700,6 +711,8 @@ describe("activity service integration", () => {
         occurredAt: "2024-01-25T00:00:00.000Z",
       },
     ]);
+
+    await rebuildActivitySnapshot();
 
     const result = await getActivityItems({
       types: ["issue"],
@@ -914,6 +927,8 @@ describe("activity service integration", () => {
 
     await seedActivityIssues([discussion]);
 
+    await rebuildActivitySnapshot();
+
     const attention: AttentionInsights = {
       ...emptyInsights(),
       backlogIssues: [
@@ -1035,6 +1050,8 @@ describe("activity service integration", () => {
       },
     ]);
 
+    await rebuildActivitySnapshot();
+
     mockedAttentionInsights.mockResolvedValue(emptyInsights());
 
     const detail = await getActivityItemDetail(issueAlpha.id);
@@ -1076,3 +1093,6 @@ describe("activity service integration", () => {
     });
   });
 });
+async function rebuildActivitySnapshot() {
+  await refreshActivityItemsSnapshot();
+}

@@ -27,6 +27,7 @@ export async function resetActivityTables() {
   await query(
     `
       TRUNCATE TABLE
+        activity_items,
         activity_issue_status_history,
         activity_issue_project_overrides,
         review_requests,
