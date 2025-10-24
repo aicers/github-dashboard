@@ -186,49 +186,4 @@ test.describe("SyncControls (Playwright)", () => {
       page.getByRole("button", { name: "자동 동기화 시작" }),
     ).toBeVisible();
   });
-
-  test("confirms data reset and handles success and failure flows", async ({
-    page,
-  }) => {
-    await page.goto(SYNC_PATH);
-
-    let resetCount = 0;
-    await page.route("**/api/sync/reset", async (route) => {
-      resetCount += 1;
-      if (resetCount === 1) {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({ success: true }),
-        });
-        return;
-      }
-
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          success: false,
-          message: "초기화 실패: 권한 오류",
-        }),
-      });
-    });
-
-    await page.once("dialog", async (dialog) => {
-      expect(dialog.message()).toContain(
-        "정말로 모든 데이터를 삭제하시겠습니까?",
-      );
-      await dialog.accept();
-    });
-    await page.getByRole("button", { name: "모든 데이터 삭제" }).click();
-
-    await expect(page.getByText("데이터가 초기화되었습니다.")).toBeVisible();
-
-    await page.once("dialog", async (dialog) => {
-      await dialog.accept();
-    });
-    await page.getByRole("button", { name: "모든 데이터 삭제" }).click();
-
-    await expect(page.getByText("초기화 실패: 권한 오류")).toBeVisible();
-  });
 });

@@ -1,10 +1,4 @@
-import {
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -227,7 +221,6 @@ describe("SyncControls", () => {
     expect(screen.getByText(/조직\(acme\)/)).toBeInTheDocument();
     expect(screen.getByText("수동 데이터 백필")).toBeInTheDocument();
     expect(screen.getByText("자동 동기화")).toBeInTheDocument();
-    expect(screen.getByText("데이터 초기화")).toBeInTheDocument();
     expect(screen.getByText("활성")).toBeInTheDocument();
     const nextSyncParagraph = screen.getByText(
       (content, element) =>
@@ -294,9 +287,6 @@ describe("SyncControls", () => {
     expect(screen.getByRole("button", { name: "백필 실행" })).toBeDisabled();
     expect(
       screen.getByRole("button", { name: "자동 동기화 시작" }),
-    ).toBeDisabled();
-    expect(
-      screen.getByRole("button", { name: "모든 데이터 삭제" }),
     ).toBeDisabled();
   });
 
@@ -459,89 +449,6 @@ describe("SyncControls", () => {
     ).toBeInTheDocument();
   });
 
-  it("runs a PR 링크 백필 and shows feedback", async () => {
-    const status = buildStatus();
-    const prLinkResult = {
-      startDate: "2024-04-01T00:00:00.000Z",
-      endDate: null,
-      startedAt: "2024-05-01T12:00:00.000Z",
-      completedAt: "2024-05-01T12:01:00.000Z",
-      repositoriesProcessed: 2,
-      pullRequestCount: 5,
-      latestPullRequestUpdated: "2024-04-10T00:00:00.000Z",
-    };
-
-    mockFetchJsonOnce({ success: true, result: prLinkResult });
-
-    render(<SyncControls status={status} isAdmin />);
-    const user = userEvent.setup();
-
-    await user.click(screen.getByRole("button", { name: "PR 링크 백필 실행" }));
-
-    await waitFor(() => {
-      expect(hasRequest("/api/sync/pr-link-backfill", "POST")).toBe(true);
-    });
-
-    const request = findRequest("/api/sync/pr-link-backfill", "POST");
-    expect(request).not.toBeNull();
-    if (!request) {
-      throw new Error("Expected PR link backfill request");
-    }
-    expect(request.url).toContain("/api/sync/pr-link-backfill");
-    expect(request.method).toBe("POST");
-
-    await waitFor(() => {
-      expect(
-        screen.getByText(
-          "PR 링크 백필을 요청했습니다. 진행 상황은 동기화 로그에서 확인하세요.",
-        ),
-      ).toBeInTheDocument();
-    });
-
-    expect(routerRefreshMock).not.toHaveBeenCalled();
-  });
-
-  it("sends an end date when running a PR 링크 백필 with a range", async () => {
-    const status = buildStatus();
-    const prLinkResult = {
-      startDate: "2024-04-01T00:00:00.000Z",
-      endDate: "2024-04-10T00:00:00.000Z",
-      startedAt: "2024-05-01T12:00:00.000Z",
-      completedAt: "2024-05-01T12:01:00.000Z",
-      repositoriesProcessed: 2,
-      pullRequestCount: 5,
-      latestPullRequestUpdated: "2024-04-10T00:00:00.000Z",
-    };
-
-    mockFetchJsonOnce({ success: true, result: prLinkResult });
-
-    render(<SyncControls status={status} isAdmin />);
-    const user = userEvent.setup();
-
-    const prLinkStartInput = screen.getAllByLabelText("시작 날짜")[1];
-    fireEvent.change(prLinkStartInput, { target: { value: "2024-04-01" } });
-    const prLinkEndInput = screen.getByLabelText("종료 날짜 (선택)");
-    fireEvent.change(prLinkEndInput, { target: { value: "2024-04-10" } });
-
-    await user.click(screen.getByRole("button", { name: "PR 링크 백필 실행" }));
-
-    await waitFor(() => {
-      expect(hasRequest("/api/sync/pr-link-backfill", "POST")).toBe(true);
-    });
-
-    const request = findRequest("/api/sync/pr-link-backfill", "POST");
-    expect(request).not.toBeNull();
-    if (!request) {
-      throw new Error("Expected PR link backfill request");
-    }
-    expect(request.url).toContain("/api/sync/pr-link-backfill");
-    const body = await request.clone().json();
-    expect(body).toEqual({
-      startDate: "2024-04-01",
-      endDate: "2024-04-10",
-    });
-  });
-
   it("validates the sync interval before toggling automatic sync", async () => {
     const status = buildStatus({
       config: {
@@ -679,61 +586,6 @@ describe("SyncControls", () => {
     expect(routerRefreshMock).not.toHaveBeenCalled();
   });
 
-  it("confirms before resetting data and displays success feedback", async () => {
-    const status = buildStatus();
-    const confirmMock = vi.spyOn(window, "confirm").mockReturnValue(true);
-
-    mockFetchJsonOnce({ success: true });
-
-    render(<SyncControls status={status} isAdmin />);
-    const user = userEvent.setup();
-
-    await user.click(screen.getByRole("button", { name: "모든 데이터 삭제" }));
-
-    expect(confirmMock).toHaveBeenCalled();
-
-    await waitFor(() => {
-      expect(hasRequest("/api/sync/reset", "POST")).toBe(true);
-    });
-    const request = findRequest("/api/sync/reset", "POST");
-    expect(request).not.toBeNull();
-    if (!request) {
-      throw new Error("Expected reset request");
-    }
-    expect(request.method).toBe("POST");
-    const body = await request.clone().json();
-    expect(body).toEqual({ preserveLogs: true });
-
-    await waitFor(() => {
-      expect(
-        screen.getByText("데이터가 초기화되었습니다."),
-      ).toBeInTheDocument();
-    });
-    expect(routerRefreshMock).toHaveBeenCalledTimes(1);
-    confirmMock.mockRestore();
-  });
-
-  it("surfaces server errors when resetting data fails", async () => {
-    const status = buildStatus();
-    const confirmMock = vi.spyOn(window, "confirm").mockReturnValue(true);
-
-    mockFetchOnce({
-      status: 400,
-      json: { success: false, message: "reset failed" },
-    });
-
-    render(<SyncControls status={status} isAdmin />);
-    const user = userEvent.setup();
-
-    await user.click(screen.getByRole("button", { name: "모든 데이터 삭제" }));
-
-    await waitFor(() => {
-      expect(screen.getByText("reset failed")).toBeInTheDocument();
-    });
-    expect(routerRefreshMock).not.toHaveBeenCalled();
-    confirmMock.mockRestore();
-  });
-
   it("fails stuck runs via the cleanup endpoint and shows feedback", async () => {
     const status = buildStatus();
     const confirmMock = vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -797,18 +649,5 @@ describe("SyncControls", () => {
     const button = screen.getByRole("button", { name: "멈춘 동기화 정리" });
     expect(button).toBeDisabled();
     expect(hasRequest("/api/sync/backfill", "POST")).toBe(false);
-  });
-
-  it("cancels reset when the confirmation dialog is rejected", async () => {
-    const status = buildStatus();
-    const confirmMock = vi.spyOn(window, "confirm").mockReturnValue(false);
-
-    render(<SyncControls status={status} isAdmin />);
-    const user = userEvent.setup();
-
-    await user.click(screen.getByRole("button", { name: "모든 데이터 삭제" }));
-
-    expect(hasRequest("/api/sync/reset", "POST")).toBe(false);
-    confirmMock.mockRestore();
   });
 });
