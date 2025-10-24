@@ -423,7 +423,6 @@ export function SyncStatusPanel() {
             ...current,
             resources: nextResources,
             resourceOrder: nextOrder,
-            status: current.status === "running" ? current.status : "running",
             updatedAt: event.startedAt,
           };
         });
