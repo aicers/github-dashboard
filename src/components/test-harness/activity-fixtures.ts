@@ -153,6 +153,7 @@ export function buildActivityItemDetailFixture(
     linkedIssues: [],
     comments: [],
     commentCount: 0,
+    reactions: [],
     todoStatusTimes: {
       todo: "2024-03-22T00:00:00.000Z",
       in_progress: "2024-03-24T00:00:00.000Z",
@@ -163,14 +164,17 @@ export function buildActivityItemDetailFixture(
   };
 
   const comments = overrides.comments ?? base.comments;
-  const commentCount =
-    overrides.commentCount ?? (comments ? comments.length : base.commentCount);
+  const normalizedComments = (comments ?? []).map((comment) => ({
+    ...comment,
+    reactions: comment?.reactions ?? [],
+  }));
+  const commentCount = overrides.commentCount ?? normalizedComments.length;
 
   return {
     ...base,
     ...overrides,
     item: baseItem,
-    comments,
+    comments: normalizedComments,
     commentCount,
   };
 }

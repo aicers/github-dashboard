@@ -71,6 +71,7 @@ import {
   PROJECT_FIELD_LABELS,
   ProjectFieldEditor,
   type ProjectFieldKey,
+  ReactionSummaryList,
   renderMarkdownHtml,
   resolveDetailBodyHtml,
   SOURCE_STATUS_KEYS,
@@ -4513,6 +4514,10 @@ export function ActivityView({
                                     </div>
                                   );
                                 })()}
+                                <ReactionSummaryList
+                                  reactions={detail.reactions}
+                                  className="mt-3"
+                                />
                               </div>
                               <ActivityCommentSection
                                 comments={detail.comments}

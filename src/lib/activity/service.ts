@@ -32,6 +32,7 @@ import type {
   ActivityMetadataResult,
   ActivityPrefetchPageInfo,
   ActivityPullRequestStatusFilter,
+  ActivityReactionGroup,
   ActivityStatusFilter,
   ActivitySummaryPageInfo,
   ActivityThresholds,
@@ -643,6 +644,13 @@ type CommentRow = {
   github_created_at: Date | string | null;
   github_updated_at: Date | string | null;
   data: unknown;
+};
+
+type ReactionAggregateRow = {
+  subject_id: string;
+  content: string | null;
+  count: number | string;
+  reactor_ids: string[] | null;
 };
 
 function coerceArray(value: string[] | null | undefined) {
@@ -2870,6 +2878,79 @@ export async function getActivityItemDetail(
        ORDER BY github_created_at ASC, id ASC`,
     [row.id],
   );
+  const commentIds = commentsResult.rows.map((comment) => comment.id);
+  const reactionTargetIds = new Set<string>([row.id, ...commentIds]);
+
+  let reactionRows: ReactionAggregateRow[] = [];
+  if (reactionTargetIds.size > 0) {
+    const reactionResult = await query<ReactionAggregateRow>(
+      `SELECT
+         subject_id,
+         content,
+         COUNT(*)::int AS count,
+         ARRAY_AGG(user_id) FILTER (WHERE user_id IS NOT NULL) AS reactor_ids
+       FROM reactions
+       WHERE subject_id = ANY($1::text[])
+       GROUP BY subject_id, content`,
+      [Array.from(reactionTargetIds)],
+    );
+    reactionRows = reactionResult.rows;
+  }
+
+  if (reactionRows.length > 0) {
+    const reactorIdSet = new Set<string>();
+    reactionRows.forEach((reactionRow) => {
+      coerceArray(reactionRow.reactor_ids).forEach((id) => {
+        if (id) {
+          reactorIdSet.add(id);
+        }
+      });
+    });
+    const missingReactorIds = Array.from(reactorIdSet).filter(
+      (id) => id && !users.has(id),
+    );
+    if (missingReactorIds.length > 0) {
+      const extraProfiles = await getUserProfiles(missingReactorIds);
+      extraProfiles.forEach((profile) => {
+        users.set(profile.id, profile);
+      });
+    }
+  }
+
+  const reactionMap = new Map<string, ActivityReactionGroup[]>();
+  reactionRows.forEach((reactionRow) => {
+    const subjectId = reactionRow.subject_id;
+    const count =
+      typeof reactionRow.count === "number"
+        ? reactionRow.count
+        : Number.parseInt(String(reactionRow.count), 10);
+    const group: ActivityReactionGroup = {
+      content: reactionRow.content ?? null,
+      count: Number.isNaN(count) ? 0 : count,
+      users: mapUsers(coerceArray(reactionRow.reactor_ids), users),
+    };
+    const existing = reactionMap.get(subjectId);
+    if (existing) {
+      existing.push(group);
+    } else {
+      reactionMap.set(subjectId, [group]);
+    }
+  });
+
+  reactionMap.forEach((groups, key) => {
+    const sorted = groups.slice().sort((a, b) => {
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+      const left = (a.content ?? "").toString();
+      const right = (b.content ?? "").toString();
+      return left.localeCompare(right);
+    });
+    reactionMap.set(key, sorted);
+  });
+
+  const itemReactions = reactionMap.get(row.id) ?? [];
+
   const comments: ActivityItemComment[] = commentsResult.rows.map(
     (commentRow) => {
       const rawComment = toRawObject(commentRow.data);
@@ -2968,6 +3049,7 @@ export async function getActivityItemDetail(
             ? commentRow.review_id
             : null,
         replyToId,
+        reactions: reactionMap.get(commentRow.id) ?? [],
       } satisfies ActivityItemComment;
     },
   );
@@ -3036,6 +3118,7 @@ export async function getActivityItemDetail(
     commentCount: comments.length,
     linkedPullRequests: item.linkedPullRequests,
     linkedIssues: item.linkedIssues,
+    reactions: itemReactions,
     todoStatusTimes: todoStatusTimes ?? undefined,
     activityStatusTimes: activityStatusTimes ?? undefined,
   };

@@ -1085,12 +1085,24 @@ describe("activity service integration", () => {
     expect(detail.item.businessDaysOpen).toBeGreaterThan(0);
     expect(detail.commentCount).toBe(1);
     expect(detail.comments).toHaveLength(1);
+    expect(detail.reactions).toEqual([
+      {
+        content: "THUMBS_UP",
+        count: 1,
+        users: [
+          expect.objectContaining({
+            id: "user-alice",
+          }),
+        ],
+      },
+    ]);
     expect(detail.comments[0]).toMatchObject({
       id: "comment-1",
       body: "Looks good to me",
       author: {
         id: "user-bob",
       },
+      reactions: [],
     });
   });
 });

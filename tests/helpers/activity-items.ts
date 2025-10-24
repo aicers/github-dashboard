@@ -165,7 +165,10 @@ export function buildActivityItemDetail(
   overrides: ActivityItemDetailOverrides = {},
 ): ActivityItemDetail {
   const baseItem = overrides.item ?? buildActivityItem();
-  const baseComments = overrides.comments ?? [];
+  const baseComments = (overrides.comments ?? []).map((comment) => ({
+    ...comment,
+    reactions: comment?.reactions ?? [],
+  }));
   const resolvedCommentCount =
     overrides.commentCount ?? baseComments.length ?? 0;
 
@@ -183,6 +186,7 @@ export function buildActivityItemDetail(
     activityStatusTimes: overrides.activityStatusTimes ?? {},
     comments: baseComments,
     commentCount: resolvedCommentCount,
+    reactions: overrides.reactions ?? [],
   };
 
   return {

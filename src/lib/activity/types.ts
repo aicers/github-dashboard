@@ -171,6 +171,7 @@ export type ActivityItemComment = {
   url: string | null;
   reviewId: string | null;
   replyToId: string | null;
+  reactions: ActivityReactionGroup[];
 };
 
 export type ActivityLinkedIssueFilter = "has_parent" | "has_sub";
@@ -302,8 +303,15 @@ export type ActivityItemDetail = {
   commentCount: number;
   linkedPullRequests: ActivityLinkedPullRequest[];
   linkedIssues: ActivityLinkedIssue[];
+  reactions: ActivityReactionGroup[];
   todoStatusTimes?: Partial<Record<IssueProjectStatus, string | null>>;
   activityStatusTimes?: Partial<Record<IssueProjectStatus, string | null>>;
+};
+
+export type ActivityReactionGroup = {
+  content: string | null;
+  count: number;
+  users: ActivityUser[];
 };
 
 export type ActivityFilterOptions = {
