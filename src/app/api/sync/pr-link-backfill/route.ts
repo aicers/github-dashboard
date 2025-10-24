@@ -11,8 +11,7 @@ const schema = z.object({
 
 function buildLogger(prefix: string) {
   return (message: string) => {
-    const timestamp = new Date().toISOString();
-    console.log(`[${timestamp}] [${prefix}] ${message}`);
+    console.log(`[${prefix}] ${message}`);
   };
 }
 
