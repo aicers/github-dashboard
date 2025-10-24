@@ -414,6 +414,19 @@ public/              → Static assets served by Next.js
 infra/               → Docker/nginx assets for HTTPS proxying
 ```
 
+### Utility scripts
+
+- `scripts/backfill-social-signals.ts` — one-off helper to rebuild the activity
+  snapshot and social-signal caches. Run it when you want a full refresh outside
+  the usual sync pipeline; add `--signals-only` to rebuild only the social-signal
+  tables.
+- `scripts/db/backup.mjs` — wraps `pg_dump` so you can produce database backups
+  with a single command. Supports `--dir`, `--label`, `--format`, and
+  `--pg-dump` flags for customizing the output location and filename.
+- `scripts/run-db-tests.mjs` — verifies that PostgreSQL (or Testcontainers) is
+  available, then runs `vitest` with `vitest.db.config.ts`. If no database is
+  reachable it exits early, letting CI/local workflows skip DB-backed tests.
+
 ## Environment
 
 Environment variables are parsed through `src/lib/env.ts`:
