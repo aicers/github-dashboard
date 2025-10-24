@@ -298,6 +298,17 @@ async function buildSinceMap(base: string | null, _strategy: SyncStrategy) {
   return map;
 }
 
+function buildConsoleSyncLogger(context: {
+  runId: number;
+  runType: SyncRunType;
+  strategy: SyncStrategy;
+}) {
+  const prefix = `[github-sync] [run:${context.runId}] [${context.runType}] [${context.strategy}]`;
+  return (message: string) => {
+    console.info(`${prefix} ${message}`);
+  };
+}
+
 async function executeSync(params: {
   since: string | null;
   until?: string | null;
@@ -305,13 +316,8 @@ async function executeSync(params: {
   strategy?: SyncStrategy;
   runType?: SyncRunType;
 }) {
-  const {
-    since,
-    until = null,
-    logger,
-    strategy = "incremental",
-    runType,
-  } = params;
+  const { since, until = null, strategy = "incremental", runType } = params;
+  let logger = params.logger;
   const org = await resolveOrgName();
   const startedAt = new Date().toISOString();
   const actualRunType: SyncRunType =
@@ -329,6 +335,14 @@ async function executeSync(params: {
 
     if (runId === null) {
       throw new Error("Failed to record sync run metadata.");
+    }
+
+    if (!logger) {
+      logger = buildConsoleSyncLogger({
+        runId,
+        runType: actualRunType,
+        strategy,
+      });
     }
 
     emitSyncEvent({
