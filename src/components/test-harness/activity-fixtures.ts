@@ -4,9 +4,8 @@ import type {
   ActivityItemDetail,
   ActivityListParams,
   ActivityListResult,
-  ActivityPrefetchPageInfo,
+  ActivityPageInfo,
   ActivitySavedFilter,
-  ActivitySummaryPageInfo,
   ActivityUser,
 } from "@/lib/activity/types";
 
@@ -182,9 +181,7 @@ export function buildActivityItemDetailFixture(
 type ActivityListResultFixtureOverrides = Partial<
   Omit<ActivityListResult, "pageInfo">
 > & {
-  pageInfo?:
-    | Partial<ActivityPrefetchPageInfo>
-    | Partial<ActivitySummaryPageInfo>;
+  pageInfo?: Partial<ActivityPageInfo>;
 };
 
 export function buildActivityListResultFixture(
@@ -194,64 +191,24 @@ export function buildActivityListResultFixture(
     buildActivityItemFixture(item),
   ) ?? [buildActivityItemFixture()];
   const pageInfoOverride = overrides.pageInfo ?? {};
-  const perPage =
-    (pageInfoOverride as Partial<ActivityPrefetchPageInfo>).perPage ?? 25;
-  const page =
-    (pageInfoOverride as Partial<ActivityPrefetchPageInfo>).page ?? 1;
-  // Prefetch fixture support is legacy and should not be extended.
-  const isPrefetch =
-    (pageInfoOverride as Partial<ActivityPrefetchPageInfo>).isPrefetch ?? false;
-  const expiresAtDefault = new Date(
-    new Date(NOW).getTime() + 5 * 60 * 1000,
-  ).toISOString();
+  const perPage = (pageInfoOverride as Partial<ActivityPageInfo>).perPage ?? 25;
+  const page = (pageInfoOverride as Partial<ActivityPageInfo>).page ?? 1;
+  const totalCount =
+    (pageInfoOverride as Partial<ActivityPageInfo>).totalCount ?? items.length;
+  const totalPages =
+    (pageInfoOverride as Partial<ActivityPageInfo>).totalPages ??
+    (totalCount > 0 && perPage > 0
+      ? Math.ceil(totalCount / perPage)
+      : totalCount > 0
+        ? 1
+        : 0);
 
-  const pageInfo: ActivityListResult["pageInfo"] = isPrefetch
-    ? (() => {
-        const override = pageInfoOverride as Partial<ActivityPrefetchPageInfo>;
-        const requestedPages = override.requestedPages ?? 3;
-        const bufferedPages =
-          override.bufferedPages ??
-          (items.length
-            ? Math.min(requestedPages, Math.ceil(items.length / perPage))
-            : 0);
-        const bufferedUntilPage =
-          override.bufferedUntilPage ??
-          (bufferedPages > 0 ? page + bufferedPages - 1 : page);
-        const hasMore = override.hasMore ?? false;
-        return {
-          page,
-          perPage,
-          bufferedPages,
-          bufferedUntilPage,
-          requestedPages,
-          hasMore,
-          isPrefetch: true,
-          requestToken: override.requestToken ?? "prefetch-token",
-          issuedAt: override.issuedAt ?? NOW,
-          expiresAt: override.expiresAt ?? expiresAtDefault,
-        } satisfies ActivityPrefetchPageInfo;
-      })()
-    : (() => {
-        const override = pageInfoOverride as Partial<ActivitySummaryPageInfo>;
-        const totalCount = override.totalCount ?? items.length;
-        const totalPages =
-          override.totalPages ??
-          (totalCount > 0 && perPage > 0
-            ? Math.ceil(totalCount / perPage)
-            : totalCount > 0
-              ? 1
-              : 0);
-        return {
-          page,
-          perPage,
-          totalCount,
-          totalPages,
-          isPrefetch: false,
-          requestToken: override.requestToken ?? "",
-          issuedAt: override.issuedAt ?? NOW,
-          expiresAt: override.expiresAt ?? null,
-        } satisfies ActivitySummaryPageInfo;
-      })();
+  const pageInfo: ActivityPageInfo = {
+    page,
+    perPage,
+    totalCount,
+    totalPages,
+  };
 
   return {
     items,

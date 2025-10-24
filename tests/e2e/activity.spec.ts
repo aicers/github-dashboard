@@ -221,10 +221,6 @@ test.describe("ActivityView (Playwright)", () => {
         perPage: 25,
         totalCount: 2,
         totalPages: 2,
-        isPrefetch: false,
-        requestToken: "",
-        issuedAt: new Date().toISOString(),
-        expiresAt: null,
       },
     });
 
@@ -241,10 +237,6 @@ test.describe("ActivityView (Playwright)", () => {
         perPage: 25,
         totalCount: 2,
         totalPages: 2,
-        isPrefetch: false,
-        requestToken: "",
-        issuedAt: new Date().toISOString(),
-        expiresAt: null,
       },
     });
 
@@ -255,10 +247,6 @@ test.describe("ActivityView (Playwright)", () => {
         perPage: 25,
         totalCount: 2,
         totalPages: 2,
-        isPrefetch: false,
-        requestToken: "",
-        issuedAt: new Date().toISOString(),
-        expiresAt: null,
       },
     });
 

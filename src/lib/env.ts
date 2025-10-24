@@ -55,34 +55,6 @@ const envSchema = z.object({
   TODO_PROJECT_NAME: z.string().optional(),
   HOLIDAYS: z.string().optional(),
   DASHBOARD_ADMIN_IDS: z.string().optional(),
-  ACTIVITY_PREFETCH_PAGES: z
-    .string()
-    .transform((value) => Number.parseInt(value, 10))
-    .optional()
-    .pipe(
-      z
-        .number()
-        .int({ message: "ACTIVITY_PREFETCH_PAGES must be an integer." })
-        .min(1, { message: "ACTIVITY_PREFETCH_PAGES must be at least 1." })
-        .max(10, { message: "ACTIVITY_PREFETCH_PAGES must be at most 10." })
-        .optional(),
-    ),
-  ACTIVITY_PREFETCH_TOKEN_TTL_SECONDS: z
-    .string()
-    .transform((value) => Number.parseInt(value, 10))
-    .optional()
-    .pipe(
-      z
-        .number()
-        .int({
-          message: "ACTIVITY_PREFETCH_TOKEN_TTL_SECONDS must be an integer.",
-        })
-        .positive({
-          message: "ACTIVITY_PREFETCH_TOKEN_TTL_SECONDS must be positive.",
-        })
-        .optional(),
-    ),
-  ACTIVITY_PREFETCH_TOKEN_SECRET: z.string().optional(),
 });
 
 const parsed = envSchema.parse({
@@ -98,10 +70,6 @@ const parsed = envSchema.parse({
   TODO_PROJECT_NAME: process.env.TODO_PROJECT_NAME,
   HOLIDAYS: process.env.HOLIDAYS,
   DASHBOARD_ADMIN_IDS: process.env.DASHBOARD_ADMIN_IDS,
-  ACTIVITY_PREFETCH_PAGES: process.env.ACTIVITY_PREFETCH_PAGES,
-  ACTIVITY_PREFETCH_TOKEN_TTL_SECONDS:
-    process.env.ACTIVITY_PREFETCH_TOKEN_TTL_SECONDS,
-  ACTIVITY_PREFETCH_TOKEN_SECRET: process.env.ACTIVITY_PREFETCH_TOKEN_SECRET,
 });
 
 export const env = {
@@ -118,13 +86,4 @@ export const env = {
         .map((value) => value.trim())
         .filter((value) => value.length > 0)
     : [],
-  ACTIVITY_PREFETCH_PAGES:
-    typeof parsed.ACTIVITY_PREFETCH_PAGES === "number"
-      ? Math.max(1, Math.min(10, parsed.ACTIVITY_PREFETCH_PAGES))
-      : null,
-  ACTIVITY_PREFETCH_TOKEN_TTL_SECONDS:
-    parsed.ACTIVITY_PREFETCH_TOKEN_TTL_SECONDS ?? 300,
-  ACTIVITY_PREFETCH_TOKEN_SECRET: coerceOptionalString(
-    parsed.ACTIVITY_PREFETCH_TOKEN_SECRET,
-  ),
 };

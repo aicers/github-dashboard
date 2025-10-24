@@ -60,55 +60,20 @@ export function DashboardHeader({
           params.append(key, userId);
         });
 
-        params.set("prefetchPages", "1");
-        const prefetchResponse = await fetch(
-          `/api/activity?${params.toString()}`,
-          {
-            signal: controller.signal,
-          },
-        );
+        const response = await fetch(`/api/activity?${params.toString()}`, {
+          signal: controller.signal,
+        });
 
-        if (!prefetchResponse.ok) {
+        if (!response.ok) {
           throw new Error("Failed to load attention count");
         }
 
-        const prefetchPayload = (await prefetchResponse.json()) as {
-          pageInfo?: {
-            requestToken?: string;
-            perPage: number;
-            page: number;
-            requestedPages?: number;
-          };
-        };
-        const token = prefetchPayload.pageInfo?.requestToken;
-        if (!token) {
-          if (!isCancelled) {
-            setNotificationCount(0);
-          }
-          return;
-        }
-
-        const summaryParams = new URLSearchParams(params.toString());
-        summaryParams.set("mode", "summary");
-        summaryParams.set("token", token);
-
-        const summaryResponse = await fetch(
-          `/api/activity?${summaryParams.toString()}`,
-          {
-            signal: controller.signal,
-          },
-        );
-
-        if (!summaryResponse.ok) {
-          throw new Error("Failed to load attention count");
-        }
-
-        const summaryPayload = (await summaryResponse.json()) as {
+        const payload = (await response.json()) as {
           pageInfo?: { totalCount?: number };
         };
         const totalCount =
-          typeof summaryPayload?.pageInfo?.totalCount === "number"
-            ? summaryPayload.pageInfo.totalCount
+          typeof payload?.pageInfo?.totalCount === "number"
+            ? payload.pageInfo.totalCount
             : 0;
         if (!isCancelled) {
           setNotificationCount(totalCount);
