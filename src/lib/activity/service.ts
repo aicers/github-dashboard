@@ -1,4 +1,3 @@
-import { performance } from "node:perf_hooks";
 import { normalizeProjectTarget } from "@/lib/activity/base-query";
 import {
   getCachedActivityFilterOptions,
@@ -1970,7 +1969,6 @@ export async function getActivityItems(
   const fetchLimit = perPage;
   const queryParams = [...values, fetchLimit, offset];
 
-  const queryStart = performance.now();
   const result = await query<ActivityRow>(
     `SELECT
        items.*
@@ -1980,7 +1978,6 @@ export async function getActivityItems(
     LIMIT $${limitIndex} OFFSET $${offsetIndex}`,
     queryParams,
   );
-  const queryDurationMs = performance.now() - queryStart;
 
   const rows = result.rows;
 
@@ -2057,14 +2054,6 @@ export async function getActivityItems(
       : totalCount > 0
         ? 1
         : 0;
-
-  if (process.env.NODE_ENV !== "test") {
-    console.log(
-      `[activity] summary latency=${queryDurationMs.toFixed(
-        1,
-      )}ms page=${page} perPage=${perPage} total=${totalCount}`,
-    );
-  }
 
   return {
     items,
