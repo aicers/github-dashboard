@@ -48,10 +48,8 @@ import type {
   ActivityLinkedIssueFilter,
   ActivityListParams,
   ActivityListResult,
-  ActivityMetadataResult,
   ActivityPullRequestStatusFilter,
   ActivitySavedFilter,
-  ActivitySummaryPageInfo,
   IssueProjectStatus,
 } from "@/lib/activity/types";
 import type { DateTimeDisplayFormat } from "@/lib/date-time-format";
@@ -113,27 +111,6 @@ type QuickFilterDefinition = {
   buildState: (perPage: number) => FilterState;
   icon: LucideIcon;
 };
-
-function isSummaryPageInfo(
-  pageInfo: ActivityListResult["pageInfo"],
-): pageInfo is ActivitySummaryPageInfo {
-  return pageInfo.isPrefetch === false;
-}
-
-function buildMetadataFromResult(
-  result: ActivityListResult,
-): ActivityMetadataResult | null {
-  if (!isSummaryPageInfo(result.pageInfo)) {
-    return null;
-  }
-  return {
-    pageInfo: result.pageInfo,
-    jumpTo: [],
-    lastSyncCompletedAt: result.lastSyncCompletedAt,
-    timezone: result.timezone,
-    dateTimeFormat: result.dateTimeFormat,
-  };
-}
 
 const CATEGORY_OPTIONS: Array<{ value: ActivityItemCategory; label: string }> =
   [
@@ -1176,19 +1153,9 @@ export function ActivityView({
 
   const [draft, setDraft] = useState<FilterState>(initialState);
   const [applied, setApplied] = useState<FilterState>(initialState);
-  const [prefetchData, setPrefetchData] =
-    useState<ActivityListResult>(initialData);
-  const [metadata, setMetadata] = useState<ActivityMetadataResult | null>(() =>
-    buildMetadataFromResult(initialData),
-  );
-  const isPrefetchPageInfo = prefetchData.pageInfo.isPrefetch;
-  const requestedPrefetchPages = isPrefetchPageInfo
-    ? prefetchData.pageInfo.requestedPages
-    : 0;
+  const [listData, setListData] = useState<ActivityListResult>(initialData);
   const [isLoading, setIsLoading] = useState(false);
-  const [isMetadataLoading, setIsMetadataLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [metadataError, setMetadataError] = useState<string | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
   const [detailMap, setDetailMap] = useState<
@@ -1231,9 +1198,9 @@ export function ActivityView({
     string | null
   >(null);
   const savedFilterSelectId = useId();
-  const activeTimezone = metadata?.timezone ?? prefetchData.timezone ?? null;
-  const activeDateTimeFormat =
-    metadata?.dateTimeFormat ?? prefetchData.dateTimeFormat;
+  const jumpDateInputId = useId();
+  const activeTimezone = listData.timezone ?? null;
+  const activeDateTimeFormat = listData.dateTimeFormat;
   const trimmedTimezone = activeTimezone?.trim() ?? "";
   const timezoneTitle = trimmedTimezone.length ? trimmedTimezone : undefined;
   const formatDateTimeWithSettings = useCallback(
@@ -1250,56 +1217,25 @@ export function ActivityView({
     },
     [activeTimezone, activeDateTimeFormat],
   );
-  const lastSyncCompletedAt =
-    metadata?.lastSyncCompletedAt ?? prefetchData.lastSyncCompletedAt;
-  const currentPage = applied.page;
-  const perPage = applied.perPage;
-  const bufferStartPage = prefetchData.pageInfo.page;
-  const bufferEndPage = isPrefetchPageInfo
-    ? prefetchData.pageInfo.bufferedUntilPage
-    : Math.max(
-        prefetchData.pageInfo.page,
-        prefetchData.pageInfo.totalPages ?? prefetchData.pageInfo.page,
-      );
-  const hasMoreBuffered = isPrefetchPageInfo
-    ? prefetchData.pageInfo.hasMore
-    : false;
-  const bufferedItems = prefetchData.items;
-  const visibleItems = useMemo(() => {
-    const startIndex = (currentPage - bufferStartPage) * perPage;
-    if (startIndex < 0 || startIndex >= bufferedItems.length) {
-      return [] as ActivityItem[];
-    }
-    return bufferedItems.slice(startIndex, startIndex + perPage);
-  }, [bufferStartPage, bufferedItems, currentPage, perPage]);
-  const totalPages = metadata?.pageInfo.totalPages ?? null;
-  const totalCount = metadata?.pageInfo.totalCount ?? null;
-  const metadataAvailable = metadata !== null;
-  const totalPagesDisplay =
-    totalPages !== null
-      ? totalPages
-      : hasMoreBuffered
-        ? `${bufferEndPage}+`
-        : bufferEndPage;
-  const totalCountDisplay =
-    totalCount !== null ? totalCount.toLocaleString() : "—";
+  const lastSyncCompletedAt = listData.lastSyncCompletedAt;
+  const currentPage = listData.pageInfo.page;
+  const visibleItems = listData.items;
+  const totalPages = listData.pageInfo.totalPages;
+  const totalCount = listData.pageInfo.totalCount;
+  const totalPagesDisplay = totalPages;
+  const totalCountDisplay = totalCount.toLocaleString();
   const canGoPrev = currentPage > 1;
-  const canGoNext = metadata
-    ? currentPage < metadata.pageInfo.totalPages
-    : currentPage < bufferEndPage || hasMoreBuffered;
+  const canGoNext = currentPage < totalPages;
 
   const fetchControllerRef = useRef<AbortController | null>(null);
-  const metadataControllerRef = useRef<AbortController | null>(null);
   const detailControllersRef = useRef(new Map<string, AbortController>());
   const requestCounterRef = useRef(0);
-  const metadataRequestCounterRef = useRef(0);
   const notificationTimerRef = useRef<NodeJS.Timeout | null>(null);
   const appliedQuickParamRef = useRef<string | null>(null);
 
   useEffect(() => {
     return () => {
       fetchControllerRef.current?.abort();
-      metadataControllerRef.current?.abort();
       detailControllersRef.current.forEach((controller) => {
         controller.abort();
       });
@@ -1322,14 +1258,7 @@ export function ActivityView({
   }, [filtersManagerOpen]);
 
   useEffect(() => {
-    if (isSummaryPageInfo(prefetchData.pageInfo)) {
-      setMetadata(buildMetadataFromResult(prefetchData));
-      setMetadataError(null);
-    }
-  }, [prefetchData]);
-
-  useEffect(() => {
-    const validIds = new Set(prefetchData.items.map((item) => item.id));
+    const validIds = new Set(listData.items.map((item) => item.id));
 
     if (openItemId && !validIds.has(openItemId)) {
       const controller = detailControllersRef.current.get(openItemId);
@@ -1376,7 +1305,7 @@ export function ActivityView({
 
       return changed ? next : current;
     });
-  }, [openItemId, prefetchData.items]);
+  }, [openItemId, listData.items]);
 
   const repositoryOptions = useMemo<MultiSelectOption[]>(
     () =>
@@ -1944,21 +1873,16 @@ export function ActivityView({
     void loadSavedFilters();
   }, [loadSavedFilters]);
 
-  // Prefetch pipeline is legacy. Do not introduce new consumers without revisiting removal plan.
-  const fetchPrefetch = useCallback(
+  const fetchActivity = useCallback(
     async (
       nextFilters: FilterState,
       options: {
         jumpToDate?: string | null;
         previousSync?: string | null;
-        prefetchPages?: number;
       } = {},
     ) => {
       setIsLoading(true);
       setError(null);
-      metadataControllerRef.current?.abort();
-      setIsMetadataLoading(false);
-      setMetadataError(null);
       requestCounterRef.current += 1;
       const requestId = requestCounterRef.current;
 
@@ -1967,10 +1891,6 @@ export function ActivityView({
       fetchControllerRef.current = controller;
 
       const params = normalizeSearchParams(nextFilters, perPageDefault);
-      const prefetchWindow = options.prefetchPages ?? requestedPrefetchPages;
-      if (prefetchWindow && prefetchWindow > 0) {
-        params.set("prefetchPages", String(prefetchWindow));
-      }
       if (options.jumpToDate) {
         params.set("jumpTo", options.jumpToDate);
       }
@@ -1987,10 +1907,7 @@ export function ActivityView({
           return;
         }
 
-        setPrefetchData(result);
-        setMetadata(
-          result.pageInfo.isPrefetch ? null : buildMetadataFromResult(result),
-        );
+        setListData(result);
         const nextState: FilterState = {
           ...nextFilters,
           page: result.pageInfo.page,
@@ -2019,79 +1936,8 @@ export function ActivityView({
         }
       }
     },
-    [perPageDefault, requestedPrefetchPages, router, showNotification],
+    [perPageDefault, router, showNotification],
   );
-
-  const fetchMetadata = useCallback(async () => {
-    // Legacy prefetch metadata flow; avoid expanding usage.
-    if (!prefetchData.pageInfo.isPrefetch) {
-      setMetadataError(null);
-      return;
-    }
-
-    const token = prefetchData.pageInfo.requestToken?.trim();
-    if (!token) {
-      setMetadataError("요청 토큰이 없어요.");
-      return;
-    }
-
-    setIsMetadataLoading(true);
-    setMetadataError(null);
-    metadataRequestCounterRef.current += 1;
-    const requestId = metadataRequestCounterRef.current;
-
-    metadataControllerRef.current?.abort();
-    const controller = new AbortController();
-    metadataControllerRef.current = controller;
-
-    const params = normalizeSearchParams(applied, perPageDefault);
-    params.set("mode", "summary");
-    params.set("token", token);
-    if (requestedPrefetchPages > 0) {
-      params.set("prefetchPages", String(requestedPrefetchPages));
-    }
-
-    try {
-      const response = await fetch(`/api/activity?${params.toString()}`, {
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        let message = "Failed to load pagination metadata.";
-        try {
-          const payload = (await response.json()) as { error?: string };
-          if (typeof payload?.error === "string") {
-            message = payload.error;
-          }
-        } catch {
-          // ignore parse errors
-        }
-        throw new Error(message);
-      }
-
-      const result = (await response.json()) as ActivityMetadataResult;
-      if (
-        requestId !== metadataRequestCounterRef.current ||
-        result.pageInfo.requestToken !== prefetchData.pageInfo.requestToken
-      ) {
-        return;
-      }
-      setMetadata(result);
-    } catch (metadataFetchError) {
-      if ((metadataFetchError as Error).name === "AbortError") {
-        return;
-      }
-      setMetadataError(
-        metadataFetchError instanceof Error
-          ? metadataFetchError.message
-          : "Failed to load pagination metadata.",
-      );
-    } finally {
-      if (requestId === metadataRequestCounterRef.current) {
-        setIsMetadataLoading(false);
-      }
-    }
-  }, [applied, perPageDefault, prefetchData.pageInfo, requestedPrefetchPages]);
 
   const handleApplyQuickFilter = useCallback(
     (definition: QuickFilterDefinition) => {
@@ -2111,9 +1957,9 @@ export function ActivityView({
       setSelectedSavedFilterId("");
       setSaveFilterError(null);
       setJumpDate("");
-      void fetchPrefetch(nextState);
+      void fetchActivity(nextState);
     },
-    [canonicalDraftKey, draft.perPage, fetchPrefetch],
+    [canonicalDraftKey, draft.perPage, fetchActivity],
   );
 
   useEffect(() => {
@@ -2191,9 +2037,9 @@ export function ActivityView({
       setSelectedSavedFilterId(filter.id);
       setSaveFilterError(null);
       setJumpDate("");
-      void fetchPrefetch(nextState);
+      void fetchActivity(nextState);
     },
-    [fetchPrefetch, perPageDefault],
+    [fetchActivity, perPageDefault],
   );
 
   const saveCurrentFilters = useCallback(async () => {
@@ -2532,52 +2378,32 @@ export function ActivityView({
       return;
     }
     const nextState = { ...draft, page: 1 };
-    fetchPrefetch(nextState);
-  }, [draft, fetchPrefetch, hasPendingChanges]);
+    fetchActivity(nextState);
+  }, [draft, fetchActivity, hasPendingChanges]);
 
   const changePage = useCallback(
     (page: number) => {
-      if (page < 1 || page === applied.page) {
+      if (page < 1 || page === listData.pageInfo.page) {
         return;
       }
 
-      if (prefetchData.pageInfo.isPrefetch) {
-        const bufferStart = prefetchData.pageInfo.page;
-        const bufferEnd = prefetchData.pageInfo.bufferedUntilPage;
-
-        if (page >= bufferStart && page <= bufferEnd) {
-          const nextState = { ...applied, page };
-          setApplied(nextState);
-          setDraft(nextState);
-          applyFiltersToQuery(router, nextState, perPageDefault);
-          return;
-        }
-      }
-
       const nextState = { ...applied, page };
-      fetchPrefetch(nextState, { prefetchPages: requestedPrefetchPages });
+      fetchActivity(nextState);
     },
-    [
-      applied,
-      fetchPrefetch,
-      perPageDefault,
-      prefetchData.pageInfo,
-      requestedPrefetchPages,
-      router,
-    ],
+    [applied, fetchActivity, listData.pageInfo.page],
   );
 
   const changePerPage = useCallback(
     (perPage: number) => {
       const nextState = { ...applied, perPage, page: 1 };
       setDraft(nextState);
-      fetchPrefetch(nextState, { prefetchPages: requestedPrefetchPages });
+      fetchActivity(nextState);
     },
-    [applied, fetchPrefetch, requestedPrefetchPages],
+    [applied, fetchActivity],
   );
 
   const jumpToDate = useCallback(() => {
-    if (!metadata || isMetadataLoading || !jumpDate) {
+    if (!jumpDate) {
       return;
     }
 
@@ -2598,15 +2424,8 @@ export function ActivityView({
       }
     }
 
-    fetchPrefetch({ ...applied }, { jumpToDate: effectiveJump });
-  }, [
-    activeTimezone,
-    applied,
-    fetchPrefetch,
-    isMetadataLoading,
-    jumpDate,
-    metadata,
-  ]);
+    fetchActivity({ ...applied }, { jumpToDate: effectiveJump });
+  }, [activeTimezone, applied, fetchActivity, jumpDate]);
 
   const loadDetail = useCallback(async (id: string) => {
     if (!id) {
@@ -2702,7 +2521,7 @@ export function ActivityView({
         if (!response.ok) {
           if (payload.item) {
             const conflictItem = payload.item;
-            setPrefetchData((current) => ({
+            setListData((current) => ({
               ...current,
               items: current.items.map((existing) =>
                 existing.id === conflictItem.id ? conflictItem : existing,
@@ -2738,7 +2557,7 @@ export function ActivityView({
 
         const updatedItem = payload.item ?? item;
 
-        setPrefetchData((current) => ({
+        setListData((current) => ({
           ...current,
           items: current.items.map((existing) =>
             existing.id === updatedItem.id ? updatedItem : existing,
@@ -2868,7 +2687,7 @@ export function ActivityView({
         if (!response.ok) {
           if (payloadResponse.item) {
             const conflictItem = payloadResponse.item;
-            setPrefetchData((current) => ({
+            setListData((current) => ({
               ...current,
               items: current.items.map((existing) =>
                 existing.id === conflictItem.id ? conflictItem : existing,
@@ -2904,7 +2723,7 @@ export function ActivityView({
 
         const updatedItem = payloadResponse.item ?? item;
 
-        setPrefetchData((current) => ({
+        setListData((current) => ({
           ...current,
           items: current.items.map((existing) =>
             existing.id === updatedItem.id ? updatedItem : existing,
@@ -4020,51 +3839,28 @@ export function ActivityView({
               페이지 {currentPage} / {totalPagesDisplay} (총 {totalCountDisplay}
               건)
             </span>
-            {isPrefetchPageInfo ? (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => fetchMetadata()}
-                  disabled={isLoading || isMetadataLoading}
-                  className="h-8 px-3 text-xs"
-                >
-                  {isMetadataLoading
-                    ? "현황 불러오는 중..."
-                    : metadataAvailable
-                      ? "전체 현황 새로고침"
-                      : "전체 현황 불러오기"}
-                </Button>
-                {metadataError && (
-                  <span className="text-xs text-destructive">
-                    {metadataError}
-                  </span>
-                )}
-              </>
-            ) : null}
             <div className="flex items-center gap-2 text-xs uppercase text-foreground">
-              <Label className="font-medium">날짜 이동</Label>
+              <Label className="font-medium" htmlFor={jumpDateInputId}>
+                날짜 이동
+              </Label>
               <Input
                 type="date"
+                id={jumpDateInputId}
                 value={jumpDate}
                 onChange={(event) => setJumpDate(event.target.value)}
                 onKeyDown={(event) => {
-                  if (
-                    event.key === "Enter" &&
-                    metadataAvailable &&
-                    !isMetadataLoading
-                  ) {
+                  if (event.key === "Enter" && jumpDate) {
                     jumpToDate();
                   }
                 }}
                 className="h-8 w-auto"
-                disabled={isLoading || !metadataAvailable || isMetadataLoading}
+                disabled={isLoading}
               />
               <Button
                 type="button"
                 variant="outline"
                 onClick={jumpToDate}
-                disabled={isLoading || !metadataAvailable || isMetadataLoading}
+                disabled={isLoading || !jumpDate}
                 className="h-8 px-3 text-xs"
               >
                 이동

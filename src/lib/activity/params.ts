@@ -7,7 +7,6 @@ import type {
   ActivityLinkedIssueFilter,
   ActivityListParams,
   ActivityPullRequestStatusFilter,
-  ActivityRequestMode,
   ActivityStatusFilter,
   ActivityThresholds,
 } from "@/lib/activity/types";
@@ -88,25 +87,6 @@ function parseThresholds(searchParams: URLSearchParams) {
   });
 
   return Object.keys(thresholds).length ? thresholds : undefined;
-}
-
-function parseMode(
-  searchParams: URLSearchParams,
-): ActivityRequestMode | undefined {
-  const raw = searchParams.get("mode");
-  if (raw === "prefetch" || raw === "summary") {
-    return raw;
-  }
-  return undefined;
-}
-
-function parseToken(searchParams: URLSearchParams) {
-  const raw = searchParams.get("token");
-  if (!raw) {
-    return undefined;
-  }
-  const trimmed = raw.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 export function parseActivityListParams(
@@ -193,12 +173,6 @@ export function parseActivityListParams(
     search: searchParams.get("search"),
     jumpToDate: searchParams.get("jumpTo"),
     thresholds: parseThresholds(searchParams),
-    mode: parseMode(searchParams),
-    prefetchPages: parsePositiveInteger(searchParams, "prefetchPages", {
-      min: 1,
-      max: 10,
-    }),
-    token: parseToken(searchParams),
   };
 }
 

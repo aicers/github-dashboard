@@ -2,30 +2,15 @@
 
 import "../../../tests/helpers/postgres-container";
 
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ensureActivityCaches } from "@/lib/activity/cache";
 import {
   getActivityFilterOptions,
   getActivityItemDetail,
   getActivityItems,
-  getActivityMetadata,
 } from "@/lib/activity/service";
 import { refreshActivityItemsSnapshot } from "@/lib/activity/snapshot";
-import type {
-  ActivityListParams,
-  ActivityListResult,
-  ActivityPrefetchPageInfo,
-} from "@/lib/activity/types";
 import type {
   AttentionInsights,
   IssueAttentionItem,
@@ -68,23 +53,6 @@ const mockedAttentionInsights = vi.mocked(getAttentionInsights);
 
 const BASE_TIME = "2024-01-01T00:00:00.000Z";
 
-const originalPrefetchPages = env.ACTIVITY_PREFETCH_PAGES;
-
-beforeAll(() => {
-  // Prefetch tests rely on legacy behavior. Keep isolated to ease future removal.
-  env.ACTIVITY_PREFETCH_PAGES = 3;
-});
-
-afterAll(() => {
-  env.ACTIVITY_PREFETCH_PAGES = originalPrefetchPages;
-});
-
-function expectPrefetchPageInfo(
-  pageInfo: ActivityListResult["pageInfo"],
-): asserts pageInfo is ActivityPrefetchPageInfo {
-  expect(pageInfo.isPrefetch).toBe(true);
-}
-
 const emptyInsights = (): AttentionInsights => ({
   generatedAt: BASE_TIME,
   timezone: "UTC",
@@ -95,6 +63,22 @@ const emptyInsights = (): AttentionInsights => ({
   backlogIssues: [],
   stalledInProgressIssues: [],
   unansweredMentions: [],
+});
+
+const originalProjectName = env.TODO_PROJECT_NAME;
+
+beforeEach(async () => {
+  mockedAttentionInsights.mockResolvedValue(emptyInsights());
+  env.TODO_PROJECT_NAME = "Acme Project";
+  await resetActivityTables();
+  await updateSyncConfig({ excludedRepositories: [] });
+});
+
+afterEach(async () => {
+  env.TODO_PROJECT_NAME = originalProjectName;
+  vi.useRealTimers();
+  vi.clearAllMocks();
+  await updateSyncConfig({ excludedRepositories: [] });
 });
 
 type SeededData = {
@@ -301,39 +285,7 @@ async function seedBasicActivityData(): Promise<SeededData> {
   };
 }
 
-async function fetchActivitySummary(
-  params: ActivityListParams,
-  prefetch: ActivityListResult,
-) {
-  expectPrefetchPageInfo(prefetch.pageInfo);
-  const pageInfo = prefetch.pageInfo;
-  return getActivityMetadata({
-    ...params,
-    mode: "summary",
-    token: pageInfo.requestToken,
-    page: pageInfo.page,
-    perPage: pageInfo.perPage,
-    prefetchPages: pageInfo.requestedPages,
-  });
-}
-
 describe("activity service integration", () => {
-  const originalProjectName = env.TODO_PROJECT_NAME;
-
-  beforeEach(async () => {
-    mockedAttentionInsights.mockResolvedValue(emptyInsights());
-    env.TODO_PROJECT_NAME = "Acme Project";
-    await resetActivityTables();
-    await updateSyncConfig({ excludedRepositories: [] });
-  });
-
-  afterEach(async () => {
-    env.TODO_PROJECT_NAME = originalProjectName;
-    vi.useRealTimers();
-    vi.clearAllMocks();
-    await updateSyncConfig({ excludedRepositories: [] });
-  });
-
   it("returns filter options with normalized ordering and deduplicated values", async () => {
     const { repoAlpha, repoBeta } = await seedBasicActivityData();
 
@@ -401,94 +353,17 @@ describe("activity service integration", () => {
     ).toBe(true);
   });
 
-  it("limits prefetched results to the requested page window", async () => {
+  it("returns pagination metadata with totals", async () => {
     await seedBasicActivityData();
 
-    const prefetch = await getActivityItems({ perPage: 1, prefetchPages: 1 });
+    const result = await getActivityItems({ perPage: 1 });
 
-    expect(prefetch.items).toHaveLength(1);
-    expectPrefetchPageInfo(prefetch.pageInfo);
-    expect(prefetch.pageInfo.requestedPages).toBe(1);
-    expect(prefetch.pageInfo.bufferedPages).toBe(1);
-    expect(prefetch.pageInfo.hasMore).toBe(true);
-  });
-
-  it("buffers multiple pages when the window exceeds remaining results", async () => {
-    await seedBasicActivityData();
-
-    const prefetch = await getActivityItems({ perPage: 1, prefetchPages: 3 });
-
-    expect(prefetch.items).toHaveLength(2);
-    expectPrefetchPageInfo(prefetch.pageInfo);
-    expect(prefetch.pageInfo.bufferedPages).toBe(2);
-    expect(prefetch.pageInfo.hasMore).toBe(false);
-  });
-
-  it("clamps the prefetch window to ten pages", async () => {
-    await seedBasicActivityData();
-
-    const prefetch = await getActivityItems({ perPage: 1, prefetchPages: 25 });
-
-    expectPrefetchPageInfo(prefetch.pageInfo);
-    expect(prefetch.pageInfo.requestedPages).toBe(10);
-    expect(prefetch.pageInfo.bufferedPages).toBeGreaterThan(0);
-  });
-
-  it("returns matching metadata totals for prefetched results", async () => {
-    await seedBasicActivityData();
-
-    const prefetch = await getActivityItems({ perPage: 1, prefetchPages: 3 });
-    expectPrefetchPageInfo(prefetch.pageInfo);
-    const metadata = await fetchActivitySummary({ perPage: 1 }, prefetch);
-
-    expect(metadata.pageInfo.totalCount).toBe(2);
-    expect(metadata.pageInfo.totalPages).toBe(2);
-    expect(metadata.pageInfo.requestToken).toBe(prefetch.pageInfo.requestToken);
-    expect(metadata.jumpTo.map((entry) => entry.page)).toEqual([1, 2]);
-  });
-
-  it("rejects metadata when filters change before the summary call", async () => {
-    const { repoAlpha, repoBeta } = await seedBasicActivityData();
-
-    const prefetch = await getActivityItems({ repositoryIds: [repoAlpha.id] });
-
-    expectPrefetchPageInfo(prefetch.pageInfo);
-    await expect(
-      getActivityMetadata({
-        repositoryIds: [repoBeta.id],
-        mode: "summary",
-        token: prefetch.pageInfo.requestToken,
-        page: prefetch.pageInfo.page,
-        perPage: prefetch.pageInfo.perPage,
-        prefetchPages: prefetch.pageInfo.requestedPages,
-      }),
-    ).rejects.toMatchObject({ status: 409 });
-  });
-
-  it("rejects metadata after the token expires", async () => {
-    await seedBasicActivityData();
-    const prefetch = await getActivityItems();
-    expectPrefetchPageInfo(prefetch.pageInfo);
-
-    const now = Date.now();
-    vi.useFakeTimers();
-    try {
-      vi.setSystemTime(
-        new Date(now + (env.ACTIVITY_PREFETCH_TOKEN_TTL_SECONDS + 5) * 1000),
-      );
-
-      await expect(
-        getActivityMetadata({
-          mode: "summary",
-          token: prefetch.pageInfo.requestToken,
-          page: prefetch.pageInfo.page,
-          perPage: prefetch.pageInfo.perPage,
-          prefetchPages: prefetch.pageInfo.requestedPages,
-        }),
-      ).rejects.toMatchObject({ status: 410 });
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(result.pageInfo).toEqual({
+      page: 1,
+      perPage: 1,
+      totalCount: 2,
+      totalPages: 2,
+    });
   });
 
   it("filters issues by to-do project status when other project history entries exist", async () => {
@@ -815,16 +690,12 @@ describe("activity service integration", () => {
     expect(pullRequestItem.type).toBe("pull_request");
     expect(pullRequestItem.attention.staleOpenPr).toBeTruthy();
     expect(pullRequestItem.attention.reviewRequestPending).toBeTruthy();
-    expectPrefetchPageInfo(repoItems.pageInfo);
-    expect(repoItems.pageInfo.bufferedPages).toBe(1);
-    expect(repoItems.pageInfo.hasMore).toBe(false);
-
-    const repoSummary = await fetchActivitySummary(
-      { repositoryIds: [repoBeta.id], perPage: 1 },
-      repoItems,
-    );
-    expect(repoSummary.pageInfo.totalCount).toBe(1);
-    expect(repoSummary.pageInfo.totalPages).toBe(1);
+    expect(repoItems.pageInfo).toEqual({
+      page: 1,
+      perPage: 1,
+      totalCount: 1,
+      totalPages: 1,
+    });
 
     const issueItems = await getActivityItems({
       repositoryIds: [repoAlpha.id],
@@ -836,13 +707,12 @@ describe("activity service integration", () => {
     expect(issueItem.id).toBe(issueAlpha.id);
     expect(issueItem.type).toBe("issue");
     expect(issueItem.attention.backlogIssue).toBe(true);
-    expectPrefetchPageInfo(issueItems.pageInfo);
-    const issueSummary = await fetchActivitySummary(
-      { repositoryIds: [repoAlpha.id], perPage: 5 },
-      issueItems,
-    );
-    expect(issueSummary.pageInfo.totalCount).toBe(1);
-    expect(issueSummary.pageInfo.totalPages).toBe(1);
+    expect(issueItems.pageInfo).toEqual({
+      page: 1,
+      perPage: 5,
+      totalCount: 1,
+      totalPages: 1,
+    });
   });
 
   it("populates linked pull requests and issues for activity items", async () => {

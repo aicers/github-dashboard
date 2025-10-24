@@ -74,26 +74,7 @@ export type ActivityPagination = {
   perPage?: number;
 };
 
-/**
- * @deprecated Prefetch mode is legacy. Avoid adding new dependencies so it can be removed.
- */
-export type ActivityRequestMode = "prefetch" | "summary";
-
-export type ActivityListParams = ActivityFilters &
-  ActivityPagination & {
-    /**
-     * @deprecated Prefetch mode is legacy. Avoid using in new logic.
-     */
-    mode?: ActivityRequestMode;
-    /**
-     * @deprecated Prefetch window is legacy. Avoid using in new logic.
-     */
-    prefetchPages?: number;
-    /**
-     * @deprecated Prefetch token is legacy. Avoid using in new logic.
-     */
-    token?: string;
-  };
+export type ActivityListParams = ActivityFilters & ActivityPagination;
 
 export type ActivityUser = {
   id: string;
@@ -240,53 +221,16 @@ export type ActivityItem = {
   attention: ActivityAttentionFlags;
 };
 
-/**
- * @deprecated Prefetch page info is legacy. Avoid adding new dependencies so it can be removed.
- */
-export type ActivityPrefetchPageInfo = {
-  page: number;
-  perPage: number;
-  bufferedPages: number;
-  bufferedUntilPage: number;
-  requestedPages: number;
-  hasMore: boolean;
-  isPrefetch: true;
-  requestToken: string;
-  issuedAt: string;
-  expiresAt: string | null;
-};
-
-export type ActivitySummaryPageInfo = {
+export type ActivityPageInfo = {
   page: number;
   perPage: number;
   totalCount: number;
   totalPages: number;
-  isPrefetch: false;
-  requestToken: string;
-  issuedAt: string;
-  expiresAt: string | null;
 };
-
-export type ActivityPageInfo =
-  | ActivityPrefetchPageInfo
-  | ActivitySummaryPageInfo;
 
 export type ActivityListResult = {
   items: ActivityItem[];
   pageInfo: ActivityPageInfo;
-  lastSyncCompletedAt: string | null;
-  timezone: string | null;
-  dateTimeFormat: DateTimeDisplayFormat;
-};
-
-export type ActivityJumpToCoordinate = {
-  page: number;
-  isoDate: string;
-};
-
-export type ActivityMetadataResult = {
-  pageInfo: ActivitySummaryPageInfo;
-  jumpTo: ActivityJumpToCoordinate[];
   lastSyncCompletedAt: string | null;
   timezone: string | null;
   dateTimeFormat: DateTimeDisplayFormat;

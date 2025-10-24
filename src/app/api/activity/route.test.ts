@@ -7,7 +7,6 @@ import type {
   ActivityItemDetail,
   ActivityListParams,
   ActivityListResult,
-  ActivityMetadataResult,
 } from "@/lib/activity/types";
 
 vi.mock("@/lib/activity/params", () => ({
@@ -20,7 +19,6 @@ vi.mock("@/lib/activity/service", async (importOriginal) => {
   return {
     ...actual,
     getActivityItems: vi.fn(),
-    getActivityMetadata: vi.fn(),
     getActivityFilterOptions: vi.fn(),
     getActivityItemDetail: vi.fn(),
   };
@@ -29,12 +27,8 @@ vi.mock("@/lib/activity/service", async (importOriginal) => {
 const { parseActivityListParams } = vi.mocked(
   await import("@/lib/activity/params"),
 );
-const {
-  getActivityItems,
-  getActivityMetadata,
-  getActivityFilterOptions,
-  getActivityItemDetail,
-} = vi.mocked(await import("@/lib/activity/service"));
+const { getActivityItems, getActivityFilterOptions, getActivityItemDetail } =
+  vi.mocked(await import("@/lib/activity/service"));
 
 describe("GET /api/activity", () => {
   beforeEach(() => {
@@ -51,14 +45,8 @@ describe("GET /api/activity", () => {
       pageInfo: {
         page: 2,
         perPage: 10,
-        bufferedPages: 1,
-        bufferedUntilPage: 2,
-        requestedPages: 3,
-        hasMore: true,
-        isPrefetch: true,
-        requestToken: "prefetch-token",
-        issuedAt: "2024-01-01T00:00:00.000Z",
-        expiresAt: "2024-01-01T00:05:00.000Z",
+        totalCount: 42,
+        totalPages: 5,
       },
       lastSyncCompletedAt: null,
       timezone: null,
@@ -79,43 +67,6 @@ describe("GET /api/activity", () => {
     expect(body).toEqual(listResult);
     expect(parseActivityListParams).toHaveBeenCalledTimes(1);
     expect(getActivityItems).toHaveBeenCalledWith(parsedParams);
-    expect(getActivityMetadata).not.toHaveBeenCalled();
-  });
-
-  it("returns metadata when summary mode is requested", async () => {
-    const parsedParams: ActivityListParams = {
-      mode: "summary",
-      token: "abc",
-    };
-    const metadata: ActivityMetadataResult = {
-      pageInfo: {
-        page: 1,
-        perPage: 25,
-        totalCount: 100,
-        totalPages: 4,
-        isPrefetch: false,
-        requestToken: "abc",
-        issuedAt: "2024-01-01T00:00:00.000Z",
-        expiresAt: "2024-01-01T00:05:00.000Z",
-      },
-      jumpTo: [],
-      lastSyncCompletedAt: null,
-      timezone: null,
-      dateTimeFormat: "auto",
-    };
-
-    parseActivityListParams.mockReturnValue(parsedParams);
-    getActivityMetadata.mockResolvedValue(metadata);
-
-    const { GET } = await import("./route");
-    const response = await GET(
-      new Request("http://localhost/api/activity?mode=summary"),
-    );
-
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual(metadata);
-    expect(getActivityMetadata).toHaveBeenCalledWith(parsedParams);
-    expect(getActivityItems).not.toHaveBeenCalled();
   });
 
   it("returns 500 when service call fails", async () => {
@@ -128,25 +79,6 @@ describe("GET /api/activity", () => {
     expect(response.status).toBe(500);
     const body = await response.json();
     expect(body).toEqual({ error: "Failed to load activity feed." });
-  });
-
-  it("propagates metadata validation errors", async () => {
-    parseActivityListParams.mockReturnValue({
-      mode: "summary",
-      token: "oops",
-    } as ActivityListParams);
-    const { ActivityMetadataError } = await import("@/lib/activity/service");
-    getActivityMetadata.mockRejectedValue(
-      new ActivityMetadataError("Token mismatch", 409),
-    );
-
-    const { GET } = await import("./route");
-    const response = await GET(
-      new Request("http://localhost/api/activity?mode=summary"),
-    );
-
-    expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: "Token mismatch" });
   });
 });
 
