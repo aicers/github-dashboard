@@ -133,6 +133,33 @@ update so fresh environments do not need the interactive script.
   (and similar for `sync_log`) via `psql` or a SQL client.
 <!-- markdownlint-enable MD013 -->
 
+#### What each sync run does
+
+Manual backfill and automatic sync share the same pipeline.
+
+1. **GitHub data collection**
+   `runCollection` fetches repositories, issues, discussions, pull requests,
+   reviews, and comments through the GraphQL API and upserts them into
+   PostgreSQL.
+   - Every resource writes a `running → success/failed` entry to `sync_log`.
+   - The latest `updated_at` timestamp is stored in `sync_state` so the next run
+     can reuse it as the `since` boundary.
+
+2. **Sync metadata updates**
+   Before the run starts it creates a `sync_run` record; on completion it
+   refreshes the `sync_config` `last_sync_*` fields and broadcasts Server-Sent
+   Events (`run-started`, `run-completed`, `run-failed`, etc.) to the dashboard.
+
+3. **Post-processing steps**
+   After collection finishes three follow-up tasks run sequentially, each
+   persisting its outcome to `sync_log`.
+   - Apply issue status automation
+   - Refresh the activity snapshot
+   - Refresh activity caches
+
+Automatic sync additionally schedules the next run, while manual backfill
+repeats the same steps for each day slice in the requested range.
+
 ### Real-time sync stream
 
 - **Server-Sent Events** — `GET /api/sync/stream` keeps an HTTP connection open
