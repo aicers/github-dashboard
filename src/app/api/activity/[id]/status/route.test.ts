@@ -115,6 +115,7 @@ function createDetail(
     commentCount: 0,
     linkedPullRequests: baseItem.linkedPullRequests,
     linkedIssues: baseItem.linkedIssues,
+    reactions: [],
     todoStatusTimes: {},
     activityStatusTimes: {},
   };

@@ -288,6 +288,7 @@ describe("GET /api/activity/[id]", () => {
       commentCount: 0,
       linkedPullRequests: [],
       linkedIssues: [],
+      reactions: [],
     };
 
     getActivityItemDetail.mockResolvedValue(detail);

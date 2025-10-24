@@ -936,6 +936,7 @@ describe("ActivityView", () => {
         subIssues: [],
         comments: [],
         commentCount: 0,
+        reactions: [],
       },
       delayMs: 10,
     });

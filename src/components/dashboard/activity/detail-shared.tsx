@@ -17,13 +17,16 @@ import type {
   ActivityItem,
   ActivityItemComment,
   ActivityItemDetail,
+  ActivityReactionGroup,
   ActivityStatusFilter,
+  ActivityUser,
   IssueProjectStatus,
 } from "@/lib/activity/types";
 import {
   type DateTimeDisplayFormat,
   formatDateTimeDisplay,
 } from "@/lib/date-time-format";
+import { cn } from "@/lib/utils";
 
 export type ProjectFieldKey =
   | "priority"
@@ -71,6 +74,28 @@ export const SOURCE_STATUS_KEYS: IssueProjectStatus[] = [
   "done",
   "canceled",
 ];
+
+const REACTION_EMOJI_MAP: Record<string, string> = {
+  THUMBS_UP: "👍",
+  THUMBS_DOWN: "👎",
+  LAUGH: "😄",
+  HOORAY: "🎉",
+  CONFUSED: "😕",
+  HEART: "❤️",
+  ROCKET: "🚀",
+  EYES: "👀",
+};
+
+const REACTION_LABEL_MAP: Record<string, string> = {
+  THUMBS_UP: "Thumbs up",
+  THUMBS_DOWN: "Thumbs down",
+  LAUGH: "Laugh",
+  HOORAY: "Hooray",
+  CONFUSED: "Confused",
+  HEART: "Heart",
+  ROCKET: "Rocket",
+  EYES: "Eyes",
+};
 
 function escapeHtml(value: string) {
   return value
@@ -584,6 +609,102 @@ export function formatProjectField(value: string | null) {
   return trimmed.length ? trimmed : "-";
 }
 
+function resolveReactionKey(content: string | null) {
+  if (!content) {
+    return null;
+  }
+
+  const trimmed = content.trim();
+  if (!trimmed.length) {
+    return null;
+  }
+
+  return trimmed.toUpperCase();
+}
+
+function resolveReactionDisplay(content: string | null) {
+  const key = resolveReactionKey(content);
+  if (!key) {
+    return {
+      emoji: "👍",
+      label: "Reaction",
+    };
+  }
+
+  const emoji = REACTION_EMOJI_MAP[key];
+  const label =
+    REACTION_LABEL_MAP[key] ??
+    key
+      .toLowerCase()
+      .split("_")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+
+  return {
+    emoji: emoji ?? "👍",
+    label,
+  };
+}
+
+function formatReactionUsers(users: ActivityUser[]) {
+  const labels = users
+    .map((user) => user.login ?? user.name ?? user.id)
+    .filter((value): value is string => Boolean(value));
+  if (!labels.length) {
+    return null;
+  }
+
+  return labels.join(", ");
+}
+
+export function ReactionSummaryList({
+  reactions,
+  className,
+}: {
+  reactions?: ActivityReactionGroup[];
+  className?: string;
+}) {
+  const list = reactions ?? [];
+  if (!list.length) {
+    return null;
+  }
+
+  return (
+    <div
+      className={cn(
+        "flex flex-wrap gap-2 text-xs text-muted-foreground/80",
+        className,
+      )}
+    >
+      {list.map((reaction, index) => {
+        const { emoji, label } = resolveReactionDisplay(reaction.content);
+        const userList = formatReactionUsers(reaction.users);
+        const titleParts = [label];
+        if (userList) {
+          titleParts.push(userList);
+        }
+        titleParts.push(`${reaction.count}`);
+
+        return (
+          <span
+            key={`${resolveReactionKey(reaction.content) ?? "reaction"}-${index.toString()}`}
+            title={titleParts.join(" · ")}
+            className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background px-2 py-0.5"
+          >
+            <span aria-hidden="true">{emoji}</span>
+            <span className="font-medium text-foreground">
+              {reaction.count}
+            </span>
+            <span className="sr-only">
+              {`${label} ${reaction.count.toString()}개`}
+            </span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 export function ActivityCommentSection({
   comments,
   timezone,
@@ -683,6 +804,10 @@ export function ActivityCommentSection({
                     내용을 표시할 수 없습니다.
                   </div>
                 )}
+                <ReactionSummaryList
+                  reactions={comment.reactions}
+                  className="mt-3"
+                />
                 {comment.url ? (
                   <a
                     href={comment.url}
