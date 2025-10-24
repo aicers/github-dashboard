@@ -74,12 +74,24 @@ export type ActivityPagination = {
   perPage?: number;
 };
 
+/**
+ * @deprecated Prefetch mode is legacy. Avoid adding new dependencies so it can be removed.
+ */
 export type ActivityRequestMode = "prefetch" | "summary";
 
 export type ActivityListParams = ActivityFilters &
   ActivityPagination & {
+    /**
+     * @deprecated Prefetch mode is legacy. Avoid using in new logic.
+     */
     mode?: ActivityRequestMode;
+    /**
+     * @deprecated Prefetch window is legacy. Avoid using in new logic.
+     */
     prefetchPages?: number;
+    /**
+     * @deprecated Prefetch token is legacy. Avoid using in new logic.
+     */
     token?: string;
   };
 
@@ -227,6 +239,9 @@ export type ActivityItem = {
   attention: ActivityAttentionFlags;
 };
 
+/**
+ * @deprecated Prefetch page info is legacy. Avoid adding new dependencies so it can be removed.
+ */
 export type ActivityPrefetchPageInfo = {
   page: number;
   perPage: number;

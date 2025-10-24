@@ -194,6 +194,7 @@ export function buildActivityListResultFixture(
     (pageInfoOverride as Partial<ActivityPrefetchPageInfo>).perPage ?? 25;
   const page =
     (pageInfoOverride as Partial<ActivityPrefetchPageInfo>).page ?? 1;
+  // Prefetch fixture support is legacy and should not be extended.
   const isPrefetch =
     (pageInfoOverride as Partial<ActivityPrefetchPageInfo>).isPrefetch ?? false;
   const expiresAtDefault = new Date(

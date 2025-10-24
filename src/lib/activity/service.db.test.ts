@@ -71,6 +71,7 @@ const BASE_TIME = "2024-01-01T00:00:00.000Z";
 const originalPrefetchPages = env.ACTIVITY_PREFETCH_PAGES;
 
 beforeAll(() => {
+  // Prefetch tests rely on legacy behavior. Keep isolated to ease future removal.
   env.ACTIVITY_PREFETCH_PAGES = 3;
 });
 

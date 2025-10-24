@@ -1943,6 +1943,7 @@ export function ActivityView({
     void loadSavedFilters();
   }, [loadSavedFilters]);
 
+  // Prefetch pipeline is legacy. Do not introduce new consumers without revisiting removal plan.
   const fetchPrefetch = useCallback(
     async (
       nextFilters: FilterState,
@@ -2021,6 +2022,7 @@ export function ActivityView({
   );
 
   const fetchMetadata = useCallback(async () => {
+    // Legacy prefetch metadata flow; avoid expanding usage.
     if (!prefetchData.pageInfo.isPrefetch) {
       setMetadataError(null);
       return;

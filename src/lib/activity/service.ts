@@ -248,6 +248,7 @@ type CanonicalFilters = {
   thresholds: Record<string, number> | null;
 };
 
+// Legacy prefetch support — keep narrowly scoped so it can be removed easily.
 type PrefetchTokenPayload = {
   page: number;
   perPage: number;
@@ -257,6 +258,7 @@ type PrefetchTokenPayload = {
 };
 
 function getPrefetchDefaultPages() {
+  // Default env value is 0, so prefetch is effectively disabled; retain for legacy clients only.
   const value = env.ACTIVITY_PREFETCH_PAGES;
   if (typeof value === "number" && Number.isFinite(value)) {
     if (value < PREFETCH_MIN_PAGES) {
@@ -449,6 +451,7 @@ function isPrefetchTokenPayload(value: unknown): value is PrefetchTokenPayload {
   return true;
 }
 
+// Legacy helper for prefetch flow. Avoid adding new callers.
 function createPrefetchToken(
   params: ActivityListParams,
   page: number,
@@ -479,6 +482,7 @@ function createPrefetchToken(
   };
 }
 
+// Legacy helper for prefetch flow. Avoid adding new callers.
 function verifyPrefetchToken(
   token: string,
   params: ActivityListParams,
@@ -2540,6 +2544,8 @@ export async function getActivityMetadata(
 ): Promise<ActivityMetadataResult> {
   await ensureSchema();
 
+  // NOTE: Prefetch metadata is maintained for backward compatibility only.
+  // Avoid introducing new call sites so the prefetch pipeline can be deleted later.
   const thresholds: Required<ActivityThresholds> = {
     ...DEFAULT_THRESHOLDS,
     ...params.thresholds,
