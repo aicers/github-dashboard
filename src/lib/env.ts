@@ -1,3 +1,5 @@
+import "@/lib/logging";
+
 import { z } from "zod";
 
 function coerceOptionalString(value: string | null | undefined) {
