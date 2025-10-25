@@ -147,6 +147,12 @@ function formatBytes(size: number | null | undefined) {
   return `${value.toFixed(digits)} ${units[unitIndex]}`;
 }
 
+export const __syncControlsTestHelpers = {
+  parseApiResponse,
+  toIsoString,
+  formatBytes,
+};
+
 type RunLogEntry = {
   id: number;
   resource: string;

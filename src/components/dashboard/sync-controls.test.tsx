@@ -2,7 +2,10 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { SyncControls } from "@/components/dashboard/sync-controls";
+import {
+  __syncControlsTestHelpers,
+  SyncControls,
+} from "@/components/dashboard/sync-controls";
 import type { ActivityCacheRefreshResult } from "@/lib/activity/cache";
 import type { BackfillChunkSuccess, SyncStatus } from "@/lib/sync/service";
 import {
@@ -154,6 +157,44 @@ function createChunk(
     ...overrides,
   };
 }
+
+const { parseApiResponse, formatBytes, toIsoString } =
+  __syncControlsTestHelpers;
+
+describe("sync controls helpers", () => {
+  it("throws a descriptive error when the API response is empty", async () => {
+    const response = new Response("", { status: 200, statusText: "OK" });
+    await expect(parseApiResponse(response)).rejects.toThrow(
+      "서버에서 빈 응답이 반환되었습니다. (200 OK)",
+    );
+  });
+
+  it("throws a descriptive error when the API response is not JSON", async () => {
+    const response = new Response("<html></html>", {
+      status: 502,
+      statusText: "Bad Gateway",
+    });
+    await expect(parseApiResponse(response)).rejects.toThrow(
+      "서버 응답을 해석하지 못했습니다. (502 Bad Gateway)",
+    );
+  });
+
+  it("formats bytes into human readable strings", () => {
+    expect(formatBytes(null)).toBe("-");
+    expect(formatBytes(0)).toBe("0 B");
+    expect(formatBytes(1024)).toBe("1.00 MB");
+    expect(formatBytes(10_485_760)).toBe("10.0 GB");
+  });
+
+  it("normalizes ISO strings through toIsoString helper", () => {
+    expect(toIsoString(null)).toBeNull();
+    expect(toIsoString("2024-01-01T00:00:00.000Z")).toBe(
+      "2024-01-01T00:00:00.000Z",
+    );
+    const iso = toIsoString(new Date("2024-01-01T12:34:56.000Z"));
+    expect(iso).toBe("2024-01-01T12:34:56.000Z");
+  });
+});
 
 describe("SyncControls", () => {
   beforeEach(() => {
@@ -997,5 +1038,130 @@ describe("SyncControls", () => {
     );
     expect(routerRefreshMock).toHaveBeenCalled();
     confirmSpy.mockRestore();
+  });
+
+  it("disables backup controls for non-admin viewers", () => {
+    const status = buildStatus({
+      backup: {
+        directory: "/var/backups/github-dashboard",
+        retentionCount: 3,
+        schedule: {
+          enabled: true,
+          hourLocal: 6,
+          timezone: "UTC",
+          nextRunAt: "2024-04-02T06:00:00.000Z",
+          lastStartedAt: "2024-04-01T06:00:00.000Z",
+          lastCompletedAt: "2024-04-01T06:02:00.000Z",
+          lastStatus: "success",
+          lastError: null,
+        },
+        records: [
+          {
+            id: 1,
+            filename: "db-backup.dump",
+            directory: "/var/backups/github-dashboard",
+            filePath: "/var/backups/github-dashboard/db-backup.dump",
+            status: "success",
+            trigger: "automatic",
+            startedAt: "2024-04-01T06:00:00.000Z",
+            completedAt: "2024-04-01T06:02:00.000Z",
+            sizeBytes: 512,
+            error: null,
+            restoredAt: null,
+            createdBy: "admin",
+          },
+        ],
+      },
+    });
+
+    render(
+      <SyncControls
+        status={status}
+        isAdmin={false}
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+        view="backup"
+        currentPathname="/dashboard/sync/backup"
+      />,
+    );
+
+    const select = screen.getByLabelText("백업 실행 시각 (UTC)");
+    expect(select).toBeDisabled();
+
+    const saveButton = screen.getByRole("button", { name: "백업 시각 저장" });
+    expect(saveButton).toBeDisabled();
+
+    expect(
+      screen.queryByRole("button", { name: "복구" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows failure states and backup error messages", () => {
+    const status = buildStatus({
+      backup: {
+        directory: "/var/backups/github-dashboard",
+        retentionCount: 5,
+        schedule: {
+          enabled: true,
+          hourLocal: 2,
+          timezone: "Asia/Seoul",
+          nextRunAt: null,
+          lastStartedAt: "2024-04-01T02:00:00.000+09:00",
+          lastCompletedAt: "2024-04-01T02:05:00.000+09:00",
+          lastStatus: "failed",
+          lastError: "백업 디렉터리 접근 실패",
+        },
+        records: [
+          {
+            id: 10,
+            filename: "db-backup-success.dump",
+            directory: "/var/backups/github-dashboard",
+            filePath: "/var/backups/github-dashboard/db-backup-success.dump",
+            status: "success",
+            trigger: "manual",
+            startedAt: "2024-03-31T02:00:00.000Z",
+            completedAt: "2024-03-31T02:02:00.000Z",
+            sizeBytes: 2_048,
+            error: null,
+            restoredAt: null,
+            createdBy: "admin",
+          },
+          {
+            id: 11,
+            filename: "db-backup-failure.dump",
+            directory: "/var/backups/github-dashboard",
+            filePath: "/var/backups/github-dashboard/db-backup-failure.dump",
+            status: "failed",
+            trigger: "automatic",
+            startedAt: "2024-04-01T02:00:00.000Z",
+            completedAt: "2024-04-01T02:02:30.000Z",
+            sizeBytes: null,
+            error: "pg_dump가 종료 코드 1로 실패했습니다.",
+            restoredAt: null,
+            createdBy: null,
+          },
+        ],
+      },
+    });
+
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="Asia/Seoul"
+        dateTimeFormat="iso-24h"
+        view="backup"
+        currentPathname="/dashboard/sync/backup"
+      />,
+    );
+
+    expect(
+      screen.getByText("최근 오류: 백업 디렉터리 접근 실패"),
+    ).toBeInTheDocument();
+
+    expect(screen.getAllByText("실패").length).toBeGreaterThanOrEqual(1);
+    expect(
+      screen.getByText("오류: pg_dump가 종료 코드 1로 실패했습니다."),
+    ).toBeInTheDocument();
   });
 });
