@@ -770,7 +770,7 @@ export async function getSyncState(resource: string) {
 
 export async function getSyncConfig() {
   const result = await query(
-    `SELECT id, org_name, auto_sync_enabled, sync_interval_minutes, timezone, week_start, excluded_repository_ids, excluded_user_ids, allowed_team_slugs, allowed_user_ids, date_time_format, last_sync_started_at, last_sync_completed_at, last_successful_sync_at
+    `SELECT id, org_name, auto_sync_enabled, sync_interval_minutes, timezone, week_start, excluded_repository_ids, excluded_user_ids, allowed_team_slugs, allowed_user_ids, date_time_format, last_sync_started_at, last_sync_completed_at, last_successful_sync_at, backup_enabled, backup_hour_local, backup_timezone, backup_last_started_at, backup_last_completed_at, backup_last_status, backup_last_error
      FROM sync_config
      WHERE id = 'default'`,
   );
@@ -792,6 +792,13 @@ export async function updateSyncConfig(params: {
   lastSyncStartedAt?: string | null;
   lastSyncCompletedAt?: string | null;
   lastSuccessfulSyncAt?: string | null;
+  backupEnabled?: boolean;
+  backupHourLocal?: number;
+  backupTimezone?: string;
+  backupLastStartedAt?: string | null;
+  backupLastCompletedAt?: string | null;
+  backupLastStatus?: string;
+  backupLastError?: string | null;
 }) {
   const fields = [] as string[];
   const values = [] as unknown[];
@@ -859,6 +866,41 @@ export async function updateSyncConfig(params: {
   if (params.lastSuccessfulSyncAt !== undefined) {
     fields.push(`last_successful_sync_at = $${fields.length + 1}`);
     values.push(params.lastSuccessfulSyncAt);
+  }
+
+  if (typeof params.backupEnabled === "boolean") {
+    fields.push(`backup_enabled = $${fields.length + 1}`);
+    values.push(params.backupEnabled);
+  }
+
+  if (typeof params.backupHourLocal === "number") {
+    fields.push(`backup_hour_local = $${fields.length + 1}`);
+    values.push(params.backupHourLocal);
+  }
+
+  if (typeof params.backupTimezone === "string") {
+    fields.push(`backup_timezone = $${fields.length + 1}`);
+    values.push(params.backupTimezone);
+  }
+
+  if (params.backupLastStartedAt !== undefined) {
+    fields.push(`backup_last_started_at = $${fields.length + 1}`);
+    values.push(params.backupLastStartedAt);
+  }
+
+  if (params.backupLastCompletedAt !== undefined) {
+    fields.push(`backup_last_completed_at = $${fields.length + 1}`);
+    values.push(params.backupLastCompletedAt);
+  }
+
+  if (typeof params.backupLastStatus === "string") {
+    fields.push(`backup_last_status = $${fields.length + 1}`);
+    values.push(params.backupLastStatus);
+  }
+
+  if (params.backupLastError !== undefined) {
+    fields.push(`backup_last_error = $${fields.length + 1}`);
+    values.push(params.backupLastError);
   }
 
   if (!fields.length) {
@@ -1144,7 +1186,7 @@ export async function resetData({
     );
   } else {
     await query(
-      `TRUNCATE comments, reviews, issues, pull_requests, repositories, users, sync_log, sync_runs, sync_state RESTART IDENTITY CASCADE`,
+      `TRUNCATE comments, reviews, issues, pull_requests, repositories, users, sync_log, sync_runs, sync_state, db_backups RESTART IDENTITY CASCADE`,
     );
   }
 }
@@ -1536,4 +1578,173 @@ export async function getDataFreshness() {
     `SELECT last_successful_sync_at FROM sync_config WHERE id = 'default'`,
   );
   return result.rows[0]?.last_successful_sync_at ?? null;
+}
+
+export type DbBackupStatus = "running" | "success" | "failed";
+export type DbBackupTrigger = "automatic" | "manual";
+
+type DbBackupRow = {
+  id: number;
+  filename: string;
+  directory: string;
+  file_path: string;
+  status: DbBackupStatus;
+  trigger_type: DbBackupTrigger;
+  started_at: string | Date;
+  completed_at: string | Date | null;
+  size_bytes: string | number | null;
+  error: string | null;
+  restored_at: string | Date | null;
+  created_by: string | null;
+  created_at: string | Date;
+  updated_at: string | Date;
+};
+
+export type DbBackupRecord = {
+  id: number;
+  filename: string;
+  directory: string;
+  filePath: string;
+  status: DbBackupStatus;
+  trigger: DbBackupTrigger;
+  startedAt: string;
+  completedAt: string | null;
+  sizeBytes: number | null;
+  error: string | null;
+  restoredAt: string | null;
+  createdBy: string | null;
+};
+
+function mapBackupRow(row: DbBackupRow): DbBackupRecord {
+  let sizeBytes: number | null = null;
+  if (row.size_bytes !== null && row.size_bytes !== undefined) {
+    const parsed =
+      typeof row.size_bytes === "string"
+        ? Number.parseInt(row.size_bytes, 10)
+        : Number(row.size_bytes);
+    sizeBytes = Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return {
+    id: row.id,
+    filename: row.filename,
+    directory: row.directory,
+    filePath: row.file_path,
+    status: row.status,
+    trigger: row.trigger_type,
+    startedAt: toIsoString(row.started_at) ?? new Date().toISOString(),
+    completedAt: toIsoString(row.completed_at),
+    sizeBytes,
+    error: row.error,
+    restoredAt: toIsoString(row.restored_at),
+    createdBy: row.created_by,
+  };
+}
+
+export async function createBackupRecord(params: {
+  filename: string;
+  directory: string;
+  filePath: string;
+  trigger: DbBackupTrigger;
+  startedAt?: string | null;
+  createdBy?: string | null;
+}) {
+  const result = await query<DbBackupRow>(
+    `INSERT INTO db_backups (filename, directory, file_path, status, trigger_type, started_at, created_by)
+     VALUES ($1, $2, $3, 'running', $4, COALESCE($5, NOW()), $6)
+     RETURNING id, filename, directory, file_path, status, trigger_type, started_at, completed_at, size_bytes, error, restored_at, created_by, created_at, updated_at`,
+    [
+      params.filename,
+      params.directory,
+      params.filePath,
+      params.trigger,
+      params.startedAt ?? null,
+      params.createdBy ?? null,
+    ],
+  );
+
+  const row = result.rows[0];
+  return row ? mapBackupRow(row) : null;
+}
+
+export async function markBackupSuccess(params: {
+  id: number;
+  sizeBytes?: number | null;
+  completedAt?: string | null;
+}) {
+  const result = await query<DbBackupRow>(
+    `UPDATE db_backups
+     SET status = 'success',
+         completed_at = COALESCE($2, NOW()),
+         size_bytes = $3,
+         error = NULL,
+         updated_at = NOW()
+     WHERE id = $1
+     RETURNING id, filename, directory, file_path, status, trigger_type, started_at, completed_at, size_bytes, error, restored_at, created_by, created_at, updated_at`,
+    [params.id, params.completedAt ?? null, params.sizeBytes ?? null],
+  );
+
+  const row = result.rows[0];
+  return row ? mapBackupRow(row) : null;
+}
+
+export async function markBackupFailure(params: {
+  id: number;
+  error: string;
+  completedAt?: string | null;
+}) {
+  const result = await query<DbBackupRow>(
+    `UPDATE db_backups
+     SET status = 'failed',
+         completed_at = COALESCE($3, NOW()),
+         error = $2,
+         updated_at = NOW()
+     WHERE id = $1
+     RETURNING id, filename, directory, file_path, status, trigger_type, started_at, completed_at, size_bytes, error, restored_at, created_by, created_at, updated_at`,
+    [params.id, params.error, params.completedAt ?? null],
+  );
+
+  const row = result.rows[0];
+  return row ? mapBackupRow(row) : null;
+}
+
+export async function listBackups(limit = 20): Promise<DbBackupRecord[]> {
+  const result = await query<DbBackupRow>(
+    `SELECT id, filename, directory, file_path, status, trigger_type, started_at, completed_at, size_bytes, error, restored_at, created_by, created_at, updated_at
+     FROM db_backups
+     ORDER BY started_at DESC
+     LIMIT $1`,
+    [Math.max(limit, 1)],
+  );
+
+  return result.rows.map(mapBackupRow);
+}
+
+export async function getBackupRecord(id: number) {
+  const result = await query<DbBackupRow>(
+    `SELECT id, filename, directory, file_path, status, trigger_type, started_at, completed_at, size_bytes, error, restored_at, created_by, created_at, updated_at
+     FROM db_backups
+     WHERE id = $1`,
+    [id],
+  );
+
+  const row = result.rows[0];
+  return row ? mapBackupRow(row) : null;
+}
+
+export async function markBackupRestored(params: {
+  id: number;
+  restoredAt?: string | null;
+}) {
+  await query(
+    `UPDATE db_backups
+     SET restored_at = COALESCE($2, NOW()),
+         updated_at = NOW()
+     WHERE id = $1`,
+    [params.id, params.restoredAt ?? null],
+  );
+}
+
+export async function deleteBackupRecord(id: number) {
+  await query(`DELETE FROM db_backups WHERE id = $1`, [id]);
 }

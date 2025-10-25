@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState } from "react";
 
+import { SyncSubTabs } from "@/components/dashboard/sync-subtabs";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -26,11 +27,15 @@ import {
 } from "@/lib/date-time-format";
 import type { BackfillResult, SyncStatus } from "@/lib/sync/service";
 
+type SyncView = "overview" | "logs" | "backup";
+
 type SyncControlsProps = {
   status: SyncStatus;
   isAdmin: boolean;
   timeZone?: string | null;
   dateTimeFormat?: DateTimeDisplayFormat;
+  view?: SyncView;
+  currentPathname?: string;
 };
 
 type ApiResponse<T> = {
@@ -84,6 +89,27 @@ const statusColors: Record<string, string> = {
   running: "text-amber-600",
 };
 
+const backupStatusLabels: Record<string, string> = {
+  success: "성공",
+  failed: "실패",
+  running: "진행 중",
+  restored: "복구 완료",
+  idle: "대기",
+};
+
+const backupStatusColors: Record<string, string> = {
+  success: "text-emerald-600",
+  failed: "text-red-600",
+  running: "text-amber-600",
+  restored: "text-sky-600",
+  idle: "text-muted-foreground",
+};
+
+const backupTriggerLabels: Record<string, string> = {
+  automatic: "자동",
+  manual: "수동",
+};
+
 const ADMIN_ONLY_MESSAGE = "관리자 권한이 있는 사용자만 실행할 수 있습니다.";
 
 function toIsoString(value: string | Date | null | undefined) {
@@ -96,6 +122,29 @@ function toIsoString(value: string | Date | null | undefined) {
   }
 
   return value;
+}
+
+function formatBytes(size: number | null | undefined) {
+  if (size === null || size === undefined || !Number.isFinite(size)) {
+    return "-";
+  }
+
+  const absolute = Math.max(0, Number(size));
+  if (absolute < 1024) {
+    return `${Math.round(absolute).toLocaleString()} B`;
+  }
+
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = absolute;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  const digits = value >= 10 ? 1 : 2;
+  return `${value.toFixed(digits)} ${units[unitIndex]}`;
 }
 
 type RunLogEntry = {
@@ -260,9 +309,16 @@ export function SyncControls({
   isAdmin,
   timeZone: userTimeZone,
   dateTimeFormat: userDateTimeFormat,
+  view = "overview",
+  currentPathname,
 }: SyncControlsProps) {
   const router = useRouter();
   const config = status.config;
+  const backupInfo = status.backup;
+  const backupSchedule = backupInfo.schedule;
+  const backupDirectory = backupInfo.directory;
+  const backupRetentionCount = backupInfo.retentionCount;
+  const backupRecords = backupInfo.records ?? [];
   const trimmedUserTimeZone =
     typeof userTimeZone === "string" ? userTimeZone.trim() : "";
   const configTimeZone =
@@ -299,6 +355,16 @@ export function SyncControls({
   const [issueStatusAutomationSummary, setIssueStatusAutomationSummary] =
     useState<IssueStatusAutomationSummary | null>(null);
   const [statusAutomationStart, setStatusAutomationStart] = useState("");
+  const [backupHour, setBackupHour] = useState(backupSchedule.hourLocal ?? 2);
+  const [isSavingBackupSchedule, setIsSavingBackupSchedule] = useState(false);
+  const [restoringBackupId, setRestoringBackupId] = useState<number | null>(
+    null,
+  );
+  const backupHourSelectId = useId();
+  const backupHourOptions = useMemo(
+    () => Array.from({ length: 24 }, (_value, hour) => hour),
+    [],
+  );
   const [isRunningBackfill, setIsRunningBackfill] = useState(false);
   const [isTogglingAuto, setIsTogglingAuto] = useState(false);
   const [isCleaning, setIsCleaning] = useState(false);
@@ -321,6 +387,10 @@ export function SyncControls({
   useEffect(() => {
     setAutoEnabled(config?.auto_sync_enabled ?? false);
   }, [config?.auto_sync_enabled]);
+
+  useEffect(() => {
+    setBackupHour(backupSchedule.hourLocal ?? 2);
+  }, [backupSchedule.hourLocal]);
 
   useEffect(() => {
     if (!canManageSync) {
@@ -457,6 +527,39 @@ export function SyncControls({
     }
 
     return "-";
+  }
+
+  const backupStatusKey = (backupSchedule.lastStatus ?? "idle").toLowerCase();
+  const backupStatusLabel =
+    backupStatusLabels[backupStatusKey] ?? capitalize(backupStatusKey);
+  const backupStatusClass =
+    backupStatusColors[backupStatusKey] ?? "text-muted-foreground";
+  const backupNextRunLabel = backupSchedule.nextRunAt
+    ? formatDateTime(backupSchedule.nextRunAt)
+    : null;
+  const backupLastRange = formatRange(
+    backupSchedule.lastStartedAt ?? null,
+    backupSchedule.lastCompletedAt ?? null,
+  );
+  const backupLastError = backupSchedule.lastError ?? null;
+  const backupTimezoneLabel = timeZone ?? backupSchedule.timezone ?? "UTC";
+
+  const viewPathMap: Record<SyncView, string> = {
+    overview: "/dashboard/sync",
+    logs: "/dashboard/sync/logs",
+    backup: "/dashboard/sync/backup",
+  };
+  const sectionIdMap: Record<SyncView, string> = {
+    overview: "sync-overview",
+    logs: "logs-section",
+    backup: "backup-section",
+  };
+  const activePath = currentPathname ?? viewPathMap[view];
+  const sectionId = sectionIdMap[view];
+
+  function formatHourLabel(hour: number) {
+    const normalized = Math.min(Math.max(Math.round(hour), 0), 23);
+    return `${normalized.toString().padStart(2, "0")}:00`;
   }
 
   function parseFilterCounts(metadata: unknown) {
@@ -703,6 +806,82 @@ export function SyncControls({
     }
   }
 
+  async function handleBackupScheduleSave() {
+    if (!canManageSync) {
+      setFeedback(ADMIN_ONLY_MESSAGE);
+      return;
+    }
+
+    if (!Number.isFinite(backupHour) || backupHour < 0 || backupHour > 23) {
+      setFeedback("백업 시각은 0시에서 23시 사이여야 합니다.");
+      return;
+    }
+
+    setIsSavingBackupSchedule(true);
+    try {
+      const response = await fetch("/api/sync/config", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ backupHour }),
+      });
+      const data = await parseApiResponse<SyncStatus>(response);
+      if (!data.success) {
+        throw new Error(data.message ?? "백업 시각 저장에 실패했습니다.");
+      }
+
+      setFeedback("백업 실행 시간을 저장했습니다.");
+      router.refresh();
+    } catch (error) {
+      setFeedback(
+        error instanceof Error
+          ? error.message
+          : "백업 시간 저장 중 오류가 발생했습니다.",
+      );
+    } finally {
+      setIsSavingBackupSchedule(false);
+    }
+  }
+
+  async function handleRestoreBackup(backupId: number) {
+    if (!canManageSync) {
+      setFeedback(ADMIN_ONLY_MESSAGE);
+      return;
+    }
+
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        "선택한 백업으로 복구할까요? 현재 동기화는 종료되고 데이터가 덮어쓰여집니다.",
+      )
+    ) {
+      return;
+    }
+
+    setRestoringBackupId(backupId);
+    try {
+      const response = await fetch(`/api/backup/${backupId}/restore`, {
+        method: "POST",
+      });
+      const data = await parseApiResponse<unknown>(response);
+      if (!data.success) {
+        throw new Error(data.message ?? "백업 복구에 실패했습니다.");
+      }
+
+      setFeedback("백업 복구를 완료했습니다.");
+      router.refresh();
+    } catch (error) {
+      setFeedback(
+        error instanceof Error
+          ? error.message
+          : "백업 복구 중 오류가 발생했습니다.",
+      );
+    } finally {
+      setRestoringBackupId(null);
+    }
+  }
+
   async function handleActivityCacheRefresh() {
     if (!canManageSync) {
       setFeedback(ADMIN_ONLY_MESSAGE);
@@ -837,326 +1016,512 @@ export function SyncControls({
   }
 
   return (
-    <section className="flex flex-col gap-3">
-      <header className="flex flex-col gap-1">
+    <section id={sectionId} className="flex flex-col gap-4">
+      <header className="flex flex-col gap-3">
         <h2 className="sr-only">데이터 동기화 제어</h2>
         <p className="text-sm text-muted-foreground">
           조직({config?.org_name})의 GitHub 데이터 수집과 동기화를 관리합니다.
         </p>
+        <SyncSubTabs currentPathname={activePath} />
         {!canManageSync ? (
           <p className="text-sm text-muted-foreground">{ADMIN_ONLY_MESSAGE}</p>
         ) : null}
         {feedback ? <p className="text-sm text-primary">{feedback}</p> : null}
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="border-border/70">
-          <CardHeader>
-            <CardTitle>수동 데이터 백필</CardTitle>
-            <CardDescription>
-              선택한 날짜부터 최신 데이터까지 즉시 수집합니다.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <label
-              className="flex flex-col gap-2 text-sm"
-              htmlFor={backfillInputId}
-            >
-              <span className="text-muted-foreground">시작 날짜</span>
-              <Input
-                id={backfillInputId}
-                value={backfillDate}
-                onChange={(event) => setBackfillDate(event.target.value)}
-                type="date"
-              />
-            </label>
-          </CardContent>
-          <CardFooter>
-            <Button
-              onClick={handleBackfill}
-              disabled={isRunningBackfill || !canManageSync}
-              title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
-            >
-              {isRunningBackfill ? "백필 실행 중..." : "백필 실행"}
-            </Button>
-          </CardFooter>
-        </Card>
+      {view === "overview" && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card className="border-border/70">
+            <CardHeader>
+              <CardTitle>수동 데이터 백필</CardTitle>
+              <CardDescription>
+                선택한 날짜부터 최신 데이터까지 즉시 수집합니다.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              <label
+                className="flex flex-col gap-2 text-sm"
+                htmlFor={backfillInputId}
+              >
+                <span className="text-muted-foreground">시작 날짜</span>
+                <Input
+                  id={backfillInputId}
+                  value={backfillDate}
+                  onChange={(event) => setBackfillDate(event.target.value)}
+                  type="date"
+                />
+              </label>
+            </CardContent>
+            <CardFooter>
+              <Button
+                onClick={handleBackfill}
+                disabled={isRunningBackfill || !canManageSync}
+                title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+              >
+                {isRunningBackfill ? "백필 실행 중..." : "백필 실행"}
+              </Button>
+            </CardFooter>
+          </Card>
 
-        <Card className="border-border/70">
-          <CardHeader>
-            <CardTitle>자동 동기화</CardTitle>
-            <CardDescription>
-              {autoEnabled
-                ? "자동 동기화가 활성화되어 있습니다."
-                : "필요 시 자동으로 데이터를 가져오도록 설정할 수 있습니다."}
-            </CardDescription>
-            <CardAction>
-              <span className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
-                {autoEnabled ? "활성" : "비활성"}
-              </span>
-            </CardAction>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <p>
-              최근 동기화:{" "}
-              <span>
-                {formatRange(latestSyncStartedAt, latestSyncCompletedAt)}
-              </span>
-            </p>
-            <p>
-              마지막 성공:{" "}
-              <span>
-                {formatRange(
-                  lastSuccessfulSyncStartedAt,
-                  lastSuccessfulSyncCompletedAt,
-                )}
-              </span>
-            </p>
-            <p>
-              간격: {(config?.sync_interval_minutes ?? 60).toLocaleString()}분
-            </p>
-            <p>
-              다음 동기화 예정:{" "}
-              <span>
-                {nextAutomaticSyncAt
-                  ? formatDateTime(nextAutomaticSyncAt)
-                  : "-"}
-              </span>
-            </p>
-          </CardContent>
-          <CardFooter className="gap-3">
-            <Button
-              variant={autoEnabled ? "secondary" : "default"}
-              onClick={() => handleAutoToggle(!autoEnabled)}
-              disabled={isTogglingAuto || !canManageSync}
-              title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
-            >
-              {isTogglingAuto
-                ? "처리 중..."
-                : autoEnabled
-                  ? "자동 동기화 중단"
-                  : "자동 동기화 시작"}
-            </Button>
-          </CardFooter>
-        </Card>
+          <Card className="border-border/70">
+            <CardHeader>
+              <CardTitle>자동 동기화</CardTitle>
+              <CardDescription>
+                {autoEnabled
+                  ? "자동 동기화가 활성화되어 있습니다."
+                  : "필요 시 자동으로 데이터를 가져오도록 설정할 수 있습니다."}
+              </CardDescription>
+              <CardAction>
+                <span className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
+                  {autoEnabled ? "활성" : "비활성"}
+                </span>
+              </CardAction>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm text-muted-foreground">
+              <p>
+                최근 동기화:{" "}
+                <span>
+                  {formatRange(latestSyncStartedAt, latestSyncCompletedAt)}
+                </span>
+              </p>
+              <p>
+                마지막 성공:{" "}
+                <span>
+                  {formatRange(
+                    lastSuccessfulSyncStartedAt,
+                    lastSuccessfulSyncCompletedAt,
+                  )}
+                </span>
+              </p>
+              <p>
+                간격: {(config?.sync_interval_minutes ?? 60).toLocaleString()}분
+              </p>
+              <p>
+                다음 동기화 예정:{" "}
+                <span>
+                  {nextAutomaticSyncAt
+                    ? formatDateTime(nextAutomaticSyncAt)
+                    : "-"}
+                </span>
+              </p>
+            </CardContent>
+            <CardFooter className="gap-3">
+              <Button
+                variant={autoEnabled ? "secondary" : "default"}
+                onClick={() => handleAutoToggle(!autoEnabled)}
+                disabled={isTogglingAuto || !canManageSync}
+                title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+              >
+                {isTogglingAuto
+                  ? "처리 중..."
+                  : autoEnabled
+                    ? "자동 동기화 중단"
+                    : "자동 동기화 시작"}
+              </Button>
+            </CardFooter>
+          </Card>
 
-        <Card className="border-primary/40">
-          <CardHeader>
-            <CardTitle>멈춰 있는 동기화 정리</CardTitle>
-            <CardDescription>
-              중단된 백필이나 자동 동기화가 계속 &ldquo;진행 중&rdquo;으로 보일
-              때 실패 처리하여 상태를 정리합니다.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            <p>
-              실패 처리된 런과 로그는 다시 실행되지 않으며, 필요 시 새로
-              동기화를 시작해야 합니다.
-            </p>
-          </CardContent>
-          <CardFooter>
-            <Button
-              variant="outline"
-              onClick={handleCleanup}
-              disabled={isCleaning || !canManageSync}
-              title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
-            >
-              {isCleaning ? "정리 중..." : "멈춘 동기화 정리"}
-            </Button>
-          </CardFooter>
-        </Card>
-        <Card className="border-primary/40">
-          <CardHeader>
-            <CardTitle>Activity 캐시 새로고침</CardTitle>
-            <CardDescription>
-              Activity 필터 옵션과 PR↔이슈 연결 정보를 미리 계산하여 페이지
-              로딩을 빠르게 유지합니다.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <p>
-              최근 생성 시각:{" "}
-              <span>
-                {activityCacheSummary?.filterOptions.generatedAt
-                  ? formatDateTime(
-                      activityCacheSummary.filterOptions.generatedAt,
-                    )
-                  : "-"}
-              </span>
-            </p>
-            {activityCacheSummary ? (
-              <ul className="space-y-1">
-                <li>
-                  필터 항목{" "}
-                  {activityCacheSummary.filterOptions.itemCount.toLocaleString()}
-                  건
-                  {activityCacheFilterCounts ? (
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      (저장소{" "}
-                      {activityCacheFilterCounts.repositories.toLocaleString()}
-                      개, 라벨{" "}
-                      {activityCacheFilterCounts.labels.toLocaleString()}개,
-                      사용자 {activityCacheFilterCounts.users.toLocaleString()}
-                      명)
-                    </span>
-                  ) : null}
-                </li>
-                <li>
-                  이슈↔PR 링크{" "}
-                  {(activityCacheIssueLinkCount ?? 0).toLocaleString()}건
-                </li>
-                <li>
-                  PR↔이슈 링크{" "}
-                  {(activityCachePrLinkCount ?? 0).toLocaleString()}건
-                </li>
-              </ul>
-            ) : (
-              <p>아직 실행된 Activity 캐시 새로고침 기록이 없습니다.</p>
-            )}
-          </CardContent>
-          <CardFooter>
-            <Button
-              onClick={handleActivityCacheRefresh}
-              disabled={isRefreshingActivityCache || !canManageSync}
-              title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
-            >
-              {isRefreshingActivityCache
-                ? "Activity 캐시 새로 고치는 중..."
-                : "Activity 캐시 새로고침"}
-            </Button>
-          </CardFooter>
-        </Card>
-
-        <Card className="border-primary/40">
-          <CardHeader>
-            <CardTitle>진행 상태 설정</CardTitle>
-            <CardDescription>
-              연결된 PR의 생성과 머지를 기준으로 이슈의 진행 상태를 즉시
-              갱신합니다.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4 text-sm text-muted-foreground">
-            <div className="space-y-3">
-              {issueStatusAutomationSummary ? (
-                <>
-                  <p>
-                    최근 실행 시각:{" "}
-                    <span>
-                      {formatDateTime(
-                        issueStatusAutomationSummary.generatedAt,
-                      ) ?? "-"}
-                    </span>
-                  </p>
-                  <p>
-                    최근 성공 시각:{" "}
-                    <span>
-                      {formatDateTime(
-                        issueStatusAutomationSummary.lastSuccessAt,
-                      ) ?? "-"}
-                    </span>
-                  </p>
-                  <p>
-                    대상 동기화 시각 (최근 실행):{" "}
-                    <span>
-                      {formatDateTime(
-                        issueStatusAutomationSummary.lastSuccessfulSyncAt,
-                      ) ?? "-"}
-                    </span>
-                  </p>
-                  <p>
-                    대상 동기화 시각 (최근 성공):{" "}
-                    <span>
-                      {formatDateTime(
-                        issueStatusAutomationSummary.lastSuccessSyncAt,
-                      ) ?? "-"}
-                    </span>
-                  </p>
-                  <p>
-                    최근 실행 결과:{" "}
-                    <span>
-                      진행{" "}
-                      {Number(
-                        issueStatusAutomationSummary.insertedInProgress ?? 0,
-                      ).toLocaleString()}
-                      건, 완료{" "}
-                      {Number(
-                        issueStatusAutomationSummary.insertedDone ?? 0,
-                      ).toLocaleString()}
-                      건, 취소{" "}
-                      {Number(
-                        issueStatusAutomationSummary.insertedCanceled ?? 0,
-                      ).toLocaleString()}
-                      건
-                    </span>
-                  </p>
-                  {issueStatusAutomationSummary.trigger ? (
-                    <p>
-                      최근 트리거:{" "}
-                      <span>{issueStatusAutomationSummary.trigger}</span>
-                    </p>
-                  ) : null}
-                  {issueStatusAutomationSummary.error ? (
-                    <p className="text-sm text-red-600">
-                      최근 오류: {issueStatusAutomationSummary.error}
-                    </p>
-                  ) : null}
-                </>
+          <Card className="border-border/70">
+            <CardHeader>
+              <CardTitle>멈춰 있는 동기화 정리</CardTitle>
+              <CardDescription>
+                중단된 백필이나 자동 동기화가 계속 &ldquo;진행 중&rdquo;으로
+                보일 때 실패 처리하여 상태를 정리합니다.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="text-sm text-muted-foreground">
+              <p>
+                실패 처리된 런과 로그는 다시 실행되지 않으며, 필요 시 새로
+                동기화를 시작해야 합니다.
+              </p>
+            </CardContent>
+            <CardFooter>
+              <Button
+                variant="outline"
+                onClick={handleCleanup}
+                disabled={isCleaning || !canManageSync}
+                title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+              >
+                {isCleaning ? "정리 중..." : "멈춘 동기화 정리"}
+              </Button>
+            </CardFooter>
+          </Card>
+          <Card className="border-border/70">
+            <CardHeader>
+              <CardTitle>Activity 캐시 새로고침</CardTitle>
+              <CardDescription>
+                Activity 필터 옵션과 PR↔이슈 연결 정보를 미리 계산하여 페이지
+                로딩을 빠르게 유지합니다.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm text-muted-foreground">
+              <p>
+                최근 생성 시각:{" "}
+                <span>
+                  {activityCacheSummary?.filterOptions.generatedAt
+                    ? formatDateTime(
+                        activityCacheSummary.filterOptions.generatedAt,
+                      )
+                    : "-"}
+                </span>
+              </p>
+              {activityCacheSummary ? (
+                <ul className="space-y-1">
+                  <li>
+                    필터 항목{" "}
+                    {activityCacheSummary.filterOptions.itemCount.toLocaleString()}
+                    건
+                    {activityCacheFilterCounts ? (
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        (저장소{" "}
+                        {activityCacheFilterCounts.repositories.toLocaleString()}
+                        개, 라벨{" "}
+                        {activityCacheFilterCounts.labels.toLocaleString()}개,
+                        사용자{" "}
+                        {activityCacheFilterCounts.users.toLocaleString()}
+                        명)
+                      </span>
+                    ) : null}
+                  </li>
+                  <li>
+                    이슈↔PR 링크{" "}
+                    {(activityCacheIssueLinkCount ?? 0).toLocaleString()}건
+                  </li>
+                  <li>
+                    PR↔이슈 링크{" "}
+                    {(activityCachePrLinkCount ?? 0).toLocaleString()}건
+                  </li>
+                </ul>
               ) : (
-                <p>아직 실행된 진행 상태 설정 기록이 없습니다.</p>
+                <p>아직 실행된 Activity 캐시 새로고침 기록이 없습니다.</p>
               )}
-            </div>
-            <div className="flex flex-col gap-2">
-              <span className="text-muted-foreground">
-                대상 동기화 시각 (선택)
-              </span>
-              <Input
-                type="datetime-local"
-                value={statusAutomationStart}
-                onChange={(event) =>
-                  setStatusAutomationStart(event.target.value)
-                }
-              />
-              {statusAutomationStart.trim().length ? (
-                (() => {
-                  const parsed = new Date(statusAutomationStart);
-                  if (Number.isNaN(parsed.getTime())) {
+            </CardContent>
+            <CardFooter>
+              <Button
+                onClick={handleActivityCacheRefresh}
+                disabled={isRefreshingActivityCache || !canManageSync}
+                title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+              >
+                {isRefreshingActivityCache
+                  ? "Activity 캐시 새로 고치는 중..."
+                  : "Activity 캐시 새로고침"}
+              </Button>
+            </CardFooter>
+          </Card>
+
+          <Card className="border-border/70">
+            <CardHeader>
+              <CardTitle>진행 상태 설정</CardTitle>
+              <CardDescription>
+                연결된 PR의 생성과 머지를 기준으로 이슈의 진행 상태를 즉시
+                갱신합니다.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm text-muted-foreground">
+              <div className="space-y-3">
+                {issueStatusAutomationSummary ? (
+                  <>
+                    <p>
+                      최근 실행 시각:{" "}
+                      <span>
+                        {formatDateTime(
+                          issueStatusAutomationSummary.generatedAt,
+                        ) ?? "-"}
+                      </span>
+                    </p>
+                    <p>
+                      최근 성공 시각:{" "}
+                      <span>
+                        {formatDateTime(
+                          issueStatusAutomationSummary.lastSuccessAt,
+                        ) ?? "-"}
+                      </span>
+                    </p>
+                    <p>
+                      대상 동기화 시각 (최근 실행):{" "}
+                      <span>
+                        {formatDateTime(
+                          issueStatusAutomationSummary.lastSuccessfulSyncAt,
+                        ) ?? "-"}
+                      </span>
+                    </p>
+                    <p>
+                      대상 동기화 시각 (최근 성공):{" "}
+                      <span>
+                        {formatDateTime(
+                          issueStatusAutomationSummary.lastSuccessSyncAt,
+                        ) ?? "-"}
+                      </span>
+                    </p>
+                    <p>
+                      최근 실행 결과:{" "}
+                      <span>
+                        진행{" "}
+                        {Number(
+                          issueStatusAutomationSummary.insertedInProgress ?? 0,
+                        ).toLocaleString()}
+                        건, 완료{" "}
+                        {Number(
+                          issueStatusAutomationSummary.insertedDone ?? 0,
+                        ).toLocaleString()}
+                        건, 취소{" "}
+                        {Number(
+                          issueStatusAutomationSummary.insertedCanceled ?? 0,
+                        ).toLocaleString()}
+                        건
+                      </span>
+                    </p>
+                    {issueStatusAutomationSummary.trigger ? (
+                      <p>
+                        최근 트리거:{" "}
+                        <span>{issueStatusAutomationSummary.trigger}</span>
+                      </p>
+                    ) : null}
+                    {issueStatusAutomationSummary.error ? (
+                      <p className="text-sm text-red-600">
+                        최근 오류: {issueStatusAutomationSummary.error}
+                      </p>
+                    ) : null}
+                  </>
+                ) : (
+                  <p>아직 실행된 진행 상태 설정 기록이 없습니다.</p>
+                )}
+              </div>
+              <div className="flex flex-col gap-2">
+                <span className="text-muted-foreground">
+                  대상 동기화 시각 (선택)
+                </span>
+                <Input
+                  type="datetime-local"
+                  value={statusAutomationStart}
+                  onChange={(event) =>
+                    setStatusAutomationStart(event.target.value)
+                  }
+                />
+                {statusAutomationStart.trim().length ? (
+                  (() => {
+                    const parsed = new Date(statusAutomationStart);
+                    if (Number.isNaN(parsed.getTime())) {
+                      return (
+                        <p className="text-xs text-destructive">
+                          유효하지 않은 시각입니다. 다시 입력해주세요.
+                        </p>
+                      );
+                    }
+                    const display =
+                      formatDateTime(parsed.toISOString()) ??
+                      parsed.toISOString();
                     return (
-                      <p className="text-xs text-destructive">
-                        유효하지 않은 시각입니다. 다시 입력해주세요.
+                      <p className="text-xs text-muted-foreground">
+                        선택된 시각: {display}
                       </p>
                     );
-                  }
-                  const display =
-                    formatDateTime(parsed.toISOString()) ??
-                    parsed.toISOString();
-                  return (
-                    <p className="text-xs text-muted-foreground">
-                      선택된 시각: {display}
-                    </p>
-                  );
-                })()
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  비워 두면 마지막 성공 시각을 기준으로 실행합니다.
-                </p>
-              )}
-            </div>
-          </CardContent>
-          <CardFooter>
-            <Button
-              onClick={handleIssueStatusAutomation}
-              disabled={isRunningStatusAutomation || !canManageSync}
-              title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
-            >
-              {isRunningStatusAutomation
-                ? "진행 상태 설정 중..."
-                : "진행 상태 설정"}
-            </Button>
-          </CardFooter>
-        </Card>
-      </div>
+                  })()
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    비워 두면 마지막 성공 시각을 기준으로 실행합니다.
+                  </p>
+                )}
+              </div>
+            </CardContent>
+            <CardFooter>
+              <Button
+                onClick={handleIssueStatusAutomation}
+                disabled={isRunningStatusAutomation || !canManageSync}
+                title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+              >
+                {isRunningStatusAutomation
+                  ? "진행 상태 설정 중..."
+                  : "진행 상태 설정"}
+              </Button>
+            </CardFooter>
+          </Card>
+        </div>
+      )}
 
-      {backfillHistory.length > 0 && (
+      {view === "backup" && (
+        <section
+          id="backup-section"
+          className="grid gap-6 lg:grid-cols-2"
+          aria-labelledby="sync-backup-heading"
+        >
+          <h3 id="sync-backup-heading" className="sr-only">
+            백업
+          </h3>
+          <Card className="border-border/70">
+            <CardHeader>
+              <CardTitle>DB 백업 일정</CardTitle>
+              <CardDescription>
+                매일 지정한 시간에 데이터베이스 백업을 생성합니다.
+              </CardDescription>
+              <CardAction>
+                <span
+                  className={`rounded-full bg-muted px-3 py-1 text-xs ${backupStatusClass}`}
+                >
+                  {backupStatusLabel}
+                </span>
+              </CardAction>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm text-muted-foreground">
+              <div className="flex flex-col gap-2">
+                <label
+                  htmlFor={backupHourSelectId}
+                  className="text-sm font-medium text-foreground"
+                >
+                  백업 실행 시각 ({backupTimezoneLabel})
+                </label>
+                <select
+                  id={backupHourSelectId}
+                  value={backupHour}
+                  onChange={(event) =>
+                    setBackupHour(Number.parseInt(event.target.value, 10))
+                  }
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  disabled={!canManageSync}
+                  title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+                >
+                  {backupHourOptions.map((hour) => (
+                    <option key={hour} value={hour}>
+                      {formatHourLabel(hour)}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  동기화가 진행 중이면 완료된 뒤에 백업이 실행됩니다.
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p>
+                  다음 백업: <span>{backupNextRunLabel ?? "-"}</span>
+                </p>
+                <p>
+                  최근 실행: <span>{backupLastRange}</span>
+                </p>
+                <p>
+                  최근 상태:{" "}
+                  <span className={`${backupStatusClass} font-medium`}>
+                    {backupStatusLabel}
+                  </span>
+                </p>
+                {backupLastError ? (
+                  <p className="text-sm text-destructive">
+                    최근 오류: {backupLastError}
+                  </p>
+                ) : null}
+              </div>
+              <div className="space-y-1">
+                <p>
+                  저장 경로:{" "}
+                  <code className="break-all text-xs text-foreground">
+                    {backupDirectory}
+                  </code>
+                </p>
+                <p>보존 개수: {backupRetentionCount.toLocaleString()}개</p>
+              </div>
+            </CardContent>
+            <CardFooter>
+              <Button
+                onClick={handleBackupScheduleSave}
+                disabled={isSavingBackupSchedule || !canManageSync}
+                title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+              >
+                {isSavingBackupSchedule ? "저장 중..." : "백업 시각 저장"}
+              </Button>
+            </CardFooter>
+          </Card>
+
+          <Card className="border-border/70 lg:col-span-2">
+            <CardHeader>
+              <CardTitle>백업 파일</CardTitle>
+              <CardDescription>
+                최근 백업을 확인하고 필요 시 복구할 수 있습니다.
+              </CardDescription>
+              <CardAction>
+                <span className="text-xs text-muted-foreground">
+                  총 {backupRecords.length.toLocaleString()}건
+                </span>
+              </CardAction>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm text-muted-foreground">
+              {backupRecords.length === 0 ? (
+                <p>아직 생성된 백업이 없습니다.</p>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {backupRecords.map((record) => {
+                    const recordStatusClass =
+                      backupStatusColors[record.status] ??
+                      "text-muted-foreground";
+                    const recordStatusLabel =
+                      backupStatusLabels[record.status] ?? record.status;
+                    return (
+                      <div
+                        key={record.id}
+                        className="flex w-full flex-wrap items-start gap-3 rounded-md border border-border/50 p-3"
+                      >
+                        <div className="min-w-[220px] flex-1 space-y-1">
+                          <p className="font-medium text-foreground">
+                            {record.filename}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            생성{" "}
+                            {formatRange(record.startedAt, record.completedAt)}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            경로:{" "}
+                            <code className="break-all text-[11px] text-foreground">
+                              {record.directory}
+                            </code>
+                          </p>
+                        </div>
+                        <div className="flex min-w-[200px] flex-col gap-1 text-xs text-muted-foreground">
+                          <span>
+                            상태:{" "}
+                            <span
+                              className={`${recordStatusClass} font-medium`}
+                            >
+                              {recordStatusLabel}
+                            </span>
+                          </span>
+                          <span>
+                            트리거:{" "}
+                            {backupTriggerLabels[record.trigger] ??
+                              record.trigger}
+                          </span>
+                          <span>크기: {formatBytes(record.sizeBytes)}</span>
+                          {record.restoredAt ? (
+                            <span>
+                              마지막 복구:{" "}
+                              {formatDateTime(record.restoredAt) ??
+                                record.restoredAt}
+                            </span>
+                          ) : null}
+                          {record.error ? (
+                            <span className="text-destructive">
+                              오류: {record.error}
+                            </span>
+                          ) : null}
+                        </div>
+                        {canManageSync && record.status === "success" ? (
+                          <Button
+                            variant="outline"
+                            onClick={() => handleRestoreBackup(record.id)}
+                            disabled={restoringBackupId === record.id}
+                          >
+                            {restoringBackupId === record.id
+                              ? "복구 중..."
+                              : "복구"}
+                          </Button>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </section>
+      )}
+      {view === "overview" && backfillHistory.length > 0 && (
         <Card className="border-border/70">
           <CardHeader>
             <CardTitle>백필 결과 히스토리</CardTitle>
@@ -1222,78 +1587,89 @@ export function SyncControls({
         </Card>
       )}
 
-      <Card className="mt-4 border-border/70">
-        <CardHeader>
-          <CardTitle>최근 동기화 로그</CardTitle>
-          <CardDescription>
-            각 리소스의 실행 상태와 메시지를 확인합니다.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4 text-sm">
-          {runGroups.length === 0 ? (
-            <p className="text-muted-foreground">로그가 없습니다.</p>
-          ) : (
-            runGroups.map((run) => (
-              <div
-                key={run.id}
-                className="space-y-3 rounded-lg border border-border/60 bg-background px-4 py-4"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex flex-col gap-1">
-                    <span className="text-sm font-semibold text-foreground">
-                      {RUN_TYPE_LABELS[run.runType] ?? "동기화"} •{" "}
-                      {formatRange(run.startedAt, run.completedAt)}
-                    </span>
-                    {run.since || run.until ? (
-                      <span className="text-xs text-muted-foreground">
-                        실행 범위: {formatRange(run.since, run.until)}
-                      </span>
-                    ) : null}
-                  </div>
-                  <span
-                    className={`text-xs font-semibold ${statusColors[run.status] ?? ""}`}
+      {view === "logs" && (
+        <section
+          id="logs-section"
+          className="mt-4 space-y-4"
+          aria-labelledby="sync-logs-heading"
+        >
+          <h3 id="sync-logs-heading" className="sr-only">
+            동기화 로그
+          </h3>
+          <Card className="border-border/70">
+            <CardHeader>
+              <CardTitle>최근 동기화 로그</CardTitle>
+              <CardDescription>
+                각 리소스의 실행 상태와 메시지를 확인합니다.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm">
+              {runGroups.length === 0 ? (
+                <p className="text-muted-foreground">로그가 없습니다.</p>
+              ) : (
+                runGroups.map((run) => (
+                  <div
+                    key={run.id}
+                    className="space-y-3 rounded-lg border border-border/60 bg-background px-4 py-4"
                   >
-                    {capitalize(run.status)}
-                  </span>
-                </div>
-                <div className="space-y-2">
-                  {run.logs.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">
-                      리소스 로그가 없습니다.
-                    </p>
-                  ) : (
-                    run.logs.map((log) => (
-                      <div
-                        key={log.id}
-                        className="rounded-md border border-border/50 bg-muted/10 px-3 py-2"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs uppercase text-muted-foreground">
-                            {log.resource}
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-col gap-1">
+                        <span className="text-sm font-semibold text-foreground">
+                          {RUN_TYPE_LABELS[run.runType] ?? "동기화"} •{" "}
+                          {formatRange(run.startedAt, run.completedAt)}
+                        </span>
+                        {run.since || run.until ? (
+                          <span className="text-xs text-muted-foreground">
+                            실행 범위: {formatRange(run.since, run.until)}
                           </span>
-                          <span
-                            className={`text-xs font-semibold ${statusColors[log.status] ?? ""}`}
-                          >
-                            {capitalize(log.status)}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {formatRange(log.startedAt, log.finishedAt)}
-                        </p>
-                        {log.message ? (
-                          <p className="mt-1 text-sm text-foreground">
-                            {log.message}
-                          </p>
                         ) : null}
                       </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            ))
-          )}
-        </CardContent>
-      </Card>
+                      <span
+                        className={`text-xs font-semibold ${statusColors[run.status] ?? ""}`}
+                      >
+                        {capitalize(run.status)}
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      {run.logs.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          리소스 로그가 없습니다.
+                        </p>
+                      ) : (
+                        run.logs.map((log) => (
+                          <div
+                            key={log.id}
+                            className="rounded-md border border-border/50 bg-muted/10 px-3 py-2"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs uppercase text-muted-foreground">
+                                {log.resource}
+                              </span>
+                              <span
+                                className={`text-xs font-semibold ${statusColors[log.status] ?? ""}`}
+                              >
+                                {capitalize(log.status)}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {formatRange(log.startedAt, log.finishedAt)}
+                            </p>
+                            {log.message ? (
+                              <p className="mt-1 text-sm text-foreground">
+                                {log.message}
+                              </p>
+                            ) : null}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </section>
+      )}
     </section>
   );
 }

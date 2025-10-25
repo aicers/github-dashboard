@@ -10,11 +10,15 @@ import type { SyncStatus } from "@/lib/sync/service";
 type SyncControlsHarnessProps = {
   status: SyncStatus;
   isAdmin?: boolean;
+  view?: "overview" | "logs" | "backup";
+  currentPathname?: string;
 };
 
 export function SyncControlsHarness({
   status,
   isAdmin = true,
+  view = "overview",
+  currentPathname = "/dashboard/sync",
 }: SyncControlsHarnessProps) {
   const router = useMemo<AppRouterInstance>(
     () => ({
@@ -35,6 +39,8 @@ export function SyncControlsHarness({
         isAdmin={isAdmin}
         timeZone="UTC"
         dateTimeFormat="iso-24h"
+        view={view}
+        currentPathname={currentPathname}
       />
     </AppRouterContext.Provider>
   );

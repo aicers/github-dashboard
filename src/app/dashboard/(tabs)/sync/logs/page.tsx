@@ -5,7 +5,7 @@ import { readUserTimeSettings } from "@/lib/user/time-settings";
 
 export const dynamic = "force-dynamic";
 
-export default async function SyncPage() {
+export default async function SyncLogsPage() {
   const [session, status] = await Promise.all([
     readActiveSession(),
     fetchSyncStatus(),
@@ -18,8 +18,8 @@ export default async function SyncPage() {
       isAdmin={Boolean(session?.isAdmin)}
       timeZone={userTimeSettings.timezone}
       dateTimeFormat={userTimeSettings.dateTimeFormat}
-      view="overview"
-      currentPathname="/dashboard/sync"
+      view="logs"
+      currentPathname="/dashboard/sync/logs"
     />
   );
 }

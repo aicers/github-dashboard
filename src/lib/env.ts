@@ -1,5 +1,7 @@
 import "@/lib/logging";
 
+import path from "node:path";
+
 import { z } from "zod";
 
 function coerceOptionalString(value: string | null | undefined) {
@@ -57,6 +59,19 @@ const envSchema = z.object({
   TODO_PROJECT_NAME: z.string().optional(),
   HOLIDAYS: z.string().optional(),
   DASHBOARD_ADMIN_IDS: z.string().optional(),
+  DB_BACKUP_DIRECTORY: z.string().optional(),
+  DB_BACKUP_RETENTION: z
+    .string()
+    .transform((value) => Number.parseInt(value, 10))
+    .optional()
+    .pipe(
+      z
+        .number()
+        .int({ message: "DB_BACKUP_RETENTION must be an integer." })
+        .min(1, "DB_BACKUP_RETENTION must be at least 1.")
+        .max(10, "DB_BACKUP_RETENTION cannot exceed 10.")
+        .optional(),
+    ),
 });
 
 const parsed = envSchema.parse({
@@ -72,7 +87,16 @@ const parsed = envSchema.parse({
   TODO_PROJECT_NAME: process.env.TODO_PROJECT_NAME,
   HOLIDAYS: process.env.HOLIDAYS,
   DASHBOARD_ADMIN_IDS: process.env.DASHBOARD_ADMIN_IDS,
+  DB_BACKUP_DIRECTORY: process.env.DB_BACKUP_DIRECTORY,
+  DB_BACKUP_RETENTION: process.env.DB_BACKUP_RETENTION,
 });
+
+const defaultBackupDirectory = path.resolve(process.cwd(), "backups");
+const resolvedBackupDirectory = parsed.DB_BACKUP_DIRECTORY
+  ? path.isAbsolute(parsed.DB_BACKUP_DIRECTORY)
+    ? parsed.DB_BACKUP_DIRECTORY
+    : path.resolve(process.cwd(), parsed.DB_BACKUP_DIRECTORY)
+  : defaultBackupDirectory;
 
 export const env = {
   ...parsed,
@@ -88,4 +112,6 @@ export const env = {
         .map((value) => value.trim())
         .filter((value) => value.length > 0)
     : [],
+  DB_BACKUP_DIRECTORY: resolvedBackupDirectory,
+  DB_BACKUP_RETENTION: parsed.DB_BACKUP_RETENTION ?? 3,
 };

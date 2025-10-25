@@ -3,6 +3,11 @@ import { z } from "zod";
 import { refreshActivityCaches } from "@/lib/activity/cache";
 import { refreshActivityItemsSnapshot } from "@/lib/activity/snapshot";
 import { ensureIssueStatusAutomation } from "@/lib/activity/status-automation";
+import {
+  updateBackupSchedule as applyBackupSchedule,
+  type BackupRuntimeInfo,
+  getBackupRuntimeInfo,
+} from "@/lib/backup/service";
 import { isValidDateTimeDisplayFormat } from "@/lib/date-time-format";
 import { ensureSchema } from "@/lib/db";
 import {
@@ -29,6 +34,7 @@ import {
   RESOURCE_KEYS,
   runCollection,
 } from "@/lib/github/collectors";
+import { withJobLock } from "@/lib/jobs/lock";
 import { emitSyncEvent } from "@/lib/sync/event-bus";
 import type { SyncRunSummaryEvent } from "@/lib/sync/events";
 
@@ -121,6 +127,7 @@ export type SyncStatus = {
   runs: SyncRunSummary[];
   logs: Awaited<ReturnType<typeof getLatestSyncLogs>>;
   dataFreshness: Awaited<ReturnType<typeof getDataFreshness>>;
+  backup: BackupRuntimeInfo;
 };
 
 export type DashboardStats = Awaited<ReturnType<typeof getDashboardStats>>;
@@ -193,17 +200,13 @@ async function computeInitialDelay(intervalMs: number) {
 async function withSyncLock<T>(handler: () => Promise<T>) {
   const scheduler = getSchedulerState();
   if (scheduler.currentRun) {
-    await scheduler.currentRun;
+    await scheduler.currentRun.catch(() => undefined);
   }
 
-  const runPromise = handler();
+  const runPromise = withJobLock("sync", handler);
   scheduler.currentRun = runPromise
-    .then(() => {
-      scheduler.currentRun = null;
-    })
-    .catch(() => {
-      scheduler.currentRun = null;
-    });
+    .then(() => undefined)
+    .catch(() => undefined);
 
   try {
     return await runPromise;
@@ -893,6 +896,8 @@ export async function updateSyncSettings(params: {
   allowedTeams?: string[];
   allowedUsers?: string[];
   dateTimeFormat?: string;
+  backupHourLocal?: number;
+  backupTimezone?: string;
 }) {
   await ensureSchema();
 
@@ -993,6 +998,24 @@ export async function updateSyncSettings(params: {
 
     await updateSyncConfig({ dateTimeFormat: format });
   }
+
+  if (
+    params.backupHourLocal !== undefined ||
+    params.backupTimezone !== undefined
+  ) {
+    const config = await getSyncConfig();
+    const hour = params.backupHourLocal ?? config?.backup_hour_local ?? 2;
+    const timezone =
+      params.backupTimezone ??
+      config?.backup_timezone ??
+      config?.timezone ??
+      "UTC";
+
+    await applyBackupSchedule({
+      hourLocal: hour,
+      timezone,
+    });
+  }
 }
 
 export async function resetData({
@@ -1011,14 +1034,15 @@ export async function resetData({
 
 export async function fetchSyncStatus(): Promise<SyncStatus> {
   await ensureSchema();
-  const [config, runs, logs, dataFreshness] = await Promise.all([
+  const [config, runs, logs, dataFreshness, backup] = await Promise.all([
     getSyncConfig(),
     getLatestSyncRuns(36),
     getLatestSyncLogs(36),
     getDataFreshness(),
+    getBackupRuntimeInfo(),
   ]);
 
-  return { config, runs, logs, dataFreshness };
+  return { config, runs, logs, dataFreshness, backup };
 }
 
 export async function fetchSyncConfig() {

@@ -4,13 +4,17 @@ import { z } from "zod";
 import { readActiveSession } from "@/lib/auth/session";
 import { DATE_TIME_FORMAT_VALUES } from "@/lib/date-time-format";
 import { fetchSyncStatus, updateSyncSettings } from "@/lib/sync/service";
-import { writeUserTimeSettings } from "@/lib/user/time-settings";
+import {
+  readUserTimeSettings,
+  writeUserTimeSettings,
+} from "@/lib/user/time-settings";
 
 const patchSchema = z.object({
   orgName: z.string().optional(),
   syncIntervalMinutes: z.number().int().positive().optional(),
   timezone: z.string().min(1).optional(),
   weekStart: z.enum(["sunday", "monday"]).optional(),
+  backupHour: z.number().int().min(0).max(23).optional(),
   dateTimeFormat: z
     .string()
     .min(1)
@@ -91,6 +95,7 @@ export async function PATCH(request: Request) {
       timezone,
       weekStart,
       dateTimeFormat,
+      backupHour,
     } = payload;
 
     const hasPersonalUpdate =
@@ -105,7 +110,8 @@ export async function PATCH(request: Request) {
         excludedRepositories !== undefined ||
         excludedPeople !== undefined ||
         allowedTeams !== undefined ||
-        allowedUsers !== undefined;
+        allowedUsers !== undefined ||
+        backupHour !== undefined;
 
       if (attemptedAdminUpdate) {
         return NextResponse.json(
@@ -145,6 +151,17 @@ export async function PATCH(request: Request) {
         });
       }
 
+      let backupScheduleTimezone: string | undefined;
+      if (
+        (backupHour !== undefined || timezone !== undefined) &&
+        session.userId
+      ) {
+        const userSettings = await readUserTimeSettings(session.userId);
+        backupScheduleTimezone = userSettings.timezone;
+      } else if (backupHour !== undefined && typeof timezone === "string") {
+        backupScheduleTimezone = timezone;
+      }
+
       await updateSyncSettings({
         orgName,
         syncIntervalMinutes,
@@ -152,6 +169,8 @@ export async function PATCH(request: Request) {
         excludedPeople,
         allowedTeams,
         allowedUsers,
+        backupHourLocal: backupHour,
+        backupTimezone: backupScheduleTimezone,
       });
     }
 
