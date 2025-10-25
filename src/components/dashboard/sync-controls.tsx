@@ -1407,52 +1407,79 @@ export function SyncControls({
                 </span>
               </CardAction>
             </CardHeader>
-            <CardContent className="space-y-3 text-sm text-muted-foreground">
-              <div className="flex flex-col gap-2">
-                <label
-                  htmlFor={backupHourSelectId}
-                  className="text-sm font-medium text-foreground"
-                >
-                  백업 실행 시각 ({backupTimezoneLabel})
-                </label>
-                <select
-                  id={backupHourSelectId}
-                  value={backupHour}
-                  onChange={(event) =>
-                    setBackupHour(Number.parseInt(event.target.value, 10))
-                  }
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                  disabled={!canManageSync}
-                  title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
-                >
-                  {backupHourOptions.map((hour) => (
-                    <option key={hour} value={hour}>
-                      {formatHourLabel(hour)}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-xs text-muted-foreground">
-                  동기화가 진행 중이면 완료된 뒤에 백업이 실행됩니다.
-                </p>
+            <CardContent className="space-y-4 text-sm text-muted-foreground">
+              <div className="space-y-3 rounded-md border border-border/60 p-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div className="flex flex-col gap-2">
+                    <label
+                      htmlFor={backupHourSelectId}
+                      className="text-sm font-medium text-foreground"
+                    >
+                      백업 실행 시각 ({backupTimezoneLabel})
+                    </label>
+                    <select
+                      id={backupHourSelectId}
+                      value={backupHour}
+                      onChange={(event) =>
+                        setBackupHour(Number.parseInt(event.target.value, 10))
+                      }
+                      className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                      disabled={!canManageSync}
+                      title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+                    >
+                      {backupHourOptions.map((hour) => (
+                        <option key={hour} value={hour}>
+                          {formatHourLabel(hour)}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-muted-foreground">
+                      동기화가 진행 중이면 완료된 뒤에 백업이 실행됩니다.
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={handleBackupScheduleSave}
+                    disabled={
+                      isSavingBackupSchedule ||
+                      isRunningBackup ||
+                      !canManageSync
+                    }
+                    title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+                    className="sm:self-start"
+                  >
+                    {isSavingBackupSchedule ? "저장 중..." : "백업 시각 저장"}
+                  </Button>
+                </div>
               </div>
-              <div className="space-y-1">
-                <p>
-                  다음 백업: <span>{backupNextRunLabel ?? "-"}</span>
-                </p>
-                <p>
-                  최근 실행: <span>{backupLastRange}</span>
-                </p>
-                <p>
-                  최근 상태:{" "}
-                  <span className={`${backupStatusClass} font-medium`}>
-                    {backupStatusLabel}
-                  </span>
-                </p>
-                {backupLastError ? (
-                  <p className="text-sm text-destructive">
-                    최근 오류: {backupLastError}
+              <div className="space-y-3 rounded-md border border-border/60 p-3">
+                <div className="space-y-1">
+                  <p>
+                    다음 백업: <span>{backupNextRunLabel ?? "-"}</span>
                   </p>
-                ) : null}
+                  <p>
+                    최근 실행: <span>{backupLastRange}</span>
+                  </p>
+                  <p>
+                    최근 상태:{" "}
+                    <span className={`${backupStatusClass} font-medium`}>
+                      {backupStatusLabel}
+                    </span>
+                  </p>
+                  {backupLastError ? (
+                    <p className="text-sm text-destructive">
+                      최근 오류: {backupLastError}
+                    </p>
+                  ) : null}
+                </div>
+                <Button
+                  onClick={handleRunBackup}
+                  disabled={isRunningBackup || !canManageSync}
+                  title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+                  className="w-full sm:w-auto"
+                >
+                  {isRunningBackup ? "백업 실행 중..." : "지금 백업하기"}
+                </Button>
               </div>
               <div className="space-y-1">
                 <p>
@@ -1461,28 +1488,9 @@ export function SyncControls({
                     {backupDirectory}
                   </code>
                 </p>
-                <p>보존 개수: {backupRetentionCount.toLocaleString()}개</p>
+                <p>최대 보존: {backupRetentionCount.toLocaleString()}개</p>
               </div>
             </CardContent>
-            <CardFooter className="flex flex-wrap gap-3">
-              <Button
-                onClick={handleRunBackup}
-                disabled={isRunningBackup || !canManageSync}
-                title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
-              >
-                {isRunningBackup ? "백업 실행 중..." : "지금 백업하기"}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={handleBackupScheduleSave}
-                disabled={
-                  isSavingBackupSchedule || isRunningBackup || !canManageSync
-                }
-                title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
-              >
-                {isSavingBackupSchedule ? "저장 중..." : "백업 시각 저장"}
-              </Button>
-            </CardFooter>
           </Card>
 
           <Card className="border-border/70 lg:col-span-2">
