@@ -25,6 +25,7 @@ test-results/
 .DS_Store
 *.pem
 github-dashboard-*.tar
+backups/
 
 # debug
 npm-debug.log*

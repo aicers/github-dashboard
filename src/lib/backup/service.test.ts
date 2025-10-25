@@ -16,6 +16,7 @@ const markBackupRestoredMock = vi.fn();
 const markBackupSuccessMock = vi.fn();
 const updateSyncConfigMock = vi.fn();
 const withJobLockMock = vi.fn();
+const queryMock = vi.fn();
 
 const accessMock = vi.fn();
 const mkdirMock = vi.fn();
@@ -57,6 +58,10 @@ vi.mock("@/lib/db/operations", () => ({
   markBackupRestored: markBackupRestoredMock,
   markBackupSuccess: markBackupSuccessMock,
   updateSyncConfig: updateSyncConfigMock,
+}));
+
+vi.mock("@/lib/db/client", () => ({
+  query: queryMock,
 }));
 
 vi.mock("@/lib/env", () => ({
@@ -111,6 +116,8 @@ beforeEach(() => {
   withJobLockMock.mockImplementation(
     async (_name: string, handler: () => Promise<unknown>) => await handler(),
   );
+  queryMock.mockReset();
+  queryMock.mockResolvedValue({ rows: [] });
 
   accessMock.mockReset();
   mkdirMock.mockReset();
@@ -441,6 +448,10 @@ describe("restoreDatabaseBackup", () => {
       "restore",
       expect.any(Function),
     );
+    expect(queryMock).toHaveBeenCalledWith(
+      "DROP SCHEMA IF EXISTS public CASCADE",
+    );
+    expect(queryMock).toHaveBeenCalledWith("CREATE SCHEMA public");
     expect(markBackupRestoredMock).toHaveBeenCalledWith({ id: 7 });
     expect(updateSyncConfigMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -467,6 +478,10 @@ describe("restoreDatabaseBackup", () => {
       "restore",
       expect.any(Function),
     );
+    expect(queryMock).toHaveBeenCalledWith(
+      "DROP SCHEMA IF EXISTS public CASCADE",
+    );
+    expect(queryMock).toHaveBeenCalledWith("CREATE SCHEMA public");
     expect(markBackupRestoredMock).not.toHaveBeenCalled();
     expect(updateSyncConfigMock).toHaveBeenCalledWith(
       expect.objectContaining({

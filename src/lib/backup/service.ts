@@ -4,6 +4,7 @@ import { access, mkdir, readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { ensureSchema } from "@/lib/db";
+import { query as runQuery } from "@/lib/db/client";
 import {
   createBackupRecord,
   type DbBackupRecord,
@@ -458,6 +459,13 @@ async function executeRestore(filePath: string) {
   await runChildProcess("pg_restore", args);
 }
 
+async function resetDatabaseSchema() {
+  await runQuery("DROP SCHEMA IF EXISTS public CASCADE");
+  await runQuery("CREATE SCHEMA public");
+  await runQuery("GRANT ALL ON SCHEMA public TO CURRENT_USER");
+  await runQuery("GRANT ALL ON SCHEMA public TO public");
+}
+
 async function pruneBackups(retentionCount: number) {
   if (!Number.isFinite(retentionCount) || retentionCount <= 0) {
     return;
@@ -711,6 +719,7 @@ export async function restoreDatabaseBackup(params: {
       });
 
       await withJobLock("restore", async () => {
+        await resetDatabaseSchema();
         await executeRestore(record.filePath);
       });
 
@@ -735,6 +744,7 @@ export async function restoreDatabaseBackup(params: {
     });
 
     await withJobLock("restore", async () => {
+      await resetDatabaseSchema();
       await executeRestore(normalizedPath);
     });
 
