@@ -1,6 +1,14 @@
 import { spawn } from "node:child_process";
 import { type Dirent, constants as fsConstants } from "node:fs";
-import { access, mkdir, readdir, rm, stat } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 
 import { ensureSchema } from "@/lib/db";
@@ -128,7 +136,29 @@ export function parseBackupRestoreKey(key: string): BackupRestoreKey | null {
   return null;
 }
 
+type BackupMetadataDetails = {
+  status: DbBackupStatus | null;
+  trigger: DbBackupTrigger | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  sizeBytes: number | null;
+  createdBy: string | null;
+  error: string | null;
+};
+
+type BackupMetadataFilePayload = {
+  status?: string;
+  trigger?: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  sizeBytes?: number | null;
+  createdBy?: string | null;
+  error?: string | null;
+  recordedAt?: string | null;
+};
+
 const DEFAULT_BACKUP_HOUR = 2;
+const BACKUP_METADATA_SUFFIX = ".meta.json";
 
 function getSchedulerState(): BackupSchedulerState {
   const globalWithScheduler = globalThis as SchedulerGlobal;
@@ -307,6 +337,82 @@ function buildBackupFilename() {
   return `db-backup-${timestampLabel()}.dump`;
 }
 
+function toBackupMetadataPath(filePath: string) {
+  return `${filePath}${BACKUP_METADATA_SUFFIX}`;
+}
+
+function normalizeBackupStatus(value: unknown): DbBackupStatus | null {
+  if (value === "success" || value === "failed" || value === "running") {
+    return value;
+  }
+  return null;
+}
+
+function normalizeBackupTrigger(value: unknown): DbBackupTrigger | null {
+  if (value === "manual" || value === "automatic") {
+    return value;
+  }
+  return null;
+}
+
+async function persistBackupMetadata(
+  filePath: string,
+  metadata: Omit<BackupMetadataFilePayload, "recordedAt">,
+) {
+  const metadataPath = toBackupMetadataPath(filePath);
+  const payload: BackupMetadataFilePayload = {
+    ...metadata,
+    recordedAt: new Date().toISOString(),
+  };
+  try {
+    await writeFile(
+      metadataPath,
+      `${JSON.stringify(payload, null, 2)}\n`,
+      "utf8",
+    );
+  } catch (error) {
+    console.error(`[backup] Failed to write metadata for ${filePath}`, error);
+  }
+}
+
+async function readBackupMetadata(
+  filePath: string,
+): Promise<BackupMetadataDetails | null> {
+  const metadataPath = toBackupMetadataPath(filePath);
+  try {
+    const raw = await readFile(metadataPath, "utf8");
+    const parsed = JSON.parse(raw) as BackupMetadataFilePayload;
+    return {
+      status: normalizeBackupStatus(parsed.status ?? null),
+      trigger: normalizeBackupTrigger(parsed.trigger ?? null),
+      startedAt: typeof parsed.startedAt === "string" ? parsed.startedAt : null,
+      completedAt:
+        typeof parsed.completedAt === "string" || parsed.completedAt === null
+          ? (parsed.completedAt ?? null)
+          : null,
+      sizeBytes:
+        typeof parsed.sizeBytes === "number" &&
+        Number.isFinite(parsed.sizeBytes)
+          ? parsed.sizeBytes
+          : null,
+      createdBy:
+        typeof parsed.createdBy === "string" && parsed.createdBy.length > 0
+          ? parsed.createdBy
+          : null,
+      error:
+        typeof parsed.error === "string" && parsed.error.length > 0
+          ? parsed.error
+          : null,
+    };
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException)?.code;
+    if (code !== "ENOENT") {
+      console.warn(`[backup] Failed to read metadata for ${filePath}`, error);
+    }
+    return null;
+  }
+}
+
 function toIsoDate(value: Date | null | undefined) {
   if (!value) {
     return new Date().toISOString();
@@ -353,6 +459,10 @@ async function discoverFilesystemBackups(options: {
       continue;
     }
 
+    if (filename.endsWith(BACKUP_METADATA_SUFFIX)) {
+      continue;
+    }
+
     const filePath = path.resolve(directory, filename);
     if (knownPaths.has(filePath)) {
       continue;
@@ -366,26 +476,31 @@ async function discoverFilesystemBackups(options: {
       continue;
     }
 
-    const sizeBytes =
+    const metadata = await readBackupMetadata(filePath);
+    const sizeBytesFromFile =
       typeof fileInfo.size === "number" && Number.isFinite(fileInfo.size)
         ? fileInfo.size
         : null;
-    const startedAt = toIsoDate(fileInfo.birthtime ?? fileInfo.mtime);
-    const completedAt = toIsoDate(fileInfo.mtime);
+    const startedAt =
+      metadata?.startedAt ?? toIsoDate(fileInfo.birthtime ?? fileInfo.mtime);
+    const completedAt = metadata?.completedAt ?? toIsoDate(fileInfo.mtime);
+    const sizeBytes = metadata?.sizeBytes ?? sizeBytesFromFile;
+    const status = metadata?.status ?? "success";
+    const trigger = metadata?.trigger ?? "manual";
 
     records.push({
       id: null,
       filename,
       directory,
       filePath,
-      status: "success",
-      trigger: "manual",
+      status,
+      trigger,
       startedAt,
       completedAt,
       sizeBytes,
-      error: null,
+      error: metadata?.error ?? null,
       restoredAt: null,
-      createdBy: null,
+      createdBy: metadata?.createdBy ?? null,
       source: "filesystem",
       isAdditionalFile: true,
       restoreKey: encodeFilesystemRestoreKey(filePath),
@@ -487,6 +602,15 @@ async function pruneBackups(retentionCount: number) {
         error,
       );
       continue;
+    }
+
+    try {
+      await rm(toBackupMetadataPath(backup.filePath), { force: true });
+    } catch (error) {
+      console.error(
+        `[backup] Failed to remove metadata for ${backup.filePath}`,
+        error,
+      );
     }
 
     try {
@@ -662,6 +786,15 @@ export async function runDatabaseBackup(options: {
         status: "success",
         completedAt,
       });
+      await persistBackupMetadata(filePath, {
+        status: "success",
+        trigger: options.trigger,
+        startedAt,
+        completedAt,
+        sizeBytes: fileInfo?.size ?? null,
+        createdBy: options.actorId ?? null,
+        error: null,
+      });
 
       await pruneBackups(retentionCount);
       console.info(`[backup] Backup created at ${filePath}`);
@@ -797,12 +930,30 @@ export async function getBackupRuntimeInfo(): Promise<BackupRuntimeInfo> {
 
   const directory = env.DB_BACKUP_DIRECTORY;
   const retentionCount = env.DB_BACKUP_RETENTION;
-  const normalizedDbRecords: BackupRecordView[] = dbRecords.map((record) => ({
-    ...record,
-    source: "database" as const,
-    isAdditionalFile: false,
-    restoreKey: encodeDatabaseRestoreKey(record.id),
-  }));
+  const dbRecordsWithMetadata = await Promise.all(
+    dbRecords.map(async (record) => {
+      const metadata = await readBackupMetadata(record.filePath);
+      return {
+        ...record,
+        status: metadata?.status ?? record.status,
+        trigger: metadata?.trigger ?? record.trigger,
+        startedAt: metadata?.startedAt ?? record.startedAt,
+        completedAt: metadata?.completedAt ?? record.completedAt,
+        sizeBytes: metadata?.sizeBytes ?? record.sizeBytes,
+        error: metadata?.error ?? record.error,
+        createdBy: metadata?.createdBy ?? record.createdBy,
+      };
+    }),
+  );
+
+  const normalizedDbRecords: BackupRecordView[] = dbRecordsWithMetadata.map(
+    (record) => ({
+      ...record,
+      source: "database" as const,
+      isAdditionalFile: false,
+      restoreKey: encodeDatabaseRestoreKey(record.id),
+    }),
+  );
 
   const knownPaths = new Set(
     normalizedDbRecords.map((record) => path.resolve(record.filePath)),
