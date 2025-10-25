@@ -1,0 +1,325 @@
+pg_restore: connecting to database for restore
+pg_restore: dropping FK CONSTRAINT user_preferences user_preferences_user_id_fkey
+pg_restore: dropping FK CONSTRAINT reviews reviews_pull_request_id_fkey
+pg_restore: dropping FK CONSTRAINT reviews reviews_author_id_fkey
+pg_restore: dropping FK CONSTRAINT review_requests review_requests_reviewer_id_fkey
+pg_restore: dropping FK CONSTRAINT review_requests review_requests_pull_request_id_fkey
+pg_restore: dropping FK CONSTRAINT repositories repositories_owner_id_fkey
+pg_restore: dropping FK CONSTRAINT reactions reactions_user_id_fkey
+pg_restore: dropping FK CONSTRAINT pull_requests pull_requests_repository_id_fkey
+pg_restore: dropping FK CONSTRAINT pull_requests pull_requests_author_id_fkey
+pg_restore: dropping FK CONSTRAINT pull_request_issues pull_request_issues_pull_request_id_fkey
+pg_restore: dropping FK CONSTRAINT issues issues_repository_id_fkey
+pg_restore: dropping FK CONSTRAINT issues issues_author_id_fkey
+pg_restore: dropping FK CONSTRAINT comments comments_review_id_fkey
+pg_restore: dropping FK CONSTRAINT comments comments_pull_request_id_fkey
+pg_restore: dropping FK CONSTRAINT comments comments_issue_id_fkey
+pg_restore: dropping FK CONSTRAINT comments comments_author_id_fkey
+pg_restore: dropping FK CONSTRAINT auth_sessions auth_sessions_user_id_fkey
+pg_restore: dropping FK CONSTRAINT activity_saved_filters activity_saved_filters_user_id_fkey
+pg_restore: dropping FK CONSTRAINT activity_items activity_items_repository_id_fkey
+pg_restore: dropping FK CONSTRAINT activity_items activity_items_author_id_fkey
+pg_restore: dropping FK CONSTRAINT activity_issue_status_history activity_issue_status_history_issue_id_fkey
+pg_restore: dropping FK CONSTRAINT activity_issue_project_overrides activity_issue_project_overrides_issue_id_fkey
+pg_restore: dropping INDEX users_login_lower_idx
+pg_restore: dropping INDEX users_login_idx
+pg_restore: dropping INDEX sync_runs_started_idx
+pg_restore: dropping INDEX sync_log_started_idx
+pg_restore: dropping INDEX sync_log_run_id_idx
+pg_restore: dropping INDEX sync_log_resource_idx
+pg_restore: dropping INDEX reviews_submitted_idx
+pg_restore: dropping INDEX reviews_pull_request_idx
+pg_restore: dropping INDEX reviews_pr_submitted_idx
+pg_restore: dropping INDEX reviews_pr_author_submitted_idx
+pg_restore: dropping INDEX reviews_author_idx
+pg_restore: dropping INDEX review_requests_reviewer_idx
+pg_restore: dropping INDEX review_requests_requested_idx
+pg_restore: dropping INDEX review_requests_pull_request_idx
+pg_restore: dropping INDEX review_requests_pending_idx
+pg_restore: dropping INDEX repositories_updated_idx
+pg_restore: dropping INDEX repositories_owner_idx
+pg_restore: dropping INDEX reactions_user_idx
+pg_restore: dropping INDEX reactions_subject_idx_normalized
+pg_restore: dropping INDEX reactions_subject_idx
+pg_restore: dropping INDEX reactions_created_idx
+pg_restore: dropping INDEX pull_requests_updated_idx
+pg_restore: dropping INDEX pull_requests_repository_idx
+pg_restore: dropping INDEX pull_requests_open_updated_idx
+pg_restore: dropping INDEX pull_requests_open_created_idx
+pg_restore: dropping INDEX pull_requests_data_gin_idx
+pg_restore: dropping INDEX pull_requests_created_idx
+pg_restore: dropping INDEX pull_requests_author_idx
+pg_restore: dropping INDEX pull_request_issues_issue_idx
+pg_restore: dropping INDEX prs_title_body_trgm_idx
+pg_restore: dropping INDEX prs_repo_merged_idx
+pg_restore: dropping INDEX prs_repo_created_idx
+pg_restore: dropping INDEX issues_updated_idx
+pg_restore: dropping INDEX issues_title_body_trgm_idx
+pg_restore: dropping INDEX issues_repository_idx
+pg_restore: dropping INDEX issues_repo_created_idx
+pg_restore: dropping INDEX issues_repo_closed_idx
+pg_restore: dropping INDEX issues_open_created_idx
+pg_restore: dropping INDEX issues_data_gin_idx
+pg_restore: dropping INDEX issues_created_idx
+pg_restore: dropping INDEX issues_author_idx
+pg_restore: dropping INDEX db_backups_started_at_idx
+pg_restore: dropping INDEX comments_pull_request_idx
+pg_restore: dropping INDEX comments_pr_author_created_idx
+pg_restore: dropping INDEX comments_issue_idx
+pg_restore: dropping INDEX comments_issue_author_created_idx
+pg_restore: dropping INDEX comments_created_idx
+pg_restore: dropping INDEX comments_body_trgm_idx
+pg_restore: dropping INDEX comments_author_idx
+pg_restore: dropping INDEX auth_sessions_user_idx
+pg_restore: dropping INDEX auth_sessions_expires_idx
+pg_restore: dropping INDEX activity_saved_filters_user_idx
+pg_restore: dropping INDEX activity_pull_request_links_cache_generated_idx
+pg_restore: dropping INDEX activity_items_updated_idx
+pg_restore: dropping INDEX activity_items_status_idx
+pg_restore: dropping INDEX activity_items_repository_idx
+pg_restore: dropping INDEX activity_issue_status_history_issue_occurred_idx
+pg_restore: dropping INDEX activity_issue_status_history_issue_idx
+pg_restore: dropping INDEX activity_issue_links_cache_generated_idx
+pg_restore: dropping CONSTRAINT users users_pkey
+pg_restore: dropping CONSTRAINT user_preferences user_preferences_pkey
+pg_restore: dropping CONSTRAINT sync_state sync_state_pkey
+pg_restore: dropping CONSTRAINT sync_runs sync_runs_pkey
+pg_restore: dropping CONSTRAINT sync_log sync_log_pkey
+pg_restore: dropping CONSTRAINT sync_config sync_config_pkey
+pg_restore: dropping CONSTRAINT reviews reviews_pkey
+pg_restore: dropping CONSTRAINT review_requests review_requests_pkey
+pg_restore: dropping CONSTRAINT repositories repositories_pkey
+pg_restore: dropping CONSTRAINT reactions reactions_pkey
+pg_restore: dropping CONSTRAINT pull_requests pull_requests_pkey
+pg_restore: dropping CONSTRAINT pull_request_issues pull_request_issues_pkey
+pg_restore: dropping CONSTRAINT issues issues_pkey
+pg_restore: dropping CONSTRAINT db_backups db_backups_pkey
+pg_restore: dropping CONSTRAINT comments comments_pkey
+pg_restore: dropping CONSTRAINT auth_sessions auth_sessions_pkey
+pg_restore: dropping CONSTRAINT activity_saved_filters activity_saved_filters_pkey
+pg_restore: dropping CONSTRAINT activity_reaction_users activity_reaction_users_pkey
+pg_restore: dropping CONSTRAINT activity_pull_request_links_cache activity_pull_request_links_cache_pkey
+pg_restore: dropping CONSTRAINT activity_items activity_items_pkey
+pg_restore: dropping CONSTRAINT activity_issue_status_history activity_issue_status_history_pkey
+pg_restore: dropping CONSTRAINT activity_issue_project_overrides activity_issue_project_overrides_pkey
+pg_restore: dropping CONSTRAINT activity_issue_links_cache activity_issue_links_cache_pkey
+pg_restore: dropping CONSTRAINT activity_filter_options_cache activity_filter_options_cache_pkey
+pg_restore: dropping CONSTRAINT activity_comment_participants activity_comment_participants_pkey
+pg_restore: dropping CONSTRAINT activity_comment_mentions activity_comment_mentions_pkey
+pg_restore: dropping CONSTRAINT activity_cache_state activity_cache_state_pkey
+pg_restore: dropping DEFAULT sync_runs id
+pg_restore: dropping DEFAULT sync_log id
+pg_restore: dropping DEFAULT db_backups id
+pg_restore: dropping DEFAULT activity_issue_status_history id
+pg_restore: dropping TABLE users
+pg_restore: dropping TABLE user_preferences
+pg_restore: dropping TABLE sync_state
+pg_restore: dropping SEQUENCE sync_runs_id_seq
+pg_restore: dropping TABLE sync_runs
+pg_restore: dropping SEQUENCE sync_log_id_seq
+pg_restore: dropping TABLE sync_log
+pg_restore: dropping TABLE sync_config
+pg_restore: dropping TABLE reviews
+pg_restore: dropping TABLE review_requests
+pg_restore: dropping TABLE repositories
+pg_restore: dropping TABLE reactions
+pg_restore: dropping TABLE pull_requests
+pg_restore: dropping TABLE pull_request_issues
+pg_restore: dropping TABLE issues
+pg_restore: dropping SEQUENCE db_backups_id_seq
+pg_restore: dropping TABLE db_backups
+pg_restore: dropping TABLE comments
+pg_restore: dropping TABLE auth_sessions
+pg_restore: dropping TABLE activity_saved_filters
+pg_restore: dropping TABLE activity_reaction_users
+pg_restore: dropping TABLE activity_pull_request_links_cache
+pg_restore: dropping TABLE activity_items
+pg_restore: dropping SEQUENCE activity_issue_status_history_id_seq
+pg_restore: dropping TABLE activity_issue_status_history
+pg_restore: dropping TABLE activity_issue_project_overrides
+pg_restore: dropping TABLE activity_issue_links_cache
+pg_restore: dropping TABLE activity_filter_options_cache
+pg_restore: dropping TABLE activity_comment_participants
+pg_restore: dropping TABLE activity_comment_mentions
+pg_restore: dropping TABLE activity_cache_state
+pg_restore: dropping EXTENSION pg_trgm
+pg_restore: creating EXTENSION "pg_trgm"
+pg_restore: creating COMMENT "EXTENSION pg_trgm"
+pg_restore: creating TABLE "public.activity_cache_state"
+pg_restore: creating TABLE "public.activity_comment_mentions"
+pg_restore: creating TABLE "public.activity_comment_participants"
+pg_restore: creating TABLE "public.activity_filter_options_cache"
+pg_restore: creating TABLE "public.activity_issue_links_cache"
+pg_restore: creating TABLE "public.activity_issue_project_overrides"
+pg_restore: creating TABLE "public.activity_issue_status_history"
+pg_restore: creating SEQUENCE "public.activity_issue_status_history_id_seq"
+pg_restore: creating SEQUENCE OWNED BY "public.activity_issue_status_history_id_seq"
+pg_restore: creating TABLE "public.activity_items"
+pg_restore: creating TABLE "public.activity_pull_request_links_cache"
+pg_restore: creating TABLE "public.activity_reaction_users"
+pg_restore: creating TABLE "public.activity_saved_filters"
+pg_restore: creating TABLE "public.auth_sessions"
+pg_restore: creating TABLE "public.comments"
+pg_restore: creating TABLE "public.db_backups"
+pg_restore: creating SEQUENCE "public.db_backups_id_seq"
+pg_restore: creating SEQUENCE OWNED BY "public.db_backups_id_seq"
+pg_restore: creating TABLE "public.issues"
+pg_restore: creating TABLE "public.pull_request_issues"
+pg_restore: creating TABLE "public.pull_requests"
+pg_restore: creating TABLE "public.reactions"
+pg_restore: creating TABLE "public.repositories"
+pg_restore: creating TABLE "public.review_requests"
+pg_restore: creating TABLE "public.reviews"
+pg_restore: creating TABLE "public.sync_config"
+pg_restore: creating TABLE "public.sync_log"
+pg_restore: creating SEQUENCE "public.sync_log_id_seq"
+pg_restore: creating SEQUENCE OWNED BY "public.sync_log_id_seq"
+pg_restore: creating TABLE "public.sync_runs"
+pg_restore: creating SEQUENCE "public.sync_runs_id_seq"
+pg_restore: creating SEQUENCE OWNED BY "public.sync_runs_id_seq"
+pg_restore: creating TABLE "public.sync_state"
+pg_restore: creating TABLE "public.user_preferences"
+pg_restore: creating TABLE "public.users"
+pg_restore: creating DEFAULT "public.activity_issue_status_history id"
+pg_restore: creating DEFAULT "public.db_backups id"
+pg_restore: creating DEFAULT "public.sync_log id"
+pg_restore: creating DEFAULT "public.sync_runs id"
+pg_restore: processing data for table "public.activity_cache_state"
+pg_restore: processing data for table "public.activity_comment_mentions"
+pg_restore: processing data for table "public.activity_comment_participants"
+pg_restore: processing data for table "public.activity_filter_options_cache"
+pg_restore: processing data for table "public.activity_issue_links_cache"
+pg_restore: processing data for table "public.activity_issue_project_overrides"
+pg_restore: processing data for table "public.activity_issue_status_history"
+pg_restore: processing data for table "public.activity_items"
+pg_restore: processing data for table "public.activity_pull_request_links_cache"
+pg_restore: processing data for table "public.activity_reaction_users"
+pg_restore: processing data for table "public.activity_saved_filters"
+pg_restore: processing data for table "public.auth_sessions"
+pg_restore: processing data for table "public.comments"
+pg_restore: processing data for table "public.db_backups"
+pg_restore: processing data for table "public.issues"
+pg_restore: processing data for table "public.pull_request_issues"
+pg_restore: processing data for table "public.pull_requests"
+pg_restore: processing data for table "public.reactions"
+pg_restore: processing data for table "public.repositories"
+pg_restore: processing data for table "public.review_requests"
+pg_restore: processing data for table "public.reviews"
+pg_restore: processing data for table "public.sync_config"
+pg_restore: processing data for table "public.sync_log"
+pg_restore: processing data for table "public.sync_runs"
+pg_restore: processing data for table "public.sync_state"
+pg_restore: processing data for table "public.user_preferences"
+pg_restore: processing data for table "public.users"
+pg_restore: executing SEQUENCE SET activity_issue_status_history_id_seq
+pg_restore: executing SEQUENCE SET db_backups_id_seq
+pg_restore: executing SEQUENCE SET sync_log_id_seq
+pg_restore: executing SEQUENCE SET sync_runs_id_seq
+pg_restore: creating CONSTRAINT "public.activity_cache_state activity_cache_state_pkey"
+pg_restore: creating CONSTRAINT "public.activity_comment_mentions activity_comment_mentions_pkey"
+pg_restore: creating CONSTRAINT "public.activity_comment_participants activity_comment_participants_pkey"
+pg_restore: creating CONSTRAINT "public.activity_filter_options_cache activity_filter_options_cache_pkey"
+pg_restore: creating CONSTRAINT "public.activity_issue_links_cache activity_issue_links_cache_pkey"
+pg_restore: creating CONSTRAINT "public.activity_issue_project_overrides activity_issue_project_overrides_pkey"
+pg_restore: creating CONSTRAINT "public.activity_issue_status_history activity_issue_status_history_pkey"
+pg_restore: creating CONSTRAINT "public.activity_items activity_items_pkey"
+pg_restore: creating CONSTRAINT "public.activity_pull_request_links_cache activity_pull_request_links_cache_pkey"
+pg_restore: creating CONSTRAINT "public.activity_reaction_users activity_reaction_users_pkey"
+pg_restore: creating CONSTRAINT "public.activity_saved_filters activity_saved_filters_pkey"
+pg_restore: creating CONSTRAINT "public.auth_sessions auth_sessions_pkey"
+pg_restore: creating CONSTRAINT "public.comments comments_pkey"
+pg_restore: creating CONSTRAINT "public.db_backups db_backups_pkey"
+pg_restore: creating CONSTRAINT "public.issues issues_pkey"
+pg_restore: creating CONSTRAINT "public.pull_request_issues pull_request_issues_pkey"
+pg_restore: creating CONSTRAINT "public.pull_requests pull_requests_pkey"
+pg_restore: creating CONSTRAINT "public.reactions reactions_pkey"
+pg_restore: creating CONSTRAINT "public.repositories repositories_pkey"
+pg_restore: creating CONSTRAINT "public.review_requests review_requests_pkey"
+pg_restore: creating CONSTRAINT "public.reviews reviews_pkey"
+pg_restore: creating CONSTRAINT "public.sync_config sync_config_pkey"
+pg_restore: creating CONSTRAINT "public.sync_log sync_log_pkey"
+pg_restore: creating CONSTRAINT "public.sync_runs sync_runs_pkey"
+pg_restore: creating CONSTRAINT "public.sync_state sync_state_pkey"
+pg_restore: creating CONSTRAINT "public.user_preferences user_preferences_pkey"
+pg_restore: creating CONSTRAINT "public.users users_pkey"
+pg_restore: creating INDEX "public.activity_issue_links_cache_generated_idx"
+pg_restore: creating INDEX "public.activity_issue_status_history_issue_idx"
+pg_restore: creating INDEX "public.activity_issue_status_history_issue_occurred_idx"
+pg_restore: creating INDEX "public.activity_items_repository_idx"
+pg_restore: creating INDEX "public.activity_items_status_idx"
+pg_restore: creating INDEX "public.activity_items_updated_idx"
+pg_restore: creating INDEX "public.activity_pull_request_links_cache_generated_idx"
+pg_restore: creating INDEX "public.activity_saved_filters_user_idx"
+pg_restore: creating INDEX "public.auth_sessions_expires_idx"
+pg_restore: creating INDEX "public.auth_sessions_user_idx"
+pg_restore: creating INDEX "public.comments_author_idx"
+pg_restore: creating INDEX "public.comments_body_trgm_idx"
+pg_restore: creating INDEX "public.comments_created_idx"
+pg_restore: creating INDEX "public.comments_issue_author_created_idx"
+pg_restore: creating INDEX "public.comments_issue_idx"
+pg_restore: creating INDEX "public.comments_pr_author_created_idx"
+pg_restore: creating INDEX "public.comments_pull_request_idx"
+pg_restore: creating INDEX "public.db_backups_started_at_idx"
+pg_restore: creating INDEX "public.issues_author_idx"
+pg_restore: creating INDEX "public.issues_created_idx"
+pg_restore: creating INDEX "public.issues_data_gin_idx"
+pg_restore: creating INDEX "public.issues_open_created_idx"
+pg_restore: creating INDEX "public.issues_repo_closed_idx"
+pg_restore: creating INDEX "public.issues_repo_created_idx"
+pg_restore: creating INDEX "public.issues_repository_idx"
+pg_restore: creating INDEX "public.issues_title_body_trgm_idx"
+pg_restore: creating INDEX "public.issues_updated_idx"
+pg_restore: creating INDEX "public.prs_repo_created_idx"
+pg_restore: creating INDEX "public.prs_repo_merged_idx"
+pg_restore: creating INDEX "public.prs_title_body_trgm_idx"
+pg_restore: creating INDEX "public.pull_request_issues_issue_idx"
+pg_restore: creating INDEX "public.pull_requests_author_idx"
+pg_restore: creating INDEX "public.pull_requests_created_idx"
+pg_restore: creating INDEX "public.pull_requests_data_gin_idx"
+pg_restore: creating INDEX "public.pull_requests_open_created_idx"
+pg_restore: creating INDEX "public.pull_requests_open_updated_idx"
+pg_restore: creating INDEX "public.pull_requests_repository_idx"
+pg_restore: creating INDEX "public.pull_requests_updated_idx"
+pg_restore: creating INDEX "public.reactions_created_idx"
+pg_restore: creating INDEX "public.reactions_subject_idx"
+pg_restore: creating INDEX "public.reactions_subject_idx_normalized"
+pg_restore: creating INDEX "public.reactions_user_idx"
+pg_restore: creating INDEX "public.repositories_owner_idx"
+pg_restore: creating INDEX "public.repositories_updated_idx"
+pg_restore: creating INDEX "public.review_requests_pending_idx"
+pg_restore: creating INDEX "public.review_requests_pull_request_idx"
+pg_restore: creating INDEX "public.review_requests_requested_idx"
+pg_restore: creating INDEX "public.review_requests_reviewer_idx"
+pg_restore: creating INDEX "public.reviews_author_idx"
+pg_restore: creating INDEX "public.reviews_pr_author_submitted_idx"
+pg_restore: creating INDEX "public.reviews_pr_submitted_idx"
+pg_restore: creating INDEX "public.reviews_pull_request_idx"
+pg_restore: creating INDEX "public.reviews_submitted_idx"
+pg_restore: creating INDEX "public.sync_log_resource_idx"
+pg_restore: creating INDEX "public.sync_log_run_id_idx"
+pg_restore: creating INDEX "public.sync_log_started_idx"
+pg_restore: creating INDEX "public.sync_runs_started_idx"
+pg_restore: creating INDEX "public.users_login_idx"
+pg_restore: creating INDEX "public.users_login_lower_idx"
+pg_restore: creating FK CONSTRAINT "public.activity_issue_project_overrides activity_issue_project_overrides_issue_id_fkey"
+pg_restore: creating FK CONSTRAINT "public.activity_issue_status_history activity_issue_status_history_issue_id_fkey"
+pg_restore: creating FK CONSTRAINT "public.activity_items activity_items_author_id_fkey"
+pg_restore: creating FK CONSTRAINT "public.activity_items activity_items_repository_id_fkey"
+pg_restore: creating FK CONSTRAINT "public.activity_saved_filters activity_saved_filters_user_id_fkey"
+pg_restore: creating FK CONSTRAINT "public.auth_sessions auth_sessions_user_id_fkey"
+pg_restore: creating FK CONSTRAINT "public.comments comments_author_id_fkey"
+pg_restore: creating FK CONSTRAINT "public.comments comments_issue_id_fkey"
+pg_restore: creating FK CONSTRAINT "public.comments comments_pull_request_id_fkey"
+pg_restore: creating FK CONSTRAINT "public.comments comments_review_id_fkey"
+pg_restore: creating FK CONSTRAINT "public.issues issues_author_id_fkey"
+pg_restore: creating FK CONSTRAINT "public.issues issues_repository_id_fkey"
+pg_restore: creating FK CONSTRAINT "public.pull_request_issues pull_request_issues_pull_request_id_fkey"
+pg_restore: creating FK CONSTRAINT "public.pull_requests pull_requests_author_id_fkey"
+pg_restore: creating FK CONSTRAINT "public.pull_requests pull_requests_repository_id_fkey"
+pg_restore: creating FK CONSTRAINT "public.reactions reactions_user_id_fkey"
+pg_restore: creating FK CONSTRAINT "public.repositories repositories_owner_id_fkey"
+pg_restore: creating FK CONSTRAINT "public.review_requests review_requests_pull_request_id_fkey"
+pg_restore: creating FK CONSTRAINT "public.review_requests review_requests_reviewer_id_fkey"
+pg_restore: creating FK CONSTRAINT "public.reviews reviews_author_id_fkey"
+pg_restore: creating FK CONSTRAINT "public.reviews reviews_pull_request_id_fkey"
+pg_restore: creating FK CONSTRAINT "public.user_preferences user_preferences_user_id_fkey"

@@ -1,7 +1,10 @@
 import { type NextRequest, NextResponse } from "next/server";
 
 import { readActiveSession } from "@/lib/auth/session";
-import { restoreDatabaseBackup } from "@/lib/backup/service";
+import {
+  parseBackupRestoreKey,
+  restoreDatabaseBackup,
+} from "@/lib/backup/service";
 
 export async function POST(
   _request: NextRequest,
@@ -23,8 +26,8 @@ export async function POST(
     );
   }
 
-  const idValue = Number.parseInt(id, 10);
-  if (!Number.isFinite(idValue) || idValue <= 0) {
+  const parsedKey = parseBackupRestoreKey(id);
+  if (!parsedKey) {
     return NextResponse.json(
       { success: false, message: "Invalid backup identifier." },
       { status: 400 },
@@ -32,10 +35,17 @@ export async function POST(
   }
 
   try {
-    await restoreDatabaseBackup({
-      backupId: idValue,
-      actorId: session.userId ?? null,
-    });
+    if (parsedKey.type === "database") {
+      await restoreDatabaseBackup({
+        backupId: parsedKey.id,
+        actorId: session.userId ?? null,
+      });
+    } else {
+      await restoreDatabaseBackup({
+        filePath: parsedKey.filePath,
+        actorId: session.userId ?? null,
+      });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

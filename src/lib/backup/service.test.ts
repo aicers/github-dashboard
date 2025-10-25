@@ -19,6 +19,7 @@ const withJobLockMock = vi.fn();
 
 const accessMock = vi.fn();
 const mkdirMock = vi.fn();
+const readdirMock = vi.fn();
 const rmMock = vi.fn();
 const statMock = vi.fn();
 
@@ -71,6 +72,7 @@ vi.mock("@/lib/jobs/lock", () => ({
 vi.mock("node:fs/promises", () => ({
   access: accessMock,
   mkdir: mkdirMock,
+  readdir: readdirMock,
   rm: rmMock,
   stat: statMock,
 }));
@@ -112,6 +114,7 @@ beforeEach(() => {
 
   accessMock.mockReset();
   mkdirMock.mockReset();
+  readdirMock.mockReset();
   rmMock.mockReset();
   statMock.mockReset();
   spawnMock.mockReset();
@@ -129,6 +132,7 @@ beforeEach(() => {
   envValues.DB_BACKUP_DIRECTORY = path.resolve(process.cwd(), ".tmp-backups");
   envValues.DB_BACKUP_RETENTION = 3;
 
+  readdirMock.mockResolvedValue([]);
   vi.useRealTimers();
   vi.setSystemTime(new Date("2024-01-05T10:00:00.000Z"));
 });
@@ -159,10 +163,62 @@ describe("runDatabaseBackup", () => {
       status: "running",
     });
     listBackupsMock.mockResolvedValue([
-      { id: 1, status: "success", filePath: "/tmp/1.dump" },
-      { id: 2, status: "success", filePath: "/tmp/2.dump" },
-      { id: 3, status: "failed", filePath: "/tmp/3.dump" },
-      { id: 4, status: "success", filePath: "/tmp/4.dump" },
+      {
+        id: 1,
+        filename: "db-backup-1.dump",
+        directory: "/tmp",
+        filePath: "/tmp/1.dump",
+        status: "success",
+        trigger: "manual",
+        startedAt: "2024-01-04T00:00:00.000Z",
+        completedAt: "2024-01-04T00:05:00.000Z",
+        sizeBytes: 1024,
+        error: null,
+        restoredAt: null,
+        createdBy: null,
+      },
+      {
+        id: 2,
+        filename: "db-backup-2.dump",
+        directory: "/tmp",
+        filePath: "/tmp/2.dump",
+        status: "success",
+        trigger: "manual",
+        startedAt: "2024-01-03T00:00:00.000Z",
+        completedAt: "2024-01-03T00:05:00.000Z",
+        sizeBytes: 1024,
+        error: null,
+        restoredAt: null,
+        createdBy: null,
+      },
+      {
+        id: 3,
+        filename: "db-backup-3.dump",
+        directory: "/tmp",
+        filePath: "/tmp/3.dump",
+        status: "failed",
+        trigger: "manual",
+        startedAt: "2024-01-02T00:00:00.000Z",
+        completedAt: null,
+        sizeBytes: null,
+        error: "failed",
+        restoredAt: null,
+        createdBy: null,
+      },
+      {
+        id: 4,
+        filename: "db-backup-4.dump",
+        directory: "/tmp",
+        filePath: "/tmp/4.dump",
+        status: "success",
+        trigger: "manual",
+        startedAt: "2024-01-01T00:00:00.000Z",
+        completedAt: "2024-01-01T00:05:00.000Z",
+        sizeBytes: 1024,
+        error: null,
+        restoredAt: null,
+        createdBy: null,
+      },
     ]);
     rmMock.mockResolvedValue(undefined);
     deleteBackupRecordMock.mockResolvedValue(undefined);
@@ -287,6 +343,86 @@ describe("runDatabaseBackup", () => {
   });
 });
 
+describe("getBackupRuntimeInfo", () => {
+  it("includes filesystem backups that are not recorded in the database", async () => {
+    ensureSchemaMock.mockResolvedValue(undefined);
+    getSyncConfigMock.mockResolvedValue({
+      backup_enabled: true,
+      backup_hour_local: 2,
+      backup_timezone: "UTC",
+      timezone: "UTC",
+    });
+
+    const trackedFile = path.join(
+      envValues.DB_BACKUP_DIRECTORY,
+      "db-backup-20240105.dump",
+    );
+    const untrackedFile = path.join(
+      envValues.DB_BACKUP_DIRECTORY,
+      "db-backup-20240106.dump",
+    );
+
+    listBackupsMock.mockResolvedValue([
+      {
+        id: 10,
+        filename: "db-backup-20240105.dump",
+        directory: envValues.DB_BACKUP_DIRECTORY,
+        filePath: trackedFile,
+        status: "success",
+        trigger: "automatic",
+        startedAt: "2024-01-05T00:00:00.000Z",
+        completedAt: "2024-01-05T00:02:00.000Z",
+        sizeBytes: 2_048,
+        error: null,
+        restoredAt: null,
+        createdBy: "admin",
+      },
+    ]);
+
+    readdirMock.mockResolvedValue([
+      {
+        name: "db-backup-20240106.dump",
+        isFile: () => true,
+      },
+    ]);
+
+    statMock.mockImplementation(async (filePath: string) => {
+      if (filePath === untrackedFile) {
+        return {
+          size: 4_096,
+          birthtime: new Date("2024-01-06T00:00:00.000Z"),
+          mtime: new Date("2024-01-06T00:03:00.000Z"),
+        };
+      }
+
+      return {
+        size: 2_048,
+        birthtime: new Date("2024-01-05T00:00:00.000Z"),
+        mtime: new Date("2024-01-05T00:02:00.000Z"),
+      };
+    });
+
+    const { getBackupRuntimeInfo } = await loadService();
+    const info = await getBackupRuntimeInfo();
+
+    expect(info.records).toHaveLength(2);
+    expect(info.records[0]).toMatchObject({
+      filename: "db-backup-20240106.dump",
+      filePath: untrackedFile,
+      isAdditionalFile: true,
+      source: "filesystem",
+    });
+    expect(info.records[0].restoreKey.startsWith("fs:")).toBe(true);
+    expect(info.records[1]).toMatchObject({
+      id: 10,
+      filename: "db-backup-20240105.dump",
+      isAdditionalFile: false,
+      source: "database",
+      restoreKey: "db:10",
+    });
+  });
+});
+
 describe("restoreDatabaseBackup", () => {
   it("ensures backup file accessibility and marks restore completion", async () => {
     ensureSchemaMock.mockResolvedValue(undefined);
@@ -306,6 +442,32 @@ describe("restoreDatabaseBackup", () => {
       expect.any(Function),
     );
     expect(markBackupRestoredMock).toHaveBeenCalledWith({ id: 7 });
+    expect(updateSyncConfigMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        backupLastStatus: "restored",
+      }),
+    );
+  });
+
+  it("restores backups that exist only on the filesystem", async () => {
+    ensureSchemaMock.mockResolvedValue(undefined);
+    accessMock.mockResolvedValue(undefined);
+
+    const { restoreDatabaseBackup } = await loadService();
+
+    await restoreDatabaseBackup({
+      filePath: path.join(
+        envValues.DB_BACKUP_DIRECTORY,
+        "db-backup-extra.dump",
+      ),
+    });
+
+    expect(getBackupRecordMock).not.toHaveBeenCalled();
+    expect(withJobLockMock).toHaveBeenCalledWith(
+      "restore",
+      expect.any(Function),
+    );
+    expect(markBackupRestoredMock).not.toHaveBeenCalled();
     expect(updateSyncConfigMock).toHaveBeenCalledWith(
       expect.objectContaining({
         backupLastStatus: "restored",

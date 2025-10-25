@@ -363,7 +363,8 @@ export function SyncControls({
   const [statusAutomationStart, setStatusAutomationStart] = useState("");
   const [backupHour, setBackupHour] = useState(backupSchedule.hourLocal ?? 2);
   const [isSavingBackupSchedule, setIsSavingBackupSchedule] = useState(false);
-  const [restoringBackupId, setRestoringBackupId] = useState<number | null>(
+  const [isRunningBackup, setIsRunningBackup] = useState(false);
+  const [restoringBackupId, setRestoringBackupId] = useState<string | null>(
     null,
   );
   const backupHourSelectId = useId();
@@ -812,6 +813,44 @@ export function SyncControls({
     }
   }
 
+  async function handleRunBackup() {
+    if (!canManageSync) {
+      setFeedback(ADMIN_ONLY_MESSAGE);
+      return;
+    }
+
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        "지금 백업을 실행할까요? 동기화 중이라면 완료 후 백업이 시작됩니다.",
+      )
+    ) {
+      return;
+    }
+
+    setIsRunningBackup(true);
+    try {
+      const response = await fetch("/api/backup/run", {
+        method: "POST",
+      });
+      const data = await parseApiResponse<unknown>(response);
+      if (!data.success) {
+        throw new Error(data.message ?? "백업 실행에 실패했습니다.");
+      }
+
+      setFeedback(data.message ?? "백업을 완료했습니다.");
+      router.refresh();
+    } catch (error) {
+      setFeedback(
+        error instanceof Error
+          ? error.message
+          : "백업 실행 중 오류가 발생했습니다.",
+      );
+    } finally {
+      setIsRunningBackup(false);
+    }
+  }
+
   async function handleBackupScheduleSave() {
     if (!canManageSync) {
       setFeedback(ADMIN_ONLY_MESSAGE);
@@ -850,7 +889,7 @@ export function SyncControls({
     }
   }
 
-  async function handleRestoreBackup(backupId: number) {
+  async function handleRestoreBackup(restoreKey: string) {
     if (!canManageSync) {
       setFeedback(ADMIN_ONLY_MESSAGE);
       return;
@@ -865,9 +904,9 @@ export function SyncControls({
       return;
     }
 
-    setRestoringBackupId(backupId);
+    setRestoringBackupId(restoreKey);
     try {
-      const response = await fetch(`/api/backup/${backupId}/restore`, {
+      const response = await fetch(`/api/backup/${restoreKey}/restore`, {
         method: "POST",
       });
       const data = await parseApiResponse<unknown>(response);
@@ -1425,10 +1464,20 @@ export function SyncControls({
                 <p>보존 개수: {backupRetentionCount.toLocaleString()}개</p>
               </div>
             </CardContent>
-            <CardFooter>
+            <CardFooter className="flex flex-wrap gap-3">
               <Button
+                onClick={handleRunBackup}
+                disabled={isRunningBackup || !canManageSync}
+                title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+              >
+                {isRunningBackup ? "백업 실행 중..." : "지금 백업하기"}
+              </Button>
+              <Button
+                variant="outline"
                 onClick={handleBackupScheduleSave}
-                disabled={isSavingBackupSchedule || !canManageSync}
+                disabled={
+                  isSavingBackupSchedule || isRunningBackup || !canManageSync
+                }
                 title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
               >
                 {isSavingBackupSchedule ? "저장 중..." : "백업 시각 저장"}
@@ -1459,14 +1508,25 @@ export function SyncControls({
                       "text-muted-foreground";
                     const recordStatusLabel =
                       backupStatusLabels[record.status] ?? record.status;
+                    const isAdditionalFile = record.isAdditionalFile;
+                    const triggerLabel = isAdditionalFile
+                      ? "디렉터리 감지"
+                      : (backupTriggerLabels[record.trigger] ?? record.trigger);
+                    const restoreInProgress =
+                      restoringBackupId === record.restoreKey;
                     return (
                       <div
-                        key={record.id}
+                        key={record.restoreKey}
                         className="flex w-full flex-wrap items-start gap-3 rounded-md border border-border/50 p-3"
                       >
                         <div className="min-w-[220px] flex-1 space-y-1">
                           <p className="font-medium text-foreground">
                             {record.filename}
+                            {isAdditionalFile ? (
+                              <span className="ml-2 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                                추가된 파일
+                              </span>
+                            ) : null}
                           </p>
                           <p className="text-xs text-muted-foreground">
                             생성{" "}
@@ -1488,11 +1548,7 @@ export function SyncControls({
                               {recordStatusLabel}
                             </span>
                           </span>
-                          <span>
-                            트리거:{" "}
-                            {backupTriggerLabels[record.trigger] ??
-                              record.trigger}
-                          </span>
+                          <span>트리거: {triggerLabel}</span>
                           <span>크기: {formatBytes(record.sizeBytes)}</span>
                           {record.restoredAt ? (
                             <span>
@@ -1510,12 +1566,12 @@ export function SyncControls({
                         {canManageSync && record.status === "success" ? (
                           <Button
                             variant="outline"
-                            onClick={() => handleRestoreBackup(record.id)}
-                            disabled={restoringBackupId === record.id}
+                            onClick={() =>
+                              handleRestoreBackup(record.restoreKey)
+                            }
+                            disabled={restoreInProgress}
                           >
-                            {restoringBackupId === record.id
-                              ? "복구 중..."
-                              : "복구"}
+                            {restoreInProgress ? "복구 중..." : "복구"}
                           </Button>
                         ) : null}
                       </div>

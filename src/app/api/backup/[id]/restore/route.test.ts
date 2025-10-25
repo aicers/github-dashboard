@@ -9,10 +9,11 @@ vi.mock("@/lib/auth/session", () => ({
 
 vi.mock("@/lib/backup/service", () => ({
   restoreDatabaseBackup: vi.fn(),
+  parseBackupRestoreKey: vi.fn(),
 }));
 
 const { readActiveSession } = vi.mocked(await import("@/lib/auth/session"));
-const { restoreDatabaseBackup } = vi.mocked(
+const { restoreDatabaseBackup, parseBackupRestoreKey } = vi.mocked(
   await import("@/lib/backup/service"),
 );
 
@@ -85,6 +86,7 @@ describe("POST /api/backup/[id]/restore", () => {
 
   it("rejects invalid backup identifiers", async () => {
     readActiveSession.mockResolvedValue(createSession());
+    parseBackupRestoreKey.mockReturnValue(null);
     const { POST } = await loadHandler();
 
     const response = await POST(
@@ -108,6 +110,7 @@ describe("POST /api/backup/[id]/restore", () => {
     readActiveSession.mockResolvedValue(
       createSession({ userId: "admin-user" }),
     );
+    parseBackupRestoreKey.mockReturnValue({ type: "database", id: 3 });
     restoreDatabaseBackup.mockResolvedValue(undefined);
     const { POST } = await loadHandler();
 
@@ -128,8 +131,36 @@ describe("POST /api/backup/[id]/restore", () => {
     });
   });
 
+  it("restores filesystem backup when restore key encodes file path", async () => {
+    readActiveSession.mockResolvedValue(
+      createSession({ userId: "admin-user" }),
+    );
+    parseBackupRestoreKey.mockReturnValue({
+      type: "filesystem",
+      filePath: "/var/backups/db-backup-extra.dump",
+    });
+    const { POST } = await loadHandler();
+
+    const response = await POST(
+      new NextRequest("http://localhost/api/backup/fs:manual/restore", {
+        method: "POST",
+      }),
+      {
+        params: Promise.resolve({ id: "fs:manual" }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(parseBackupRestoreKey).toHaveBeenCalledWith("fs:manual");
+    expect(restoreDatabaseBackup).toHaveBeenCalledWith({
+      filePath: "/var/backups/db-backup-extra.dump",
+      actorId: "admin-user",
+    });
+  });
+
   it("propagates service errors as 400 responses", async () => {
     readActiveSession.mockResolvedValue(createSession());
+    parseBackupRestoreKey.mockReturnValue({ type: "database", id: 5 });
     restoreDatabaseBackup.mockRejectedValue(
       new Error("Backup record not found."),
     );
@@ -153,6 +184,7 @@ describe("POST /api/backup/[id]/restore", () => {
 
   it("returns 500 when service throws unknown error type", async () => {
     readActiveSession.mockResolvedValue(createSession());
+    parseBackupRestoreKey.mockReturnValue({ type: "database", id: 6 });
     restoreDatabaseBackup.mockRejectedValue("fatal");
 
     const { POST } = await loadHandler();
