@@ -12,13 +12,14 @@ import {
   fetchOrganizationTeams,
 } from "@/lib/github/org";
 import { fetchSyncConfig } from "@/lib/sync/service";
+import { readUserTimeSettings } from "@/lib/user/time-settings";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const session = await readActiveSession();
   const config = await fetchSyncConfig();
-  const timeZone = config?.timezone ?? "UTC";
+  const timeSettings = await readUserTimeSettings(session?.userId ?? null);
   const repositories = await listAllRepositories();
   const members = await listAllUsers();
   const excludedRepositoryIds = Array.isArray(config?.excluded_repository_ids)
@@ -68,9 +69,9 @@ export default async function SettingsPage() {
     <SettingsView
       orgName={config?.org_name ?? ""}
       syncIntervalMinutes={config?.sync_interval_minutes ?? 60}
-      timeZone={timeZone}
-      weekStart={(config?.week_start as "sunday" | "monday") ?? "monday"}
-      dateTimeFormat={config?.date_time_format ?? "auto"}
+      timeZone={timeSettings.timezone}
+      weekStart={timeSettings.weekStart}
+      dateTimeFormat={timeSettings.dateTimeFormat}
       repositories={repositories}
       excludedRepositoryIds={excludedRepositoryIds}
       members={members}

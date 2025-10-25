@@ -39,12 +39,15 @@ describe("GET /api/dashboard/analytics", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ success: true, analytics });
-    expect(getDashboardAnalytics).toHaveBeenCalledWith({
-      start: "2024-01-01",
-      end: "2024-01-07",
-      repositoryIds: ["repo-1", "repo-2"],
-      personId: null,
-    });
+    expect(getDashboardAnalytics).toHaveBeenCalledWith(
+      {
+        start: "2024-01-01",
+        end: "2024-01-07",
+        repositoryIds: ["repo-1", "repo-2"],
+        personId: null,
+      },
+      { userId: "user" },
+    );
   });
 
   it("returns validation errors for invalid queries", async () => {

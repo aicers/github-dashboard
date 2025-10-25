@@ -23,11 +23,14 @@ export default async function ActivityPage({
     createSearchParamsFromRecord(resolvedSearchParams),
   );
 
-  const [initialData, filterOptions, session] = await Promise.all([
-    getActivityItems(params),
+  const sessionPromise = readActiveSession();
+  const [filterOptions, session] = await Promise.all([
     getActivityFilterOptions(),
-    readActiveSession(),
+    sessionPromise,
   ]);
+  const initialData = await getActivityItems(params, {
+    userId: session?.userId ?? null,
+  });
 
   return (
     <ActivityView

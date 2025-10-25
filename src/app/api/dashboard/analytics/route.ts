@@ -39,12 +39,15 @@ export async function GET(request: Request) {
       person: searchParams.get("person"),
     });
 
-    const analytics = await getDashboardAnalytics({
-      start: parsed.start,
-      end: parsed.end,
-      repositoryIds: parsed.repos,
-      personId: parsed.person ?? null,
-    });
+    const analytics = await getDashboardAnalytics(
+      {
+        start: parsed.start,
+        end: parsed.end,
+        repositoryIds: parsed.repos,
+        personId: parsed.person ?? null,
+      },
+      { userId: session.userId },
+    );
 
     return NextResponse.json({ success: true, analytics });
   } catch (error) {

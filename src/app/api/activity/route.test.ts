@@ -24,15 +24,21 @@ vi.mock("@/lib/activity/service", async (importOriginal) => {
   };
 });
 
+vi.mock("@/lib/auth/session", () => ({
+  readActiveSession: vi.fn(),
+}));
+
 const { parseActivityListParams } = vi.mocked(
   await import("@/lib/activity/params"),
 );
 const { getActivityItems, getActivityFilterOptions, getActivityItemDetail } =
   vi.mocked(await import("@/lib/activity/service"));
+const { readActiveSession } = vi.mocked(await import("@/lib/auth/session"));
 
 describe("GET /api/activity", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    readActiveSession.mockResolvedValue(null);
   });
 
   it("returns activity items for parsed params", async () => {
@@ -66,7 +72,9 @@ describe("GET /api/activity", () => {
     const body = (await response.json()) as ActivityListResult;
     expect(body).toEqual(listResult);
     expect(parseActivityListParams).toHaveBeenCalledTimes(1);
-    expect(getActivityItems).toHaveBeenCalledWith(parsedParams);
+    expect(getActivityItems).toHaveBeenCalledWith(parsedParams, {
+      userId: null,
+    });
   });
 
   it("returns 500 when service call fails", async () => {

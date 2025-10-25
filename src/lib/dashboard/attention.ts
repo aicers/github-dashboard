@@ -12,10 +12,7 @@ import {
   differenceInBusinessDaysOrNull,
   HOLIDAY_SET,
 } from "@/lib/dashboard/business-days";
-import {
-  type DateTimeDisplayFormat,
-  normalizeDateTimeDisplayFormat,
-} from "@/lib/date-time-format";
+import type { DateTimeDisplayFormat } from "@/lib/date-time-format";
 import { ensureSchema } from "@/lib/db";
 import { query } from "@/lib/db/client";
 import {
@@ -24,6 +21,7 @@ import {
   type UserProfile,
 } from "@/lib/db/operations";
 import { env } from "@/lib/env";
+import { readUserTimeSettings } from "@/lib/user/time-settings";
 
 export type UserReference = {
   id: string;
@@ -1584,10 +1582,15 @@ function toIssueReference(
   } satisfies IssueReference;
 }
 
-export async function getAttentionInsights(): Promise<AttentionInsights> {
+export async function getAttentionInsights(options?: {
+  userId?: string | null;
+}): Promise<AttentionInsights> {
   await ensureSchema();
 
-  const config = await getSyncConfig();
+  const [config, userTimeSettings] = await Promise.all([
+    getSyncConfig(),
+    readUserTimeSettings(options?.userId ?? null),
+  ]);
   const excludedUserIds = new Set<string>(
     Array.isArray(config?.excluded_user_ids)
       ? (config?.excluded_user_ids as string[]).filter(
@@ -1602,12 +1605,8 @@ export async function getAttentionInsights(): Promise<AttentionInsights> {
         )
       : [],
   );
-  const timezone = config?.timezone ?? "UTC";
-  const dateTimeFormat = normalizeDateTimeDisplayFormat(
-    typeof config?.date_time_format === "string"
-      ? config.date_time_format
-      : null,
-  );
+  const timezone = userTimeSettings.timezone;
+  const dateTimeFormat = userTimeSettings.dateTimeFormat;
   const excludedUsersArray = Array.from(excludedUserIds);
   const excludedReposArray = Array.from(excludedRepositoryIds);
   const now = new Date();

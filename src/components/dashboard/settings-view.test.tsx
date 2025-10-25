@@ -160,7 +160,7 @@ describe("SettingsView", () => {
       within(personalSection as HTMLElement).getByLabelText("주의 시작 요일"),
     ).toHaveValue("monday");
     expect(
-      within(personalSection as HTMLElement).getByLabelText("날짜와 시간"),
+      within(personalSection as HTMLElement).getByLabelText("날짜와 시간 형식"),
     ).toHaveValue("auto");
     expect(
       within(personalSection as HTMLElement).getByRole("button", {
@@ -185,17 +185,6 @@ describe("SettingsView", () => {
         "자동 동기화 간격 (분)",
       ),
     ).toHaveValue(30);
-    expect(
-      within(organizationSection as HTMLElement).getByLabelText("표준 시간대"),
-    ).toHaveValue("Asia/Seoul");
-    expect(
-      within(organizationSection as HTMLElement).getByLabelText(
-        "주의 시작 요일",
-      ),
-    ).toHaveValue("monday");
-    expect(
-      within(organizationSection as HTMLElement).getByLabelText("날짜와 시간"),
-    ).toHaveValue("auto");
     const allowedTeamSelect = within(
       organizationSection as HTMLElement,
     ).getByLabelText(/로그인 허용 팀/) as HTMLSelectElement;
@@ -271,14 +260,6 @@ describe("SettingsView", () => {
     await user.clear(intervalInput);
     await user.type(intervalInput, "15");
 
-    const timezoneSelect =
-      within(organizationSection).getByLabelText("표준 시간대");
-    await user.selectOptions(timezoneSelect, "America/Los_Angeles");
-
-    const weekStartSelect =
-      within(organizationSection).getByLabelText("주의 시작 요일");
-    await user.selectOptions(weekStartSelect, "sunday");
-
     const repoSelect =
       within(organizationSection).getByLabelText(/제외할 저장소를 선택하세요/);
     await user.deselectOptions(repoSelect, ["repo-2"]);
@@ -302,10 +283,10 @@ describe("SettingsView", () => {
     expect(payload).toMatchObject({
       orgName: "new-org",
       syncIntervalMinutes: 15,
-      timezone: "America/Los_Angeles",
-      weekStart: "sunday",
-      dateTimeFormat: "auto",
     });
+    expect(payload.timezone).toBeUndefined();
+    expect(payload.weekStart).toBeUndefined();
+    expect(payload.dateTimeFormat).toBeUndefined();
     expect([...payload.excludedRepositories].sort()).toEqual([
       "repo-1",
       "repo-3",
@@ -448,7 +429,7 @@ describe("SettingsView", () => {
     const timezoneSelect = screen.getByLabelText("표준 시간대");
     await user.selectOptions(timezoneSelect, "America/Los_Angeles");
 
-    const formatSelect = screen.getByLabelText("날짜와 시간");
+    const formatSelect = screen.getByLabelText("날짜와 시간 형식");
     await user.selectOptions(formatSelect, "en-us-12h");
 
     await user.click(screen.getByRole("button", { name: "개인 설정 저장" }));
@@ -521,7 +502,7 @@ describe("SettingsView", () => {
     const timezoneSelect = screen.getByLabelText("표준 시간대");
     await user.selectOptions(timezoneSelect, "America/Los_Angeles");
 
-    const formatSelect = screen.getByLabelText("날짜와 시간");
+    const formatSelect = screen.getByLabelText("날짜와 시간 형식");
     await user.selectOptions(formatSelect, "dot-24h");
 
     await user.click(screen.getByRole("button", { name: "개인 설정 저장" }));

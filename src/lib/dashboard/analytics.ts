@@ -76,6 +76,7 @@ import {
   type UserProfile,
 } from "@/lib/db/operations";
 import { env } from "@/lib/env";
+import { readUserTimeSettings } from "@/lib/user/time-settings";
 
 function mapRepoDistribution(
   rows: RepoDistributionRow[],
@@ -233,15 +234,18 @@ function toTrend(points: TrendPoint[]): TrendPoint[] {
 
 export async function getDashboardAnalytics(
   params: AnalyticsParams,
+  options?: { userId?: string | null },
 ): Promise<DashboardAnalytics> {
   const { start, end, repositoryIds = [], personId } = params;
   const range = resolveRange({ start, end });
 
   await ensureSchema();
-  const config = await getSyncConfig();
-  const timeZone = config?.timezone ?? "UTC";
-  const weekStart: WeekStart =
-    config?.week_start === "sunday" ? "sunday" : "monday";
+  const [config, userTimeSettings] = await Promise.all([
+    getSyncConfig(),
+    readUserTimeSettings(options?.userId ?? null),
+  ]);
+  const timeZone = userTimeSettings.timezone;
+  const weekStart: WeekStart = userTimeSettings.weekStart;
   const excludedUserIds = new Set<string>(
     Array.isArray(config?.excluded_user_ids)
       ? (config?.excluded_user_ids as string[]).filter(

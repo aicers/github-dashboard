@@ -30,7 +30,12 @@ export function SyncControlsHarness({
 
   return (
     <AppRouterContext.Provider value={router}>
-      <SyncControls status={status} isAdmin={isAdmin} />
+      <SyncControls
+        status={status}
+        isAdmin={isAdmin}
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+      />
     </AppRouterContext.Provider>
   );
 }

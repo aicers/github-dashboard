@@ -73,8 +73,6 @@ test.describe("SettingsView (Playwright)", () => {
     await page.getByLabel("Organization 이름").fill("  new-org  ");
     await page.getByLabel("자동 동기화 간격 (분)").fill("");
     await page.getByLabel("자동 동기화 간격 (분)").fill("15");
-    await page.getByLabel("표준 시간대").selectOption("Europe/London");
-    await page.getByLabel("주의 시작 요일").selectOption("sunday");
     await page
       .getByLabel("제외할 저장소를 선택하세요")
       .selectOption(["repo-1", "repo-3"]);
@@ -96,9 +94,9 @@ test.describe("SettingsView (Playwright)", () => {
     expect(capturedPayload).toMatchObject({
       orgName: "new-org",
       syncIntervalMinutes: 15,
-      timezone: "Europe/London",
-      weekStart: "sunday",
     });
+    expect(capturedPayload).not.toHaveProperty("timezone");
+    expect(capturedPayload).not.toHaveProperty("weekStart");
     const excludedRepositories = Array.from(
       (capturedPayload?.excludedRepositories as string[]) ?? [],
     ).sort();

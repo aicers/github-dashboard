@@ -30,6 +30,17 @@ const SCHEMA_STATEMENTS = [
   )`,
   `CREATE INDEX IF NOT EXISTS auth_sessions_user_idx ON auth_sessions(user_id)`,
   `CREATE INDEX IF NOT EXISTS auth_sessions_expires_idx ON auth_sessions(expires_at)`,
+  `CREATE TABLE IF NOT EXISTS user_preferences (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    timezone TEXT NOT NULL DEFAULT 'UTC',
+    week_start TEXT NOT NULL DEFAULT 'monday',
+    date_time_format TEXT NOT NULL DEFAULT 'auto',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'UTC'`,
+  `ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS week_start TEXT NOT NULL DEFAULT 'monday'`,
+  `ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS date_time_format TEXT NOT NULL DEFAULT 'auto'`,
   `CREATE TABLE IF NOT EXISTS repositories (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,

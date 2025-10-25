@@ -10,6 +10,7 @@ import { query } from "@/lib/db/client";
 import type { DbActor, DbRepository } from "@/lib/db/operations";
 import {
   getSyncConfig,
+  getUserPreferences,
   listAllRepositories,
   listAllUsers,
   updateSyncConfig,
@@ -30,7 +31,7 @@ const START_TIME = new Date("2024-06-01T00:00:00.000Z");
 async function resetDatabaseState() {
   await ensureSchema();
   await query(
-    "TRUNCATE TABLE users, repositories, sync_log, sync_state RESTART IDENTITY CASCADE",
+    "TRUNCATE TABLE users, user_preferences, repositories, sync_log, sync_state RESTART IDENTITY CASCADE",
   );
   await query(
     `UPDATE sync_config
@@ -82,6 +83,7 @@ describe("sync config API routes", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     await resetDatabaseState();
+    await seedUser("user");
     vi.mocked(readActiveSession).mockResolvedValue({
       id: "session",
       userId: "user",
@@ -146,13 +148,18 @@ describe("sync config API routes", () => {
     const config = await getSyncConfig();
     expect(config?.org_name).toBe("new-org");
     expect(config?.sync_interval_minutes).toBe(24);
-    expect(config?.timezone).toBe("Asia/Seoul");
-    expect(config?.week_start).toBe("sunday");
-    expect(config?.date_time_format).toBe("en-gb-24h");
+    expect(config?.timezone).toBe("UTC");
+    expect(config?.week_start).toBe("monday");
+    expect(config?.date_time_format).toBe("auto");
     expect(config?.excluded_repository_ids).toEqual(["repo-1", "repo-2"]);
     expect(config?.excluded_user_ids).toEqual(["user-1", "user-2"]);
     expect(config?.allowed_team_slugs).toEqual(["team-alpha", "team-beta"]);
     expect(config?.allowed_user_ids).toEqual(["user-3", "user-4"]);
+
+    const preferences = await getUserPreferences("user");
+    expect(preferences?.timezone).toBe("Asia/Seoul");
+    expect(preferences?.weekStart).toBe("sunday");
+    expect(preferences?.dateTimeFormat).toBe("en-gb-24h");
 
     await Promise.resolve();
     await Promise.resolve();
@@ -187,7 +194,7 @@ describe("sync config API routes", () => {
     expect(repositories.map((repo) => repo.id)).toEqual(["repo-1", "repo-2"]);
 
     const users = await listAllUsers();
-    expect(users.map((user) => user.id)).toEqual(["user-1", "user-2"]);
+    expect(users.map((user) => user.id)).toEqual(["user", "user-1", "user-2"]);
   });
 
   it("rejects organization control updates from non-admin users", async () => {
@@ -253,10 +260,15 @@ describe("sync config API routes", () => {
     const body = await response.json();
     expect(body.success).toBe(true);
 
+    const preferences = await getUserPreferences("user");
+    expect(preferences?.timezone).toBe("Europe/London");
+    expect(preferences?.weekStart).toBe("sunday");
+    expect(preferences?.dateTimeFormat).toBe("dot-24h");
+
     const config = await getSyncConfig();
-    expect(config?.timezone).toBe("Europe/London");
-    expect(config?.week_start).toBe("sunday");
-    expect(config?.date_time_format).toBe("dot-24h");
+    expect(config?.timezone).toBe("UTC");
+    expect(config?.week_start).toBe("monday");
+    expect(config?.date_time_format).toBe("auto");
     expect(config?.org_name).toBe("seed-org");
   });
 

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { readActiveSession } from "@/lib/auth/session";
 import { DATE_TIME_FORMAT_VALUES } from "@/lib/date-time-format";
 import { fetchSyncStatus, updateSyncSettings } from "@/lib/sync/service";
+import { writeUserTimeSettings } from "@/lib/user/time-settings";
 
 const patchSchema = z.object({
   orgName: z.string().optional(),
@@ -92,6 +93,11 @@ export async function PATCH(request: Request) {
       dateTimeFormat,
     } = payload;
 
+    const hasPersonalUpdate =
+      timezone !== undefined ||
+      weekStart !== undefined ||
+      dateTimeFormat !== undefined;
+
     if (!session.isAdmin) {
       const attemptedAdminUpdate =
         orgName !== undefined ||
@@ -112,18 +118,40 @@ export async function PATCH(request: Request) {
         );
       }
 
-      await updateSyncSettings({ timezone, weekStart, dateTimeFormat });
+      if (hasPersonalUpdate) {
+        if (!session.userId) {
+          return NextResponse.json(
+            {
+              success: false,
+              message:
+                "User session is required to update personal time settings.",
+            },
+            { status: 400 },
+          );
+        }
+
+        await writeUserTimeSettings(session.userId, {
+          timezone,
+          weekStart,
+          dateTimeFormat,
+        });
+      }
     } else {
+      if (hasPersonalUpdate && session.userId) {
+        await writeUserTimeSettings(session.userId, {
+          timezone,
+          weekStart,
+          dateTimeFormat,
+        });
+      }
+
       await updateSyncSettings({
         orgName,
         syncIntervalMinutes,
-        timezone,
-        weekStart,
         excludedRepositories,
         excludedPeople,
         allowedTeams,
         allowedUsers,
-        dateTimeFormat,
       });
     }
 

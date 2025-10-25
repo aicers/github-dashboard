@@ -43,11 +43,11 @@ import {
   differenceInBusinessDaysOrNull,
   HOLIDAY_SET,
 } from "@/lib/dashboard/business-days";
-import { normalizeDateTimeDisplayFormat } from "@/lib/date-time-format";
 import { ensureSchema } from "@/lib/db";
 import { query } from "@/lib/db/client";
 import { getSyncConfig, getUserProfiles } from "@/lib/db/operations";
 import { env } from "@/lib/env";
+import { readUserTimeSettings } from "@/lib/user/time-settings";
 
 const DEFAULT_PER_PAGE = 25;
 const MAX_PER_PAGE = 100;
@@ -974,8 +974,11 @@ function extractTodoProjectFieldValues(
 
 async function resolveAttentionSets(
   thresholds: Required<ActivityThresholds>,
+  options?: { userId?: string | null },
 ): Promise<AttentionSets> {
-  const insights = await getAttentionInsights();
+  const insights = await getAttentionInsights({
+    userId: options?.userId ?? null,
+  });
   const unansweredMentions = new Set<string>();
   const reviewRequests = new Set<string>();
   const stalePullRequests = new Set<string>();
@@ -1870,6 +1873,7 @@ export async function getActivityFilterOptions(): Promise<ActivityFilterOptions>
 
 export async function getActivityItems(
   params: ActivityListParams = {},
+  options?: { userId?: string | null },
 ): Promise<ActivityListResult> {
   await ensureSchema();
 
@@ -1895,12 +1899,17 @@ export async function getActivityItems(
   );
   let page = Math.max(1, params.page ?? 1);
 
-  const attentionSets = await resolveAttentionSets(thresholds);
+  const attentionSets = await resolveAttentionSets(thresholds, {
+    userId: options?.userId ?? null,
+  });
   const attentionSelection = collectAttentionFilterIds(
     params.attention,
     attentionSets,
   );
-  const config = await getSyncConfig();
+  const [config, userTimeSettings] = await Promise.all([
+    getSyncConfig(),
+    readUserTimeSettings(options?.userId ?? null),
+  ]);
   const excludedRepositoryIds = Array.from(
     new Set(
       Array.isArray(config?.excluded_repository_ids)
@@ -1911,15 +1920,9 @@ export async function getActivityItems(
         : [],
     ),
   );
-  const dateTimeFormat = normalizeDateTimeDisplayFormat(
-    typeof config?.date_time_format === "string"
-      ? config.date_time_format
-      : null,
-  );
-  const timezone =
-    typeof config?.timezone === "string" && config.timezone.trim().length
-      ? config.timezone
-      : null;
+  const dateTimeFormat = userTimeSettings.dateTimeFormat;
+  const trimmedTimezone = userTimeSettings.timezone.trim();
+  const timezone = trimmedTimezone.length ? trimmedTimezone : null;
   const lastSyncCompletedAt = toIso(config?.last_sync_completed_at ?? null);
 
   if (
