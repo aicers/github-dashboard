@@ -13,9 +13,17 @@ export function buildSyncStatusFixture(): SyncStatus {
       excluded_user_ids: [],
       allowed_team_slugs: [],
       allowed_user_ids: [],
+      date_time_format: "auto",
       last_sync_started_at: "2024-04-02T09:00:00.000Z",
       last_sync_completed_at: "2024-04-02T10:30:00.000Z",
       last_successful_sync_at: "2024-04-02T10:30:00.000Z",
+      backup_enabled: true,
+      backup_hour_local: 2,
+      backup_timezone: "Asia/Seoul",
+      backup_last_started_at: "2024-04-01T17:00:00.000Z",
+      backup_last_completed_at: "2024-04-01T17:02:00.000Z",
+      backup_last_status: "success",
+      backup_last_error: null,
     },
     runs: [
       {
@@ -110,6 +118,37 @@ export function buildSyncStatusFixture(): SyncStatus {
       pullRequests: "2024-04-02T10:30:00.000Z",
       reviews: "2024-04-02T10:30:00.000Z",
       comments: "2024-04-02T10:30:00.000Z",
+    },
+    backup: {
+      directory: "/var/backups/github-dashboard",
+      retentionCount: 3,
+      schedule: {
+        enabled: true,
+        hourLocal: 2,
+        timezone: "Asia/Seoul",
+        nextRunAt: "2024-04-03T17:00:00.000Z",
+        lastStartedAt: "2024-04-01T17:00:00.000Z",
+        lastCompletedAt: "2024-04-01T17:02:00.000Z",
+        lastStatus: "success",
+        lastError: null,
+      },
+      records: [
+        {
+          id: 1,
+          filename: "db-backup-20240401-170000.dump",
+          directory: "/var/backups/github-dashboard",
+          filePath:
+            "/var/backups/github-dashboard/db-backup-20240401-170000.dump",
+          status: "success",
+          trigger: "automatic",
+          startedAt: "2024-04-01T17:00:00.000Z",
+          completedAt: "2024-04-01T17:02:00.000Z",
+          sizeBytes: 1024,
+          error: null,
+          restoredAt: null,
+          createdBy: "admin-user",
+        },
+      ],
     },
   };
 }

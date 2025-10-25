@@ -31,7 +31,7 @@ const START_TIME = new Date("2024-06-01T00:00:00.000Z");
 async function resetDatabaseState() {
   await ensureSchema();
   await query(
-    "TRUNCATE TABLE users, user_preferences, repositories, sync_log, sync_state RESTART IDENTITY CASCADE",
+    "TRUNCATE TABLE users, user_preferences, repositories, sync_log, sync_state, db_backups RESTART IDENTITY CASCADE",
   );
   await query(
     `UPDATE sync_config
@@ -48,6 +48,13 @@ async function resetDatabaseState() {
          last_sync_started_at = NULL,
          last_sync_completed_at = NULL,
          last_successful_sync_at = NULL,
+         backup_enabled = TRUE,
+         backup_hour_local = 2,
+         backup_timezone = 'UTC',
+         backup_last_started_at = NULL,
+         backup_last_completed_at = NULL,
+         backup_last_status = 'idle',
+         backup_last_error = NULL,
          updated_at = NOW()
      WHERE id = 'default'`,
   );
@@ -130,6 +137,7 @@ describe("sync config API routes", () => {
           excludedPeople: [" user-1 ", "user-2", "user-1"],
           allowedTeams: [" team-alpha ", "team-beta", "team-alpha"],
           allowedUsers: [" user-3 ", "user-3", "user-4 "],
+          backupHour: 4,
         }),
       }),
     );
@@ -155,6 +163,8 @@ describe("sync config API routes", () => {
     expect(config?.excluded_user_ids).toEqual(["user-1", "user-2"]);
     expect(config?.allowed_team_slugs).toEqual(["team-alpha", "team-beta"]);
     expect(config?.allowed_user_ids).toEqual(["user-3", "user-4"]);
+    expect(config?.backup_hour_local).toBe(4);
+    expect(config?.backup_timezone).toBe("Asia/Seoul");
 
     const preferences = await getUserPreferences("user");
     expect(preferences?.timezone).toBe("Asia/Seoul");

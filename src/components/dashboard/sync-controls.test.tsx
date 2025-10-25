@@ -74,6 +74,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({
     refresh: routerRefreshMock,
   }),
+  usePathname: () => "/dashboard/sync",
 }));
 
 function buildStatus(overrides: Partial<SyncStatus> = {}): SyncStatus {
@@ -87,15 +88,39 @@ function buildStatus(overrides: Partial<SyncStatus> = {}): SyncStatus {
       week_start: "monday",
       excluded_repository_ids: [],
       excluded_user_ids: [],
+      allowed_team_slugs: [],
+      allowed_user_ids: [],
       date_time_format: "auto",
       last_sync_started_at: null,
       last_sync_completed_at: null,
       last_successful_sync_at: null,
+      backup_enabled: true,
+      backup_hour_local: 2,
+      backup_timezone: "UTC",
+      backup_last_started_at: null,
+      backup_last_completed_at: null,
+      backup_last_status: "idle",
+      backup_last_error: null,
       ...(overrides.config ?? {}),
     },
     runs: overrides.runs ?? [],
     logs: overrides.logs ?? [],
     dataFreshness: overrides.dataFreshness ?? null,
+    backup: overrides.backup ?? {
+      directory: "/var/backups/github-dashboard",
+      retentionCount: 3,
+      schedule: {
+        enabled: true,
+        hourLocal: 2,
+        timezone: "UTC",
+        nextRunAt: null,
+        lastStartedAt: null,
+        lastCompletedAt: null,
+        lastStatus: "idle",
+        lastError: null,
+      },
+      records: [],
+    },
   };
 }
 
@@ -148,7 +173,7 @@ describe("SyncControls", () => {
     mockFetchJsonOnce(mockIssueStatusAutomationResponse);
   });
 
-  it("renders primary sections and the latest sync logs", () => {
+  it("renders the overview controls and navigation tabs", () => {
     const status = buildStatus({
       config: {
         auto_sync_enabled: true,
@@ -219,6 +244,8 @@ describe("SyncControls", () => {
         isAdmin
         timeZone="Asia/Seoul"
         dateTimeFormat="iso-24h"
+        view="overview"
+        currentPathname="/dashboard/sync"
       />,
     );
 
@@ -226,6 +253,17 @@ describe("SyncControls", () => {
       screen.getByRole("heading", { name: "데이터 동기화 제어" }),
     ).toBeInTheDocument();
     expect(screen.getByText(/조직\(acme\)/)).toBeInTheDocument();
+    const overviewTab = screen.getByRole("link", { name: "동기화" });
+    expect(overviewTab).toHaveAttribute("href", "/dashboard/sync");
+    expect(overviewTab).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "동기화 로그" })).toHaveAttribute(
+      "href",
+      "/dashboard/sync/logs",
+    );
+    expect(screen.getByRole("link", { name: "백업" })).toHaveAttribute(
+      "href",
+      "/dashboard/sync/backup",
+    );
     expect(screen.getByText("수동 데이터 백필")).toBeInTheDocument();
     expect(screen.getByText("자동 동기화")).toBeInTheDocument();
     expect(screen.getByText("활성")).toBeInTheDocument();
@@ -237,11 +275,76 @@ describe("SyncControls", () => {
     expect(nextSyncParagraph).toHaveTextContent(
       /다음 동기화 예정:\s*2024-04-02 19:30/,
     );
-    expect(screen.getByText(/자동 동기화 •/)).toBeInTheDocument();
+    expect(screen.queryByText("DB 백업 일정")).not.toBeInTheDocument();
+    expect(screen.queryByText("최근 동기화 로그")).not.toBeInTheDocument();
+  });
+
+  it("renders the logs view with recent run entries", () => {
+    const status = buildStatus({
+      runs: [
+        {
+          id: 10,
+          runType: "automatic",
+          strategy: "incremental",
+          status: "success",
+          since: null,
+          until: null,
+          startedAt: "2024-04-02T09:30:00.000Z",
+          completedAt: "2024-04-02T10:00:00.000Z",
+          logs: [
+            {
+              id: 1,
+              runId: 10,
+              resource: "issues",
+              status: "success",
+              message: "Processed issues",
+              startedAt: "2024-04-02T09:30:00.000Z",
+              finishedAt: "2024-04-02T09:45:00.000Z",
+            },
+            {
+              id: 2,
+              runId: 10,
+              resource: "pull_requests",
+              status: "failed",
+              message: "Timeout",
+              startedAt: "2024-04-02T09:45:00.000Z",
+              finishedAt: "2024-04-02T09:55:00.000Z",
+            },
+          ],
+        },
+      ],
+      logs: [
+        {
+          id: 1,
+          resource: "issues",
+          status: "success",
+          message: "Processed issues",
+          started_at: "2024-04-02T09:00:00.000Z",
+          finished_at: "2024-04-02T09:30:00.000Z",
+          run_id: 10,
+        },
+      ],
+    });
+
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="Asia/Seoul"
+        dateTimeFormat="iso-24h"
+        view="logs"
+        currentPathname="/dashboard/sync/logs"
+      />,
+    );
+
+    expect(screen.getByText("최근 동기화 로그")).toBeInTheDocument();
+    const logsTab = screen.getByRole("link", { name: "동기화 로그" });
+    expect(logsTab).toHaveAttribute("aria-current", "page");
     expect(screen.getByText("Processed issues")).toBeInTheDocument();
     expect(screen.getByText("Timeout")).toBeInTheDocument();
     expect(screen.getAllByText("Success")).not.toHaveLength(0);
     expect(screen.getAllByText("Failed")).not.toHaveLength(0);
+    expect(screen.queryByText("DB 백업 일정")).not.toBeInTheDocument();
   });
 
   it("formats timestamps using the configured timezone and display format", () => {
@@ -272,15 +375,23 @@ describe("SyncControls", () => {
         isAdmin
         timeZone="Asia/Seoul"
         dateTimeFormat="iso-24h"
+        view="overview"
+        currentPathname="/dashboard/sync"
       />,
     );
 
     expect(
-      screen.getByText("2024-04-02 08:00 → 2024-04-02 09:00"),
+      screen.getByText(
+        (content) =>
+          content.includes("2024-04-02 08:00") &&
+          content.includes("2024-04-02 09:00"),
+      ),
     ).toBeInTheDocument();
-    expect(screen.getByText("- → 2024-04-02 12:15")).toBeInTheDocument();
     expect(
-      screen.getByText("2024-04-02 00:00 → 2024-04-02 01:45"),
+      screen.getByText(
+        (content) =>
+          content.includes("- →") && content.includes("2024-04-02 12:15"),
+      ),
     ).toBeInTheDocument();
     const nextSyncParagraph = screen.getByText(
       (content, element) =>
@@ -299,6 +410,8 @@ describe("SyncControls", () => {
         isAdmin={false}
         timeZone="UTC"
         dateTimeFormat="iso-24h"
+        view="overview"
+        currentPathname="/dashboard/sync"
       />,
     );
 
@@ -335,6 +448,8 @@ describe("SyncControls", () => {
         isAdmin
         timeZone="UTC"
         dateTimeFormat="iso-24h"
+        view="overview"
+        currentPathname="/dashboard/sync/backup"
       />,
     );
     const user = userEvent.setup();
@@ -405,6 +520,8 @@ describe("SyncControls", () => {
         isAdmin
         timeZone="UTC"
         dateTimeFormat="iso-24h"
+        view="overview"
+        currentPathname="/dashboard/sync/backup"
       />,
     );
     const user = userEvent.setup();
@@ -435,6 +552,8 @@ describe("SyncControls", () => {
         isAdmin
         timeZone="UTC"
         dateTimeFormat="iso-24h"
+        view="overview"
+        currentPathname="/dashboard/sync/backup"
       />,
     );
     const user = userEvent.setup();
@@ -472,6 +591,8 @@ describe("SyncControls", () => {
         isAdmin
         timeZone="UTC"
         dateTimeFormat="iso-24h"
+        view="overview"
+        currentPathname="/dashboard/sync/backup"
       />,
     );
     const user = userEvent.setup();
@@ -511,6 +632,8 @@ describe("SyncControls", () => {
         isAdmin
         timeZone="UTC"
         dateTimeFormat="iso-24h"
+        view="overview"
+        currentPathname="/dashboard/sync/backup"
       />,
     );
     const user = userEvent.setup();
@@ -541,6 +664,8 @@ describe("SyncControls", () => {
         isAdmin
         timeZone="UTC"
         dateTimeFormat="iso-24h"
+        view="overview"
+        currentPathname="/dashboard/sync/backup"
       />,
     );
     const user = userEvent.setup();
@@ -577,6 +702,8 @@ describe("SyncControls", () => {
         isAdmin
         timeZone="UTC"
         dateTimeFormat="iso-24h"
+        view="overview"
+        currentPathname="/dashboard/sync/backup"
       />,
     );
     const user = userEvent.setup();
@@ -609,6 +736,8 @@ describe("SyncControls", () => {
         isAdmin
         timeZone="UTC"
         dateTimeFormat="iso-24h"
+        view="overview"
+        currentPathname="/dashboard/sync/backup"
       />,
     );
     const user = userEvent.setup();
@@ -658,6 +787,8 @@ describe("SyncControls", () => {
         isAdmin
         timeZone="UTC"
         dateTimeFormat="iso-24h"
+        view="overview"
+        currentPathname="/dashboard/sync/backup"
       />,
     );
     const user = userEvent.setup();
@@ -685,6 +816,8 @@ describe("SyncControls", () => {
         isAdmin
         timeZone="UTC"
         dateTimeFormat="iso-24h"
+        view="overview"
+        currentPathname="/dashboard/sync/backup"
       />,
     );
     const user = userEvent.setup();
@@ -726,6 +859,8 @@ describe("SyncControls", () => {
         isAdmin
         timeZone="UTC"
         dateTimeFormat="iso-24h"
+        view="overview"
+        currentPathname="/dashboard/sync/backup"
       />,
     );
     const user = userEvent.setup();
@@ -748,11 +883,119 @@ describe("SyncControls", () => {
         isAdmin={false}
         timeZone="UTC"
         dateTimeFormat="iso-24h"
+        view="overview"
+        currentPathname="/dashboard/sync"
       />,
     );
 
     const button = screen.getByRole("button", { name: "멈춘 동기화 정리" });
     expect(button).toBeDisabled();
     expect(hasRequest("/api/sync/backfill", "POST")).toBe(false);
+  });
+
+  it("allows admins to update the backup schedule hour", async () => {
+    const user = userEvent.setup();
+    const status = buildStatus({
+      backup: {
+        directory: "/var/backups/github-dashboard",
+        retentionCount: 3,
+        schedule: {
+          enabled: true,
+          hourLocal: 2,
+          timezone: "Asia/Seoul",
+          nextRunAt: null,
+          lastStartedAt: null,
+          lastCompletedAt: null,
+          lastStatus: "success",
+          lastError: null,
+        },
+        records: [],
+      },
+    });
+
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="Asia/Seoul"
+        dateTimeFormat="iso-24h"
+        view="backup"
+        currentPathname="/dashboard/sync/backup"
+      />,
+    );
+
+    const select = screen.getByLabelText("백업 실행 시각 (Asia/Seoul)");
+    await user.selectOptions(select, ["5"]);
+
+    const saveButton = screen.getByRole("button", { name: "백업 시각 저장" });
+    await user.click(saveButton);
+
+    await waitFor(() =>
+      expect(hasRequest("/api/sync/config", "PATCH")).toBe(true),
+    );
+    const request = findRequest("/api/sync/config", "PATCH");
+    const payload = request ? JSON.parse(await request.clone().text()) : null;
+    expect(payload).toEqual({ backupHour: 5 });
+    expect(routerRefreshMock).toHaveBeenCalled();
+  });
+
+  it("posts a restore request when admins restore a backup", async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi
+      .spyOn(window, "confirm")
+      .mockImplementation(() => true);
+
+    const status = buildStatus({
+      backup: {
+        directory: "/var/backups/github-dashboard",
+        retentionCount: 3,
+        schedule: {
+          enabled: true,
+          hourLocal: 2,
+          timezone: "UTC",
+          nextRunAt: null,
+          lastStartedAt: "2024-04-01T02:00:00.000Z",
+          lastCompletedAt: "2024-04-01T02:02:00.000Z",
+          lastStatus: "success",
+          lastError: null,
+        },
+        records: [
+          {
+            id: 42,
+            filename: "db-backup-20240401.dump",
+            directory: "/var/backups/github-dashboard",
+            filePath: "/var/backups/github-dashboard/db-backup-20240401.dump",
+            status: "success",
+            trigger: "automatic",
+            startedAt: "2024-04-01T02:00:00.000Z",
+            completedAt: "2024-04-01T02:02:00.000Z",
+            sizeBytes: 1024,
+            error: null,
+            restoredAt: null,
+            createdBy: "admin",
+          },
+        ],
+      },
+    });
+
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+        view="backup"
+        currentPathname="/dashboard/sync/backup"
+      />,
+    );
+
+    const restoreButton = screen.getByRole("button", { name: "복구" });
+    await user.click(restoreButton);
+
+    await waitFor(() =>
+      expect(hasRequest("/api/backup/42/restore", "POST")).toBe(true),
+    );
+    expect(routerRefreshMock).toHaveBeenCalled();
+    confirmSpy.mockRestore();
   });
 });
