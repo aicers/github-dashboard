@@ -1,12 +1,13 @@
 import { spawn } from "node:child_process";
-import { constants as fsConstants } from "node:fs";
-import { access, mkdir, rm, stat } from "node:fs/promises";
+import { type Dirent, constants as fsConstants } from "node:fs";
+import { access, mkdir, readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { ensureSchema } from "@/lib/db";
 import {
   createBackupRecord,
   type DbBackupRecord,
+  type DbBackupStatus,
   type DbBackupTrigger,
   deleteBackupRecord,
   getBackupRecord,
@@ -43,12 +44,88 @@ export type BackupRuntimeInfo = {
     lastStatus: string | null;
     lastError: string | null;
   };
-  records: DbBackupRecord[];
+  records: BackupRecordView[];
 };
 
 type SchedulerGlobal = typeof globalThis & {
   __githubDashboardBackupScheduler?: BackupSchedulerState;
 };
+
+export type BackupRecordView =
+  | (DbBackupRecord & {
+      source: "database";
+      isAdditionalFile: false;
+      restoreKey: string;
+    })
+  | {
+      id: null;
+      filename: string;
+      directory: string;
+      filePath: string;
+      status: DbBackupStatus;
+      trigger: DbBackupTrigger;
+      startedAt: string;
+      completedAt: string | null;
+      sizeBytes: number | null;
+      error: string | null;
+      restoredAt: string | null;
+      createdBy: string | null;
+      source: "filesystem";
+      isAdditionalFile: true;
+      restoreKey: string;
+    };
+
+export type BackupRestoreKey =
+  | {
+      type: "database";
+      id: number;
+    }
+  | {
+      type: "filesystem";
+      filePath: string;
+    };
+
+const DATABASE_RESTORE_PREFIX = "db:";
+const FILESYSTEM_RESTORE_PREFIX = "fs:";
+
+export function encodeDatabaseRestoreKey(id: number) {
+  return `${DATABASE_RESTORE_PREFIX}${id}`;
+}
+
+export function encodeFilesystemRestoreKey(filePath: string) {
+  const encoded = Buffer.from(filePath, "utf8").toString("base64url");
+  return `${FILESYSTEM_RESTORE_PREFIX}${encoded}`;
+}
+
+export function parseBackupRestoreKey(key: string): BackupRestoreKey | null {
+  if (key.startsWith(DATABASE_RESTORE_PREFIX)) {
+    const numericPart = key.slice(DATABASE_RESTORE_PREFIX.length);
+    const id = Number.parseInt(numericPart, 10);
+    if (!Number.isFinite(id) || id <= 0) {
+      return null;
+    }
+    return { type: "database", id };
+  }
+
+  if (key.startsWith(FILESYSTEM_RESTORE_PREFIX)) {
+    const encoded = key.slice(FILESYSTEM_RESTORE_PREFIX.length);
+    if (!encoded) {
+      return null;
+    }
+
+    try {
+      const filePath = Buffer.from(encoded, "base64url").toString("utf8");
+      if (!filePath || filePath.includes("\u0000")) {
+        return null;
+      }
+      return { type: "filesystem", filePath };
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  return null;
+}
 
 const DEFAULT_BACKUP_HOUR = 2;
 
@@ -227,6 +304,94 @@ function timestampLabel() {
 
 function buildBackupFilename() {
   return `db-backup-${timestampLabel()}.dump`;
+}
+
+function toIsoDate(value: Date | null | undefined) {
+  if (!value) {
+    return new Date().toISOString();
+  }
+
+  const time = value.getTime();
+  if (Number.isNaN(time)) {
+    return new Date().toISOString();
+  }
+
+  return value.toISOString();
+}
+
+async function discoverFilesystemBackups(options: {
+  directory: string;
+  knownPaths: Set<string>;
+}): Promise<BackupRecordView[]> {
+  const { directory, knownPaths } = options;
+  let entries: Dirent[];
+
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
+      return [];
+    }
+
+    console.error(
+      `[backup] Failed to scan backup directory ${directory}`,
+      error,
+    );
+    return [];
+  }
+
+  const records: BackupRecordView[] = [];
+
+  for (const entry of entries) {
+    if (!entry.isFile?.()) {
+      continue;
+    }
+
+    const filename = entry.name;
+    if (!filename.startsWith("db-backup-")) {
+      continue;
+    }
+
+    const filePath = path.resolve(directory, filename);
+    if (knownPaths.has(filePath)) {
+      continue;
+    }
+
+    let fileInfo: Awaited<ReturnType<typeof stat>> | null = null;
+    try {
+      fileInfo = await stat(filePath);
+    } catch (error) {
+      console.error(`[backup] Failed to stat backup file ${filePath}`, error);
+      continue;
+    }
+
+    const sizeBytes =
+      typeof fileInfo.size === "number" && Number.isFinite(fileInfo.size)
+        ? fileInfo.size
+        : null;
+    const startedAt = toIsoDate(fileInfo.birthtime ?? fileInfo.mtime);
+    const completedAt = toIsoDate(fileInfo.mtime);
+
+    records.push({
+      id: null,
+      filename,
+      directory,
+      filePath,
+      status: "success",
+      trigger: "manual",
+      startedAt,
+      completedAt,
+      sizeBytes,
+      error: null,
+      restoredAt: null,
+      createdBy: null,
+      source: "filesystem",
+      isAdditionalFile: true,
+      restoreKey: encodeFilesystemRestoreKey(filePath),
+    });
+  }
+
+  return records;
 }
 
 function runChildProcess(
@@ -520,26 +685,60 @@ export async function runDatabaseBackup(options: {
 }
 
 export async function restoreDatabaseBackup(params: {
-  backupId: number;
+  backupId?: number;
+  filePath?: string;
   actorId?: string | null;
 }) {
   await withTrackedRun(async () => {
     await ensureSchema();
-    const record = await getBackupRecord(params.backupId);
-    if (!record) {
-      throw new Error("Backup record not found.");
+    const hasBackupId =
+      typeof params.backupId === "number" && Number.isFinite(params.backupId);
+    const hasFilePath =
+      typeof params.filePath === "string" && params.filePath.trim().length > 0;
+
+    if (hasBackupId === hasFilePath) {
+      throw new Error("A backup identifier or file path must be provided.");
     }
 
-    await access(record.filePath, fsConstants.R_OK).catch(() => {
+    if (hasBackupId && params.backupId) {
+      const record = await getBackupRecord(params.backupId);
+      if (!record) {
+        throw new Error("Backup record not found.");
+      }
+
+      await access(record.filePath, fsConstants.R_OK).catch(() => {
+        throw new Error("Backup file is not accessible on disk.");
+      });
+
+      await withJobLock("restore", async () => {
+        await executeRestore(record.filePath);
+      });
+
+      await markBackupRestored({ id: record.id });
+      console.info(`[backup] Restore completed from ${record.filePath}`);
+      await updateLastStatus({
+        status: "restored",
+        completedAt: new Date().toISOString(),
+        error: null,
+      });
+      await refreshScheduler();
+      return;
+    }
+
+    const filePathValue = params.filePath?.trim() ?? "";
+    if (!filePathValue) {
+      throw new Error("Backup file path is required.");
+    }
+    const normalizedPath = path.resolve(filePathValue);
+    await access(normalizedPath, fsConstants.R_OK).catch(() => {
       throw new Error("Backup file is not accessible on disk.");
     });
 
     await withJobLock("restore", async () => {
-      await executeRestore(record.filePath);
+      await executeRestore(normalizedPath);
     });
 
-    await markBackupRestored({ id: record.id });
-    console.info(`[backup] Restore completed from ${record.filePath}`);
+    console.info(`[backup] Restore completed from ${normalizedPath}`);
     await updateLastStatus({
       status: "restored",
       completedAt: new Date().toISOString(),
@@ -581,13 +780,39 @@ export async function updateBackupSchedule(params: {
 
 export async function getBackupRuntimeInfo(): Promise<BackupRuntimeInfo> {
   await ensureSchema();
-  const [config, records] = await Promise.all([
+  const [config, dbRecords] = await Promise.all([
     getSyncConfig(),
     listBackups(env.DB_BACKUP_RETENTION + 10),
   ]);
 
   const directory = env.DB_BACKUP_DIRECTORY;
   const retentionCount = env.DB_BACKUP_RETENTION;
+  const normalizedDbRecords: BackupRecordView[] = dbRecords.map((record) => ({
+    ...record,
+    source: "database" as const,
+    isAdditionalFile: false,
+    restoreKey: encodeDatabaseRestoreKey(record.id),
+  }));
+
+  const knownPaths = new Set(
+    normalizedDbRecords.map((record) => path.resolve(record.filePath)),
+  );
+  const filesystemRecords = await discoverFilesystemBackups({
+    directory,
+    knownPaths,
+  });
+
+  const combinedRecords = [...normalizedDbRecords, ...filesystemRecords].sort(
+    (a, b) => {
+      const aTime = new Date(a.startedAt ?? "").getTime();
+      const bTime = new Date(b.startedAt ?? "").getTime();
+
+      const safeATime = Number.isFinite(aTime) ? aTime : 0;
+      const safeBTime = Number.isFinite(bTime) ? bTime : 0;
+      return safeBTime - safeATime;
+    },
+  );
+
   const schedule: BackupScheduleConfig & {
     nextRunAt: string | null;
     lastStartedAt: string | null;
@@ -609,7 +834,7 @@ export async function getBackupRuntimeInfo(): Promise<BackupRuntimeInfo> {
     directory,
     retentionCount,
     schedule,
-    records,
+    records: combinedRecords,
   };
 }
 

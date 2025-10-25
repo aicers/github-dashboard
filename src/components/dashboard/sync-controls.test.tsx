@@ -1014,6 +1014,9 @@ describe("SyncControls", () => {
             error: null,
             restoredAt: null,
             createdBy: "admin",
+            source: "database",
+            isAdditionalFile: false,
+            restoreKey: "db:42",
           },
         ],
       },
@@ -1034,9 +1037,73 @@ describe("SyncControls", () => {
     await user.click(restoreButton);
 
     await waitFor(() =>
-      expect(hasRequest("/api/backup/42/restore", "POST")).toBe(true),
+      expect(hasRequest("/api/backup/db:42/restore", "POST")).toBe(true),
     );
     expect(routerRefreshMock).toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it("shows directory-only backups with a badge and restores them", async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi
+      .spyOn(window, "confirm")
+      .mockImplementation(() => true);
+
+    const status = buildStatus({
+      backup: {
+        directory: "/var/backups/github-dashboard",
+        retentionCount: 3,
+        schedule: {
+          enabled: true,
+          hourLocal: 3,
+          timezone: "UTC",
+          nextRunAt: null,
+          lastStartedAt: null,
+          lastCompletedAt: null,
+          lastStatus: "success",
+          lastError: null,
+        },
+        records: [
+          {
+            id: null,
+            filename: "db-backup-20240402.dump",
+            directory: "/var/backups/github-dashboard",
+            filePath: "/var/backups/github-dashboard/db-backup-20240402.dump",
+            status: "success",
+            trigger: "manual",
+            startedAt: "2024-04-02T02:00:00.000Z",
+            completedAt: "2024-04-02T02:03:00.000Z",
+            sizeBytes: 2048,
+            error: null,
+            restoredAt: null,
+            createdBy: null,
+            source: "filesystem",
+            isAdditionalFile: true,
+            restoreKey: "fs:external",
+          },
+        ],
+      },
+    });
+
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+        view="backup"
+        currentPathname="/dashboard/sync/backup"
+      />,
+    );
+
+    expect(screen.getByText("추가된 파일")).toBeInTheDocument();
+
+    const restoreButton = screen.getByRole("button", { name: "복구" });
+    await user.click(restoreButton);
+
+    await waitFor(() =>
+      expect(hasRequest("/api/backup/fs:external/restore", "POST")).toBe(true),
+    );
     confirmSpy.mockRestore();
   });
 
@@ -1069,6 +1136,9 @@ describe("SyncControls", () => {
             error: null,
             restoredAt: null,
             createdBy: "admin",
+            source: "database",
+            isAdditionalFile: false,
+            restoreKey: "db:1",
           },
         ],
       },
@@ -1125,6 +1195,9 @@ describe("SyncControls", () => {
             error: null,
             restoredAt: null,
             createdBy: "admin",
+            source: "database",
+            isAdditionalFile: false,
+            restoreKey: "db:10",
           },
           {
             id: 11,
@@ -1139,6 +1212,9 @@ describe("SyncControls", () => {
             error: "pg_dump가 종료 코드 1로 실패했습니다.",
             restoredAt: null,
             createdBy: null,
+            source: "database",
+            isAdditionalFile: false,
+            restoreKey: "db:11",
           },
         ],
       },
