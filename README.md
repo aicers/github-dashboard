@@ -160,6 +160,13 @@ Manual backfill and automatic sync share the same pipeline.
 Automatic sync additionally schedules the next run, while manual backfill
 repeats the same steps for each day slice in the requested range.
 
+> **Manual controls:** Issue status automation and activity cache refresh run
+> automatically after each sync, and administrators can re-run them from the Sync
+> tab (“진행 상태 설정” and “Activity 캐시 새로고침”) if a previous attempt failed or
+> stale data needs to be refreshed immediately. The activity snapshot refresh is
+> tightly coupled to the sync pipeline (a failure marks the sync as failed), so
+> no separate manual trigger is exposed.
+
 ### Real-time sync stream
 
 - **Server-Sent Events** — `GET /api/sync/stream` keeps an HTTP connection open
@@ -194,6 +201,87 @@ made from the dashboard continue to work, while project-driven fields and locks
 are simply disabled. This is useful if you track issue progress entirely inside
 the dashboard or maintain multiple GitHub projects and only want dashboard-side
 state.
+
+## Database backups
+
+The dashboard includes a lightweight backup scheduler so operators can snapshot
+the PostgreSQL database without leaving the UI.
+
+### Configuration
+
+Set the following environment variables alongside `DATABASE_URL`:
+
+<!-- markdownlint-disable MD013 -->
+| Variable | Description | Default |
+| --- | --- | --- |
+| `DB_BACKUP_DIRECTORY` | Absolute path where `.dump` files are written. Must be writable by the dashboard process. | `backups` in the project root |
+| `DB_BACKUP_RETENTION` | Maximum number of successful backups to keep. Older dumps (and their metadata) are deleted automatically. | `3` |
+<!-- markdownlint-enable MD013 -->
+
+The scheduler reads the user-configured hour and timezone from `sync_config`.
+Administrators can adjust the schedule from **Dashboard → 동기화 → 백업** or via
+`PATCH /api/sync/config { "backupHour": number }`.
+
+### What happens during a backup
+
+1. A record is inserted into `db_backups` with status `running`.
+2. `pg_dump --format=custom` writes a file named
+   `db-backup-YYYYMMDD-HHMMSS.dump` under `DB_BACKUP_DIRECTORY`.
+3. On success the record is updated to `success`, the size is stored, and a
+   metadata sidecar file (`.meta.json`) is written next to the dump, for
+   example:
+
+   ```json
+   {
+     "status": "success",
+     "trigger": "manual",
+     "startedAt": "2025-10-25T22:57:59.000Z",
+     "completedAt": "2025-10-25T22:58:02.000Z",
+     "sizeBytes": 675028992,
+     "createdBy": "admin-user"
+   }
+   ```
+
+   The metadata makes it easy to verify a dump even if you move it to another
+   machine—the UI reads the sidecar and falls back to filesystem timestamps if
+   it is missing.
+4. When retention is exceeded both the dump and sidecar are removed.
+
+If `pg_dump` fails the record becomes `failed`, the dump is left in place for
+inspection, and no metadata file is written.
+
+### Restoring a backup
+
+Use **복구** in the backup panel or call
+`POST /api/backup/<restoreKey>/restore`. The handler:
+
+1. Drops and recreates the `public` schema.
+2. Runs `pg_restore --clean --if-exists` with the selected dump.
+3. Marks the record as restored and refreshes the scheduler.
+
+Because the schema is rebuilt during restore, ensure you do not have unsaved
+changes in the target database. Copy both the `.dump` and `.meta.json` files if
+you need to move backups between environments.
+
+### Concurrency with sync runs
+
+Backups and sync runs share a cooperative locking system:
+
+- Backups acquire a `withJobLock("backup")` lock for the duration of `pg_dump`.
+  The job waits if a sync run is still in progress. As soon as the sync run
+  finishes the queued backup starts automatically.
+- Sync runs acquire `withJobLock("sync")` (inside the sync pipeline). When a
+  backup is in progress, new sync runs wait for the backup to finish.
+- Restore operations use a separate lock `withJobLock("restore")`. While a
+  restore is running, both sync runs and new backups will wait until the
+  restore completes.
+
+This guarantees only one of the long-running jobs (backup, restore, sync) touches
+the database at a time, preventing `pg_dump` from racing with writes. See
+[What each sync run does](#what-each-sync-run-does) for the full pipeline—GitHub
+data collection and the subsequent post-processing steps (automation, snapshot,
+caches) run sequentially. Administrators can manually re-run automation and cache
+refresh from the Sync tab if needed (the snapshot remains automatic-only).
 
 ## Quality Tooling
 
