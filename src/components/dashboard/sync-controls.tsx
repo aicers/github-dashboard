@@ -20,6 +20,7 @@ import type {
   IssueStatusAutomationSummary,
 } from "@/lib/activity/status-automation";
 import {
+  type DateTimeDisplayFormat,
   formatDateTime as formatDateTimeDisplay,
   normalizeDateTimeDisplayFormat,
 } from "@/lib/date-time-format";
@@ -28,6 +29,8 @@ import type { BackfillResult, SyncStatus } from "@/lib/sync/service";
 type SyncControlsProps = {
   status: SyncStatus;
   isAdmin: boolean;
+  timeZone?: string | null;
+  dateTimeFormat?: DateTimeDisplayFormat;
 };
 
 type ApiResponse<T> = {
@@ -252,21 +255,33 @@ function buildRunGroups(status: SyncStatus): RunGroup[] {
   return groups;
 }
 
-export function SyncControls({ status, isAdmin }: SyncControlsProps) {
+export function SyncControls({
+  status,
+  isAdmin,
+  timeZone: userTimeZone,
+  dateTimeFormat: userDateTimeFormat,
+}: SyncControlsProps) {
   const router = useRouter();
   const config = status.config;
+  const trimmedUserTimeZone =
+    typeof userTimeZone === "string" ? userTimeZone.trim() : "";
+  const configTimeZone =
+    typeof config?.timezone === "string" ? config.timezone.trim() : "";
   const timeZone =
-    typeof config?.timezone === "string" && config.timezone.trim().length
-      ? config.timezone
-      : null;
+    trimmedUserTimeZone.length > 0
+      ? trimmedUserTimeZone
+      : configTimeZone.length > 0
+        ? configTimeZone
+        : null;
   const dateTimeFormat = useMemo(
     () =>
+      userDateTimeFormat ??
       normalizeDateTimeDisplayFormat(
         typeof config?.date_time_format === "string"
           ? config.date_time_format
           : null,
       ),
-    [config?.date_time_format],
+    [config?.date_time_format, userDateTimeFormat],
   );
   const backfillInputId = useId();
   const [autoEnabled, setAutoEnabled] = useState(

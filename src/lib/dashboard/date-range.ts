@@ -143,11 +143,20 @@ export function resolveDashboardRange(
     | { timezone?: string | null; week_start?: WeekStartConfig }
     | null
     | undefined,
-  options?: { preset?: TimePresetKey; reference?: Date },
+  options?: {
+    preset?: TimePresetKey;
+    reference?: Date;
+    userTimeSettings?: { timezone: string; weekStart: WeekStart };
+  },
 ) {
-  const { preset = "last_14_days", reference } = options ?? {};
-  const timeZone = config?.timezone ?? "UTC";
-  const weekStart = normalizeWeekStart(config?.week_start);
+  const {
+    preset = "last_14_days",
+    reference,
+    userTimeSettings,
+  } = options ?? {};
+  const timeZone = userTimeSettings?.timezone ?? config?.timezone ?? "UTC";
+  const weekStart =
+    userTimeSettings?.weekStart ?? normalizeWeekStart(config?.week_start);
   const fallbackIso = (reference ?? new Date()).toISOString();
   const presetRange = buildRangeFromPreset(
     preset,

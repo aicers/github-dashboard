@@ -29,7 +29,9 @@ const START_TIME = new Date("2024-01-01T00:00:00.000Z");
 async function resetDatabaseState() {
   await ensureSchema();
   await query("TRUNCATE TABLE activity_saved_filters RESTART IDENTITY CASCADE");
-  await query("TRUNCATE TABLE users RESTART IDENTITY CASCADE");
+  await query(
+    "TRUNCATE TABLE users, user_preferences RESTART IDENTITY CASCADE",
+  );
 }
 
 async function seedUser(id: string) {

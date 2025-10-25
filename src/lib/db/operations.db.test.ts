@@ -14,7 +14,7 @@ import {
 const TEST_USER_ID = "user_123";
 
 afterEach(async () => {
-  await query("TRUNCATE TABLE users CASCADE");
+  await query("TRUNCATE TABLE users, user_preferences CASCADE");
 });
 
 describe("db operations", () => {

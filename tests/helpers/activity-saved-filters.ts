@@ -6,7 +6,9 @@ import { upsertUser } from "@/lib/db/operations";
 export async function resetActivitySavedFiltersTables() {
   await ensureSchema();
   await query("TRUNCATE TABLE activity_saved_filters RESTART IDENTITY CASCADE");
-  await query("TRUNCATE TABLE users RESTART IDENTITY CASCADE");
+  await query(
+    "TRUNCATE TABLE users, user_preferences RESTART IDENTITY CASCADE",
+  );
 }
 
 export async function seedActivityUser({

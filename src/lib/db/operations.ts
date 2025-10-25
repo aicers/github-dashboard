@@ -1299,6 +1299,64 @@ export async function listAllUsers(): Promise<UserProfile[]> {
   }));
 }
 
+export type UserPreferencesRow = {
+  userId: string;
+  timezone: string;
+  weekStart: "sunday" | "monday";
+  dateTimeFormat: string;
+};
+
+export async function getUserPreferences(
+  userId: string,
+): Promise<UserPreferencesRow | null> {
+  const result = await query<{
+    user_id: string;
+    timezone: string;
+    week_start: string;
+    date_time_format: string;
+  }>(
+    `SELECT user_id, timezone, week_start, date_time_format
+     FROM user_preferences
+     WHERE user_id = $1`,
+    [userId],
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    return null;
+  }
+
+  const weekStart =
+    row.week_start === "sunday" || row.week_start === "monday"
+      ? row.week_start
+      : "monday";
+
+  return {
+    userId: row.user_id,
+    timezone: row.timezone,
+    weekStart,
+    dateTimeFormat: row.date_time_format,
+  };
+}
+
+export async function upsertUserPreferences(params: {
+  userId: string;
+  timezone: string;
+  weekStart: "sunday" | "monday";
+  dateTimeFormat: string;
+}) {
+  await query(
+    `INSERT INTO user_preferences (user_id, timezone, week_start, date_time_format)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (user_id) DO UPDATE SET
+       timezone = EXCLUDED.timezone,
+       week_start = EXCLUDED.week_start,
+       date_time_format = EXCLUDED.date_time_format,
+       updated_at = NOW()`,
+    [params.userId, params.timezone, params.weekStart, params.dateTimeFormat],
+  );
+}
+
 export async function updateUserAvatarUrl(
   userId: string,
   avatarUrl: string | null,

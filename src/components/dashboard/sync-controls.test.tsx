@@ -213,7 +213,14 @@ describe("SyncControls", () => {
       ],
     });
 
-    render(<SyncControls status={status} isAdmin />);
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="Asia/Seoul"
+        dateTimeFormat="iso-24h"
+      />,
+    );
 
     expect(
       screen.getByRole("heading", { name: "데이터 동기화 제어" }),
@@ -259,7 +266,14 @@ describe("SyncControls", () => {
       ],
     });
 
-    render(<SyncControls status={status} isAdmin />);
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="Asia/Seoul"
+        dateTimeFormat="iso-24h"
+      />,
+    );
 
     expect(
       screen.getByText("2024-04-02 08:00 → 2024-04-02 09:00"),
@@ -279,7 +293,14 @@ describe("SyncControls", () => {
   it("disables sync actions and displays an admin notice for non-admin users", () => {
     const status = buildStatus();
 
-    render(<SyncControls status={status} isAdmin={false} />);
+    render(
+      <SyncControls
+        status={status}
+        isAdmin={false}
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+      />,
+    );
 
     expect(
       screen.getByText("관리자 권한이 있는 사용자만 실행할 수 있습니다."),
@@ -308,7 +329,14 @@ describe("SyncControls", () => {
 
     mockFetchJsonOnce({ success: true, result: backfillResult });
 
-    render(<SyncControls status={status} isAdmin />);
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+      />,
+    );
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "백필 실행" }));
@@ -371,7 +399,14 @@ describe("SyncControls", () => {
       },
     });
 
-    render(<SyncControls status={status} isAdmin />);
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+      />,
+    );
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "백필 실행" }));
@@ -394,7 +429,14 @@ describe("SyncControls", () => {
       json: { success: false, message: "backfill failed" },
     });
 
-    render(<SyncControls status={status} isAdmin />);
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+      />,
+    );
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "백필 실행" }));
@@ -424,7 +466,14 @@ describe("SyncControls", () => {
 
     mockFetchJsonOnce({ success: true, result: backfillResult });
 
-    render(<SyncControls status={status} isAdmin />);
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+      />,
+    );
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "백필 실행" }));
@@ -456,7 +505,14 @@ describe("SyncControls", () => {
       },
     });
 
-    render(<SyncControls status={status} isAdmin />);
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+      />,
+    );
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "자동 동기화 시작" }));
@@ -479,7 +535,14 @@ describe("SyncControls", () => {
       new Response(null, { status: 204, statusText: "No Content" }),
     );
 
-    render(<SyncControls status={status} isAdmin />);
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+      />,
+    );
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "자동 동기화 시작" }));
@@ -508,7 +571,14 @@ describe("SyncControls", () => {
       }),
     );
 
-    render(<SyncControls status={status} isAdmin />);
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+      />,
+    );
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "자동 동기화 중단" }));
@@ -533,7 +603,14 @@ describe("SyncControls", () => {
 
     mockFetchJsonOnce({ success: true, action: "enabled" });
 
-    render(<SyncControls status={status} isAdmin />);
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+      />,
+    );
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "자동 동기화 시작" }));
@@ -575,7 +652,14 @@ describe("SyncControls", () => {
       json: { success: false, message: "toggle failed" },
     });
 
-    render(<SyncControls status={status} isAdmin />);
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+      />,
+    );
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "자동 동기화 중단" }));
@@ -595,7 +679,14 @@ describe("SyncControls", () => {
       result: { runCount: 2, logCount: 3 },
     });
 
-    render(<SyncControls status={status} isAdmin />);
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+      />,
+    );
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "멈춘 동기화 정리" }));
@@ -629,7 +720,14 @@ describe("SyncControls", () => {
       result: { runCount: 0, logCount: 0 },
     });
 
-    render(<SyncControls status={status} isAdmin />);
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+      />,
+    );
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "멈춘 동기화 정리" }));
@@ -644,7 +742,14 @@ describe("SyncControls", () => {
   it("disables the cleanup button for non-admin users", async () => {
     const status = buildStatus();
 
-    render(<SyncControls status={status} isAdmin={false} />);
+    render(
+      <SyncControls
+        status={status}
+        isAdmin={false}
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+      />,
+    );
 
     const button = screen.getByRole("button", { name: "멈춘 동기화 정리" });
     expect(button).toBeDisabled();
