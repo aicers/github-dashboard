@@ -21,8 +21,10 @@ const queryMock = vi.fn();
 const accessMock = vi.fn();
 const mkdirMock = vi.fn();
 const readdirMock = vi.fn();
+const readFileMock = vi.fn();
 const rmMock = vi.fn();
 const statMock = vi.fn();
+const writeFileMock = vi.fn();
 
 const spawnMock = vi.fn();
 
@@ -78,8 +80,10 @@ vi.mock("node:fs/promises", () => ({
   access: accessMock,
   mkdir: mkdirMock,
   readdir: readdirMock,
+  readFile: readFileMock,
   rm: rmMock,
   stat: statMock,
+  writeFile: writeFileMock,
 }));
 
 vi.mock("node:child_process", () => ({
@@ -122,8 +126,10 @@ beforeEach(() => {
   accessMock.mockReset();
   mkdirMock.mockReset();
   readdirMock.mockReset();
+  readFileMock.mockReset();
   rmMock.mockReset();
   statMock.mockReset();
+  writeFileMock.mockReset();
   spawnMock.mockReset();
   childProcessStubs.length = 0;
   spawnMock.mockImplementation(() => {
@@ -140,6 +146,10 @@ beforeEach(() => {
   envValues.DB_BACKUP_RETENTION = 3;
 
   readdirMock.mockResolvedValue([]);
+  readFileMock.mockRejectedValue(
+    Object.assign(new Error("missing"), { code: "ENOENT" }),
+  );
+  writeFileMock.mockResolvedValue(undefined);
   vi.useRealTimers();
   vi.setSystemTime(new Date("2024-01-05T10:00:00.000Z"));
 });
@@ -262,9 +272,29 @@ describe("runDatabaseBackup", () => {
     expect(listBackupsMock).toHaveBeenCalledWith(
       envValues.DB_BACKUP_RETENTION + 10,
     );
-    expect(rmMock).toHaveBeenCalledTimes(1);
-    expect(rmMock).toHaveBeenCalledWith("/tmp/4.dump", { force: true });
+    expect(rmMock).toHaveBeenCalledTimes(2);
+    expect(rmMock).toHaveBeenNthCalledWith(1, "/tmp/4.dump", {
+      force: true,
+    });
+    expect(rmMock).toHaveBeenNthCalledWith(2, "/tmp/4.dump.meta.json", {
+      force: true,
+    });
     expect(deleteBackupRecordMock).toHaveBeenCalledWith(4);
+
+    const metadataCall = writeFileMock.mock.calls.find(([filePath]) =>
+      filePath.toString().endsWith(".meta.json"),
+    );
+    expect(metadataCall).toBeTruthy();
+    if (metadataCall) {
+      const [metadataPath, raw, encoding] = metadataCall;
+      expect(metadataPath).toContain(envValues.DB_BACKUP_DIRECTORY);
+      expect(encoding).toBe("utf8");
+      const metadata = JSON.parse(raw as string);
+      expect(metadata.status).toBe("success");
+      expect(metadata.trigger).toBe("manual");
+      expect(typeof metadata.startedAt).toBe("string");
+      expect(metadata.completedAt).toBeDefined();
+    }
 
     const info = await getBackupRuntimeInfo();
     expect(info.directory).toBe(envValues.DB_BACKUP_DIRECTORY);
@@ -375,7 +405,7 @@ describe("getBackupRuntimeInfo", () => {
         filename: "db-backup-20240105.dump",
         directory: envValues.DB_BACKUP_DIRECTORY,
         filePath: trackedFile,
-        status: "success",
+        status: "running",
         trigger: "automatic",
         startedAt: "2024-01-05T00:00:00.000Z",
         completedAt: "2024-01-05T00:02:00.000Z",
@@ -391,7 +421,34 @@ describe("getBackupRuntimeInfo", () => {
         name: "db-backup-20240106.dump",
         isFile: () => true,
       },
+      {
+        name: "db-backup-20240106.dump.meta.json",
+        isFile: () => true,
+      },
     ]);
+    readFileMock.mockImplementation(async (filePath: string) => {
+      if (filePath.endsWith("db-backup-20240106.dump.meta.json")) {
+        return `${JSON.stringify({
+          status: "failed",
+          trigger: "automatic",
+          startedAt: "2024-01-06T00:00:00.000Z",
+          completedAt: "2024-01-06T00:03:00.000Z",
+          sizeBytes: 4_096,
+          error: "Checksum mismatch",
+          createdBy: "bot",
+        })}\n`;
+      }
+      if (filePath.endsWith("db-backup-20240105.dump.meta.json")) {
+        return `${JSON.stringify({
+          status: "success",
+          trigger: "automatic",
+          startedAt: "2024-01-05T00:00:00.000Z",
+          completedAt: "2024-01-05T00:02:00.000Z",
+          sizeBytes: 2_560,
+        })}\n`;
+      }
+      throw Object.assign(new Error("missing"), { code: "ENOENT" });
+    });
 
     statMock.mockImplementation(async (filePath: string) => {
       if (filePath === untrackedFile) {
@@ -418,6 +475,13 @@ describe("getBackupRuntimeInfo", () => {
       filePath: untrackedFile,
       isAdditionalFile: true,
       source: "filesystem",
+      status: "failed",
+      trigger: "automatic",
+      sizeBytes: 4_096,
+      error: "Checksum mismatch",
+      createdBy: "bot",
+      startedAt: "2024-01-06T00:00:00.000Z",
+      completedAt: "2024-01-06T00:03:00.000Z",
     });
     expect(info.records[0].restoreKey.startsWith("fs:")).toBe(true);
     expect(info.records[1]).toMatchObject({
@@ -427,6 +491,8 @@ describe("getBackupRuntimeInfo", () => {
       source: "database",
       restoreKey: "db:10",
     });
+    expect(info.records[1].status).toBe("success");
+    expect(info.records[1].sizeBytes).toBe(2_560);
   });
 });
 
@@ -452,6 +518,12 @@ describe("restoreDatabaseBackup", () => {
       "DROP SCHEMA IF EXISTS public CASCADE",
     );
     expect(queryMock).toHaveBeenCalledWith("CREATE SCHEMA public");
+    expect(queryMock).toHaveBeenCalledWith(
+      "GRANT ALL ON SCHEMA public TO CURRENT_USER",
+    );
+    expect(queryMock).toHaveBeenCalledWith(
+      "GRANT ALL ON SCHEMA public TO public",
+    );
     expect(markBackupRestoredMock).toHaveBeenCalledWith({ id: 7 });
     expect(updateSyncConfigMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -482,6 +554,12 @@ describe("restoreDatabaseBackup", () => {
       "DROP SCHEMA IF EXISTS public CASCADE",
     );
     expect(queryMock).toHaveBeenCalledWith("CREATE SCHEMA public");
+    expect(queryMock).toHaveBeenCalledWith(
+      "GRANT ALL ON SCHEMA public TO CURRENT_USER",
+    );
+    expect(queryMock).toHaveBeenCalledWith(
+      "GRANT ALL ON SCHEMA public TO public",
+    );
     expect(markBackupRestoredMock).not.toHaveBeenCalled();
     expect(updateSyncConfigMock).toHaveBeenCalledWith(
       expect.objectContaining({
