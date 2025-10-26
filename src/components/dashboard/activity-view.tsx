@@ -435,8 +435,15 @@ function applyFiltersToQuery(
   router: ReturnType<typeof useRouter>,
   filters: FilterState,
   defaultPerPage: number,
+  resolveLabelKeys: (labels: readonly string[]) => string[],
 ) {
-  const params = normalizeSearchParams(filters, defaultPerPage);
+  const params = normalizeSearchParams(
+    {
+      ...filters,
+      labelKeys: resolveLabelKeys(filters.labelKeys),
+    },
+    defaultPerPage,
+  );
   const query = params.toString();
   router.replace(
     query.length ? `/dashboard/activity?${query}` : "/dashboard/activity",
@@ -1140,9 +1147,141 @@ export function ActivityView({
   const searchParams = useSearchParams();
   const perPageDefault =
     initialData.pageInfo.perPage ?? PER_PAGE_CHOICES[1] ?? 25;
+  const labelMetadata = useMemo(() => {
+    const groups = new Map<
+      string,
+      { keys: Set<string>; repositories: Set<string> }
+    >();
+    const keyToName = new Map<string, string>();
+
+    filterOptions.labels.forEach((label) => {
+      const rawName = typeof label.name === "string" ? label.name.trim() : "";
+      const labelKey = label.key ?? "";
+      const separatorIndex = labelKey.lastIndexOf(":");
+      const fallback =
+        separatorIndex >= 0 && separatorIndex < labelKey.length - 1
+          ? labelKey.slice(separatorIndex + 1).trim()
+          : labelKey.trim();
+      const normalizedName =
+        rawName.length > 0
+          ? rawName
+          : fallback.length > 0
+            ? fallback
+            : labelKey;
+
+      keyToName.set(labelKey, normalizedName);
+
+      let group = groups.get(normalizedName);
+      if (!group) {
+        group = { keys: new Set<string>(), repositories: new Set<string>() };
+        groups.set(normalizedName, group);
+      }
+      group.keys.add(labelKey);
+
+      const repositoryName = label.repositoryNameWithOwner?.trim();
+      if (repositoryName && repositoryName.length > 0) {
+        group.repositories.add(repositoryName);
+      }
+    });
+
+    const nameToKeys = new Map<string, string[]>();
+    const options: MultiSelectOption[] = Array.from(groups.entries())
+      .sort(([firstName], [secondName]) => firstName.localeCompare(secondName))
+      .map(([name, group]) => {
+        const keys = Array.from(group.keys).sort((a, b) => a.localeCompare(b));
+        nameToKeys.set(name, keys);
+
+        let description: string | null = null;
+        if (group.repositories.size > 0) {
+          const repoList = Array.from(group.repositories).sort((a, b) =>
+            a.localeCompare(b),
+          );
+          if (repoList.length > 3) {
+            const preview = repoList.slice(0, 3).join(", ");
+            description = `${preview} 외 ${repoList.length - 3}개 저장소`;
+          } else {
+            description = repoList.join(", ");
+          }
+        }
+
+        return {
+          value: name,
+          label: name,
+          description,
+        };
+      });
+
+    return {
+      options,
+      nameToKeys,
+      keyToName,
+    };
+  }, [filterOptions.labels]);
+
+  const convertFilterLabelKeysToNames = useCallback(
+    (state: FilterState): FilterState => {
+      if (!state.labelKeys.length) {
+        return state;
+      }
+      const seen = new Set<string>();
+      const next: string[] = [];
+      state.labelKeys.forEach((value) => {
+        let resolved = labelMetadata.keyToName.get(value);
+        if (!resolved) {
+          const lastColon = value.lastIndexOf(":");
+          if (lastColon >= 0 && lastColon < value.length - 1) {
+            resolved = value.slice(lastColon + 1);
+          } else {
+            resolved = value;
+          }
+        }
+        const trimmed = resolved.trim();
+        const finalValue = trimmed.length ? trimmed : resolved;
+        if (!finalValue.length || seen.has(finalValue)) {
+          return;
+        }
+        seen.add(finalValue);
+        next.push(finalValue);
+      });
+
+      if (
+        next.length === state.labelKeys.length &&
+        next.every((value, index) => value === state.labelKeys[index])
+      ) {
+        return state;
+      }
+      return { ...state, labelKeys: next };
+    },
+    [labelMetadata],
+  );
+
+  const resolveLabelKeys = useCallback(
+    (names: readonly string[]): string[] => {
+      if (!names.length) {
+        return [];
+      }
+      const resolved = new Set<string>();
+      names.forEach((name) => {
+        const keys = labelMetadata.nameToKeys.get(name);
+        if (keys && keys.length > 0) {
+          for (const key of keys) {
+            resolved.add(key);
+          }
+        } else {
+          resolved.add(name);
+        }
+      });
+      return Array.from(resolved).sort((a, b) => a.localeCompare(b));
+    },
+    [labelMetadata],
+  );
+
   const initialState = useMemo(
-    () => buildFilterState(initialParams, perPageDefault),
-    [initialParams, perPageDefault],
+    () =>
+      convertFilterLabelKeysToNames(
+        buildFilterState(initialParams, perPageDefault),
+      ),
+    [convertFilterLabelKeysToNames, initialParams, perPageDefault],
   );
 
   const perPageChoices = useMemo(() => {
@@ -1199,6 +1338,11 @@ export function ActivityView({
   >(null);
   const savedFilterSelectId = useId();
   const jumpDateInputId = useId();
+
+  useEffect(() => {
+    setDraft((current) => convertFilterLabelKeysToNames(current));
+    setApplied((current) => convertFilterLabelKeysToNames(current));
+  }, [convertFilterLabelKeysToNames]);
   const activeTimezone = listData.timezone ?? null;
   const activeDateTimeFormat = listData.dateTimeFormat;
   const trimmedTimezone = activeTimezone?.trim() ?? "";
@@ -1317,24 +1461,7 @@ export function ActivityView({
     [filterOptions.repositories],
   );
 
-  const labelOptions = useMemo<MultiSelectOption[]>(() => {
-    if (!draft.repositoryIds.length) {
-      return filterOptions.labels.map((label) => ({
-        value: label.key,
-        label: label.key,
-        description: label.repositoryNameWithOwner,
-      }));
-    }
-
-    const repoSet = new Set(draft.repositoryIds);
-    return filterOptions.labels
-      .filter((label) => repoSet.has(label.repositoryId))
-      .map((label) => ({
-        value: label.key,
-        label: label.key,
-        description: label.repositoryNameWithOwner,
-      }));
-  }, [draft.repositoryIds, filterOptions.labels]);
+  const labelOptions = labelMetadata.options;
 
   const issueTypeOptions = useMemo<MultiSelectOption[]>(() => {
     return filterOptions.issueTypes.map((issueType) => ({
@@ -1400,10 +1527,6 @@ export function ActivityView({
   );
 
   useEffect(() => {
-    if (!draft.repositoryIds.length) {
-      return;
-    }
-
     const allowed = new Set(labelOptions.map((label) => label.value));
     setDraft((current) => {
       const sanitized = current.labelKeys.filter((key) => allowed.has(key));
@@ -1413,7 +1536,15 @@ export function ActivityView({
 
       return { ...current, labelKeys: sanitized };
     });
-  }, [draft.repositoryIds, labelOptions]);
+    setApplied((current) => {
+      const sanitized = current.labelKeys.filter((key) => allowed.has(key));
+      if (sanitized.length === current.labelKeys.length) {
+        return current;
+      }
+
+      return { ...current, labelKeys: sanitized };
+    });
+  }, [labelOptions]);
 
   useEffect(() => {
     setDraft((current) => {
@@ -1577,14 +1708,15 @@ export function ActivityView({
   const quickFilterCanonicalSet = useMemo(() => {
     const keys = new Set<string>();
     quickFilterDefinitions.forEach((definition) => {
-      const payload = buildSavedFilterPayload({
+      const baseState = convertFilterLabelKeysToNames({
         ...definition.buildState(draft.perPage),
         page: 1,
       });
+      const payload = buildSavedFilterPayload(baseState);
       keys.add(canonicalizeActivityParams(payload));
     });
     return keys;
-  }, [draft.perPage, quickFilterDefinitions]);
+  }, [convertFilterLabelKeysToNames, draft.perPage, quickFilterDefinitions]);
 
   const canonicalDraftKey = useMemo(
     () =>
@@ -1609,29 +1741,36 @@ export function ActivityView({
 
   const savedFilterCanonicalEntries = useMemo(
     () =>
-      savedFilters.map((filter) => ({
-        id: filter.id,
-        key: canonicalizeActivityParams(
-          buildSavedFilterPayload(
-            buildFilterState(filter.payload, perPageDefault),
-          ),
-        ),
-      })),
-    [perPageDefault, savedFilters],
+      savedFilters.map((filter) => {
+        const state = convertFilterLabelKeysToNames(
+          buildFilterState(filter.payload, perPageDefault),
+        );
+        return {
+          id: filter.id,
+          key: canonicalizeActivityParams(buildSavedFilterPayload(state)),
+        };
+      }),
+    [convertFilterLabelKeysToNames, perPageDefault, savedFilters],
   );
 
   const activeQuickFilterId = useMemo(() => {
     for (const definition of quickFilterDefinitions) {
-      const payload = buildSavedFilterPayload({
+      const baseState = convertFilterLabelKeysToNames({
         ...definition.buildState(draft.perPage),
         page: 1,
       });
+      const payload = buildSavedFilterPayload(baseState);
       if (canonicalizeActivityParams(payload) === canonicalDraftKey) {
         return definition.id;
       }
     }
     return null;
-  }, [canonicalDraftKey, draft.perPage, quickFilterDefinitions]);
+  }, [
+    canonicalDraftKey,
+    convertFilterLabelKeysToNames,
+    draft.perPage,
+    quickFilterDefinitions,
+  ]);
 
   useEffect(() => {
     const matched = savedFilterCanonicalEntries.find(
@@ -1890,7 +2029,11 @@ export function ActivityView({
       const controller = new AbortController();
       fetchControllerRef.current = controller;
 
-      const params = normalizeSearchParams(nextFilters, perPageDefault);
+      const resolvedFilters: FilterState = {
+        ...nextFilters,
+        labelKeys: resolveLabelKeys(nextFilters.labelKeys),
+      };
+      const params = normalizeSearchParams(resolvedFilters, perPageDefault);
       if (options.jumpToDate) {
         params.set("jumpTo", options.jumpToDate);
       }
@@ -1915,7 +2058,12 @@ export function ActivityView({
         };
         setApplied(nextState);
         setDraft(nextState);
-        applyFiltersToQuery(router, nextState, perPageDefault);
+        applyFiltersToQuery(
+          router,
+          nextState,
+          perPageDefault,
+          resolveLabelKeys,
+        );
 
         if (
           options.previousSync &&
@@ -1936,15 +2084,15 @@ export function ActivityView({
         }
       }
     },
-    [perPageDefault, router, showNotification],
+    [perPageDefault, resolveLabelKeys, router, showNotification],
   );
 
   const handleApplyQuickFilter = useCallback(
     (definition: QuickFilterDefinition) => {
-      const nextState = {
+      const nextState = convertFilterLabelKeysToNames({
         ...definition.buildState(draft.perPage),
         page: 1,
-      };
+      });
       const nextKey = canonicalizeActivityParams(
         buildSavedFilterPayload(nextState),
       );
@@ -1959,7 +2107,12 @@ export function ActivityView({
       setJumpDate("");
       void fetchActivity(nextState);
     },
-    [canonicalDraftKey, draft.perPage, fetchActivity],
+    [
+      canonicalDraftKey,
+      convertFilterLabelKeysToNames,
+      draft.perPage,
+      fetchActivity,
+    ],
   );
 
   useEffect(() => {
@@ -1998,10 +2151,10 @@ export function ActivityView({
       return;
     }
 
-    const nextState = {
+    const nextState = convertFilterLabelKeysToNames({
       ...definition.buildState(draft.perPage),
       page: 1,
-    };
+    });
     const nextKey = canonicalizeActivityParams(
       buildSavedFilterPayload(nextState),
     );
@@ -2015,6 +2168,7 @@ export function ActivityView({
     handleApplyQuickFilter(definition);
   }, [
     canonicalDraftKey,
+    convertFilterLabelKeysToNames,
     draft.perPage,
     handleApplyQuickFilter,
     quickFilterDefinitions,
@@ -2028,10 +2182,10 @@ export function ActivityView({
         ...filter.payload,
         page: 1,
       };
-      const nextState = {
+      const nextState = convertFilterLabelKeysToNames({
         ...buildFilterState(params, perPageDefault),
         page: 1,
-      };
+      });
       setDraft(nextState);
       setApplied(nextState);
       setSelectedSavedFilterId(filter.id);
@@ -2039,7 +2193,7 @@ export function ActivityView({
       setJumpDate("");
       void fetchActivity(nextState);
     },
-    [fetchActivity, perPageDefault],
+    [convertFilterLabelKeysToNames, fetchActivity, perPageDefault],
   );
 
   const saveCurrentFilters = useCallback(async () => {
@@ -2369,9 +2523,11 @@ export function ActivityView({
   );
 
   const resetFilters = useCallback(() => {
-    const base = buildFilterState({}, perPageDefault);
+    const base = convertFilterLabelKeysToNames(
+      buildFilterState({}, perPageDefault),
+    );
     setDraft(base);
-  }, [perPageDefault]);
+  }, [convertFilterLabelKeysToNames, perPageDefault]);
 
   const applyDraftFilters = useCallback(() => {
     if (!hasPendingChanges) {
@@ -3383,7 +3539,7 @@ export function ActivityView({
                 />
                 <MultiSelectInput
                   label="라벨"
-                  placeholder="repo:label"
+                  placeholder="라벨 선택"
                   value={draft.labelKeys}
                   onChange={(next) =>
                     setDraft((current) => ({ ...current, labelKeys: next }))
