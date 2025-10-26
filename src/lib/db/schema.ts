@@ -250,6 +250,7 @@ const SCHEMA_STATEMENTS = [
     timezone TEXT NOT NULL DEFAULT 'UTC',
     week_start TEXT NOT NULL DEFAULT 'monday',
     date_time_format TEXT NOT NULL DEFAULT 'auto',
+    activity_rows_per_page INTEGER NOT NULL DEFAULT 25,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
@@ -258,6 +259,11 @@ const SCHEMA_STATEMENTS = [
   `ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS date_time_format TEXT NOT NULL DEFAULT 'auto'`,
   `ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS holiday_calendar_code TEXT`,
   `ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS holiday_calendar_codes TEXT[] NOT NULL DEFAULT '{}'`,
+  `ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS activity_rows_per_page INTEGER`,
+  `ALTER TABLE user_preferences ALTER COLUMN activity_rows_per_page SET DEFAULT 25`,
+  `UPDATE user_preferences
+     SET activity_rows_per_page = 25
+     WHERE activity_rows_per_page IS NULL`,
   `UPDATE user_preferences
      SET holiday_calendar_codes = ARRAY[holiday_calendar_code]
      WHERE COALESCE(array_length(holiday_calendar_codes, 1), 0) = 0

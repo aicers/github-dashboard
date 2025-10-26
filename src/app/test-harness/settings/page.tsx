@@ -166,6 +166,7 @@ export default async function SettingsHarnessPage({
         currentUserAvatarUrl={null}
         currentUserOriginalAvatarUrl={"https://github.com/images/octocat.png"}
         currentUserCustomAvatarUrl={null}
+        activityRowsPerPage={25}
       />
       <p className="text-sm text-muted-foreground">
         Query with <code>?admin=false</code> to preview the non-admin read-only

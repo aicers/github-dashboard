@@ -170,6 +170,7 @@ describe("sync config API routes", () => {
     expect(preferences?.timezone).toBe("Asia/Seoul");
     expect(preferences?.weekStart).toBe("sunday");
     expect(preferences?.dateTimeFormat).toBe("en-gb-24h");
+    expect(preferences?.activityRowsPerPage).toBe(25);
 
     await Promise.resolve();
     await Promise.resolve();
@@ -262,6 +263,7 @@ describe("sync config API routes", () => {
           timezone: "Europe/London",
           weekStart: "sunday",
           dateTimeFormat: "dot-24h",
+          activityRowsPerPage: 40,
         }),
       }),
     );
@@ -274,6 +276,7 @@ describe("sync config API routes", () => {
     expect(preferences?.timezone).toBe("Europe/London");
     expect(preferences?.weekStart).toBe("sunday");
     expect(preferences?.dateTimeFormat).toBe("dot-24h");
+    expect(preferences?.activityRowsPerPage).toBe(40);
 
     const config = await getSyncConfig();
     expect(config?.timezone).toBe("UTC");

@@ -2393,13 +2393,42 @@ export function ActivityView({
     [applied, fetchActivity, listData.pageInfo.page],
   );
 
+  const persistActivityRowsPreference = useCallback(
+    async (perPage: number) => {
+      try {
+        const response = await fetch("/api/sync/config", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ activityRowsPerPage: perPage }),
+        });
+        if (!response.ok) {
+          let message = "Rows 설정을 저장하지 못했어요.";
+          try {
+            const payload = (await response.json()) as { message?: string };
+            if (payload?.message) {
+              message = payload.message;
+            }
+          } catch {
+            // ignore parsing errors
+          }
+          showNotification(message);
+        }
+      } catch (error) {
+        console.error("Failed to persist activity rows preference", error);
+        showNotification("Rows 설정을 저장하지 못했어요.");
+      }
+    },
+    [showNotification],
+  );
+
   const changePerPage = useCallback(
     (perPage: number) => {
       const nextState = { ...applied, perPage, page: 1 };
       setDraft(nextState);
       fetchActivity(nextState);
+      void persistActivityRowsPreference(perPage);
     },
-    [applied, fetchActivity],
+    [applied, fetchActivity, persistActivityRowsPreference],
   );
 
   const jumpToDate = useCallback(() => {
@@ -3868,7 +3897,7 @@ export function ActivityView({
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs uppercase text-foreground">Rows</span>
+            <span className="text-xs font-medium text-foreground">Rows</span>
             <select
               className="rounded-md border border-border bg-background px-2 py-1 text-sm"
               value={draft.perPage}

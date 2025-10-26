@@ -118,6 +118,7 @@ export default async function SettingsPage() {
       currentUserAvatarUrl={avatarState.avatarUrl}
       currentUserOriginalAvatarUrl={avatarState.originalAvatarUrl}
       currentUserCustomAvatarUrl={avatarState.customAvatarUrl}
+      activityRowsPerPage={timeSettings.activityRowsPerPage}
     />
   );
 }

@@ -1388,6 +1388,7 @@ export type UserPreferencesRow = {
   dateTimeFormat: string;
   holidayCalendarCode: HolidayCalendarCode | null;
   holidayCalendarCodes: HolidayCalendarCode[];
+  activityRowsPerPage: number;
 };
 
 export async function getUserPreferences(
@@ -1400,13 +1401,15 @@ export async function getUserPreferences(
     date_time_format: string;
     holiday_calendar_code: HolidayCalendarCode | null;
     holiday_calendar_codes: HolidayCalendarCode[] | null;
+    activity_rows_per_page: number | null;
   }>(
     `SELECT user_id,
             timezone,
             week_start,
             date_time_format,
             holiday_calendar_code,
-            holiday_calendar_codes
+            holiday_calendar_codes,
+            activity_rows_per_page
      FROM user_preferences
      WHERE user_id = $1`,
     [userId],
@@ -1457,6 +1460,10 @@ export async function getUserPreferences(
     dateTimeFormat: row.date_time_format,
     holidayCalendarCode,
     holidayCalendarCodes: normalizedCodes,
+    activityRowsPerPage:
+      typeof row.activity_rows_per_page === "number"
+        ? row.activity_rows_per_page
+        : 25,
   };
 }
 
@@ -1475,13 +1482,15 @@ export async function getUserPreferencesByIds(
     date_time_format: string;
     holiday_calendar_code: HolidayCalendarCode | null;
     holiday_calendar_codes: HolidayCalendarCode[] | null;
+    activity_rows_per_page: number | null;
   }>(
     `SELECT user_id,
             timezone,
             week_start,
             date_time_format,
             holiday_calendar_code,
-            holiday_calendar_codes
+            holiday_calendar_codes,
+            activity_rows_per_page
      FROM user_preferences
      WHERE user_id = ANY($1::text[])`,
     [uniqueIds],
@@ -1530,6 +1539,10 @@ export async function getUserPreferencesByIds(
       dateTimeFormat: row.date_time_format,
       holidayCalendarCode,
       holidayCalendarCodes: normalizedCodes,
+      activityRowsPerPage:
+        typeof row.activity_rows_per_page === "number"
+          ? row.activity_rows_per_page
+          : 25,
     });
   }
 
@@ -1542,6 +1555,7 @@ export async function upsertUserPreferences(params: {
   weekStart: "sunday" | "monday";
   dateTimeFormat: string;
   holidayCalendarCodes: HolidayCalendarCode[];
+  activityRowsPerPage: number;
 }) {
   const uniqueCodes = Array.from(
     new Set<HolidayCalendarCode>(params.holidayCalendarCodes),
@@ -1555,15 +1569,17 @@ export async function upsertUserPreferences(params: {
        week_start,
        date_time_format,
        holiday_calendar_code,
-       holiday_calendar_codes
+       holiday_calendar_codes,
+       activity_rows_per_page
      )
-     VALUES ($1, $2, $3, $4, $5, $6)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (user_id) DO UPDATE SET
        timezone = EXCLUDED.timezone,
        week_start = EXCLUDED.week_start,
        date_time_format = EXCLUDED.date_time_format,
        holiday_calendar_code = EXCLUDED.holiday_calendar_code,
        holiday_calendar_codes = EXCLUDED.holiday_calendar_codes,
+       activity_rows_per_page = EXCLUDED.activity_rows_per_page,
        updated_at = NOW()`,
     [
       params.userId,
@@ -1572,6 +1588,7 @@ export async function upsertUserPreferences(params: {
       params.dateTimeFormat,
       primaryCode,
       uniqueCodes,
+      params.activityRowsPerPage,
     ],
   );
 }
