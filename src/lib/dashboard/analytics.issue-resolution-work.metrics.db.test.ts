@@ -6,6 +6,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import {
+  calculateBusinessHoursBetween,
+  EMPTY_HOLIDAY_SET,
+} from "@/lib/dashboard/business-days";
+import {
   type DbActor,
   type DbIssue,
   type DbRepository,
@@ -35,6 +39,13 @@ type DurationSpec = {
 };
 
 type PeriodDurations = Record<RoleKey, DurationSpec>;
+
+type BusinessDuration = {
+  resolutionHours: number;
+  workHours: number;
+};
+
+type BusinessPeriodDurations = Record<RoleKey, BusinessDuration>;
 
 function createDurationIssue(
   repository: DbRepository,
@@ -178,6 +189,17 @@ describe("analytics issue resolution and work metrics", () => {
       },
     };
 
+    const businessDurations: Record<PeriodKey, BusinessPeriodDurations> =
+      Object.fromEntries(
+        PERIODS.map((period) => [
+          period,
+          {
+            parent: convertToBusinessDurations(specs[period].parent),
+            child: convertToBusinessDurations(specs[period].child),
+          },
+        ]),
+      ) as Record<PeriodKey, BusinessPeriodDurations>;
+
     let issueNumber = 1;
     for (const period of PERIODS) {
       for (const role of ["parent", "child"] as const) {
@@ -201,24 +223,24 @@ describe("analytics issue resolution and work metrics", () => {
     const history = analytics.organization.metricHistory;
 
     const expectedResolutionHistory = PERIODS.map((period) => {
-      const { parent, child } = specs[period];
+      const { parent, child } = businessDurations[period];
       return calculateAverage([parent.resolutionHours, child.resolutionHours]);
     });
     const expectedWorkHistory = PERIODS.map((period) => {
-      const { parent, child } = specs[period];
+      const { parent, child } = businessDurations[period];
       return calculateAverage([parent.workHours, child.workHours]);
     });
     const expectedParentResolutionHistory = PERIODS.map(
-      (period) => specs[period].parent.resolutionHours,
+      (period) => businessDurations[period].parent.resolutionHours,
     );
     const expectedChildResolutionHistory = PERIODS.map(
-      (period) => specs[period].child.resolutionHours,
+      (period) => businessDurations[period].child.resolutionHours,
     );
     const expectedParentWorkHistory = PERIODS.map(
-      (period) => specs[period].parent.workHours,
+      (period) => businessDurations[period].parent.workHours,
     );
     const expectedChildWorkHistory = PERIODS.map(
-      (period) => specs[period].child.workHours,
+      (period) => businessDurations[period].child.workHours,
     );
 
     const expectedResolutionCurrent =
@@ -249,19 +271,19 @@ describe("analytics issue resolution and work metrics", () => {
     );
 
     expect(metrics.parentIssueResolutionTime.current).toBeCloseTo(
-      specs.current.parent.resolutionHours,
+      businessDurations.current.parent.resolutionHours,
       5,
     );
     expect(metrics.childIssueResolutionTime.current).toBeCloseTo(
-      specs.current.child.resolutionHours,
+      businessDurations.current.child.resolutionHours,
       5,
     );
     expect(metrics.parentIssueWorkTime.current).toBeCloseTo(
-      specs.current.parent.workHours,
+      businessDurations.current.parent.workHours,
       5,
     );
     expect(metrics.childIssueWorkTime.current).toBeCloseTo(
-      specs.current.child.workHours,
+      businessDurations.current.child.workHours,
       5,
     );
 
@@ -528,13 +550,18 @@ describe("analytics issue resolution and work metrics", () => {
     const resolutionMetric = analytics.organization.metrics.issueResolutionTime;
     const workMetric = analytics.organization.metrics.issueWorkTime;
 
+    const primaryBusiness: BusinessPeriodDurations = {
+      parent: convertToBusinessDurations(primarySpecs.parent),
+      child: convertToBusinessDurations(primarySpecs.child),
+    };
+
     const expectedResolution = calculateAverage([
-      primarySpecs.parent.resolutionHours,
-      primarySpecs.child.resolutionHours,
+      primaryBusiness.parent.resolutionHours,
+      primaryBusiness.child.resolutionHours,
     ]);
     const expectedWork = calculateAverage([
-      primarySpecs.parent.workHours,
-      primarySpecs.child.workHours,
+      primaryBusiness.parent.workHours,
+      primaryBusiness.child.workHours,
     ]);
 
     expect(resolutionMetric.current).toBeCloseTo(expectedResolution, 5);
@@ -555,3 +582,24 @@ describe("analytics issue resolution and work metrics", () => {
     expect(workMap.current ?? Number.NaN).toBeCloseTo(expectedWork, 5);
   });
 });
+
+function convertToBusinessDurations(spec: DurationSpec): BusinessDuration {
+  const resolutionStart = shiftHours(spec.closedAt, -spec.resolutionHours);
+  const workStart = shiftHours(spec.closedAt, -spec.workHours);
+  const resolutionHours =
+    calculateBusinessHoursBetween(
+      resolutionStart,
+      spec.closedAt,
+      EMPTY_HOLIDAY_SET,
+    ) ?? Number.NaN;
+  const workHours =
+    calculateBusinessHoursBetween(
+      workStart,
+      spec.closedAt,
+      EMPTY_HOLIDAY_SET,
+    ) ?? Number.NaN;
+  return {
+    resolutionHours,
+    workHours,
+  };
+}

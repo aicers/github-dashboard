@@ -4,6 +4,7 @@ import {
 } from "@/lib/activity/status-store";
 import type { IssueProjectStatus } from "@/lib/activity/types";
 import { normalizeText } from "@/lib/dashboard/analytics/shared";
+import { calculateBusinessHoursBetween } from "@/lib/dashboard/business-days";
 import type { MultiTrendPoint } from "@/lib/dashboard/types";
 import { query } from "@/lib/db/client";
 
@@ -112,6 +113,7 @@ export async function fetchIssueDurationDetails(
 }
 
 type IssueDurationSummary = {
+  overallResolution: number | null;
   parentResolution: number | null;
   childResolution: number | null;
   parentWork: number | null;
@@ -219,28 +221,6 @@ function parseTimestamp(value: unknown): number | null {
 
   const time = Date.parse(value);
   return Number.isNaN(time) ? null : time;
-}
-
-function calculateHoursBetween(
-  start: string | Date | null,
-  end: string | Date | null,
-): number | null {
-  if (!start || !end) {
-    return null;
-  }
-
-  const startTime = parseTimestamp(start);
-  const endTime = parseTimestamp(end);
-  if (startTime === null || endTime === null) {
-    return null;
-  }
-
-  const durationMs = endTime - startTime;
-  if (durationMs < 0) {
-    return null;
-  }
-
-  return durationMs / 3_600_000;
 }
 
 type WorkTimestamps = {
@@ -715,7 +695,9 @@ function resolveWorkTimestamps(info: IssueStatusInfo | null): WorkTimestamps {
 export function summarizeIssueDurations(
   rows: IssueDurationDetailRow[],
   targetProject: string | null,
+  holidays: ReadonlySet<string>,
 ): IssueDurationSummary {
+  const overallResolution = createAccumulator();
   const parentResolution = createAccumulator();
   const childResolution = createAccumulator();
   const parentWork = createAccumulator();
@@ -724,14 +706,16 @@ export function summarizeIssueDurations(
 
   rows.forEach((row) => {
     const raw = parseIssueRaw(row.data);
-    const resolutionHours = calculateHoursBetween(
+    const resolutionHours = calculateBusinessHoursBetween(
       row.github_created_at,
       row.github_closed_at,
+      holidays,
     );
 
     // Issues without raw payload lack link metadata; default them to child-only stats.
     const fallbackClassification = { isParent: false, isChild: true };
     const classification = raw ? classifyIssue(raw) : fallbackClassification;
+    addSample(overallResolution, resolutionHours);
     if (classification.isParent) {
       addSample(parentResolution, resolutionHours);
     }
@@ -746,7 +730,11 @@ export function summarizeIssueDurations(
         row.activityStatusHistory,
       );
       const { startedAt, completedAt } = resolveWorkTimestamps(statusInfo);
-      const workHours = calculateHoursBetween(startedAt, completedAt);
+      const workHours = calculateBusinessHoursBetween(
+        startedAt,
+        completedAt,
+        holidays,
+      );
       addSample(overallWork, workHours);
       if (classification.isParent) {
         addSample(parentWork, workHours);
@@ -758,6 +746,7 @@ export function summarizeIssueDurations(
   });
 
   return {
+    overallResolution: finalizeAccumulator(overallResolution),
     parentResolution: finalizeAccumulator(parentResolution),
     childResolution: finalizeAccumulator(childResolution),
     parentWork: finalizeAccumulator(parentWork),
@@ -783,6 +772,7 @@ export function buildMonthlyDurationTrend(
   rows: IssueDurationDetailRow[],
   targetProject: string | null,
   timeZone: string,
+  holidays: ReadonlySet<string>,
 ): MultiTrendPoint[] {
   const formatter = getMonthFormatter(timeZone);
   const buckets = new Map<string, MonthlyBucket>();
@@ -807,9 +797,10 @@ export function buildMonthlyDurationTrend(
       buckets.set(bucketKey, bucket);
     }
 
-    const resolutionHours = calculateHoursBetween(
+    const resolutionHours = calculateBusinessHoursBetween(
       row.github_created_at,
       row.github_closed_at,
+      holidays,
     );
     addSample(bucket.resolution, resolutionHours);
 
@@ -822,7 +813,11 @@ export function buildMonthlyDurationTrend(
           row.activityStatusHistory,
         );
         const { startedAt, completedAt } = resolveWorkTimestamps(statusInfo);
-        const workHours = calculateHoursBetween(startedAt, completedAt);
+        const workHours = calculateBusinessHoursBetween(
+          startedAt,
+          completedAt,
+          holidays,
+        );
         addSample(bucket.work, workHours);
       }
     }

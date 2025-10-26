@@ -4,6 +4,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import {
+  calculateBusinessHoursBetween,
+  EMPTY_HOLIDAY_SET,
+} from "@/lib/dashboard/business-days";
+import {
   type DbActor,
   type DbIssue,
   type DbRepository,
@@ -112,9 +116,12 @@ function seriesFromSpecs(
   role: RoleKey,
   key: "resolutionHours" | "workHours",
 ): number[] {
-  return PERIODS.map((period) =>
-    calculateAverage(specs[period]?.[role]?.map((entry) => entry[key]) ?? []),
-  );
+  return PERIODS.map((period) => {
+    const entries = specs[period]?.[role] ?? [];
+    return calculateAverage(
+      entries.map((entry) => calculateBusinessHours(entry, key)),
+    );
+  });
 }
 
 function expectHoursSnapshot(
@@ -143,6 +150,17 @@ function expectHoursSnapshot(
   expect(actualSnapshot.valueLabel).toBe(expectedSnapshot.valueLabel);
   expect(`${actualSnapshot.changeLabel} (${actualSnapshot.percentLabel})`).toBe(
     `${expectedSnapshot.changeLabel} (${expectedSnapshot.percentLabel})`,
+  );
+}
+
+function calculateBusinessHours(
+  spec: DurationSpec,
+  key: "resolutionHours" | "workHours",
+): number {
+  const end = spec.closedAt;
+  const start = shiftHours(end, -spec[key]);
+  return (
+    calculateBusinessHoursBetween(start, end, EMPTY_HOLIDAY_SET) ?? Number.NaN
   );
 }
 
@@ -650,9 +668,14 @@ describe("analytics parent/child issue metrics", () => {
     expect(parentWorkMetric.percentChange).toBeNull();
 
     const expectedChildResolutionCurrent = calculateAverage(
-      currentChildSpecs.map((spec) => spec.resolutionHours),
+      currentChildSpecs.map((spec) =>
+        calculateBusinessHours(spec, "resolutionHours"),
+      ),
     );
-    const expectedChildResolutionPrevious = previousChildSpec.resolutionHours;
+    const expectedChildResolutionPrevious = calculateBusinessHours(
+      previousChildSpec,
+      "resolutionHours",
+    );
     expect(childResolutionMetric.current).toBeCloseTo(
       expectedChildResolutionCurrent,
       5,
@@ -661,20 +684,53 @@ describe("analytics parent/child issue metrics", () => {
       expectedChildResolutionPrevious,
       5,
     );
-    expect(childResolutionMetric.absoluteChange).toBeCloseTo(0, 5);
-    expect(childResolutionMetric.percentChange).toBe(0);
+    const expectedChildResolutionAbsolute =
+      expectedChildResolutionCurrent - expectedChildResolutionPrevious;
+    expect(childResolutionMetric.absoluteChange).toBeCloseTo(
+      expectedChildResolutionAbsolute,
+      5,
+    );
+    const expectedChildResolutionPercent =
+      expectedChildResolutionPrevious === 0
+        ? null
+        : (expectedChildResolutionAbsolute / expectedChildResolutionPrevious) *
+          100;
+    if (expectedChildResolutionPercent == null) {
+      expect(childResolutionMetric.percentChange).toBeNull();
+    } else {
+      expect(childResolutionMetric.percentChange ?? Number.NaN).toBeCloseTo(
+        expectedChildResolutionPercent,
+        5,
+      );
+    }
 
     const expectedChildWorkCurrent = calculateAverage([
-      currentChildSpecs[0].workHours,
+      calculateBusinessHours(currentChildSpecs[0], "workHours"),
     ]);
-    const expectedChildWorkPrevious = previousChildSpec.workHours;
+    const expectedChildWorkPrevious = calculateBusinessHours(
+      previousChildSpec,
+      "workHours",
+    );
     expect(childWorkMetric.current).toBeCloseTo(expectedChildWorkCurrent, 5);
     expect(childWorkMetric.previous).toBeCloseTo(expectedChildWorkPrevious, 5);
     expect(childWorkMetric.absoluteChange).toBeCloseTo(
       expectedChildWorkCurrent - expectedChildWorkPrevious,
       5,
     );
-    expect(childWorkMetric.percentChange ?? Number.NaN).toBeCloseTo(50, 5);
+    const expectedChildWorkPercent =
+      expectedChildWorkPrevious === 0
+        ? null
+        : ((expectedChildWorkCurrent - expectedChildWorkPrevious) /
+            expectedChildWorkPrevious) *
+          100;
+    if (expectedChildWorkPercent == null) {
+      expect(childWorkMetric.percentChange).toBeNull();
+    } else {
+      expect(childWorkMetric.percentChange ?? Number.NaN).toBeCloseTo(
+        expectedChildWorkPercent,
+        5,
+      );
+    }
 
     history.parentIssueResolutionTime.forEach((entry) => {
       expect(entry.value).toBeNull();
@@ -715,13 +771,13 @@ describe("analytics parent/child issue metrics", () => {
     });
     expectHoursSnapshot(childResolutionMetric, {
       current: expectedChildResolutionCurrent,
-      absoluteChange: 0,
-      percentChange: 0,
+      absoluteChange: expectedChildResolutionAbsolute,
+      percentChange: expectedChildResolutionPercent,
     });
     expectHoursSnapshot(childWorkMetric, {
       current: expectedChildWorkCurrent,
       absoluteChange: expectedChildWorkCurrent - expectedChildWorkPrevious,
-      percentChange: 50,
+      percentChange: expectedChildWorkPercent,
     });
   });
 
@@ -858,28 +914,44 @@ describe("analytics parent/child issue metrics", () => {
     const history = analytics.organization.metricHistory;
 
     const expectedParentResolutionCurrent = calculateAverage(
-      primaryCurrent.parent.map((spec) => spec.resolutionHours),
+      primaryCurrent.parent.map((spec) =>
+        calculateBusinessHours(spec, "resolutionHours"),
+      ),
     );
     const expectedParentResolutionPrevious = calculateAverage(
-      primaryPrevious.parent.map((spec) => spec.resolutionHours),
+      primaryPrevious.parent.map((spec) =>
+        calculateBusinessHours(spec, "resolutionHours"),
+      ),
     );
     const expectedParentWorkCurrent = calculateAverage(
-      primaryCurrent.parent.map((spec) => spec.workHours),
+      primaryCurrent.parent.map((spec) =>
+        calculateBusinessHours(spec, "workHours"),
+      ),
     );
     const expectedParentWorkPrevious = calculateAverage(
-      primaryPrevious.parent.map((spec) => spec.workHours),
+      primaryPrevious.parent.map((spec) =>
+        calculateBusinessHours(spec, "workHours"),
+      ),
     );
     const expectedChildResolutionCurrent = calculateAverage(
-      primaryCurrent.child.map((spec) => spec.resolutionHours),
+      primaryCurrent.child.map((spec) =>
+        calculateBusinessHours(spec, "resolutionHours"),
+      ),
     );
     const expectedChildResolutionPrevious = calculateAverage(
-      primaryPrevious.child.map((spec) => spec.resolutionHours),
+      primaryPrevious.child.map((spec) =>
+        calculateBusinessHours(spec, "resolutionHours"),
+      ),
     );
     const expectedChildWorkCurrent = calculateAverage(
-      primaryCurrent.child.map((spec) => spec.workHours),
+      primaryCurrent.child.map((spec) =>
+        calculateBusinessHours(spec, "workHours"),
+      ),
     );
     const expectedChildWorkPrevious = calculateAverage(
-      primaryPrevious.child.map((spec) => spec.workHours),
+      primaryPrevious.child.map((spec) =>
+        calculateBusinessHours(spec, "workHours"),
+      ),
     );
 
     expect(metrics.parentIssueResolutionTime.current).toBeCloseTo(
