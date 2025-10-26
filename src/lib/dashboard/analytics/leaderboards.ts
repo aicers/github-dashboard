@@ -1,9 +1,6 @@
 import { fetchReviewResponsePairs } from "@/lib/dashboard/analytics/reviews";
 import { DEPENDABOT_FILTER } from "@/lib/dashboard/analytics/shared";
-import {
-  calculateBusinessHoursBetween,
-  HOLIDAY_SET,
-} from "@/lib/dashboard/business-days";
+import { calculateBusinessHoursBetween } from "@/lib/dashboard/business-days";
 import { query } from "@/lib/db/client";
 
 export type LeaderboardRow = {
@@ -36,6 +33,7 @@ export async function fetchLeaderboard(
   start: string,
   end: string,
   repositoryIds: string[] | undefined,
+  holidays: ReadonlySet<string>,
 ): Promise<LeaderboardRow[]> {
   const params: unknown[] = [start, end];
   let repoClauseIssues = "";
@@ -139,7 +137,7 @@ export async function fetchLeaderboard(
         const hours = calculateBusinessHoursBetween(
           row.requested_at,
           row.responded_at,
-          HOLIDAY_SET,
+          holidays,
         );
         if (hours === null || !Number.isFinite(hours)) {
           return;

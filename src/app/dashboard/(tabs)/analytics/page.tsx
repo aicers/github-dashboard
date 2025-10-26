@@ -4,6 +4,7 @@ import { buildSyncStatusFixture } from "@/components/test-harness/sync-fixtures"
 import { readActiveSession } from "@/lib/auth/session";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 import { resolveDashboardRange } from "@/lib/dashboard/date-range";
+import { DEFAULT_HOLIDAY_CALENDAR } from "@/lib/holidays/constants";
 import { fetchSyncConfig } from "@/lib/sync/service";
 import { readUserTimeSettings } from "@/lib/user/time-settings";
 
@@ -33,6 +34,7 @@ export default async function AnalyticsPage() {
     timezone: "UTC",
     weekStart: "monday" as const,
     dateTimeFormat: "auto",
+    holidayCalendarCode: DEFAULT_HOLIDAY_CALENDAR,
   };
   const userTimeSettings = await (async () => {
     if (skipDatabase) {

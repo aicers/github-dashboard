@@ -99,6 +99,38 @@ const organizationMembers = [
   },
 ];
 
+const holidayCalendars = [
+  {
+    code: "kr" as const,
+    label: "한국",
+    countryLabel: "한국",
+    regionLabel: null,
+    sortOrder: 1,
+    holidayCount: 1,
+  },
+  {
+    code: "jp" as const,
+    label: "일본",
+    countryLabel: "일본",
+    regionLabel: null,
+    sortOrder: 2,
+    holidayCount: 0,
+  },
+];
+
+const holidayEntries = [
+  {
+    id: 1,
+    calendarCode: "kr" as const,
+    year: 2025,
+    dateKey: "01-01",
+    holidayDate: "2025-01-01",
+    weekday: "수",
+    name: "신정",
+    note: null,
+  },
+];
+
 function renderSettings(
   overrides: Partial<ComponentProps<typeof SettingsView>> = {},
 ) {
@@ -109,6 +141,9 @@ function renderSettings(
       timeZone="Asia/Seoul"
       weekStart="monday"
       dateTimeFormat="auto"
+      holidayCalendarCode="kr"
+      holidayCalendars={holidayCalendars}
+      initialHolidayEntries={holidayEntries}
       repositories={repositories}
       excludedRepositoryIds={["repo-2"]}
       members={members}
@@ -445,6 +480,7 @@ describe("SettingsView", () => {
       timezone: "America/Los_Angeles",
       weekStart: "monday",
       dateTimeFormat: "en-us-12h",
+      holidayCalendarCode: "kr",
     });
 
     await waitFor(() => {
@@ -517,6 +553,7 @@ describe("SettingsView", () => {
       timezone: "America/Los_Angeles",
       weekStart: "monday",
       dateTimeFormat: "dot-24h",
+      holidayCalendarCode: "kr",
     });
 
     await waitFor(() => {

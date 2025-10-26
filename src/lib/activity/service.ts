@@ -41,7 +41,7 @@ import {
 import {
   differenceInBusinessDays,
   differenceInBusinessDaysOrNull,
-  HOLIDAY_SET,
+  loadHolidaySet,
 } from "@/lib/dashboard/business-days";
 import { ensureSchema } from "@/lib/db";
 import { query } from "@/lib/db/client";
@@ -1583,6 +1583,7 @@ function buildActivityItem(
   users: Map<string, ActivityUser>,
   sets: AttentionSets,
   targetProject: string | null,
+  holidaySet: ReadonlySet<string>,
   now: Date,
   projectOverrides: Map<string, ProjectFieldOverrides>,
   activityStatusHistory: Map<string, ActivityStatusEvent[]>,
@@ -1638,12 +1639,12 @@ function buildActivityItem(
 
   const businessDaysOpen =
     status === "open"
-      ? differenceInBusinessDays(row.created_at, now, HOLIDAY_SET)
-      : differenceInBusinessDaysOrNull(row.created_at, now, HOLIDAY_SET);
+      ? differenceInBusinessDays(row.created_at, now, holidaySet)
+      : differenceInBusinessDaysOrNull(row.created_at, now, holidaySet);
   const businessDaysIdle = differenceInBusinessDaysOrNull(
     row.updated_at,
     now,
-    HOLIDAY_SET,
+    holidaySet,
   );
 
   let businessDaysSinceInProgress: number | null | undefined = null;
@@ -1715,25 +1716,25 @@ function buildActivityItem(
       businessDaysSinceInProgress = differenceInBusinessDaysOrNull(
         startDate,
         now,
-        HOLIDAY_SET,
+        holidaySet,
       );
       if (status !== "open" && row.closed_at) {
         businessDaysInProgressOpen = differenceInBusinessDaysOrNull(
           startDate,
           new Date(row.closed_at),
-          HOLIDAY_SET,
+          holidaySet,
         );
       } else if (statusInfo.timelineSource === "activity" && completedAt) {
         businessDaysInProgressOpen = differenceInBusinessDaysOrNull(
           startDate,
           new Date(completedAt),
-          HOLIDAY_SET,
+          holidaySet,
         );
       } else {
         businessDaysInProgressOpen = differenceInBusinessDaysOrNull(
           startDate,
           now,
-          HOLIDAY_SET,
+          holidaySet,
         );
       }
     }
@@ -1910,6 +1911,7 @@ export async function getActivityItems(
     getSyncConfig(),
     readUserTimeSettings(options?.userId ?? null),
   ]);
+  const holidaySet = await loadHolidaySet(userTimeSettings.holidayCalendarCode);
   const excludedRepositoryIds = Array.from(
     new Set(
       Array.isArray(config?.excluded_repository_ids)
@@ -2035,6 +2037,7 @@ export async function getActivityItems(
       users,
       attentionSets,
       targetProject,
+      holidaySet,
       now,
       projectOverrides,
       activityStatusHistory,
@@ -2080,6 +2083,10 @@ export async function getActivityItemDetail(
   const thresholds: Required<ActivityThresholds> = { ...DEFAULT_THRESHOLDS };
   const attentionSets = await resolveAttentionSets(thresholds);
   const targetProject = normalizeProjectTarget(env.TODO_PROJECT_NAME);
+  const detailTimeSettings = await readUserTimeSettings(null);
+  const holidaySet = await loadHolidaySet(
+    detailTimeSettings.holidayCalendarCode,
+  );
 
   const result = await query<ActivityRow>(
     `SELECT items.*
@@ -2135,6 +2142,7 @@ export async function getActivityItemDetail(
     users,
     attentionSets,
     targetProject,
+    holidaySet,
     now,
     projectOverrides,
     activityStatusHistory,
