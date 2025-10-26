@@ -37,7 +37,7 @@ afterAll(async () => {
     await container.stop();
     container = null;
   }
-});
+}, 60_000);
 
 async function warmupDashboardAnalytics() {
   try {

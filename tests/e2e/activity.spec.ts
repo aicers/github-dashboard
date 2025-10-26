@@ -293,7 +293,7 @@ test.describe("ActivityView (Playwright)", () => {
     await repoInput.fill("acme");
     await repoInput.press("Enter");
 
-    const labelInput = page.getByPlaceholder("repo:label");
+    const labelInput = page.getByPlaceholder("라벨 선택");
     await labelInput.fill("bug");
     await labelInput.press("Enter");
 
