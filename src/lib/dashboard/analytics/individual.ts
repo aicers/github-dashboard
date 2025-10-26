@@ -7,8 +7,10 @@ import {
   averageBusinessResponseHours,
   DEPENDABOT_FILTER,
 } from "@/lib/dashboard/analytics/shared";
+import { loadPersonalHolidaySet } from "@/lib/dashboard/personal-holidays";
 import type { HeatmapCell, MultiTrendPoint } from "@/lib/dashboard/types";
 import { query } from "@/lib/db/client";
+import type { HolidayCalendarCode } from "@/lib/holidays/constants";
 
 type IndividualIssueRow = {
   created: number;
@@ -237,7 +239,10 @@ export async function fetchIndividualReviewMetrics(
   start: string,
   end: string,
   repositoryIds: string[] | undefined,
-  holidays: ReadonlySet<string>,
+  options: {
+    organizationHolidayCodes: HolidayCalendarCode[];
+    organizationHolidaySet: ReadonlySet<string>;
+  },
 ): Promise<IndividualReviewRow> {
   const params: unknown[] = [personId, start, end];
   let repoClause = "";
@@ -305,12 +310,17 @@ export async function fetchIndividualReviewMetrics(
     personId,
   );
 
+  const personalHolidaySet = await loadPersonalHolidaySet(personId, {
+    organizationHolidayCodes: options.organizationHolidayCodes,
+    organizationHolidaySet: options.organizationHolidaySet,
+  });
+
   const avgResponseHours = averageBusinessResponseHours(
     responsePairs.map((row) => ({
       requestedAt: row.requested_at,
       respondedAt: row.responded_at,
     })),
-    holidays,
+    { defaultHolidays: personalHolidaySet },
   );
 
   return {

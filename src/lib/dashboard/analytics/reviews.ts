@@ -2,8 +2,10 @@ import {
   averageBusinessResponseHours,
   DEPENDABOT_FILTER,
 } from "@/lib/dashboard/analytics/shared";
+import { loadPersonalHolidaySetsForUsers } from "@/lib/dashboard/personal-holidays";
 import type { HeatmapCell } from "@/lib/dashboard/types";
 import { query } from "@/lib/db/client";
+import type { HolidayCalendarCode } from "@/lib/holidays/constants";
 
 type ReviewAggregateRow = {
   reviews_completed: number;
@@ -33,7 +35,10 @@ export async function fetchReviewAggregates(
   start: string,
   end: string,
   repositoryIds: string[] | undefined,
-  holidays: ReadonlySet<string>,
+  options: {
+    organizationHolidayCodes: HolidayCalendarCode[];
+    organizationHolidaySet: ReadonlySet<string>;
+  },
 ): Promise<ReviewAggregateRow> {
   const params: unknown[] = [start, end];
   let repoClause = "";
@@ -82,13 +87,32 @@ export async function fetchReviewAggregates(
     avg_participation: null,
   };
 
-  const avgResponseHours = averageBusinessResponseHours(
-    responseRows.map((row) => ({
-      requestedAt: row.requested_at,
-      respondedAt: row.responded_at,
-    })),
-    holidays,
+  const reviewerIds = Array.from(
+    new Set(
+      responseRows
+        .map((row) => row.reviewer_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
   );
+  const personalHolidaySets = await loadPersonalHolidaySetsForUsers(
+    reviewerIds,
+    {
+      organizationHolidayCodes: options.organizationHolidayCodes,
+      organizationHolidaySet: options.organizationHolidaySet,
+    },
+  );
+
+  const responseValues = responseRows.map((row) => ({
+    requestedAt: row.requested_at,
+    respondedAt: row.responded_at,
+    reviewerId: row.reviewer_id,
+  }));
+
+  const avgResponseHours = averageBusinessResponseHours(responseValues, {
+    defaultHolidays: options.organizationHolidaySet,
+    getHolidaysForRow: (row) =>
+      row.reviewerId ? (personalHolidaySets.get(row.reviewerId) ?? null) : null,
+  });
 
   return {
     reviews_completed: Number(statsRow.reviews_completed ?? 0),

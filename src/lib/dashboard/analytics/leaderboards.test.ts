@@ -12,18 +12,26 @@ vi.mock("@/lib/dashboard/business-days", () => ({
   calculateBusinessHoursBetween: vi.fn(),
 }));
 
+vi.mock("@/lib/dashboard/personal-holidays", () => ({
+  loadPersonalHolidaySetsForUsers: vi.fn(),
+}));
+
 import {
   fetchLeaderboard,
   fetchPrCompletionLeaderboard,
 } from "@/lib/dashboard/analytics/leaderboards";
 import { fetchReviewResponsePairs } from "@/lib/dashboard/analytics/reviews";
 import { calculateBusinessHoursBetween } from "@/lib/dashboard/business-days";
+import { loadPersonalHolidaySetsForUsers } from "@/lib/dashboard/personal-holidays";
 import { query } from "@/lib/db/client";
 
 const mockQuery = vi.mocked(query);
 const mockFetchReviewResponsePairs = vi.mocked(fetchReviewResponsePairs);
 const mockCalculateBusinessHoursBetween = vi.mocked(
   calculateBusinessHoursBetween,
+);
+const mockLoadPersonalHolidaySetsForUsers = vi.mocked(
+  loadPersonalHolidaySetsForUsers,
 );
 
 afterEach(() => {
@@ -45,7 +53,10 @@ describe("analytics leaderboards helpers", () => {
       "start",
       "end",
       ["repo-1", "repo-2"],
-      new Set(),
+      {
+        organizationHolidayCodes: [],
+        organizationHolidaySet: new Set(),
+      },
     );
 
     expect(result).toEqual([]);
@@ -87,13 +98,22 @@ describe("analytics leaderboards helpers", () => {
     mockCalculateBusinessHoursBetween.mockImplementation(
       () => durations.shift() ?? 0,
     );
+    mockLoadPersonalHolidaySetsForUsers.mockResolvedValue(
+      new Map([
+        ["alice", new Set()],
+        ["bob", new Set()],
+      ]),
+    );
 
     const result = await fetchLeaderboard(
       "response",
       "start",
       "end",
       undefined,
-      new Set<string>(),
+      {
+        organizationHolidayCodes: [],
+        organizationHolidaySet: new Set<string>(),
+      },
     );
 
     expect(mockQuery).not.toHaveBeenCalled();
@@ -101,6 +121,13 @@ describe("analytics leaderboards helpers", () => {
       "start",
       "end",
       undefined,
+    );
+    expect(mockLoadPersonalHolidaySetsForUsers).toHaveBeenCalledWith(
+      ["alice", "bob"],
+      expect.objectContaining({
+        organizationHolidayCodes: [],
+        organizationHolidaySet: expect.any(Set),
+      }),
     );
     expect(result).toEqual([
       {

@@ -80,13 +80,15 @@ describe("analytics duration metrics", () => {
     const summary = summarizeIssueDurations(
       [parentIssue, childIssue, orphanIssue],
       targetProject,
+      new Set(),
     );
 
     expect(summary.parentResolution).toBeCloseTo(96, 5);
-    expect(summary.childResolution).toBeCloseTo(96, 5);
+    expect(summary.childResolution).toBeCloseTo(72, 5);
     expect(summary.parentWork).toBeCloseTo(48, 5);
     expect(summary.childWork).toBeCloseTo(48, 5);
     expect(summary.overallWork).toBeCloseTo(48, 5);
+    expect(summary.overallResolution).toBeCloseTo(80, 5);
   });
 
   it("uses activity status history when to-do project lacks progress", () => {
@@ -106,10 +108,10 @@ describe("analytics duration metrics", () => {
       ],
     });
 
-    const summary = summarizeIssueDurations([issue], targetProject);
+    const summary = summarizeIssueDurations([issue], targetProject, new Set());
 
-    expect(summary.childWork).toBeCloseTo(96, 5);
-    expect(summary.overallWork).toBeCloseTo(96, 5);
+    expect(summary.childWork).toBeCloseTo(48, 5);
+    expect(summary.overallWork).toBeCloseTo(48, 5);
   });
 
   it("defers to to-do project statuses when locked", () => {
@@ -140,10 +142,10 @@ describe("analytics duration metrics", () => {
       ],
     });
 
-    const summary = summarizeIssueDurations([issue], targetProject);
+    const summary = summarizeIssueDurations([issue], targetProject, new Set());
 
-    expect(summary.childWork).toBeCloseTo(168, 5);
-    expect(summary.overallWork).toBeCloseTo(168, 5);
+    expect(summary.childWork).toBeCloseTo(120, 5);
+    expect(summary.overallWork).toBeCloseTo(120, 5);
   });
 
   it("builds five-period history series with normalized values", () => {

@@ -5,6 +5,10 @@ import "../../../tests/helpers/postgres-container";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
+import {
+  calculateBusinessHoursBetween,
+  EMPTY_HOLIDAY_SET,
+} from "@/lib/dashboard/business-days";
 import { type DbIssue, upsertIssue } from "@/lib/db/operations";
 import { env } from "@/lib/env";
 import {
@@ -26,7 +30,27 @@ type DurationSpec = {
 
 type PeriodDurations = Record<RoleKey, DurationSpec>;
 
+type BusinessDuration = {
+  resolutionHours: number;
+  workHours: number;
+};
+
+type BusinessPeriodDurations = Record<RoleKey, BusinessDuration>;
+
 const TARGET_PROJECT = "To-Do List";
+
+function calculateBusinessHoursForDuration(
+  closedAt: string,
+  hours: number,
+): number {
+  return (
+    calculateBusinessHoursBetween(
+      shiftHours(closedAt, -hours),
+      closedAt,
+      EMPTY_HOLIDAY_SET,
+    ) ?? Number.NaN
+  );
+}
 
 function createDurationIssue(
   period: string,
@@ -107,6 +131,11 @@ describe("people parent and child issue metrics", () => {
       },
     } as const;
 
+    const businessDurations = {} as Record<
+      (typeof PERIOD_KEYS)[number],
+      BusinessPeriodDurations
+    >;
+
     let index = 1;
     for (const period of PERIOD_KEYS) {
       const position = PERIOD_KEYS.indexOf(period);
@@ -137,6 +166,29 @@ describe("people parent and child issue metrics", () => {
       );
       index += 1;
       await upsertIssue(childIssue);
+
+      businessDurations[period] = {
+        parent: {
+          resolutionHours: calculateBusinessHoursForDuration(
+            parentClosedAt,
+            specs[period].parent.resolutionHours,
+          ),
+          workHours: calculateBusinessHoursForDuration(
+            parentClosedAt,
+            specs[period].parent.workHours,
+          ),
+        },
+        child: {
+          resolutionHours: calculateBusinessHoursForDuration(
+            childClosedAt,
+            specs[period].child.resolutionHours,
+          ),
+          workHours: calculateBusinessHoursForDuration(
+            childClosedAt,
+            specs[period].child.workHours,
+          ),
+        },
+      };
     }
 
     const analytics = await getDashboardAnalytics({
@@ -154,16 +206,16 @@ describe("people parent and child issue metrics", () => {
     const history = individual.metricHistory;
 
     const expectedParentResolutionHistory = PERIOD_KEYS.map(
-      (period) => specs[period].parent.resolutionHours,
+      (period) => businessDurations[period].parent.resolutionHours,
     );
     const expectedChildResolutionHistory = PERIOD_KEYS.map(
-      (period) => specs[period].child.resolutionHours,
+      (period) => businessDurations[period].child.resolutionHours,
     );
     const expectedParentWorkHistory = PERIOD_KEYS.map(
-      (period) => specs[period].parent.workHours,
+      (period) => businessDurations[period].parent.workHours,
     );
     const expectedChildWorkHistory = PERIOD_KEYS.map(
-      (period) => specs[period].child.workHours,
+      (period) => businessDurations[period].child.workHours,
     );
 
     const parentResolution = metrics.parentIssueResolutionTime;
@@ -177,28 +229,40 @@ describe("people parent and child issue metrics", () => {
     expect(childWork.unit).toBe("hours");
 
     expect(parentResolution.current).toBeCloseTo(
-      specs.current.parent.resolutionHours,
+      businessDurations.current.parent.resolutionHours,
       5,
     );
     expect(parentResolution.previous).toBeCloseTo(
-      specs.previous.parent.resolutionHours,
+      businessDurations.previous.parent.resolutionHours,
       5,
     );
 
     expect(childResolution.current).toBeCloseTo(
-      specs.current.child.resolutionHours,
+      businessDurations.current.child.resolutionHours,
       5,
     );
     expect(childResolution.previous).toBeCloseTo(
-      specs.previous.child.resolutionHours,
+      businessDurations.previous.child.resolutionHours,
       5,
     );
 
-    expect(parentWork.current).toBeCloseTo(specs.current.parent.workHours, 5);
-    expect(parentWork.previous).toBeCloseTo(specs.previous.parent.workHours, 5);
+    expect(parentWork.current).toBeCloseTo(
+      businessDurations.current.parent.workHours,
+      5,
+    );
+    expect(parentWork.previous).toBeCloseTo(
+      businessDurations.previous.parent.workHours,
+      5,
+    );
 
-    expect(childWork.current).toBeCloseTo(specs.current.child.workHours, 5);
-    expect(childWork.previous).toBeCloseTo(specs.previous.child.workHours, 5);
+    expect(childWork.current).toBeCloseTo(
+      businessDurations.current.child.workHours,
+      5,
+    );
+    expect(childWork.previous).toBeCloseTo(
+      businessDurations.previous.child.workHours,
+      5,
+    );
 
     const historyChecks: Array<{
       series: { period: string; value: number | null }[];

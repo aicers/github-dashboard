@@ -1,7 +1,9 @@
 import { fetchReviewResponsePairs } from "@/lib/dashboard/analytics/reviews";
 import { DEPENDABOT_FILTER } from "@/lib/dashboard/analytics/shared";
 import { calculateBusinessHoursBetween } from "@/lib/dashboard/business-days";
+import { loadPersonalHolidaySetsForUsers } from "@/lib/dashboard/personal-holidays";
 import { query } from "@/lib/db/client";
+import type { HolidayCalendarCode } from "@/lib/holidays/constants";
 
 export type LeaderboardRow = {
   user_id: string;
@@ -33,7 +35,10 @@ export async function fetchLeaderboard(
   start: string,
   end: string,
   repositoryIds: string[] | undefined,
-  holidays: ReadonlySet<string>,
+  options: {
+    organizationHolidayCodes: HolidayCalendarCode[];
+    organizationHolidaySet: ReadonlySet<string>;
+  },
 ): Promise<LeaderboardRow[]> {
   const params: unknown[] = [start, end];
   let repoClauseIssues = "";
@@ -128,16 +133,33 @@ export async function fetchLeaderboard(
         end,
         repositoryIds,
       );
+      const reviewerIds = Array.from(
+        new Set(
+          responsePairs
+            .map((row) => row.reviewer_id)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      );
+      const personalHolidaySets = await loadPersonalHolidaySetsForUsers(
+        reviewerIds,
+        {
+          organizationHolidayCodes: options.organizationHolidayCodes,
+          organizationHolidaySet: options.organizationHolidaySet,
+        },
+      );
       const stats = new Map<string, { sum: number; count: number }>();
       responsePairs.forEach((row) => {
         if (!row.reviewer_id) {
           return;
         }
+        const reviewerHolidays =
+          personalHolidaySets.get(row.reviewer_id) ??
+          options.organizationHolidaySet;
 
         const hours = calculateBusinessHoursBetween(
           row.requested_at,
           row.responded_at,
-          holidays,
+          reviewerHolidays,
         );
         if (hours === null || !Number.isFinite(hours)) {
           return;

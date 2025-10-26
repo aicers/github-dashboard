@@ -11,20 +11,16 @@ import {
   differenceInBusinessDays,
   differenceInBusinessDaysOrNull,
   loadCombinedHolidaySet,
-  loadHolidaySet,
 } from "@/lib/dashboard/business-days";
+import { createPersonalHolidaySetLoader } from "@/lib/dashboard/personal-holidays";
 import type { DateTimeDisplayFormat } from "@/lib/date-time-format";
 import { ensureSchema } from "@/lib/db";
 import { query } from "@/lib/db/client";
 import {
   getSyncConfig,
-  getUserPreferences,
   getUserPreferencesByIds,
   getUserProfiles,
-  listUserPersonalHolidays,
   listUserPersonalHolidaysByIds,
-  type UserPersonalHolidayRow,
-  type UserPreferencesRow,
   type UserProfile,
 } from "@/lib/db/operations";
 import { env } from "@/lib/env";
@@ -33,11 +29,7 @@ import {
   type HolidayCalendarCode,
   isHolidayCalendarCode,
 } from "@/lib/holidays/constants";
-import {
-  expandPersonalHolidayDates,
-  type PersonalHoliday,
-  readUserTimeSettings,
-} from "@/lib/user/time-settings";
+import { readUserTimeSettings } from "@/lib/user/time-settings";
 
 export type UserReference = {
   id: string;
@@ -134,93 +126,6 @@ function normalizeOrganizationHolidayCodes(
   }
 
   return Array.from(new Set(codes)) as HolidayCalendarCode[];
-}
-
-function mapPersonalHolidayRow(row: UserPersonalHolidayRow): PersonalHoliday {
-  return {
-    id: row.id,
-    label: row.label,
-    startDate: row.startDate,
-    endDate: row.endDate,
-  };
-}
-
-function buildPersonalHolidaySetLoader(options: {
-  organizationHolidayCodes: HolidayCalendarCode[];
-  organizationHolidaySet: ReadonlySet<string>;
-  preferencesMap?: Map<string, UserPreferencesRow>;
-  personalHolidayMap?: Map<string, UserPersonalHolidayRow[]>;
-}) {
-  const cache = new Map<string, Promise<ReadonlySet<string>>>();
-  const holidaySetCache = new Map<string, Promise<ReadonlySet<string>>>();
-
-  return async function getPersonalHolidaySet(
-    userId: string | null | undefined,
-  ): Promise<ReadonlySet<string>> {
-    if (!userId) {
-      return options.organizationHolidaySet;
-    }
-
-    const existing = cache.get(userId);
-    if (existing) {
-      return existing;
-    }
-
-    const loader = (async () => {
-      const preferences =
-        options.preferencesMap?.get(userId) ??
-        (await getUserPreferences(userId));
-      const preferredCodes = preferences?.holidayCalendarCodes?.length
-        ? preferences.holidayCalendarCodes
-        : options.organizationHolidayCodes;
-      const uniqueCodes = Array.from(new Set(preferredCodes));
-      const codesToLoad = uniqueCodes.length
-        ? uniqueCodes
-        : options.organizationHolidayCodes;
-
-      const holidaySets = await Promise.all(
-        codesToLoad.map((code) => {
-          const existingSet = holidaySetCache.get(code);
-          if (existingSet) {
-            return existingSet;
-          }
-          const promise = loadHolidaySet(code);
-          holidaySetCache.set(code, promise);
-          return promise;
-        }),
-      );
-      const combined = new Set<string>();
-      for (const set of holidaySets) {
-        for (const date of set) {
-          combined.add(date);
-        }
-      }
-
-      const personalRows =
-        options.personalHolidayMap?.get(userId) ??
-        (await listUserPersonalHolidays(userId));
-      const personalEntries = personalRows.map(mapPersonalHolidayRow);
-      const personalDates = expandPersonalHolidayDates(personalEntries);
-      for (const date of personalDates) {
-        combined.add(date);
-      }
-
-      const codesMatchOrganization =
-        codesToLoad.length === options.organizationHolidayCodes.length &&
-        codesToLoad.every((code) =>
-          options.organizationHolidayCodes.includes(code),
-        );
-
-      if (personalDates.size === 0 && codesMatchOrganization) {
-        return options.organizationHolidaySet;
-      }
-
-      return combined;
-    })();
-
-    cache.set(userId, loader);
-    return loader;
-  };
 }
 
 export type MentionAttentionItem = {
@@ -1369,7 +1274,7 @@ async function fetchStuckReviewRequests(
     listUserPersonalHolidaysByIds(reviewerIds),
   ]);
 
-  const getPersonalHolidaySet = buildPersonalHolidaySetLoader({
+  const getPersonalHolidaySet = createPersonalHolidaySetLoader({
     organizationHolidayCodes,
     organizationHolidaySet,
     preferencesMap,
@@ -1677,7 +1582,7 @@ async function fetchUnansweredMentions(
     listUserPersonalHolidaysByIds(mentionedUserIds),
   ]);
 
-  const getPersonalHolidaySet = buildPersonalHolidaySetLoader({
+  const getPersonalHolidaySet = createPersonalHolidaySetLoader({
     organizationHolidayCodes,
     organizationHolidaySet,
     preferencesMap,

@@ -154,12 +154,19 @@ export function normalizeText(value: unknown): string | null {
   return trimmed.length ? trimmed : null;
 }
 
-export function averageBusinessResponseHours(
-  rows: { requestedAt: string; respondedAt: string | null }[],
-  holidays: ReadonlySet<string>,
+export function averageBusinessResponseHours<
+  T extends { requestedAt: string; respondedAt: string | null },
+>(
+  rows: T[],
+  options: {
+    defaultHolidays: ReadonlySet<string>;
+    getHolidaysForRow?: (row: T) => ReadonlySet<string> | null | undefined;
+  },
 ) {
+  const { defaultHolidays, getHolidaysForRow } = options;
   const values: number[] = [];
   rows.forEach((row) => {
+    const holidays = getHolidaysForRow?.(row) ?? defaultHolidays;
     const hours = calculateBusinessHoursBetween(
       row.requestedAt,
       row.respondedAt,

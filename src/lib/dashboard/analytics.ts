@@ -378,30 +378,45 @@ export async function getDashboardAnalytics(
     previous3Reviews,
     previous4Reviews,
   ] = await Promise.all([
-    fetchReviewAggregates(range.start, range.end, repositoryFilter, holidaySet),
+    fetchReviewAggregates(range.start, range.end, repositoryFilter, {
+      organizationHolidayCodes,
+      organizationHolidaySet: holidaySet,
+    }),
     fetchReviewAggregates(
       range.previousStart,
       range.previousEnd,
       repositoryFilter,
-      holidaySet,
+      {
+        organizationHolidayCodes,
+        organizationHolidaySet: holidaySet,
+      },
     ),
     fetchReviewAggregates(
       range.previous2Start,
       range.previous2End,
       repositoryFilter,
-      holidaySet,
+      {
+        organizationHolidayCodes,
+        organizationHolidaySet: holidaySet,
+      },
     ),
     fetchReviewAggregates(
       range.previous3Start,
       range.previous3End,
       repositoryFilter,
-      holidaySet,
+      {
+        organizationHolidayCodes,
+        organizationHolidaySet: holidaySet,
+      },
     ),
     fetchReviewAggregates(
       range.previous4Start,
       range.previous4End,
       repositoryFilter,
-      holidaySet,
+      {
+        organizationHolidayCodes,
+        organizationHolidaySet: holidaySet,
+      },
     ),
   ]);
 
@@ -471,56 +486,35 @@ export async function getDashboardAnalytics(
     fetchRepoComparison(range.start, range.end, repositoryFilter),
     fetchReviewerActivity(range.start, range.end, repositoryFilter),
     fetchMainBranchContribution(range.start, range.end, repositoryFilter),
-    fetchLeaderboard(
-      "prs",
-      range.start,
-      range.end,
-      repositoryFilter,
-      holidaySet,
-    ),
-    fetchLeaderboard(
-      "prsMerged",
-      range.start,
-      range.end,
-      repositoryFilter,
-      holidaySet,
-    ),
-    fetchLeaderboard(
-      "prsMergedBy",
-      range.start,
-      range.end,
-      repositoryFilter,
-      holidaySet,
-    ),
+    fetchLeaderboard("prs", range.start, range.end, repositoryFilter, {
+      organizationHolidayCodes,
+      organizationHolidaySet: holidaySet,
+    }),
+    fetchLeaderboard("prsMerged", range.start, range.end, repositoryFilter, {
+      organizationHolidayCodes,
+      organizationHolidaySet: holidaySet,
+    }),
+    fetchLeaderboard("prsMergedBy", range.start, range.end, repositoryFilter, {
+      organizationHolidayCodes,
+      organizationHolidaySet: holidaySet,
+    }),
     fetchPrCompletionLeaderboard(range.start, range.end, repositoryFilter),
-    fetchLeaderboard(
-      "issues",
-      range.start,
-      range.end,
-      repositoryFilter,
-      holidaySet,
-    ),
-    fetchLeaderboard(
-      "reviews",
-      range.start,
-      range.end,
-      repositoryFilter,
-      holidaySet,
-    ),
-    fetchLeaderboard(
-      "response",
-      range.start,
-      range.end,
-      repositoryFilter,
-      holidaySet,
-    ),
-    fetchLeaderboard(
-      "comments",
-      range.start,
-      range.end,
-      repositoryFilter,
-      holidaySet,
-    ),
+    fetchLeaderboard("issues", range.start, range.end, repositoryFilter, {
+      organizationHolidayCodes,
+      organizationHolidaySet: holidaySet,
+    }),
+    fetchLeaderboard("reviews", range.start, range.end, repositoryFilter, {
+      organizationHolidayCodes,
+      organizationHolidaySet: holidaySet,
+    }),
+    fetchLeaderboard("response", range.start, range.end, repositoryFilter, {
+      organizationHolidayCodes,
+      organizationHolidaySet: holidaySet,
+    }),
+    fetchLeaderboard("comments", range.start, range.end, repositoryFilter, {
+      organizationHolidayCodes,
+      organizationHolidaySet: holidaySet,
+    }),
     fetchIssueDurationDetails(range.start, range.end, repositoryFilter),
     fetchIssueDurationDetails(
       range.previousStart,
@@ -669,27 +663,46 @@ export async function getDashboardAnalytics(
   const issueDurationCurrent = summarizeIssueDurations(
     currentIssueDurationDetails,
     targetProject,
+    holidaySet,
   );
   const issueDurationPrevious = summarizeIssueDurations(
     previousIssueDurationDetails,
     targetProject,
+    holidaySet,
   );
   const issueDurationPrevious2 = summarizeIssueDurations(
     previous2IssueDurationDetails,
     targetProject,
+    holidaySet,
   );
   const issueDurationPrevious3 = summarizeIssueDurations(
     previous3IssueDurationDetails,
     targetProject,
+    holidaySet,
   );
   const issueDurationPrevious4 = summarizeIssueDurations(
     previous4IssueDurationDetails,
     targetProject,
+    holidaySet,
   );
+  const syncAverageResolution = (
+    aggregate: { avg_resolution_hours: number | null },
+    summary: { overallResolution: number | null },
+  ) => {
+    const value = summary.overallResolution;
+    aggregate.avg_resolution_hours =
+      value === null || Number.isNaN(value) ? null : value;
+  };
+  syncAverageResolution(currentIssues, issueDurationCurrent);
+  syncAverageResolution(previousIssues, issueDurationPrevious);
+  syncAverageResolution(previous2Issues, issueDurationPrevious2);
+  syncAverageResolution(previous3Issues, issueDurationPrevious3);
+  syncAverageResolution(previous4Issues, issueDurationPrevious4);
   const monthlyDurationTrend = buildMonthlyDurationTrend(
     currentIssueDurationDetails,
     targetProject,
     timeZone,
+    holidaySet,
   );
 
   const issueMetrics = {
@@ -702,8 +715,8 @@ export async function getDashboardAnalytics(
       previousIssues.issues_closed,
     ),
     issueResolutionTime: buildDurationComparison(
-      currentIssues.avg_resolution_hours,
-      previousIssues.avg_resolution_hours,
+      issueDurationCurrent.overallResolution,
+      issueDurationPrevious.overallResolution,
       "hours",
     ),
     issueWorkTime: buildDurationComparison(
@@ -757,11 +770,11 @@ export async function getDashboardAnalytics(
       currentIssues.issues_closed,
     ]),
     issueResolutionTime: buildHistorySeries([
-      previous4Issues.avg_resolution_hours,
-      previous3Issues.avg_resolution_hours,
-      previous2Issues.avg_resolution_hours,
-      previousIssues.avg_resolution_hours,
-      currentIssues.avg_resolution_hours,
+      issueDurationPrevious4.overallResolution,
+      issueDurationPrevious3.overallResolution,
+      issueDurationPrevious2.overallResolution,
+      issueDurationPrevious.overallResolution,
+      issueDurationCurrent.overallResolution,
     ]),
     issueWorkTime: buildHistorySeries([
       issueDurationPrevious4.overallWork,
@@ -1198,35 +1211,50 @@ export async function getDashboardAnalytics(
         range.start,
         range.end,
         repositoryFilter,
-        holidaySet,
+        {
+          organizationHolidayCodes,
+          organizationHolidaySet: holidaySet,
+        },
       ),
       fetchIndividualReviewMetrics(
         personProfile.id,
         range.previousStart,
         range.previousEnd,
         repositoryFilter,
-        holidaySet,
+        {
+          organizationHolidayCodes,
+          organizationHolidaySet: holidaySet,
+        },
       ),
       fetchIndividualReviewMetrics(
         personProfile.id,
         range.previous2Start,
         range.previous2End,
         repositoryFilter,
-        holidaySet,
+        {
+          organizationHolidayCodes,
+          organizationHolidaySet: holidaySet,
+        },
       ),
       fetchIndividualReviewMetrics(
         personProfile.id,
         range.previous3Start,
         range.previous3End,
         repositoryFilter,
-        holidaySet,
+        {
+          organizationHolidayCodes,
+          organizationHolidaySet: holidaySet,
+        },
       ),
       fetchIndividualReviewMetrics(
         personProfile.id,
         range.previous4Start,
         range.previous4End,
         repositoryFilter,
-        holidaySet,
+        {
+          organizationHolidayCodes,
+          organizationHolidaySet: holidaySet,
+        },
       ),
     ]);
 
@@ -1397,22 +1425,41 @@ export async function getDashboardAnalytics(
     const individualDurationCurrent = summarizeIssueDurations(
       individualIssueDurationsCurrent,
       targetProject,
+      holidaySet,
     );
     const individualDurationPrevious = summarizeIssueDurations(
       individualIssueDurationsPrevious,
       targetProject,
+      holidaySet,
     );
     const individualDurationPrevious2 = summarizeIssueDurations(
       individualIssueDurationsPrevious2,
       targetProject,
+      holidaySet,
     );
     const individualDurationPrevious3 = summarizeIssueDurations(
       individualIssueDurationsPrevious3,
       targetProject,
+      holidaySet,
     );
     const individualDurationPrevious4 = summarizeIssueDurations(
       individualIssueDurationsPrevious4,
       targetProject,
+      holidaySet,
+    );
+    syncAverageResolution(individualIssuesCurrent, individualDurationCurrent);
+    syncAverageResolution(individualIssuesPrevious, individualDurationPrevious);
+    syncAverageResolution(
+      individualIssuesPrevious2,
+      individualDurationPrevious2,
+    );
+    syncAverageResolution(
+      individualIssuesPrevious3,
+      individualDurationPrevious3,
+    );
+    syncAverageResolution(
+      individualIssuesPrevious4,
+      individualDurationPrevious4,
     );
 
     const calculatePrCompletenessValue = (row: IndividualPrCompletionRow) => {
@@ -1435,8 +1482,8 @@ export async function getDashboardAnalytics(
         individualIssuesPrevious.closed,
       ),
       issueResolutionTime: buildDurationComparison(
-        individualIssuesCurrent.avg_resolution_hours,
-        individualIssuesPrevious.avg_resolution_hours,
+        individualDurationCurrent.overallResolution,
+        individualDurationPrevious.overallResolution,
         "hours",
       ),
       issueWorkTime: buildDurationComparison(
@@ -1558,11 +1605,11 @@ export async function getDashboardAnalytics(
         individualIssuesCurrent.closed,
       ]),
       issueResolutionTime: buildHistorySeries([
-        individualIssuesPrevious4.avg_resolution_hours,
-        individualIssuesPrevious3.avg_resolution_hours,
-        individualIssuesPrevious2.avg_resolution_hours,
-        individualIssuesPrevious.avg_resolution_hours,
-        individualIssuesCurrent.avg_resolution_hours,
+        individualDurationPrevious4.overallResolution,
+        individualDurationPrevious3.overallResolution,
+        individualDurationPrevious2.overallResolution,
+        individualDurationPrevious.overallResolution,
+        individualDurationCurrent.overallResolution,
       ]),
       issueWorkTime: buildHistorySeries([
         individualDurationPrevious4.overallWork,
