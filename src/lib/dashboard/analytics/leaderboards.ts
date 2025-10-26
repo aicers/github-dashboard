@@ -1,9 +1,9 @@
 import { fetchReviewResponsePairs } from "@/lib/dashboard/analytics/reviews";
+import { DEPENDABOT_FILTER } from "@/lib/dashboard/analytics/shared";
 import {
-  DEPENDABOT_FILTER,
+  calculateBusinessHoursBetween,
   HOLIDAY_SET,
-} from "@/lib/dashboard/analytics/shared";
-import { calculateBusinessHoursBetween } from "@/lib/dashboard/business-days";
+} from "@/lib/dashboard/business-days";
 import { query } from "@/lib/db/client";
 
 export type LeaderboardRow = {
