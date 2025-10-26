@@ -141,9 +141,12 @@ function renderSettings(
       timeZone="Asia/Seoul"
       weekStart="monday"
       dateTimeFormat="auto"
-      holidayCalendarCode="kr"
+      personalHolidayCalendarCodes={["kr"]}
+      organizationHolidayCalendarCodes={["kr"]}
+      holidayPreviewCalendarCode="kr"
       holidayCalendars={holidayCalendars}
-      initialHolidayEntries={holidayEntries}
+      initialPreviewHolidayEntries={holidayEntries}
+      personalHolidays={[]}
       repositories={repositories}
       excludedRepositoryIds={["repo-2"]}
       members={members}
@@ -198,6 +201,17 @@ describe("SettingsView", () => {
       within(personalSection as HTMLElement).getByLabelText("날짜와 시간 형식"),
     ).toHaveValue("auto");
     expect(
+      within(personalSection as HTMLElement).getByLabelText(/한국/),
+    ).toBeChecked();
+    expect(
+      within(personalSection as HTMLElement).getByText("신정"),
+    ).toBeInTheDocument();
+    expect(
+      within(personalSection as HTMLElement).getByText(
+        "등록된 개인 휴무일이 없습니다.",
+      ),
+    ).toBeInTheDocument();
+    expect(
       within(personalSection as HTMLElement).getByRole("button", {
         name: "개인 설정 저장",
       }),
@@ -243,6 +257,9 @@ describe("SettingsView", () => {
         "허용된 팀: 1개 · 허용된 구성원: 1명",
       ),
     ).toBeInTheDocument();
+    expect(
+      within(organizationSection as HTMLElement).getByLabelText(/한국/),
+    ).toBeChecked();
     expect(
       within(organizationSection as HTMLElement).getByRole("option", {
         name: "acme/repo-two",
@@ -480,7 +497,7 @@ describe("SettingsView", () => {
       timezone: "America/Los_Angeles",
       weekStart: "monday",
       dateTimeFormat: "en-us-12h",
-      holidayCalendarCode: "kr",
+      holidayCalendarCodes: ["kr"],
     });
 
     await waitFor(() => {
@@ -524,6 +541,7 @@ describe("SettingsView", () => {
       name: "조직 설정 저장",
     });
     expect(saveButton).toBeDisabled();
+    expect(within(organizationSection).getByLabelText(/한국/)).toBeDisabled();
     expect(
       screen.getByText("관리자 권한이 있는 사용자만 수정할 수 있습니다."),
     ).toBeInTheDocument();
@@ -553,7 +571,7 @@ describe("SettingsView", () => {
       timezone: "America/Los_Angeles",
       weekStart: "monday",
       dateTimeFormat: "dot-24h",
-      holidayCalendarCode: "kr",
+      holidayCalendarCodes: ["kr"],
     });
 
     await waitFor(() => {

@@ -37,6 +37,34 @@ const patchSchema = z.object({
         (value.length > 0 && isHolidayCalendarCode(value)),
       { message: "Unsupported holiday calendar." },
     ),
+  holidayCalendarCodes: z
+    .array(z.string())
+    .optional()
+    .transform((value) =>
+      value
+        ?.map((item) => (typeof item === "string" ? item.trim() : ""))
+        .filter((item) => item.length > 0),
+    )
+    .refine(
+      (value) =>
+        value === undefined ||
+        value.every((code) => isHolidayCalendarCode(code)),
+      { message: "Unsupported holiday calendar." },
+    ),
+  organizationHolidayCalendarCodes: z
+    .array(z.string())
+    .optional()
+    .transform((value) =>
+      value
+        ?.map((item) => (typeof item === "string" ? item.trim() : ""))
+        .filter((item) => item.length > 0),
+    )
+    .refine(
+      (value) =>
+        value === undefined ||
+        value.every((code) => isHolidayCalendarCode(code)),
+      { message: "Unsupported holiday calendar." },
+    ),
   excludedRepositories: z
     .array(z.string().min(1))
     .optional()
@@ -107,6 +135,8 @@ export async function PATCH(request: Request) {
       weekStart,
       dateTimeFormat,
       holidayCalendarCode,
+      holidayCalendarCodes,
+      organizationHolidayCalendarCodes,
       backupHour,
     } = payload;
 
@@ -114,7 +144,8 @@ export async function PATCH(request: Request) {
       timezone !== undefined ||
       weekStart !== undefined ||
       dateTimeFormat !== undefined ||
-      holidayCalendarCode !== undefined;
+      holidayCalendarCode !== undefined ||
+      holidayCalendarCodes !== undefined;
 
     if (!session.isAdmin) {
       const attemptedAdminUpdate =
@@ -124,7 +155,8 @@ export async function PATCH(request: Request) {
         excludedPeople !== undefined ||
         allowedTeams !== undefined ||
         allowedUsers !== undefined ||
-        backupHour !== undefined;
+        backupHour !== undefined ||
+        organizationHolidayCalendarCodes !== undefined;
 
       if (attemptedAdminUpdate) {
         return NextResponse.json(
@@ -154,6 +186,7 @@ export async function PATCH(request: Request) {
           weekStart,
           dateTimeFormat,
           holidayCalendarCode,
+          holidayCalendarCodes,
         });
       }
     } else {
@@ -163,6 +196,7 @@ export async function PATCH(request: Request) {
           weekStart,
           dateTimeFormat,
           holidayCalendarCode,
+          holidayCalendarCodes,
         });
       }
 
@@ -184,6 +218,7 @@ export async function PATCH(request: Request) {
         excludedPeople,
         allowedTeams,
         allowedUsers,
+        orgHolidayCalendarCodes: organizationHolidayCalendarCodes,
         backupHourLocal: backupHour,
         backupTimezone: backupScheduleTimezone,
       });

@@ -53,7 +53,7 @@ import {
   resolveRange,
   roundToOneDecimal,
 } from "@/lib/dashboard/analytics/shared";
-import { loadHolidaySet } from "@/lib/dashboard/business-days";
+import { loadCombinedHolidaySet } from "@/lib/dashboard/business-days";
 import type {
   AnalyticsParams,
   DashboardAnalytics,
@@ -77,6 +77,11 @@ import {
   type UserProfile,
 } from "@/lib/db/operations";
 import { env } from "@/lib/env";
+import {
+  DEFAULT_HOLIDAY_CALENDAR,
+  type HolidayCalendarCode,
+  isHolidayCalendarCode,
+} from "@/lib/holidays/constants";
 import { readUserTimeSettings } from "@/lib/user/time-settings";
 
 function mapRepoDistribution(
@@ -233,6 +238,35 @@ function toTrend(points: TrendPoint[]): TrendPoint[] {
   }));
 }
 
+function normalizeOrganizationHolidayCodes(
+  config: unknown,
+): HolidayCalendarCode[] {
+  if (
+    !config ||
+    !(config as { org_holiday_calendar_codes?: unknown })
+      .org_holiday_calendar_codes
+  ) {
+    return [DEFAULT_HOLIDAY_CALENDAR];
+  }
+
+  const raw = (config as { org_holiday_calendar_codes?: unknown })
+    .org_holiday_calendar_codes;
+  if (!Array.isArray(raw)) {
+    return [DEFAULT_HOLIDAY_CALENDAR];
+  }
+
+  const codes = raw
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0 && isHolidayCalendarCode(value));
+
+  if (!codes.length) {
+    return [DEFAULT_HOLIDAY_CALENDAR];
+  }
+
+  return Array.from(new Set(codes)) as HolidayCalendarCode[];
+}
+
 export async function getDashboardAnalytics(
   params: AnalyticsParams,
   options?: { userId?: string | null },
@@ -245,7 +279,8 @@ export async function getDashboardAnalytics(
     getSyncConfig(),
     readUserTimeSettings(options?.userId ?? null),
   ]);
-  const holidaySet = await loadHolidaySet(userTimeSettings.holidayCalendarCode);
+  const organizationHolidayCodes = normalizeOrganizationHolidayCodes(config);
+  const holidaySet = await loadCombinedHolidaySet(organizationHolidayCodes);
   const timeZone = userTimeSettings.timezone;
   const weekStart: WeekStart = userTimeSettings.weekStart;
   const excludedUserIds = new Set<string>(

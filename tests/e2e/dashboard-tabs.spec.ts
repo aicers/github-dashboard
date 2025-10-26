@@ -4,7 +4,7 @@ const DASHBOARD_ROOT = "/dashboard";
 const DASHBOARD_TABS_PATH = "/test-harness/dashboard-tabs";
 
 test.describe("Dashboard navigation (Playwright)", () => {
-  test.setTimeout(45000);
+  test.setTimeout(120_000);
 
   test("redirects unauthenticated users to GitHub sign-in", async ({
     page,

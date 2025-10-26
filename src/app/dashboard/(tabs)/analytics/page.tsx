@@ -34,7 +34,9 @@ export default async function AnalyticsPage() {
     timezone: "UTC",
     weekStart: "monday" as const,
     dateTimeFormat: "auto",
-    holidayCalendarCode: DEFAULT_HOLIDAY_CALENDAR,
+    holidayCalendarCodes: [DEFAULT_HOLIDAY_CALENDAR],
+    organizationHolidayCalendarCodes: [DEFAULT_HOLIDAY_CALENDAR],
+    personalHolidays: [],
   };
   const userTimeSettings = await (async () => {
     if (skipDatabase) {

@@ -41,12 +41,17 @@ import {
 import {
   differenceInBusinessDays,
   differenceInBusinessDaysOrNull,
-  loadHolidaySet,
+  loadCombinedHolidaySet,
 } from "@/lib/dashboard/business-days";
 import { ensureSchema } from "@/lib/db";
 import { query } from "@/lib/db/client";
 import { getSyncConfig, getUserProfiles } from "@/lib/db/operations";
 import { env } from "@/lib/env";
+import {
+  DEFAULT_HOLIDAY_CALENDAR,
+  type HolidayCalendarCode,
+  isHolidayCalendarCode,
+} from "@/lib/holidays/constants";
 import { readUserTimeSettings } from "@/lib/user/time-settings";
 
 const DEFAULT_PER_PAGE = 25;
@@ -60,6 +65,35 @@ const DEFAULT_THRESHOLDS: Required<ActivityThresholds> = {
   backlogIssueDays: 40,
   stalledIssueDays: 20,
 };
+
+function normalizeOrganizationHolidayCodes(
+  config: unknown,
+): HolidayCalendarCode[] {
+  if (
+    !config ||
+    !(config as { org_holiday_calendar_codes?: unknown })
+      .org_holiday_calendar_codes
+  ) {
+    return [DEFAULT_HOLIDAY_CALENDAR];
+  }
+
+  const raw = (config as { org_holiday_calendar_codes?: unknown })
+    .org_holiday_calendar_codes;
+  if (!Array.isArray(raw)) {
+    return [DEFAULT_HOLIDAY_CALENDAR];
+  }
+
+  const codes = raw
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0 && isHolidayCalendarCode(value));
+
+  if (!codes.length) {
+    return [DEFAULT_HOLIDAY_CALENDAR];
+  }
+
+  return Array.from(new Set(codes)) as HolidayCalendarCode[];
+}
 
 const ISSUE_PROJECT_STATUS_VALUES: IssueProjectStatus[] = [
   "no_status",
@@ -1583,7 +1617,7 @@ function buildActivityItem(
   users: Map<string, ActivityUser>,
   sets: AttentionSets,
   targetProject: string | null,
-  holidaySet: ReadonlySet<string>,
+  organizationHolidaySet: ReadonlySet<string>,
   now: Date,
   projectOverrides: Map<string, ProjectFieldOverrides>,
   activityStatusHistory: Map<string, ActivityStatusEvent[]>,
@@ -1639,12 +1673,16 @@ function buildActivityItem(
 
   const businessDaysOpen =
     status === "open"
-      ? differenceInBusinessDays(row.created_at, now, holidaySet)
-      : differenceInBusinessDaysOrNull(row.created_at, now, holidaySet);
+      ? differenceInBusinessDays(row.created_at, now, organizationHolidaySet)
+      : differenceInBusinessDaysOrNull(
+          row.created_at,
+          now,
+          organizationHolidaySet,
+        );
   const businessDaysIdle = differenceInBusinessDaysOrNull(
     row.updated_at,
     now,
-    holidaySet,
+    organizationHolidaySet,
   );
 
   let businessDaysSinceInProgress: number | null | undefined = null;
@@ -1716,25 +1754,25 @@ function buildActivityItem(
       businessDaysSinceInProgress = differenceInBusinessDaysOrNull(
         startDate,
         now,
-        holidaySet,
+        organizationHolidaySet,
       );
       if (status !== "open" && row.closed_at) {
         businessDaysInProgressOpen = differenceInBusinessDaysOrNull(
           startDate,
           new Date(row.closed_at),
-          holidaySet,
+          organizationHolidaySet,
         );
       } else if (statusInfo.timelineSource === "activity" && completedAt) {
         businessDaysInProgressOpen = differenceInBusinessDaysOrNull(
           startDate,
           new Date(completedAt),
-          holidaySet,
+          organizationHolidaySet,
         );
       } else {
         businessDaysInProgressOpen = differenceInBusinessDaysOrNull(
           startDate,
           now,
-          holidaySet,
+          organizationHolidaySet,
         );
       }
     }
@@ -1911,7 +1949,10 @@ export async function getActivityItems(
     getSyncConfig(),
     readUserTimeSettings(options?.userId ?? null),
   ]);
-  const holidaySet = await loadHolidaySet(userTimeSettings.holidayCalendarCode);
+  const organizationHolidayCodes = normalizeOrganizationHolidayCodes(config);
+  const organizationHolidaySet = await loadCombinedHolidaySet(
+    organizationHolidayCodes,
+  );
   const excludedRepositoryIds = Array.from(
     new Set(
       Array.isArray(config?.excluded_repository_ids)
@@ -2037,7 +2078,7 @@ export async function getActivityItems(
       users,
       attentionSets,
       targetProject,
-      holidaySet,
+      organizationHolidaySet,
       now,
       projectOverrides,
       activityStatusHistory,
@@ -2083,9 +2124,10 @@ export async function getActivityItemDetail(
   const thresholds: Required<ActivityThresholds> = { ...DEFAULT_THRESHOLDS };
   const attentionSets = await resolveAttentionSets(thresholds);
   const targetProject = normalizeProjectTarget(env.TODO_PROJECT_NAME);
-  const detailTimeSettings = await readUserTimeSettings(null);
-  const holidaySet = await loadHolidaySet(
-    detailTimeSettings.holidayCalendarCode,
+  const config = await getSyncConfig();
+  const organizationHolidayCodes = normalizeOrganizationHolidayCodes(config);
+  const organizationHolidaySet = await loadCombinedHolidaySet(
+    organizationHolidayCodes,
   );
 
   const result = await query<ActivityRow>(
@@ -2142,7 +2184,7 @@ export async function getActivityItemDetail(
     users,
     attentionSets,
     targetProject,
-    holidaySet,
+    organizationHolidaySet,
     now,
     projectOverrides,
     activityStatusHistory,

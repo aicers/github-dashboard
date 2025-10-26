@@ -5,8 +5,13 @@ import {
 } from "@/lib/date-time-format";
 import { ensureSchema } from "@/lib/db";
 import {
+  createUserPersonalHoliday,
+  deleteUserPersonalHoliday,
   getSyncConfig,
   getUserPreferences,
+  listUserPersonalHolidays,
+  type UserPersonalHolidayRow,
+  updateUserPersonalHoliday,
   upsertUserPreferences,
 } from "@/lib/db/operations";
 import {
@@ -15,17 +20,104 @@ import {
   isHolidayCalendarCode,
 } from "@/lib/holidays/constants";
 
+export type PersonalHoliday = {
+  id: number;
+  label: string | null;
+  startDate: string;
+  endDate: string;
+};
+
 export type UserTimeSettings = {
   timezone: string;
   weekStart: "sunday" | "monday";
   dateTimeFormat: DateTimeDisplayFormat;
-  holidayCalendarCode: HolidayCalendarCode;
+  holidayCalendarCodes: HolidayCalendarCode[];
+  organizationHolidayCalendarCodes: HolidayCalendarCode[];
+  personalHolidays: PersonalHoliday[];
 };
 
 function normalizeWeekStart(
   value: string | null | undefined,
 ): "sunday" | "monday" {
   return value === "sunday" ? "sunday" : "monday";
+}
+
+function normalizeHolidayCodes(
+  values: readonly (string | null | undefined)[] | null | undefined,
+  fallback: HolidayCalendarCode[],
+): HolidayCalendarCode[] {
+  const codes: HolidayCalendarCode[] = [];
+  const seen = new Set<string>();
+
+  if (Array.isArray(values)) {
+    for (const value of values) {
+      if (typeof value !== "string") {
+        continue;
+      }
+      const trimmed = value.trim();
+      if (!trimmed || seen.has(trimmed) || !isHolidayCalendarCode(trimmed)) {
+        continue;
+      }
+      seen.add(trimmed);
+      codes.push(trimmed);
+    }
+  }
+
+  if (codes.length > 0) {
+    return codes;
+  }
+
+  const fallbackCodes: HolidayCalendarCode[] = [];
+  for (const value of fallback) {
+    if (!seen.has(value)) {
+      seen.add(value);
+      fallbackCodes.push(value);
+    }
+  }
+  if (fallbackCodes.length > 0) {
+    return fallbackCodes;
+  }
+
+  return [DEFAULT_HOLIDAY_CALENDAR];
+}
+
+function toIsoDate(value: string): string {
+  const trimmed = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    throw new Error("날짜는 YYYY-MM-DD 형식이어야 합니다.");
+  }
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error("유효한 날짜를 입력해 주세요.");
+  }
+  return trimmed;
+}
+
+function normalizePersonalHolidayLabel(
+  value: string | null | undefined,
+): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed.length > 120) {
+    throw new Error("이름은 120자 이하여야 합니다.");
+  }
+  return trimmed;
+}
+
+function mapPersonalHolidayRow(row: UserPersonalHolidayRow): PersonalHoliday {
+  const startDate = row.startDate.slice(0, 10);
+  const endDate = row.endDate.slice(0, 10);
+  return {
+    id: row.id,
+    label: row.label ?? null,
+    startDate,
+    endDate,
+  };
 }
 
 async function readFallbackSettings(): Promise<UserTimeSettings> {
@@ -40,12 +132,20 @@ async function readFallbackSettings(): Promise<UserTimeSettings> {
       ? config.date_time_format
       : null,
   );
+  const organizationHolidayCalendarCodes = normalizeHolidayCodes(
+    Array.isArray(config?.org_holiday_calendar_codes)
+      ? (config.org_holiday_calendar_codes as (string | null | undefined)[])
+      : null,
+    [DEFAULT_HOLIDAY_CALENDAR],
+  );
 
   return {
     timezone,
     weekStart,
     dateTimeFormat,
-    holidayCalendarCode: DEFAULT_HOLIDAY_CALENDAR,
+    holidayCalendarCodes: organizationHolidayCalendarCodes,
+    organizationHolidayCalendarCodes,
+    personalHolidays: [],
   };
 }
 
@@ -59,9 +159,16 @@ export async function readUserTimeSettings(
     return fallback;
   }
 
-  const preferences = await getUserPreferences(userId);
+  const [preferences, personalHolidayRows] = await Promise.all([
+    getUserPreferences(userId),
+    listUserPersonalHolidays(userId),
+  ]);
+
   if (!preferences) {
-    return fallback;
+    return {
+      ...fallback,
+      personalHolidays: personalHolidayRows.map(mapPersonalHolidayRow),
+    };
   }
 
   const timezone =
@@ -69,20 +176,31 @@ export async function readUserTimeSettings(
     preferences.timezone.trim().length
       ? preferences.timezone
       : fallback.timezone;
+
   const weekStart =
     preferences.weekStart === "sunday" || preferences.weekStart === "monday"
       ? preferences.weekStart
       : fallback.weekStart;
+
   const dateTimeFormat = normalizeDateTimeDisplayFormat(
     preferences.dateTimeFormat,
   );
-  const holidayCalendarCode = preferences.holidayCalendarCode
-    ? isHolidayCalendarCode(preferences.holidayCalendarCode)
-      ? preferences.holidayCalendarCode
-      : fallback.holidayCalendarCode
-    : fallback.holidayCalendarCode;
 
-  return { timezone, weekStart, dateTimeFormat, holidayCalendarCode };
+  const holidayCalendarCodes = normalizeHolidayCodes(
+    preferences.holidayCalendarCodes,
+    fallback.organizationHolidayCalendarCodes,
+  );
+
+  const personalHolidays = personalHolidayRows.map(mapPersonalHolidayRow);
+
+  return {
+    timezone,
+    weekStart,
+    dateTimeFormat,
+    holidayCalendarCodes,
+    organizationHolidayCalendarCodes: fallback.organizationHolidayCalendarCodes,
+    personalHolidays,
+  };
 }
 
 export async function writeUserTimeSettings(
@@ -92,6 +210,7 @@ export async function writeUserTimeSettings(
     weekStart?: "sunday" | "monday";
     dateTimeFormat?: string;
     holidayCalendarCode?: string;
+    holidayCalendarCodes?: string[];
   },
 ) {
   await ensureSchema();
@@ -130,8 +249,32 @@ export async function writeUserTimeSettings(
     dateTimeFormat = trimmed;
   }
 
-  let holidayCalendarCode = current.holidayCalendarCode;
-  if (params.holidayCalendarCode !== undefined) {
+  let holidayCalendarCodes = current.holidayCalendarCodes;
+  if (params.holidayCalendarCodes !== undefined) {
+    if (!Array.isArray(params.holidayCalendarCodes)) {
+      throw new Error("공휴일 달력 선택이 올바르지 않습니다.");
+    }
+    const selected: HolidayCalendarCode[] = [];
+    const seen = new Set<string>();
+    for (const value of params.holidayCalendarCodes) {
+      if (typeof value !== "string") {
+        throw new Error("지원하지 않는 공휴일 달력입니다.");
+      }
+      const trimmed = value.trim();
+      if (!trimmed) {
+        continue;
+      }
+      if (!isHolidayCalendarCode(trimmed)) {
+        throw new Error("지원하지 않는 공휴일 달력입니다.");
+      }
+      if (!seen.has(trimmed)) {
+        seen.add(trimmed);
+        selected.push(trimmed);
+      }
+    }
+    holidayCalendarCodes =
+      selected.length > 0 ? selected : current.organizationHolidayCalendarCodes;
+  } else if (params.holidayCalendarCode !== undefined) {
     const trimmed = params.holidayCalendarCode.trim();
     if (!trimmed) {
       throw new Error("공휴일 달력을 선택해 주세요.");
@@ -139,7 +282,7 @@ export async function writeUserTimeSettings(
     if (!isHolidayCalendarCode(trimmed)) {
       throw new Error("지원하지 않는 공휴일 달력입니다.");
     }
-    holidayCalendarCode = trimmed;
+    holidayCalendarCodes = [trimmed];
   }
 
   await upsertUserPreferences({
@@ -147,6 +290,108 @@ export async function writeUserTimeSettings(
     timezone,
     weekStart,
     dateTimeFormat,
-    holidayCalendarCode,
+    holidayCalendarCodes,
   });
+}
+
+export type PersonalHolidayInput = {
+  label?: string | null;
+  startDate: string;
+  endDate?: string | null;
+};
+
+function normalizePersonalHolidayInput(input: PersonalHolidayInput): {
+  label: string | null;
+  startDate: string;
+  endDate: string;
+} {
+  if (!input.startDate) {
+    throw new Error("시작일을 입력해 주세요.");
+  }
+
+  const startDate = toIsoDate(input.startDate);
+  const endSource = input.endDate ?? input.startDate;
+  if (!endSource) {
+    throw new Error("종료일을 입력해 주세요.");
+  }
+  const endDate = toIsoDate(endSource);
+
+  if (endDate < startDate) {
+    throw new Error("종료일은 시작일 이후여야 합니다.");
+  }
+
+  const label = normalizePersonalHolidayLabel(input.label);
+
+  return { label, startDate, endDate };
+}
+
+export async function addPersonalHoliday(
+  userId: string,
+  input: PersonalHolidayInput,
+): Promise<PersonalHoliday> {
+  await ensureSchema();
+  const normalized = normalizePersonalHolidayInput(input);
+  const row = await createUserPersonalHoliday({
+    userId,
+    label: normalized.label,
+    startDate: normalized.startDate,
+    endDate: normalized.endDate,
+  });
+  return mapPersonalHolidayRow(row);
+}
+
+export async function updatePersonalHoliday(
+  userId: string,
+  id: number,
+  input: PersonalHolidayInput,
+): Promise<PersonalHoliday> {
+  await ensureSchema();
+  const normalized = normalizePersonalHolidayInput(input);
+  const row = await updateUserPersonalHoliday({
+    id,
+    userId,
+    label: normalized.label,
+    startDate: normalized.startDate,
+    endDate: normalized.endDate,
+  });
+  if (!row) {
+    throw new Error("개인 휴일을 찾을 수 없습니다.");
+  }
+  return mapPersonalHolidayRow(row);
+}
+
+export async function removePersonalHoliday(
+  userId: string,
+  id: number,
+): Promise<void> {
+  await ensureSchema();
+  const removed = await deleteUserPersonalHoliday({ id, userId });
+  if (!removed) {
+    throw new Error("개인 휴일을 찾을 수 없습니다.");
+  }
+}
+
+export function expandPersonalHolidayDates(
+  entries: PersonalHoliday[],
+): Set<string> {
+  const dates = new Set<string>();
+  for (const entry of entries) {
+    const start = new Date(`${entry.startDate}T00:00:00Z`);
+    const end = new Date(`${entry.endDate}T00:00:00Z`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      continue;
+    }
+
+    for (
+      let time = start.getTime();
+      time <= end.getTime();
+      time += 86_400_000
+    ) {
+      const current = new Date(time);
+      const isoDate = `${current.getUTCFullYear()}-${`${current.getUTCMonth() + 1}`.padStart(2, "0")}-${`${current.getUTCDate()}`.padStart(2, "0")}`;
+      dates.add(isoDate);
+    }
+  }
+
+  return dates;
 }
