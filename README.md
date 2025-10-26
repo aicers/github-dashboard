@@ -202,6 +202,27 @@ are simply disabled. This is useful if you track issue progress entirely inside
 the dashboard or maintain multiple GitHub projects and only want dashboard-side
 state.
 
+### Business time & holiday handling
+
+- The dashboard treats weekends as non-working time across all business-day and
+  business-hour calculations.
+- Organization-wide metrics (예: Activity/Follow-ups의 “정체된 Backlog/In
+  Progress 이슈”, “오래된 PR”, “업데이트 없는 PR”, Age/Idle, Analytics/People의
+  평균 해결/작업 시간) rely on the organization holiday calendar codes
+  configured in `sync_config`. Those dates are combined with weekends to form
+  the working calendar.
+- User-specific wait metrics (Activity/Follow-ups의 “응답 없는 리뷰 요청”, “응답
+  없는 멘션”, Analytics/People의 리뷰 응답 시간) first try to load the
+  reviewer’s personal holiday preferences and time-off entries. When a person
+  supplies their own calendar or personal days, only those dates (plus weekends)
+  are excluded from response-time calculations.
+- If a person has not configured any personal calendar codes, the system falls
+  back to the organization holiday set so that users without preferences still
+  benefit from holiday-aware metrics.
+- Personal time entries expand multi-day ranges into individual dates, ensuring
+  that longer vacations are excluded consistently without requiring day-by-day
+  entries.
+
 ## Database backups
 
 The dashboard includes a lightweight backup scheduler so operators can snapshot
