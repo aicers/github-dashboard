@@ -23,6 +23,7 @@ WORKDIR /app
 COPY --from=builder --chown=node:node /app/public ./public
 COPY --from=builder --chown=node:node /app/.next/standalone ./
 COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+RUN mkdir -p /app/backups && chown node:node /app/backups
 
 EXPOSE 3000
 USER node
