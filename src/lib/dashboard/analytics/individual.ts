@@ -7,7 +7,6 @@ import {
   averageBusinessResponseHours,
   DEPENDABOT_FILTER,
 } from "@/lib/dashboard/analytics/shared";
-import { HOLIDAY_SET } from "@/lib/dashboard/business-days";
 import type { HeatmapCell, MultiTrendPoint } from "@/lib/dashboard/types";
 import { query } from "@/lib/db/client";
 
@@ -238,6 +237,7 @@ export async function fetchIndividualReviewMetrics(
   start: string,
   end: string,
   repositoryIds: string[] | undefined,
+  holidays: ReadonlySet<string>,
 ): Promise<IndividualReviewRow> {
   const params: unknown[] = [personId, start, end];
   let repoClause = "";
@@ -310,7 +310,7 @@ export async function fetchIndividualReviewMetrics(
       requestedAt: row.requested_at,
       respondedAt: row.responded_at,
     })),
-    HOLIDAY_SET,
+    holidays,
   );
 
   return {

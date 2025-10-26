@@ -10,7 +10,6 @@ vi.mock("@/lib/dashboard/analytics/reviews", () => ({
 
 vi.mock("@/lib/dashboard/business-days", () => ({
   calculateBusinessHoursBetween: vi.fn(),
-  HOLIDAY_SET: new Set(),
 }));
 
 import {
@@ -41,10 +40,13 @@ describe("analytics leaderboards helpers", () => {
       fields: [],
     });
 
-    const result = await fetchLeaderboard("prs", "start", "end", [
-      "repo-1",
-      "repo-2",
-    ]);
+    const result = await fetchLeaderboard(
+      "prs",
+      "start",
+      "end",
+      ["repo-1", "repo-2"],
+      new Set(),
+    );
 
     expect(result).toEqual([]);
     expect(mockQuery).toHaveBeenCalledTimes(1);
@@ -91,6 +93,7 @@ describe("analytics leaderboards helpers", () => {
       "start",
       "end",
       undefined,
+      new Set<string>(),
     );
 
     expect(mockQuery).not.toHaveBeenCalled();

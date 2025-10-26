@@ -10,7 +10,7 @@ import type {
 import {
   differenceInBusinessDays,
   differenceInBusinessDaysOrNull,
-  HOLIDAY_SET,
+  loadHolidaySet,
 } from "@/lib/dashboard/business-days";
 import type { DateTimeDisplayFormat } from "@/lib/date-time-format";
 import { ensureSchema } from "@/lib/db";
@@ -360,12 +360,20 @@ function parseDate(value: Maybe<string>) {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-function differenceInDays(value: Maybe<string>, now: Date) {
-  return differenceInBusinessDays(value ?? null, now, HOLIDAY_SET);
+function differenceInDays(
+  value: Maybe<string>,
+  now: Date,
+  holidays: ReadonlySet<string>,
+) {
+  return differenceInBusinessDays(value ?? null, now, holidays);
 }
 
-function differenceInDaysOrNull(value: Maybe<string>, now: Date) {
-  return differenceInBusinessDaysOrNull(value ?? null, now, HOLIDAY_SET);
+function differenceInDaysOrNull(
+  value: Maybe<string>,
+  now: Date,
+  holidays: ReadonlySet<string>,
+) {
+  return differenceInBusinessDaysOrNull(value ?? null, now, holidays);
 }
 
 function toUserReference(
@@ -966,6 +974,7 @@ async function fetchStalePullRequests(
   excludedRepositoryIds: readonly string[],
   excludedUserIds: readonly string[],
   now: Date,
+  holidays: ReadonlySet<string>,
 ): Promise<Dataset<RawPullRequestItem>> {
   const result = await query<PullRequestRow>(
     `SELECT
@@ -999,7 +1008,7 @@ async function fetchStalePullRequests(
   const items: RawPullRequestItem[] = [];
 
   result.rows.forEach((row) => {
-    const ageDays = differenceInDays(row.github_created_at, now);
+    const ageDays = differenceInDays(row.github_created_at, now, holidays);
     if (ageDays < STALE_PR_BUSINESS_DAYS) {
       return;
     }
@@ -1012,7 +1021,7 @@ async function fetchStalePullRequests(
     });
 
     const inactivityDays =
-      differenceInDaysOrNull(row.github_updated_at, now) ?? undefined;
+      differenceInDaysOrNull(row.github_updated_at, now, holidays) ?? undefined;
 
     items.push({
       id: row.id,
@@ -1039,6 +1048,7 @@ async function fetchIdlePullRequests(
   excludedRepositoryIds: readonly string[],
   excludedUserIds: readonly string[],
   now: Date,
+  holidays: ReadonlySet<string>,
 ): Promise<Dataset<RawPullRequestItem>> {
   const result = await query<PullRequestRow>(
     `SELECT
@@ -1073,8 +1083,12 @@ async function fetchIdlePullRequests(
   const items: RawPullRequestItem[] = [];
 
   result.rows.forEach((row) => {
-    const ageDays = differenceInDays(row.github_created_at, now);
-    const inactivityDays = differenceInDays(row.github_updated_at, now);
+    const ageDays = differenceInDays(row.github_created_at, now, holidays);
+    const inactivityDays = differenceInDays(
+      row.github_updated_at,
+      now,
+      holidays,
+    );
     if (
       ageDays < IDLE_PR_BUSINESS_DAYS ||
       inactivityDays < IDLE_PR_BUSINESS_DAYS
@@ -1114,6 +1128,7 @@ async function fetchStuckReviewRequests(
   excludedRepositoryIds: readonly string[],
   excludedUserIds: readonly string[],
   now: Date,
+  holidays: ReadonlySet<string>,
 ): Promise<Dataset<ReviewRequestRawItem>> {
   const result = await query<ReviewRequestRow>(
     `WITH base AS (
@@ -1211,7 +1226,7 @@ async function fetchStuckReviewRequests(
   const items: ReviewRequestRawItem[] = [];
 
   result.rows.forEach((row) => {
-    const waitingDays = differenceInDays(row.requested_at, now);
+    const waitingDays = differenceInDays(row.requested_at, now, holidays);
     if (waitingDays < STUCK_REVIEW_BUSINESS_DAYS) {
       return;
     }
@@ -1235,10 +1250,15 @@ async function fetchStuckReviewRequests(
     addUserId(userIds, row.pr_author_id);
     addUserId(userIds, row.reviewer_id);
 
-    const pullRequestAgeDays = differenceInDaysOrNull(row.pr_created_at, now);
+    const pullRequestAgeDays = differenceInDaysOrNull(
+      row.pr_created_at,
+      now,
+      holidays,
+    );
     const pullRequestInactivityDays = differenceInDaysOrNull(
       row.pr_updated_at,
       now,
+      holidays,
     );
 
     items.push({
@@ -1273,6 +1293,7 @@ async function fetchIssueInsights(
   excludedUserIds: readonly string[],
   targetProject: string | null,
   now: Date,
+  holidays: ReadonlySet<string>,
 ): Promise<{
   backlog: Dataset<IssueRawItem>;
   stalled: Dataset<IssueRawItem>;
@@ -1327,9 +1348,9 @@ async function fetchIssueInsights(
       linkedPullRequests: [],
       createdAt: row.github_created_at,
       updatedAt: row.github_updated_at,
-      ageDays: differenceInDays(row.github_created_at, now),
+      ageDays: differenceInDays(row.github_created_at, now, holidays),
       startedAt: work.startedAt,
-      inProgressAgeDays: differenceInDaysOrNull(work.startedAt, now),
+      inProgressAgeDays: differenceInDaysOrNull(work.startedAt, now, holidays),
       issueProjectStatus: projectSnapshot.projectStatus,
       issueProjectStatusSource: projectSnapshot.projectStatusSource,
       issueProjectStatusLocked: projectSnapshot.projectStatusLocked,
@@ -1388,6 +1409,7 @@ async function fetchUnansweredMentions(
   excludedRepositoryIds: readonly string[],
   excludedUserIds: readonly string[],
   now: Date,
+  holidays: ReadonlySet<string>,
 ): Promise<Dataset<MentionRawItem>> {
   const result = await query<MentionRow>(
     `WITH mention_candidates AS (
@@ -1484,7 +1506,7 @@ async function fetchUnansweredMentions(
   const items: MentionRawItem[] = [];
 
   result.rows.forEach((row) => {
-    const waitingDays = differenceInDays(row.mentioned_at, now);
+    const waitingDays = differenceInDays(row.mentioned_at, now, holidays);
     if (waitingDays < UNANSWERED_MENTION_BUSINESS_DAYS) {
       return;
     }
@@ -1591,6 +1613,7 @@ export async function getAttentionInsights(options?: {
     getSyncConfig(),
     readUserTimeSettings(options?.userId ?? null),
   ]);
+  const holidaySet = await loadHolidaySet(userTimeSettings.holidayCalendarCode);
   const excludedUserIds = new Set<string>(
     Array.isArray(config?.excluded_user_ids)
       ? (config?.excluded_user_ids as string[]).filter(
@@ -1614,16 +1637,37 @@ export async function getAttentionInsights(options?: {
 
   const [stale, idle, stuckReviews, issueInsights, mentions] =
     await Promise.all([
-      fetchStalePullRequests(excludedReposArray, excludedUsersArray, now),
-      fetchIdlePullRequests(excludedReposArray, excludedUsersArray, now),
-      fetchStuckReviewRequests(excludedReposArray, excludedUsersArray, now),
+      fetchStalePullRequests(
+        excludedReposArray,
+        excludedUsersArray,
+        now,
+        holidaySet,
+      ),
+      fetchIdlePullRequests(
+        excludedReposArray,
+        excludedUsersArray,
+        now,
+        holidaySet,
+      ),
+      fetchStuckReviewRequests(
+        excludedReposArray,
+        excludedUsersArray,
+        now,
+        holidaySet,
+      ),
       fetchIssueInsights(
         excludedReposArray,
         excludedUsersArray,
         targetProject,
         now,
+        holidaySet,
       ),
-      fetchUnansweredMentions(excludedReposArray, excludedUsersArray, now),
+      fetchUnansweredMentions(
+        excludedReposArray,
+        excludedUsersArray,
+        now,
+        holidaySet,
+      ),
     ]);
 
   const userIdSet = new Set<string>();

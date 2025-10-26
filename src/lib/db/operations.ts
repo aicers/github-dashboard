@@ -1,5 +1,6 @@
 import { refreshActivitySocialSignals } from "@/lib/activity/social-signals";
 import { query, withTransaction } from "@/lib/db/client";
+import type { HolidayCalendarCode } from "@/lib/holidays/constants";
 import { emitSyncEvent } from "@/lib/sync/event-bus";
 
 type TableCountKey = "issues" | "pull_requests" | "reviews" | "comments";
@@ -1346,6 +1347,7 @@ export type UserPreferencesRow = {
   timezone: string;
   weekStart: "sunday" | "monday";
   dateTimeFormat: string;
+  holidayCalendarCode: HolidayCalendarCode | null;
 };
 
 export async function getUserPreferences(
@@ -1356,8 +1358,9 @@ export async function getUserPreferences(
     timezone: string;
     week_start: string;
     date_time_format: string;
+    holiday_calendar_code: HolidayCalendarCode | null;
   }>(
-    `SELECT user_id, timezone, week_start, date_time_format
+    `SELECT user_id, timezone, week_start, date_time_format, holiday_calendar_code
      FROM user_preferences
      WHERE user_id = $1`,
     [userId],
@@ -1378,6 +1381,7 @@ export async function getUserPreferences(
     timezone: row.timezone,
     weekStart,
     dateTimeFormat: row.date_time_format,
+    holidayCalendarCode: row.holiday_calendar_code,
   };
 }
 
@@ -1386,16 +1390,24 @@ export async function upsertUserPreferences(params: {
   timezone: string;
   weekStart: "sunday" | "monday";
   dateTimeFormat: string;
+  holidayCalendarCode: HolidayCalendarCode;
 }) {
   await query(
-    `INSERT INTO user_preferences (user_id, timezone, week_start, date_time_format)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO user_preferences (user_id, timezone, week_start, date_time_format, holiday_calendar_code)
+     VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT (user_id) DO UPDATE SET
        timezone = EXCLUDED.timezone,
        week_start = EXCLUDED.week_start,
        date_time_format = EXCLUDED.date_time_format,
+       holiday_calendar_code = EXCLUDED.holiday_calendar_code,
        updated_at = NOW()`,
-    [params.userId, params.timezone, params.weekStart, params.dateTimeFormat],
+    [
+      params.userId,
+      params.timezone,
+      params.weekStart,
+      params.dateTimeFormat,
+      params.holidayCalendarCode,
+    ],
   );
 }
 

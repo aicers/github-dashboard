@@ -78,6 +78,48 @@ const organizationMembers = [
   },
 ];
 
+const holidayCalendars = [
+  {
+    code: "kr" as const,
+    label: "한국",
+    countryLabel: "한국",
+    regionLabel: null,
+    sortOrder: 1,
+    holidayCount: 2,
+  },
+  {
+    code: "jp" as const,
+    label: "일본",
+    countryLabel: "일본",
+    regionLabel: null,
+    sortOrder: 2,
+    holidayCount: 0,
+  },
+];
+
+const holidayEntries = [
+  {
+    id: 1,
+    calendarCode: "kr" as const,
+    year: 2025,
+    dateKey: "01-01",
+    holidayDate: "2025-01-01",
+    weekday: "수",
+    name: "신정",
+    note: null,
+  },
+  {
+    id: 2,
+    calendarCode: "kr" as const,
+    year: 2025,
+    dateKey: "02-28",
+    holidayDate: "2025-02-28",
+    weekday: "금",
+    name: "샘플 공휴일",
+    note: "테스트용",
+  },
+];
+
 function resolveIsAdmin(searchParams?: { admin?: string }) {
   const value = searchParams?.admin;
   if (!value) {
@@ -103,6 +145,9 @@ export default async function SettingsHarnessPage({
         timeZone="Asia/Seoul"
         weekStart="monday"
         dateTimeFormat="auto"
+        holidayCalendarCode="kr"
+        holidayCalendars={holidayCalendars}
+        initialHolidayEntries={holidayEntries}
         repositories={repositories}
         excludedRepositoryIds={["repo-2"]}
         members={members}

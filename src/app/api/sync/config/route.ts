@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { readActiveSession } from "@/lib/auth/session";
 import { DATE_TIME_FORMAT_VALUES } from "@/lib/date-time-format";
+import { isHolidayCalendarCode } from "@/lib/holidays/constants";
 import { fetchSyncStatus, updateSyncSettings } from "@/lib/sync/service";
 import {
   readUserTimeSettings,
@@ -26,6 +27,16 @@ const patchSchema = z.object({
       { message: "Unsupported date-time display format." },
     )
     .optional(),
+  holidayCalendarCode: z
+    .string()
+    .optional()
+    .transform((value) => (typeof value === "string" ? value.trim() : value))
+    .refine(
+      (value) =>
+        value === undefined ||
+        (value.length > 0 && isHolidayCalendarCode(value)),
+      { message: "Unsupported holiday calendar." },
+    ),
   excludedRepositories: z
     .array(z.string().min(1))
     .optional()
@@ -95,13 +106,15 @@ export async function PATCH(request: Request) {
       timezone,
       weekStart,
       dateTimeFormat,
+      holidayCalendarCode,
       backupHour,
     } = payload;
 
     const hasPersonalUpdate =
       timezone !== undefined ||
       weekStart !== undefined ||
-      dateTimeFormat !== undefined;
+      dateTimeFormat !== undefined ||
+      holidayCalendarCode !== undefined;
 
     if (!session.isAdmin) {
       const attemptedAdminUpdate =
@@ -140,6 +153,7 @@ export async function PATCH(request: Request) {
           timezone,
           weekStart,
           dateTimeFormat,
+          holidayCalendarCode,
         });
       }
     } else {
@@ -148,6 +162,7 @@ export async function PATCH(request: Request) {
           timezone,
           weekStart,
           dateTimeFormat,
+          holidayCalendarCode,
         });
       }
 

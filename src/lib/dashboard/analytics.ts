@@ -53,6 +53,7 @@ import {
   resolveRange,
   roundToOneDecimal,
 } from "@/lib/dashboard/analytics/shared";
+import { loadHolidaySet } from "@/lib/dashboard/business-days";
 import type {
   AnalyticsParams,
   DashboardAnalytics,
@@ -244,6 +245,7 @@ export async function getDashboardAnalytics(
     getSyncConfig(),
     readUserTimeSettings(options?.userId ?? null),
   ]);
+  const holidaySet = await loadHolidaySet(userTimeSettings.holidayCalendarCode);
   const timeZone = userTimeSettings.timezone;
   const weekStart: WeekStart = userTimeSettings.weekStart;
   const excludedUserIds = new Set<string>(
@@ -341,26 +343,30 @@ export async function getDashboardAnalytics(
     previous3Reviews,
     previous4Reviews,
   ] = await Promise.all([
-    fetchReviewAggregates(range.start, range.end, repositoryFilter),
+    fetchReviewAggregates(range.start, range.end, repositoryFilter, holidaySet),
     fetchReviewAggregates(
       range.previousStart,
       range.previousEnd,
       repositoryFilter,
+      holidaySet,
     ),
     fetchReviewAggregates(
       range.previous2Start,
       range.previous2End,
       repositoryFilter,
+      holidaySet,
     ),
     fetchReviewAggregates(
       range.previous3Start,
       range.previous3End,
       repositoryFilter,
+      holidaySet,
     ),
     fetchReviewAggregates(
       range.previous4Start,
       range.previous4End,
       repositoryFilter,
+      holidaySet,
     ),
   ]);
 
@@ -430,14 +436,56 @@ export async function getDashboardAnalytics(
     fetchRepoComparison(range.start, range.end, repositoryFilter),
     fetchReviewerActivity(range.start, range.end, repositoryFilter),
     fetchMainBranchContribution(range.start, range.end, repositoryFilter),
-    fetchLeaderboard("prs", range.start, range.end, repositoryFilter),
-    fetchLeaderboard("prsMerged", range.start, range.end, repositoryFilter),
-    fetchLeaderboard("prsMergedBy", range.start, range.end, repositoryFilter),
+    fetchLeaderboard(
+      "prs",
+      range.start,
+      range.end,
+      repositoryFilter,
+      holidaySet,
+    ),
+    fetchLeaderboard(
+      "prsMerged",
+      range.start,
+      range.end,
+      repositoryFilter,
+      holidaySet,
+    ),
+    fetchLeaderboard(
+      "prsMergedBy",
+      range.start,
+      range.end,
+      repositoryFilter,
+      holidaySet,
+    ),
     fetchPrCompletionLeaderboard(range.start, range.end, repositoryFilter),
-    fetchLeaderboard("issues", range.start, range.end, repositoryFilter),
-    fetchLeaderboard("reviews", range.start, range.end, repositoryFilter),
-    fetchLeaderboard("response", range.start, range.end, repositoryFilter),
-    fetchLeaderboard("comments", range.start, range.end, repositoryFilter),
+    fetchLeaderboard(
+      "issues",
+      range.start,
+      range.end,
+      repositoryFilter,
+      holidaySet,
+    ),
+    fetchLeaderboard(
+      "reviews",
+      range.start,
+      range.end,
+      repositoryFilter,
+      holidaySet,
+    ),
+    fetchLeaderboard(
+      "response",
+      range.start,
+      range.end,
+      repositoryFilter,
+      holidaySet,
+    ),
+    fetchLeaderboard(
+      "comments",
+      range.start,
+      range.end,
+      repositoryFilter,
+      holidaySet,
+    ),
     fetchIssueDurationDetails(range.start, range.end, repositoryFilter),
     fetchIssueDurationDetails(
       range.previousStart,
@@ -1115,30 +1163,35 @@ export async function getDashboardAnalytics(
         range.start,
         range.end,
         repositoryFilter,
+        holidaySet,
       ),
       fetchIndividualReviewMetrics(
         personProfile.id,
         range.previousStart,
         range.previousEnd,
         repositoryFilter,
+        holidaySet,
       ),
       fetchIndividualReviewMetrics(
         personProfile.id,
         range.previous2Start,
         range.previous2End,
         repositoryFilter,
+        holidaySet,
       ),
       fetchIndividualReviewMetrics(
         personProfile.id,
         range.previous3Start,
         range.previous3End,
         repositoryFilter,
+        holidaySet,
       ),
       fetchIndividualReviewMetrics(
         personProfile.id,
         range.previous4Start,
         range.previous4End,
         repositoryFilter,
+        holidaySet,
       ),
     ]);
 

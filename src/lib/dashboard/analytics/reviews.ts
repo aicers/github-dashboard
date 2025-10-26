@@ -2,7 +2,6 @@ import {
   averageBusinessResponseHours,
   DEPENDABOT_FILTER,
 } from "@/lib/dashboard/analytics/shared";
-import { HOLIDAY_SET } from "@/lib/dashboard/business-days";
 import type { HeatmapCell } from "@/lib/dashboard/types";
 import { query } from "@/lib/db/client";
 
@@ -34,6 +33,7 @@ export async function fetchReviewAggregates(
   start: string,
   end: string,
   repositoryIds: string[] | undefined,
+  holidays: ReadonlySet<string>,
 ): Promise<ReviewAggregateRow> {
   const params: unknown[] = [start, end];
   let repoClause = "";
@@ -87,7 +87,7 @@ export async function fetchReviewAggregates(
       requestedAt: row.requested_at,
       respondedAt: row.responded_at,
     })),
-    HOLIDAY_SET,
+    holidays,
   );
 
   return {

@@ -4,6 +4,7 @@ import { Building2, Camera, ImageOff, Loader2, User } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
+  useCallback,
   useEffect,
   useId,
   useMemo,
@@ -29,6 +30,8 @@ import {
 } from "@/lib/date-time-format";
 import type { RepositoryProfile, UserProfile } from "@/lib/db/operations";
 import type { GithubMemberSummary, GithubTeamSummary } from "@/lib/github/org";
+import type { HolidayCalendarCode } from "@/lib/holidays/constants";
+import type { CalendarHoliday, HolidayCalendar } from "@/lib/holidays/service";
 import { buildUserInitials } from "@/lib/user/initials";
 import { cn } from "@/lib/utils";
 
@@ -84,6 +87,9 @@ type SettingsViewProps = {
   timeZone: string;
   weekStart: "sunday" | "monday";
   dateTimeFormat: string;
+  holidayCalendarCode: HolidayCalendarCode;
+  holidayCalendars: HolidayCalendar[];
+  initialHolidayEntries: CalendarHoliday[];
   repositories: RepositoryProfile[];
   excludedRepositoryIds: string[];
   members: UserProfile[];
@@ -107,12 +113,30 @@ type ApiResponse<T> = {
   result?: T;
 };
 
+type HolidayFormState = {
+  id: number | null;
+  date: string;
+  weekday: string;
+  name: string;
+  note: string;
+};
+
+type HolidayApiResponse = {
+  success: boolean;
+  message?: string;
+  holidays?: CalendarHoliday[];
+  holiday?: CalendarHoliday;
+};
+
 export function SettingsView({
   orgName,
   syncIntervalMinutes,
   timeZone,
   weekStart,
   dateTimeFormat,
+  holidayCalendarCode: initialHolidayCalendarCode,
+  holidayCalendars,
+  initialHolidayEntries,
   repositories,
   excludedRepositoryIds,
   members,
@@ -140,6 +164,16 @@ export function SettingsView({
     useState<DateTimeDisplayFormat>(
       normalizeDateTimeDisplayFormat(dateTimeFormat),
     );
+  const [holidayCalendarCode, setHolidayCalendarCode] =
+    useState<HolidayCalendarCode>(initialHolidayCalendarCode);
+  const [holidayEntries, setHolidayEntries] = useState<CalendarHoliday[]>(
+    initialHolidayEntries,
+  );
+  const [isLoadingPersonalHolidays, setIsLoadingPersonalHolidays] =
+    useState(false);
+  const [holidaySelectionError, setHolidaySelectionError] = useState<
+    string | null
+  >(null);
   const [personalFeedback, setPersonalFeedback] = useState<string | null>(null);
   const [orgFeedback, setOrgFeedback] = useState<string | null>(null);
   const [persistedAvatarUrl, setPersistedAvatarUrl] = useState<string | null>(
@@ -159,6 +193,9 @@ export function SettingsView({
   const [avatarFeedback, setAvatarFeedback] = useState<string | null>(null);
   const tempAvatarUrlRef = useRef<string | null>(null);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const holidayCacheRef = useRef<Map<string, CalendarHoliday[]>>(new Map());
+  const personalHolidayRequestRef = useRef(0);
+  const adminHolidayRequestRef = useRef(0);
   const avatarInitials = useMemo(
     () =>
       buildUserInitials({
@@ -213,10 +250,30 @@ export function SettingsView({
   const [allowedUsers, setAllowedUsers] = useState<string[]>(
     normalizedAllowedUsers,
   );
+  const [adminCalendarCode, setAdminCalendarCode] =
+    useState<HolidayCalendarCode>(initialHolidayCalendarCode);
+  const [adminHolidayEntries, setAdminHolidayEntries] = useState<
+    CalendarHoliday[]
+  >(initialHolidayEntries);
+  const [isLoadingAdminHolidays, setIsLoadingAdminHolidays] = useState(false);
+  const [holidayAdminError, setHolidayAdminError] = useState<string | null>(
+    null,
+  );
+  const [holidayAdminFeedback, setHolidayAdminFeedback] = useState<
+    string | null
+  >(null);
+  const [holidayForm, setHolidayForm] = useState<HolidayFormState>({
+    id: null,
+    date: "",
+    weekday: "",
+    name: "",
+    note: "",
+  });
   const [isSavingPersonal, startSavingPersonal] = useTransition();
   const [isSavingOrganization, startSavingOrganization] = useTransition();
   const [isUploadingAvatar, startUploadingAvatar] = useTransition();
   const [isRemovingAvatar, startRemovingAvatar] = useTransition();
+  const [isMutatingHoliday, startMutatingHoliday] = useTransition();
   const [activeTab, setActiveTab] = useState<"personal" | "organization">(
     "personal",
   );
@@ -227,6 +284,10 @@ export function SettingsView({
   const excludePeopleSelectId = useId();
   const allowedTeamsSelectId = useId();
   const allowedUsersSelectId = useId();
+  const holidayDateInputId = useId();
+  const holidayWeekdayInputId = useId();
+  const holidayNameInputId = useId();
+  const holidayNoteInputId = useId();
   const feedbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const canEditOrganization = isAdmin;
@@ -301,6 +362,67 @@ export function SettingsView({
   }, [dateTimeFormat]);
 
   useEffect(() => {
+    holidayCacheRef.current.set(
+      initialHolidayCalendarCode,
+      initialHolidayEntries,
+    );
+    setHolidayCalendarCode(initialHolidayCalendarCode);
+    setAdminCalendarCode(initialHolidayCalendarCode);
+    setHolidayEntries(initialHolidayEntries);
+    setAdminHolidayEntries(initialHolidayEntries);
+    setHolidayForm({ id: null, date: "", weekday: "", name: "", note: "" });
+  }, [initialHolidayCalendarCode, initialHolidayEntries]);
+
+  const parseHolidayResponse = useCallback(
+    async (response: Response): Promise<HolidayApiResponse> => {
+      const rawBody = await response.text();
+      const trimmed = rawBody.trim();
+      const statusLabel = response.statusText
+        ? `${response.status} ${response.statusText}`
+        : `${response.status}`;
+      if (!trimmed) {
+        throw new Error(`서버에서 빈 응답이 반환되었습니다. (${statusLabel})`);
+      }
+      try {
+        return JSON.parse(trimmed) as HolidayApiResponse;
+      } catch (_error) {
+        throw new Error(`서버 응답을 해석하지 못했습니다. (${statusLabel})`);
+      }
+    },
+    [],
+  );
+
+  const fetchHolidayEntries = useCallback(
+    async (code: string) => {
+      const cached = holidayCacheRef.current.get(code);
+      if (cached) {
+        return cached;
+      }
+      let response: Response;
+      try {
+        response = await fetch(
+          `/api/holidays/calendars/${encodeURIComponent(code)}`,
+        );
+      } catch (_error) {
+        throw new Error("공휴일 정보를 불러오지 못했습니다.");
+      }
+      const payload = await parseHolidayResponse(response);
+      if (
+        !response.ok ||
+        !payload.success ||
+        !Array.isArray(payload.holidays)
+      ) {
+        throw new Error(
+          payload.message ?? "공휴일 정보를 불러오지 못했습니다.",
+        );
+      }
+      holidayCacheRef.current.set(code, payload.holidays);
+      return payload.holidays;
+    },
+    [parseHolidayResponse],
+  );
+
+  useEffect(() => {
     if (feedbackTimeoutRef.current) {
       clearTimeout(feedbackTimeoutRef.current);
       feedbackTimeoutRef.current = null;
@@ -346,6 +468,17 @@ export function SettingsView({
       }),
     );
   }, [members]);
+  const sortedHolidayCalendars = useMemo(() => {
+    return [...holidayCalendars].sort((a, b) => {
+      const order = a.sortOrder - b.sortOrder;
+      if (order !== 0) {
+        return order;
+      }
+      return a.label.localeCompare(b.label, "ko", {
+        sensitivity: "base",
+      });
+    });
+  }, [holidayCalendars]);
   const sortedOrganizationTeams = useMemo(() => {
     return [...organizationTeams].sort((a, b) =>
       (a.name || a.slug).localeCompare(b.name || b.slug, undefined, {
@@ -403,6 +536,250 @@ export function SettingsView({
 
   const handleClearAllowedUsers = () => {
     setAllowedUsers([]);
+  };
+
+  const handleHolidayCalendarSelect = (
+    event: React.ChangeEvent<HTMLSelectElement>,
+  ) => {
+    const code = event.target.value as HolidayCalendarCode;
+    setHolidayCalendarCode(code);
+    setHolidaySelectionError(null);
+    const requestId = personalHolidayRequestRef.current + 1;
+    personalHolidayRequestRef.current = requestId;
+    const cached = holidayCacheRef.current.get(code);
+    if (cached) {
+      setHolidayEntries(cached);
+      setIsLoadingPersonalHolidays(false);
+      return;
+    }
+    setIsLoadingPersonalHolidays(true);
+
+    fetchHolidayEntries(code)
+      .then((entries) => {
+        if (personalHolidayRequestRef.current !== requestId) {
+          return;
+        }
+        setHolidayEntries(entries);
+      })
+      .catch((error) => {
+        console.error(error);
+        if (personalHolidayRequestRef.current !== requestId) {
+          return;
+        }
+        setHolidaySelectionError(
+          error instanceof Error
+            ? error.message
+            : "공휴일 정보를 불러오지 못했습니다.",
+        );
+      })
+      .finally(() => {
+        if (personalHolidayRequestRef.current === requestId) {
+          setIsLoadingPersonalHolidays(false);
+        }
+      });
+  };
+
+  const resetHolidayForm = () => {
+    setHolidayForm({ id: null, date: "", weekday: "", name: "", note: "" });
+  };
+
+  const handleAdminCalendarSelect = (
+    event: React.ChangeEvent<HTMLSelectElement>,
+  ) => {
+    const code = event.target.value as HolidayCalendarCode;
+    setAdminCalendarCode(code);
+    setHolidayAdminError(null);
+    setHolidayAdminFeedback(null);
+    resetHolidayForm();
+    const requestId = adminHolidayRequestRef.current + 1;
+    adminHolidayRequestRef.current = requestId;
+    const cached = holidayCacheRef.current.get(code);
+    if (cached) {
+      setAdminHolidayEntries(cached);
+      setIsLoadingAdminHolidays(false);
+      return;
+    }
+    setIsLoadingAdminHolidays(true);
+
+    fetchHolidayEntries(code)
+      .then((entries) => {
+        if (adminHolidayRequestRef.current !== requestId) {
+          return;
+        }
+        setAdminHolidayEntries(entries);
+      })
+      .catch((error) => {
+        console.error(error);
+        if (adminHolidayRequestRef.current !== requestId) {
+          return;
+        }
+        setHolidayAdminError(
+          error instanceof Error
+            ? error.message
+            : "공휴일 정보를 불러오지 못했습니다.",
+        );
+      })
+      .finally(() => {
+        if (adminHolidayRequestRef.current === requestId) {
+          setIsLoadingAdminHolidays(false);
+        }
+      });
+  };
+
+  const handleHolidayFormChange =
+    (field: keyof HolidayFormState) =>
+    (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      const value = event.target.value;
+      setHolidayForm((previous) => ({
+        ...previous,
+        [field]: value,
+      }));
+    };
+
+  const handleEditHoliday = (entry: CalendarHoliday) => {
+    setHolidayAdminError(null);
+    setHolidayAdminFeedback(null);
+    setHolidayForm({
+      id: entry.id,
+      date: entry.holidayDate,
+      weekday: entry.weekday ?? "",
+      name: entry.name,
+      note: entry.note ?? "",
+    });
+  };
+
+  const handleCancelHolidayEdit = () => {
+    resetHolidayForm();
+    setHolidayAdminError(null);
+    setHolidayAdminFeedback(null);
+  };
+
+  const handleHolidayFormSubmit = () => {
+    const targetCalendar = adminCalendarCode;
+    const trimmedDate = holidayForm.date.trim();
+    const trimmedName = holidayForm.name.trim();
+    const trimmedWeekday = holidayForm.weekday.trim();
+    const trimmedNote = holidayForm.note.trim();
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmedDate)) {
+      setHolidayAdminError("날짜는 YYYY-MM-DD 형식으로 입력해 주세요.");
+      return;
+    }
+
+    if (!trimmedName.length) {
+      setHolidayAdminError("공휴일 이름을 입력해 주세요.");
+      return;
+    }
+
+    setHolidayAdminError(null);
+    setHolidayAdminFeedback(null);
+    setIsLoadingAdminHolidays(true);
+    const requestId = adminHolidayRequestRef.current + 1;
+    adminHolidayRequestRef.current = requestId;
+
+    startMutatingHoliday(async () => {
+      try {
+        holidayCacheRef.current.delete(targetCalendar);
+        const payloadBody = JSON.stringify({
+          calendarCode: targetCalendar,
+          holidayDate: trimmedDate,
+          weekday: trimmedWeekday || undefined,
+          name: trimmedName,
+          note: trimmedNote || undefined,
+        });
+
+        if (holidayForm.id) {
+          const response = await fetch(
+            `/api/holidays/entries/${holidayForm.id}`,
+            {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: payloadBody,
+            },
+          );
+          const payload = await parseHolidayResponse(response);
+          if (!response.ok || !payload.success || !payload.holiday) {
+            throw new Error(payload.message ?? "공휴일을 수정하지 못했습니다.");
+          }
+          setHolidayAdminFeedback("공휴일을 수정했어요.");
+        } else {
+          const response = await fetch(
+            `/api/holidays/calendars/${encodeURIComponent(targetCalendar)}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: payloadBody,
+            },
+          );
+          const payload = await parseHolidayResponse(response);
+          if (!response.ok || !payload.success || !payload.holiday) {
+            throw new Error(payload.message ?? "공휴일을 추가하지 못했습니다.");
+          }
+          setHolidayAdminFeedback("공휴일을 추가했어요.");
+        }
+
+        const updatedEntries = await fetchHolidayEntries(targetCalendar);
+        setAdminHolidayEntries(updatedEntries);
+        if (holidayCalendarCode === targetCalendar) {
+          setHolidayEntries(updatedEntries);
+        }
+        resetHolidayForm();
+      } catch (error) {
+        console.error(error);
+        setHolidayAdminError(
+          error instanceof Error
+            ? error.message
+            : "공휴일 정보를 저장하지 못했습니다.",
+        );
+      } finally {
+        if (adminHolidayRequestRef.current === requestId) {
+          setIsLoadingAdminHolidays(false);
+        }
+      }
+    });
+  };
+
+  const handleDeleteHoliday = (holidayId: number) => {
+    const targetCalendar = adminCalendarCode;
+    setHolidayAdminError(null);
+    setHolidayAdminFeedback(null);
+    setIsLoadingAdminHolidays(true);
+    const requestId = adminHolidayRequestRef.current + 1;
+    adminHolidayRequestRef.current = requestId;
+
+    startMutatingHoliday(async () => {
+      try {
+        holidayCacheRef.current.delete(targetCalendar);
+        const response = await fetch(`/api/holidays/entries/${holidayId}`, {
+          method: "DELETE",
+        });
+        const payload = await parseHolidayResponse(response);
+        if (!response.ok || !payload.success) {
+          throw new Error(payload.message ?? "공휴일을 삭제하지 못했습니다.");
+        }
+
+        const updatedEntries = await fetchHolidayEntries(targetCalendar);
+        setAdminHolidayEntries(updatedEntries);
+        if (holidayCalendarCode === targetCalendar) {
+          setHolidayEntries(updatedEntries);
+        }
+        if (holidayForm.id === holidayId) {
+          resetHolidayForm();
+        }
+        setHolidayAdminFeedback("공휴일을 삭제했어요.");
+      } catch (error) {
+        console.error(error);
+        setHolidayAdminError(
+          error instanceof Error
+            ? error.message
+            : "공휴일을 삭제하지 못했습니다.",
+        );
+      } finally {
+        if (adminHolidayRequestRef.current === requestId) {
+          setIsLoadingAdminHolidays(false);
+        }
+      }
+    });
   };
 
   const releaseTempAvatarPreview = () => {
@@ -605,6 +982,7 @@ export function SettingsView({
             timezone,
             weekStart: weekStartValue,
             dateTimeFormat: dateTimeFormatValue,
+            holidayCalendarCode,
           }),
         });
         const data = (await response.json()) as ApiResponse<unknown>;
@@ -848,6 +1226,90 @@ export function SettingsView({
                       </p>
                     ) : null}
                   </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/70">
+              <CardHeader>
+                <CardTitle>공휴일 설정</CardTitle>
+                <CardDescription>
+                  개인 대시보드에서 사용할 공휴일 집합을 선택하세요.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4 text-sm">
+                <label className="flex flex-col gap-2">
+                  <span className="text-muted-foreground">적용할 국가</span>
+                  <select
+                    value={holidayCalendarCode}
+                    onChange={handleHolidayCalendarSelect}
+                    className="rounded-md border border-border/60 bg-background p-2 text-sm"
+                  >
+                    {sortedHolidayCalendars.map((calendar) => {
+                      const cachedEntries = holidayCacheRef.current.get(
+                        calendar.code,
+                      );
+                      const count =
+                        cachedEntries?.length ?? calendar.holidayCount ?? 0;
+                      return (
+                        <option key={calendar.code} value={calendar.code}>
+                          {calendar.label}
+                          {count ? ` · ${count.toLocaleString()}일` : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </label>
+                {holidaySelectionError ? (
+                  <p className="text-xs text-rose-600">
+                    {holidaySelectionError}
+                  </p>
+                ) : null}
+                <div className="overflow-hidden rounded-md border border-border/60">
+                  {isLoadingPersonalHolidays ? (
+                    <p className="p-4 text-sm text-muted-foreground">
+                      공휴일 목록을 불러오는 중입니다...
+                    </p>
+                  ) : holidayEntries.length ? (
+                    <table className="min-w-full divide-y divide-border/80 text-sm">
+                      <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-medium">
+                            날짜
+                          </th>
+                          <th className="px-3 py-2 text-left font-medium">
+                            요일
+                          </th>
+                          <th className="px-3 py-2 text-left font-medium">
+                            공휴일명
+                          </th>
+                          <th className="px-3 py-2 text-left font-medium">
+                            비고
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/60 bg-background">
+                        {holidayEntries.map((entry) => (
+                          <tr key={entry.id}>
+                            <td className="px-3 py-2 font-mono text-xs">
+                              {entry.holidayDate}
+                            </td>
+                            <td className="px-3 py-2">
+                              {entry.weekday ?? "-"}
+                            </td>
+                            <td className="px-3 py-2">{entry.name}</td>
+                            <td className="px-3 py-2 text-muted-foreground">
+                              {entry.note ?? "-"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="p-4 text-sm text-muted-foreground">
+                      등록된 공휴일 정보가 없습니다.
+                    </p>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -1105,6 +1567,203 @@ export function SettingsView({
                 </div>
               </CardFooter>
             </Card>
+
+            {canEditOrganization ? (
+              <Card className="border-border/70">
+                <CardHeader>
+                  <CardTitle>공휴일 관리</CardTitle>
+                  <CardDescription>
+                    국가별 공휴일 정보를 추가, 수정, 삭제할 수 있습니다.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-4 text-sm">
+                  <label className="flex flex-col gap-2">
+                    <span className="text-muted-foreground">관리할 국가</span>
+                    <select
+                      value={adminCalendarCode}
+                      onChange={handleAdminCalendarSelect}
+                      className="rounded-md border border-border/60 bg-background p-2 text-sm"
+                    >
+                      {sortedHolidayCalendars.map((calendar) => {
+                        const cachedEntries = holidayCacheRef.current.get(
+                          calendar.code,
+                        );
+                        const count =
+                          cachedEntries?.length ?? calendar.holidayCount ?? 0;
+                        return (
+                          <option key={calendar.code} value={calendar.code}>
+                            {calendar.label}
+                            {count ? ` · ${count.toLocaleString()}일` : ""}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </label>
+                  {holidayAdminError ? (
+                    <p className="text-xs text-rose-600">{holidayAdminError}</p>
+                  ) : null}
+                  {holidayAdminFeedback ? (
+                    <p className="text-xs text-emerald-600">
+                      {holidayAdminFeedback}
+                    </p>
+                  ) : null}
+                  <div className="overflow-hidden rounded-md border border-border/60">
+                    {isLoadingAdminHolidays ? (
+                      <p className="p-4 text-sm text-muted-foreground">
+                        공휴일 목록을 불러오는 중입니다...
+                      </p>
+                    ) : adminHolidayEntries.length ? (
+                      <table className="min-w-full divide-y divide-border/80 text-sm">
+                        <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
+                          <tr>
+                            <th className="px-3 py-2 text-left font-medium">
+                              날짜
+                            </th>
+                            <th className="px-3 py-2 text-left font-medium">
+                              요일
+                            </th>
+                            <th className="px-3 py-2 text-left font-medium">
+                              공휴일명
+                            </th>
+                            <th className="px-3 py-2 text-left font-medium">
+                              비고
+                            </th>
+                            <th className="px-3 py-2 text-right font-medium">
+                              작업
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border/60 bg-background">
+                          {adminHolidayEntries.map((entry) => (
+                            <tr
+                              key={entry.id}
+                              className={cn({
+                                "bg-primary/5": holidayForm.id === entry.id,
+                              })}
+                            >
+                              <td className="px-3 py-2 font-mono text-xs">
+                                {entry.holidayDate}
+                              </td>
+                              <td className="px-3 py-2">
+                                {entry.weekday ?? "-"}
+                              </td>
+                              <td className="px-3 py-2">{entry.name}</td>
+                              <td className="px-3 py-2 text-muted-foreground">
+                                {entry.note ?? "-"}
+                              </td>
+                              <td className="px-3 py-2">
+                                <div className="flex justify-end gap-2">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleEditHoliday(entry)}
+                                    disabled={isMutatingHoliday}
+                                  >
+                                    수정
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="destructive"
+                                    onClick={() =>
+                                      handleDeleteHoliday(entry.id)
+                                    }
+                                    disabled={isMutatingHoliday}
+                                  >
+                                    삭제
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <p className="p-4 text-sm text-muted-foreground">
+                        등록된 공휴일이 없습니다.
+                      </p>
+                    )}
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-4">
+                    <label
+                      className="flex flex-col gap-2"
+                      htmlFor={holidayDateInputId}
+                    >
+                      <span className="text-muted-foreground">날짜</span>
+                      <Input
+                        id={holidayDateInputId}
+                        type="date"
+                        value={holidayForm.date}
+                        onChange={handleHolidayFormChange("date")}
+                        maxLength={10}
+                      />
+                    </label>
+                    <label
+                      className="flex flex-col gap-2"
+                      htmlFor={holidayWeekdayInputId}
+                    >
+                      <span className="text-muted-foreground">요일</span>
+                      <Input
+                        id={holidayWeekdayInputId}
+                        value={holidayForm.weekday}
+                        onChange={handleHolidayFormChange("weekday")}
+                        placeholder="예: 월"
+                      />
+                    </label>
+                    <label
+                      className="md:col-span-2 flex flex-col gap-2"
+                      htmlFor={holidayNameInputId}
+                    >
+                      <span className="text-muted-foreground">공휴일명</span>
+                      <Input
+                        id={holidayNameInputId}
+                        value={holidayForm.name}
+                        onChange={handleHolidayFormChange("name")}
+                        placeholder="공휴일 이름"
+                      />
+                    </label>
+                    <label
+                      className="md:col-span-4 flex flex-col gap-2"
+                      htmlFor={holidayNoteInputId}
+                    >
+                      <span className="text-muted-foreground">비고</span>
+                      <textarea
+                        id={holidayNoteInputId}
+                        value={holidayForm.note}
+                        onChange={handleHolidayFormChange("note")}
+                        rows={2}
+                        className="w-full rounded-md border border-border/60 bg-background p-2 text-sm"
+                        placeholder="추가 정보가 있다면 입력하세요."
+                      />
+                    </label>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      onClick={handleHolidayFormSubmit}
+                      disabled={isMutatingHoliday}
+                    >
+                      {isMutatingHoliday
+                        ? "저장 중..."
+                        : holidayForm.id
+                          ? "공휴일 수정"
+                          : "공휴일 추가"}
+                    </Button>
+                    {holidayForm.id ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleCancelHolidayEdit}
+                        disabled={isMutatingHoliday}
+                      >
+                        취소
+                      </Button>
+                    ) : null}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null}
 
             <Card className="border-border/70">
               <CardHeader>

@@ -11,6 +11,11 @@ import {
   fetchOrganizationMembers,
   fetchOrganizationTeams,
 } from "@/lib/github/org";
+import {
+  type CalendarHoliday,
+  getCalendarHolidays,
+  listHolidayCalendars,
+} from "@/lib/holidays/service";
 import { fetchSyncConfig } from "@/lib/sync/service";
 import { readUserTimeSettings } from "@/lib/user/time-settings";
 
@@ -20,6 +25,15 @@ export default async function SettingsPage() {
   const session = await readActiveSession();
   const config = await fetchSyncConfig();
   const timeSettings = await readUserTimeSettings(session?.userId ?? null);
+  const holidayCalendars = await listHolidayCalendars();
+  const selectedHolidayCode = timeSettings.holidayCalendarCode;
+  let selectedHolidayEntries: CalendarHoliday[] = [];
+  try {
+    selectedHolidayEntries = await getCalendarHolidays(selectedHolidayCode);
+  } catch (error) {
+    console.error("[settings] Failed to load holidays", error);
+    selectedHolidayEntries = [];
+  }
   const repositories = await listAllRepositories();
   const members = await listAllUsers();
   const excludedRepositoryIds = Array.isArray(config?.excluded_repository_ids)
@@ -72,6 +86,9 @@ export default async function SettingsPage() {
       timeZone={timeSettings.timezone}
       weekStart={timeSettings.weekStart}
       dateTimeFormat={timeSettings.dateTimeFormat}
+      holidayCalendarCode={timeSettings.holidayCalendarCode}
+      holidayCalendars={holidayCalendars}
+      initialHolidayEntries={selectedHolidayEntries}
       repositories={repositories}
       excludedRepositoryIds={excludedRepositoryIds}
       members={members}

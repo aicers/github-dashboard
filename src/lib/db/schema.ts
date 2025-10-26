@@ -1,7 +1,222 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
 import { getPool } from "@/lib/db/client";
 import { env } from "@/lib/env";
+import {
+  DEFAULT_HOLIDAY_CALENDAR,
+  HOLIDAY_CALENDAR_DEFINITIONS,
+  HOLIDAY_SOURCE_COUNTRY_MAP,
+  type HolidayCalendarCode,
+} from "@/lib/holidays/constants";
 
 const SCHEMA_LOCK_ID = BigInt("8764321987654321");
+
+type ParsedHolidayRow = {
+  country: string;
+  year: number;
+  dateKey: string;
+  weekday: string | null;
+  name: string;
+  note: string | null;
+};
+
+function splitCsvLine(line: string): string[] {
+  const result: string[] = [];
+  let buffer = "";
+  let insideQuotes = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+
+    if (char === '"') {
+      const nextChar = line[index + 1];
+      if (insideQuotes && nextChar === '"') {
+        buffer += '"';
+        index += 1;
+        continue;
+      }
+      insideQuotes = !insideQuotes;
+      continue;
+    }
+
+    if (char === "," && !insideQuotes) {
+      result.push(buffer.trim());
+      buffer = "";
+      continue;
+    }
+
+    buffer += char;
+  }
+
+  result.push(buffer.trim());
+  return result;
+}
+
+function parseHolidayCsv(content: string): ParsedHolidayRow[] {
+  const lines = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  if (!lines.length) {
+    return [];
+  }
+
+  const rows: ParsedHolidayRow[] = [];
+  for (let lineIndex = 1; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex];
+    if (!line) {
+      continue;
+    }
+    const rawValues = splitCsvLine(line);
+    if (rawValues.length < 5) {
+      continue;
+    }
+    const [country, yearValue, dateKey, weekdayValue, nameValue, ...noteParts] =
+      rawValues;
+    const noteValue = noteParts.length ? noteParts.join(", ") : "";
+    const year = Number.parseInt(yearValue, 10);
+    if (!Number.isFinite(year)) {
+      continue;
+    }
+    const normalizedDateKey = dateKey.replace(/\s+/g, "");
+    if (!/^\d{2}-\d{2}$/.test(normalizedDateKey)) {
+      continue;
+    }
+    rows.push({
+      country: country.trim(),
+      year,
+      dateKey: normalizedDateKey,
+      weekday: weekdayValue.trim() || null,
+      name: nameValue.trim(),
+      note: noteValue.trim() || null,
+    });
+  }
+  return rows;
+}
+
+function toIsoDateKey(year: number, monthDay: string): string {
+  const [month, day] = monthDay.split("-");
+  const normalizedMonth = month.padStart(2, "0");
+  const normalizedDay = day.padStart(2, "0");
+  return `${year}-${normalizedMonth}-${normalizedDay}`;
+}
+
+async function seedHolidayData() {
+  const pool = getPool();
+  const csvPath = path.resolve(process.cwd(), "data", "holidays.csv");
+  let fileContent: string;
+  try {
+    fileContent = await readFile(csvPath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      console.warn(
+        "[schema] Holiday CSV not found at data/holidays.csv; skipping seed.",
+      );
+      return;
+    }
+    throw error;
+  }
+
+  const parsedRows = parseHolidayCsv(fileContent);
+  if (!parsedRows.length) {
+    return;
+  }
+
+  for (const definition of HOLIDAY_CALENDAR_DEFINITIONS) {
+    await pool.query(
+      `INSERT INTO holiday_calendars (code, label, country_label, region_label, sort_order)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (code) DO UPDATE SET
+         label = EXCLUDED.label,
+         country_label = EXCLUDED.country_label,
+         region_label = EXCLUDED.region_label,
+         sort_order = EXCLUDED.sort_order,
+         updated_at = NOW()`,
+      [
+        definition.code,
+        definition.label,
+        definition.countryLabel,
+        definition.regionLabel,
+        definition.sortOrder,
+      ],
+    );
+  }
+
+  const rowsByCalendar = new Map<HolidayCalendarCode, ParsedHolidayRow[]>();
+  for (const row of parsedRows) {
+    const targets = HOLIDAY_SOURCE_COUNTRY_MAP[row.country];
+    if (!targets) {
+      continue;
+    }
+    for (const calendarCode of targets) {
+      const current = rowsByCalendar.get(calendarCode) ?? [];
+      current.push(row);
+      rowsByCalendar.set(calendarCode, current);
+    }
+  }
+
+  for (const definition of HOLIDAY_CALENDAR_DEFINITIONS) {
+    const calendarRows = rowsByCalendar.get(definition.code) ?? [];
+    if (!calendarRows.length) {
+      continue;
+    }
+    const existingCountResult = await pool.query<{ count: string }>(
+      `SELECT COUNT(*) AS count
+       FROM calendar_holidays
+       WHERE calendar_code = $1`,
+      [definition.code],
+    );
+    const existingCount = Number.parseInt(
+      existingCountResult.rows[0]?.count ?? "0",
+      10,
+    );
+    if (existingCount > 0) {
+      continue;
+    }
+
+    const sortedRows = [...calendarRows].sort((a, b) => {
+      const aDate = toIsoDateKey(a.year, a.dateKey);
+      const bDate = toIsoDateKey(b.year, b.dateKey);
+      return aDate.localeCompare(bDate);
+    });
+
+    for (const row of sortedRows) {
+      await pool.query(
+        `INSERT INTO calendar_holidays (
+           calendar_code,
+           source_country,
+           year,
+           date_key,
+           holiday_date,
+           weekday,
+           name,
+           note
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (calendar_code, holiday_date, name) DO NOTHING`,
+        [
+          definition.code,
+          row.country,
+          row.year,
+          row.dateKey,
+          toIsoDateKey(row.year, row.dateKey),
+          row.weekday,
+          row.name,
+          row.note,
+        ],
+      );
+    }
+  }
+
+  await pool.query(
+    `UPDATE user_preferences
+     SET holiday_calendar_code = $1
+     WHERE holiday_calendar_code IS NULL`,
+    [DEFAULT_HOLIDAY_CALENDAR],
+  );
+}
 
 const SCHEMA_STATEMENTS = [
   `CREATE EXTENSION IF NOT EXISTS pg_trgm`,
@@ -41,6 +256,34 @@ const SCHEMA_STATEMENTS = [
   `ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'UTC'`,
   `ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS week_start TEXT NOT NULL DEFAULT 'monday'`,
   `ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS date_time_format TEXT NOT NULL DEFAULT 'auto'`,
+  `CREATE TABLE IF NOT EXISTS holiday_calendars (
+    id SERIAL PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    label TEXT NOT NULL,
+    country_label TEXT NOT NULL,
+    region_label TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE TABLE IF NOT EXISTS calendar_holidays (
+    id SERIAL PRIMARY KEY,
+    calendar_code TEXT NOT NULL REFERENCES holiday_calendars(code) ON DELETE CASCADE,
+    source_country TEXT NOT NULL,
+    year INTEGER NOT NULL,
+    date_key TEXT NOT NULL,
+    holiday_date DATE NOT NULL,
+    weekday TEXT,
+    name TEXT NOT NULL,
+    note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS calendar_holidays_unique_idx
+     ON calendar_holidays(calendar_code, holiday_date, name)`,
+  `CREATE INDEX IF NOT EXISTS calendar_holidays_calendar_idx
+     ON calendar_holidays(calendar_code, holiday_date)`,
+  `ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS holiday_calendar_code TEXT`,
   `CREATE TABLE IF NOT EXISTS repositories (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -450,6 +693,8 @@ async function applySchema() {
     for (const statement of SCHEMA_STATEMENTS) {
       await pool.query(statement);
     }
+
+    await seedHolidayData();
 
     const orgName = env.GITHUB_ORG ?? null;
     await pool.query(

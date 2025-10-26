@@ -9,11 +9,17 @@ import {
   getUserPreferences,
   upsertUserPreferences,
 } from "@/lib/db/operations";
+import {
+  DEFAULT_HOLIDAY_CALENDAR,
+  type HolidayCalendarCode,
+  isHolidayCalendarCode,
+} from "@/lib/holidays/constants";
 
 export type UserTimeSettings = {
   timezone: string;
   weekStart: "sunday" | "monday";
   dateTimeFormat: DateTimeDisplayFormat;
+  holidayCalendarCode: HolidayCalendarCode;
 };
 
 function normalizeWeekStart(
@@ -35,7 +41,12 @@ async function readFallbackSettings(): Promise<UserTimeSettings> {
       : null,
   );
 
-  return { timezone, weekStart, dateTimeFormat };
+  return {
+    timezone,
+    weekStart,
+    dateTimeFormat,
+    holidayCalendarCode: DEFAULT_HOLIDAY_CALENDAR,
+  };
 }
 
 export async function readUserTimeSettings(
@@ -65,8 +76,13 @@ export async function readUserTimeSettings(
   const dateTimeFormat = normalizeDateTimeDisplayFormat(
     preferences.dateTimeFormat,
   );
+  const holidayCalendarCode = preferences.holidayCalendarCode
+    ? isHolidayCalendarCode(preferences.holidayCalendarCode)
+      ? preferences.holidayCalendarCode
+      : fallback.holidayCalendarCode
+    : fallback.holidayCalendarCode;
 
-  return { timezone, weekStart, dateTimeFormat };
+  return { timezone, weekStart, dateTimeFormat, holidayCalendarCode };
 }
 
 export async function writeUserTimeSettings(
@@ -75,6 +91,7 @@ export async function writeUserTimeSettings(
     timezone?: string;
     weekStart?: "sunday" | "monday";
     dateTimeFormat?: string;
+    holidayCalendarCode?: string;
   },
 ) {
   await ensureSchema();
@@ -113,10 +130,23 @@ export async function writeUserTimeSettings(
     dateTimeFormat = trimmed;
   }
 
+  let holidayCalendarCode = current.holidayCalendarCode;
+  if (params.holidayCalendarCode !== undefined) {
+    const trimmed = params.holidayCalendarCode.trim();
+    if (!trimmed) {
+      throw new Error("공휴일 달력을 선택해 주세요.");
+    }
+    if (!isHolidayCalendarCode(trimmed)) {
+      throw new Error("지원하지 않는 공휴일 달력입니다.");
+    }
+    holidayCalendarCode = trimmed;
+  }
+
   await upsertUserPreferences({
     userId,
     timezone,
     weekStart,
     dateTimeFormat,
+    holidayCalendarCode,
   });
 }

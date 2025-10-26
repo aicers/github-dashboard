@@ -156,7 +156,7 @@ export function normalizeText(value: unknown): string | null {
 
 export function averageBusinessResponseHours(
   rows: { requestedAt: string; respondedAt: string | null }[],
-  holidays: Set<string>,
+  holidays: ReadonlySet<string>,
 ) {
   const values: number[] = [];
   rows.forEach((row) => {

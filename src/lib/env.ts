@@ -57,7 +57,6 @@ const envSchema = z.object({
         .optional(),
     ),
   TODO_PROJECT_NAME: z.string().optional(),
-  HOLIDAYS: z.string().optional(),
   DASHBOARD_ADMIN_IDS: z.string().optional(),
   DB_BACKUP_DIRECTORY: z.string().optional(),
   DB_BACKUP_RETENTION: z
@@ -85,7 +84,6 @@ const parsed = envSchema.parse({
   DATABASE_URL: process.env.DATABASE_URL,
   SYNC_INTERVAL_MINUTES: process.env.SYNC_INTERVAL_MINUTES,
   TODO_PROJECT_NAME: process.env.TODO_PROJECT_NAME,
-  HOLIDAYS: process.env.HOLIDAYS,
   DASHBOARD_ADMIN_IDS: process.env.DASHBOARD_ADMIN_IDS,
   DB_BACKUP_DIRECTORY: process.env.DB_BACKUP_DIRECTORY,
   DB_BACKUP_RETENTION: process.env.DB_BACKUP_RETENTION,
@@ -102,11 +100,6 @@ export const env = {
   ...parsed,
   SYNC_INTERVAL_MINUTES: parsed.SYNC_INTERVAL_MINUTES ?? 60,
   TODO_PROJECT_NAME: coerceOptionalString(parsed.TODO_PROJECT_NAME),
-  HOLIDAYS: parsed.HOLIDAYS
-    ? parsed.HOLIDAYS.split(",")
-        .map((value) => value.trim())
-        .filter((value) => value.length > 0)
-    : [],
   DASHBOARD_ADMIN_IDS: parsed.DASHBOARD_ADMIN_IDS
     ? parsed.DASHBOARD_ADMIN_IDS.split(",")
         .map((value) => value.trim())
