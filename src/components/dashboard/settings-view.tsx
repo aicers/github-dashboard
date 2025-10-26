@@ -54,6 +54,7 @@ const ADMIN_ONLY_MESSAGE = "관리자 권한이 있는 사용자만 수정할 �
 
 const MAX_AVATAR_FILE_SIZE = 4 * 1024 * 1024; // 4MB
 const ACCEPTED_AVATAR_MIME_TYPES = ["image/png", "image/jpeg", "image/webp"];
+const ACTIVITY_ROWS_CHOICES = [10, 25, 50];
 
 function buildTimezoneOptions(seed: string) {
   const options = new Set<string>();
@@ -112,6 +113,7 @@ type SettingsViewProps = {
   currentUserAvatarUrl: string | null;
   currentUserOriginalAvatarUrl: string | null;
   currentUserCustomAvatarUrl: string | null;
+  activityRowsPerPage: number;
 };
 
 type ApiResponse<T> = {
@@ -162,6 +164,7 @@ export function SettingsView({
   currentUserAvatarUrl,
   currentUserOriginalAvatarUrl,
   currentUserCustomAvatarUrl,
+  activityRowsPerPage: initialActivityRowsPerPage,
 }: SettingsViewProps) {
   const router = useRouter();
   const initialAdminCalendarCode =
@@ -193,6 +196,9 @@ export function SettingsView({
   );
   const [personalHolidays, setPersonalHolidays] = useState<PersonalHoliday[]>(
     initialPersonalHolidays,
+  );
+  const [activityRowsPerPage, setActivityRowsPerPage] = useState(
+    initialActivityRowsPerPage,
   );
   const [personalHolidayForm, setPersonalHolidayForm] = useState({
     id: null as number | null,
@@ -464,6 +470,19 @@ export function SettingsView({
     });
   }, [holidayCalendars]);
 
+  const activityRowsChoices = useMemo(() => {
+    const values = new Set<number>(ACTIVITY_ROWS_CHOICES);
+    if (Number.isFinite(activityRowsPerPage)) {
+      values.add(Math.floor(Math.max(1, activityRowsPerPage)));
+    }
+    if (Number.isFinite(initialActivityRowsPerPage)) {
+      values.add(Math.floor(Math.max(1, initialActivityRowsPerPage)));
+    }
+    return Array.from(values)
+      .filter((value) => value > 0 && value <= 100)
+      .sort((a, b) => a - b);
+  }, [activityRowsPerPage, initialActivityRowsPerPage]);
+
   useEffect(() => {
     setPersonalHolidayCodes(personalHolidayCalendarCodes);
     setOrganizationHolidayCodes(organizationHolidayCalendarCodes);
@@ -540,6 +559,10 @@ export function SettingsView({
     sortedHolidayCalendars,
     fetchHolidayEntries,
   ]);
+
+  useEffect(() => {
+    setActivityRowsPerPage(initialActivityRowsPerPage);
+  }, [initialActivityRowsPerPage]);
 
   useEffect(() => {
     if (feedbackTimeoutRef.current) {
@@ -1285,6 +1308,7 @@ export function SettingsView({
             weekStart: weekStartValue,
             dateTimeFormat: dateTimeFormatValue,
             holidayCalendarCodes: personalHolidayCodes,
+            activityRowsPerPage,
           }),
         });
         const data = (await response.json()) as ApiResponse<unknown>;
@@ -1588,6 +1612,32 @@ export function SettingsView({
                     ))}
                   </select>
                 </label>
+                <div className="flex flex-col gap-1.5">
+                  <label className="flex flex-col gap-2">
+                    <span className="text-muted-foreground">Activity Rows</span>
+                    <select
+                      value={activityRowsPerPage}
+                      onChange={(event) => {
+                        const next = Number.parseInt(event.target.value, 10);
+                        if (Number.isFinite(next)) {
+                          setActivityRowsPerPage(
+                            Math.min(100, Math.max(1, next)),
+                          );
+                        }
+                      }}
+                      className="rounded-md border border-border/60 bg-background p-2 text-sm"
+                    >
+                      {activityRowsChoices.map((value) => (
+                        <option key={value} value={value}>
+                          {value}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    Activity 탭의 Rows 기본 값을 설정합니다.
+                  </p>
+                </div>
               </CardContent>
             </Card>
             <Card className="border-border/70">

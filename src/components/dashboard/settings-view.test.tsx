@@ -162,6 +162,7 @@ function renderSettings(
       currentUserAvatarUrl={null}
       currentUserOriginalAvatarUrl="https://example.com/original.png"
       currentUserCustomAvatarUrl={null}
+      activityRowsPerPage={25}
       {...overrides}
     />,
   );
@@ -175,6 +176,7 @@ describe("SettingsView", () => {
       "Asia/Seoul",
       "America/Los_Angeles",
     ]);
+    fetchMock.mockReset();
   });
 
   afterEach(() => {
@@ -200,6 +202,9 @@ describe("SettingsView", () => {
     expect(
       within(personalSection as HTMLElement).getByLabelText("날짜와 시간 형식"),
     ).toHaveValue("auto");
+    expect(
+      within(personalSection as HTMLElement).getByLabelText("Activity Rows"),
+    ).toHaveValue("25");
     expect(
       within(personalSection as HTMLElement).getByLabelText(/한국/),
     ).toBeChecked();
@@ -498,6 +503,7 @@ describe("SettingsView", () => {
       weekStart: "monday",
       dateTimeFormat: "en-us-12h",
       holidayCalendarCodes: ["kr"],
+      activityRowsPerPage: 25,
     });
 
     await waitFor(() => {
@@ -507,6 +513,32 @@ describe("SettingsView", () => {
     expect(
       screen.getByText("설정이 저장되었습니다.", { selector: "p" }),
     ).toBeInTheDocument();
+  });
+
+  it("allows updating activity rows preference from personal settings", async () => {
+    const user = userEvent.setup();
+    mockFetchJsonOnce({ success: true });
+
+    renderSettings({ activityRowsPerPage: 10 });
+
+    const rowsSelect = screen.getByLabelText("Activity Rows");
+    await user.selectOptions(rowsSelect, "50");
+
+    await user.click(screen.getByRole("button", { name: "개인 설정 저장" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    const request = fetchMock.mock.calls[0]?.[0] as Request;
+    const payload = (await request.clone().json()) as Record<string, unknown>;
+    expect(payload.activityRowsPerPage).toBe(50);
+    expect(payload).toMatchObject({
+      timezone: "Asia/Seoul",
+      weekStart: "monday",
+      dateTimeFormat: "auto",
+      holidayCalendarCodes: ["kr"],
+    });
   });
 
   it("shows organization controls as read-only for non-admin users", async () => {
@@ -572,6 +604,7 @@ describe("SettingsView", () => {
       weekStart: "monday",
       dateTimeFormat: "dot-24h",
       holidayCalendarCodes: ["kr"],
+      activityRowsPerPage: 25,
     });
 
     await waitFor(() => {

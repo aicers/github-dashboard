@@ -81,6 +81,7 @@ const patchSchema = z.object({
     .array(z.string().min(1))
     .optional()
     .transform((value) => (value ? Array.from(new Set(value)) : undefined)),
+  activityRowsPerPage: z.number().int().min(1).max(100).optional(),
 });
 
 export async function GET() {
@@ -138,6 +139,7 @@ export async function PATCH(request: Request) {
       holidayCalendarCodes,
       organizationHolidayCalendarCodes,
       backupHour,
+      activityRowsPerPage,
     } = payload;
 
     const hasPersonalUpdate =
@@ -145,7 +147,8 @@ export async function PATCH(request: Request) {
       weekStart !== undefined ||
       dateTimeFormat !== undefined ||
       holidayCalendarCode !== undefined ||
-      holidayCalendarCodes !== undefined;
+      holidayCalendarCodes !== undefined ||
+      activityRowsPerPage !== undefined;
 
     if (!session.isAdmin) {
       const attemptedAdminUpdate =
@@ -187,6 +190,7 @@ export async function PATCH(request: Request) {
           dateTimeFormat,
           holidayCalendarCode,
           holidayCalendarCodes,
+          activityRowsPerPage,
         });
       }
     } else {
@@ -197,6 +201,7 @@ export async function PATCH(request: Request) {
           dateTimeFormat,
           holidayCalendarCode,
           holidayCalendarCodes,
+          activityRowsPerPage,
         });
       }
 

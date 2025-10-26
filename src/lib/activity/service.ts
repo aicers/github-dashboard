@@ -1932,10 +1932,6 @@ export async function getActivityItems(
 
   const targetProject = normalizeProjectTarget(env.TODO_PROJECT_NAME);
 
-  const perPage = Math.min(
-    MAX_PER_PAGE,
-    Math.max(1, params.perPage ?? DEFAULT_PER_PAGE),
-  );
   let page = Math.max(1, params.page ?? 1);
 
   const attentionSets = await resolveAttentionSets(thresholds, {
@@ -1949,6 +1945,14 @@ export async function getActivityItems(
     getSyncConfig(),
     readUserTimeSettings(options?.userId ?? null),
   ]);
+  const perPagePreference = Math.min(
+    MAX_PER_PAGE,
+    Math.max(1, userTimeSettings.activityRowsPerPage ?? DEFAULT_PER_PAGE),
+  );
+  const perPage = Math.min(
+    MAX_PER_PAGE,
+    Math.max(1, params.perPage ?? perPagePreference),
+  );
   const organizationHolidayCodes = normalizeOrganizationHolidayCodes(config);
   const organizationHolidaySet = await loadCombinedHolidaySet(
     organizationHolidayCodes,

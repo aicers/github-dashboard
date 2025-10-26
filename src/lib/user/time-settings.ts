@@ -34,6 +34,7 @@ export type UserTimeSettings = {
   holidayCalendarCodes: HolidayCalendarCode[];
   organizationHolidayCalendarCodes: HolidayCalendarCode[];
   personalHolidays: PersonalHoliday[];
+  activityRowsPerPage: number;
 };
 
 function normalizeWeekStart(
@@ -146,6 +147,7 @@ async function readFallbackSettings(): Promise<UserTimeSettings> {
     holidayCalendarCodes: organizationHolidayCalendarCodes,
     organizationHolidayCalendarCodes,
     personalHolidays: [],
+    activityRowsPerPage: 25,
   };
 }
 
@@ -200,6 +202,13 @@ export async function readUserTimeSettings(
     holidayCalendarCodes,
     organizationHolidayCalendarCodes: fallback.organizationHolidayCalendarCodes,
     personalHolidays,
+    activityRowsPerPage:
+      typeof preferences.activityRowsPerPage === "number" &&
+      Number.isFinite(preferences.activityRowsPerPage) &&
+      preferences.activityRowsPerPage > 0 &&
+      preferences.activityRowsPerPage <= 100
+        ? Math.floor(preferences.activityRowsPerPage)
+        : fallback.activityRowsPerPage,
   };
 }
 
@@ -211,6 +220,7 @@ export async function writeUserTimeSettings(
     dateTimeFormat?: string;
     holidayCalendarCode?: string;
     holidayCalendarCodes?: string[];
+    activityRowsPerPage?: number;
   },
 ) {
   await ensureSchema();
@@ -284,6 +294,20 @@ export async function writeUserTimeSettings(
     }
     holidayCalendarCodes = [trimmed];
   }
+  let activityRowsPerPage = current.activityRowsPerPage;
+  if (params.activityRowsPerPage !== undefined) {
+    if (
+      !Number.isFinite(params.activityRowsPerPage) ||
+      params.activityRowsPerPage <= 0
+    ) {
+      throw new Error("Activity rows per page must be a positive number.");
+    }
+    const normalized = Math.floor(params.activityRowsPerPage);
+    if (normalized < 1 || normalized > 100) {
+      throw new Error("Activity rows per page must be between 1 and 100.");
+    }
+    activityRowsPerPage = normalized;
+  }
 
   await upsertUserPreferences({
     userId,
@@ -291,6 +315,7 @@ export async function writeUserTimeSettings(
     weekStart,
     dateTimeFormat,
     holidayCalendarCodes,
+    activityRowsPerPage,
   });
 }
 
