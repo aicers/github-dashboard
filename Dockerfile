@@ -3,6 +3,19 @@
 FROM node:22-slim AS base
 ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app
+RUN set -eux; \
+  apt-get update; \
+  apt-get install -y --no-install-recommends ca-certificates curl gnupg; \
+  install -d /usr/share/keyrings; \
+  curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    | gpg --dearmor --yes -o /usr/share/keyrings/postgresql.gpg; \
+  . /etc/os-release; \
+  echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+    > /etc/apt/sources.list.d/pgdg.list; \
+  apt-get update; \
+  apt-get install -y --no-install-recommends postgresql-client-17; \
+  apt-get purge -y --auto-remove curl gnupg; \
+  rm -rf /var/lib/apt/lists/*
 
 FROM base AS deps
 COPY package.json package-lock.json ./
