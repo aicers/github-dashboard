@@ -6,8 +6,8 @@ import { fetchReviewResponsePairs } from "@/lib/dashboard/analytics/reviews";
 import {
   averageBusinessResponseHours,
   DEPENDABOT_FILTER,
-  HOLIDAY_SET,
 } from "@/lib/dashboard/analytics/shared";
+import { HOLIDAY_SET } from "@/lib/dashboard/business-days";
 import type { HeatmapCell, MultiTrendPoint } from "@/lib/dashboard/types";
 import { query } from "@/lib/db/client";
 

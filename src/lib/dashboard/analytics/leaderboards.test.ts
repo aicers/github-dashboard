@@ -10,6 +10,7 @@ vi.mock("@/lib/dashboard/analytics/reviews", () => ({
 
 vi.mock("@/lib/dashboard/business-days", () => ({
   calculateBusinessHoursBetween: vi.fn(),
+  HOLIDAY_SET: new Set(),
 }));
 
 import {

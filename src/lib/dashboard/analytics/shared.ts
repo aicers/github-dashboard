@@ -1,8 +1,7 @@
 import {
   calculateBusinessHoursBetween,
   formatDateKey,
-  HOLIDAY_SET,
-} from "@/lib/dashboard/business-days";
+} from "@/lib/dashboard/business-days-core";
 import type {
   ComparisonBreakdownEntry,
   ComparisonValue,
@@ -228,4 +227,4 @@ export function resolveRange({
   };
 }
 
-export { formatDateKey, HOLIDAY_SET };
+export { formatDateKey };

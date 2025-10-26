@@ -1,4 +1,4 @@
-import { formatDateKey } from "@/lib/dashboard/business-days";
+import { formatDateKey } from "@/lib/dashboard/business-days-core";
 
 export type TrendEntry = Record<string, number> & { date: string };
 
