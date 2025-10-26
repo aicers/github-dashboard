@@ -30,9 +30,13 @@ import {
 } from "@/lib/date-time-format";
 import type { RepositoryProfile, UserProfile } from "@/lib/db/operations";
 import type { GithubMemberSummary, GithubTeamSummary } from "@/lib/github/org";
-import type { HolidayCalendarCode } from "@/lib/holidays/constants";
+import {
+  DEFAULT_HOLIDAY_CALENDAR,
+  type HolidayCalendarCode,
+} from "@/lib/holidays/constants";
 import type { CalendarHoliday, HolidayCalendar } from "@/lib/holidays/service";
 import { buildUserInitials } from "@/lib/user/initials";
+import type { PersonalHoliday } from "@/lib/user/time-settings";
 import { cn } from "@/lib/utils";
 
 const FALLBACK_TIMEZONES = [
@@ -87,9 +91,12 @@ type SettingsViewProps = {
   timeZone: string;
   weekStart: "sunday" | "monday";
   dateTimeFormat: string;
-  holidayCalendarCode: HolidayCalendarCode;
+  personalHolidayCalendarCodes: HolidayCalendarCode[];
+  organizationHolidayCalendarCodes: HolidayCalendarCode[];
+  holidayPreviewCalendarCode: HolidayCalendarCode | null;
   holidayCalendars: HolidayCalendar[];
-  initialHolidayEntries: CalendarHoliday[];
+  initialPreviewHolidayEntries: CalendarHoliday[];
+  personalHolidays: PersonalHoliday[];
   repositories: RepositoryProfile[];
   excludedRepositoryIds: string[];
   members: UserProfile[];
@@ -134,9 +141,12 @@ export function SettingsView({
   timeZone,
   weekStart,
   dateTimeFormat,
-  holidayCalendarCode: initialHolidayCalendarCode,
+  personalHolidayCalendarCodes,
+  organizationHolidayCalendarCodes,
+  holidayPreviewCalendarCode,
   holidayCalendars,
-  initialHolidayEntries,
+  initialPreviewHolidayEntries,
+  personalHolidays: initialPersonalHolidays,
   repositories,
   excludedRepositoryIds,
   members,
@@ -154,6 +164,12 @@ export function SettingsView({
   currentUserCustomAvatarUrl,
 }: SettingsViewProps) {
   const router = useRouter();
+  const initialAdminCalendarCode =
+    organizationHolidayCalendarCodes[0] ??
+    holidayPreviewCalendarCode ??
+    personalHolidayCalendarCodes[0] ??
+    holidayCalendars[0]?.code ??
+    DEFAULT_HOLIDAY_CALENDAR;
   const [name, setName] = useState(orgName);
   const [interval, setInterval] = useState(syncIntervalMinutes.toString());
   const [timezone, setTimezone] = useState(timeZone);
@@ -164,11 +180,31 @@ export function SettingsView({
     useState<DateTimeDisplayFormat>(
       normalizeDateTimeDisplayFormat(dateTimeFormat),
     );
-  const [holidayCalendarCode, setHolidayCalendarCode] =
-    useState<HolidayCalendarCode>(initialHolidayCalendarCode);
+  const [personalHolidayCodes, setPersonalHolidayCodes] = useState<
+    HolidayCalendarCode[]
+  >(personalHolidayCalendarCodes);
+  const [organizationHolidayCodes, setOrganizationHolidayCodes] = useState<
+    HolidayCalendarCode[]
+  >(organizationHolidayCalendarCodes);
+  const [previewHolidayCode, setPreviewHolidayCode] =
+    useState<HolidayCalendarCode | null>(holidayPreviewCalendarCode);
   const [holidayEntries, setHolidayEntries] = useState<CalendarHoliday[]>(
-    initialHolidayEntries,
+    initialPreviewHolidayEntries,
   );
+  const [personalHolidays, setPersonalHolidays] = useState<PersonalHoliday[]>(
+    initialPersonalHolidays,
+  );
+  const [personalHolidayForm, setPersonalHolidayForm] = useState({
+    id: null as number | null,
+    label: "",
+    startDate: "",
+    endDate: "",
+  });
+  const [isSavingPersonalHolidayEntry, setIsSavingPersonalHolidayEntry] =
+    useState(false);
+  const [personalHolidayError, setPersonalHolidayError] = useState<
+    string | null
+  >(null);
   const [isLoadingPersonalHolidays, setIsLoadingPersonalHolidays] =
     useState(false);
   const [holidaySelectionError, setHolidaySelectionError] = useState<
@@ -195,6 +231,7 @@ export function SettingsView({
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const holidayCacheRef = useRef<Map<string, CalendarHoliday[]>>(new Map());
   const personalHolidayRequestRef = useRef(0);
+  const personalHolidayMutationRef = useRef(0);
   const adminHolidayRequestRef = useRef(0);
   const avatarInitials = useMemo(
     () =>
@@ -251,10 +288,14 @@ export function SettingsView({
     normalizedAllowedUsers,
   );
   const [adminCalendarCode, setAdminCalendarCode] =
-    useState<HolidayCalendarCode>(initialHolidayCalendarCode);
+    useState<HolidayCalendarCode>(initialAdminCalendarCode);
   const [adminHolidayEntries, setAdminHolidayEntries] = useState<
     CalendarHoliday[]
-  >(initialHolidayEntries);
+  >(
+    initialAdminCalendarCode === holidayPreviewCalendarCode
+      ? initialPreviewHolidayEntries
+      : [],
+  );
   const [isLoadingAdminHolidays, setIsLoadingAdminHolidays] = useState(false);
   const [holidayAdminError, setHolidayAdminError] = useState<string | null>(
     null,
@@ -288,6 +329,7 @@ export function SettingsView({
   const holidayWeekdayInputId = useId();
   const holidayNameInputId = useId();
   const holidayNoteInputId = useId();
+  const personalHolidayNoteInputId = useId();
   const feedbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const canEditOrganization = isAdmin;
@@ -361,18 +403,6 @@ export function SettingsView({
     setDateTimeFormatValue(normalizeDateTimeDisplayFormat(dateTimeFormat));
   }, [dateTimeFormat]);
 
-  useEffect(() => {
-    holidayCacheRef.current.set(
-      initialHolidayCalendarCode,
-      initialHolidayEntries,
-    );
-    setHolidayCalendarCode(initialHolidayCalendarCode);
-    setAdminCalendarCode(initialHolidayCalendarCode);
-    setHolidayEntries(initialHolidayEntries);
-    setAdminHolidayEntries(initialHolidayEntries);
-    setHolidayForm({ id: null, date: "", weekday: "", name: "", note: "" });
-  }, [initialHolidayCalendarCode, initialHolidayEntries]);
-
   const parseHolidayResponse = useCallback(
     async (response: Response): Promise<HolidayApiResponse> => {
       const rawBody = await response.text();
@@ -422,6 +452,95 @@ export function SettingsView({
     [parseHolidayResponse],
   );
 
+  const sortedHolidayCalendars = useMemo(() => {
+    return [...holidayCalendars].sort((a, b) => {
+      const order = a.sortOrder - b.sortOrder;
+      if (order !== 0) {
+        return order;
+      }
+      return a.label.localeCompare(b.label, "ko", {
+        sensitivity: "base",
+      });
+    });
+  }, [holidayCalendars]);
+
+  useEffect(() => {
+    setPersonalHolidayCodes(personalHolidayCalendarCodes);
+    setOrganizationHolidayCodes(organizationHolidayCalendarCodes);
+    setPersonalHolidays(initialPersonalHolidays);
+
+    const sortedCodes = sortedHolidayCalendars.map((calendar) => calendar.code);
+    const defaultPreviewCode =
+      holidayPreviewCalendarCode ??
+      personalHolidayCalendarCodes[0] ??
+      organizationHolidayCalendarCodes[0] ??
+      sortedCodes[0] ??
+      DEFAULT_HOLIDAY_CALENDAR;
+
+    setPreviewHolidayCode(defaultPreviewCode);
+    holidayCacheRef.current.set(
+      defaultPreviewCode,
+      initialPreviewHolidayEntries,
+    );
+    setHolidayEntries(initialPreviewHolidayEntries);
+    setHolidaySelectionError(null);
+
+    const adminDefaultCode =
+      organizationHolidayCalendarCodes[0] ??
+      defaultPreviewCode ??
+      sortedCodes[0] ??
+      DEFAULT_HOLIDAY_CALENDAR;
+
+    setAdminCalendarCode(adminDefaultCode);
+    setHolidayAdminError(null);
+
+    if (adminDefaultCode === defaultPreviewCode) {
+      setAdminHolidayEntries(initialPreviewHolidayEntries);
+      setIsLoadingAdminHolidays(false);
+    } else {
+      setAdminHolidayEntries([]);
+      if (adminDefaultCode) {
+        setIsLoadingAdminHolidays(true);
+        const requestId = adminHolidayRequestRef.current + 1;
+        adminHolidayRequestRef.current = requestId;
+        fetchHolidayEntries(adminDefaultCode)
+          .then((entries) => {
+            if (adminHolidayRequestRef.current !== requestId) {
+              return;
+            }
+            holidayCacheRef.current.set(adminDefaultCode, entries);
+            setAdminHolidayEntries(entries);
+          })
+          .catch((error) => {
+            console.error(error);
+            if (adminHolidayRequestRef.current !== requestId) {
+              return;
+            }
+            setHolidayAdminError(
+              error instanceof Error
+                ? error.message
+                : "공휴일 정보를 불러오지 못했습니다.",
+            );
+          })
+          .finally(() => {
+            if (adminHolidayRequestRef.current === requestId) {
+              setIsLoadingAdminHolidays(false);
+            }
+          });
+      }
+    }
+
+    setHolidayForm({ id: null, date: "", weekday: "", name: "", note: "" });
+  }, [
+    personalHolidayCalendarCodes,
+    organizationHolidayCalendarCodes,
+    holidayPreviewCalendarCode,
+    initialPreviewHolidayEntries,
+    initialPersonalHolidays,
+    sortedHolidayCalendars,
+    fetchHolidayEntries,
+  ]);
+
   useEffect(() => {
     if (feedbackTimeoutRef.current) {
       clearTimeout(feedbackTimeoutRef.current);
@@ -468,17 +587,6 @@ export function SettingsView({
       }),
     );
   }, [members]);
-  const sortedHolidayCalendars = useMemo(() => {
-    return [...holidayCalendars].sort((a, b) => {
-      const order = a.sortOrder - b.sortOrder;
-      if (order !== 0) {
-        return order;
-      }
-      return a.label.localeCompare(b.label, "ko", {
-        sensitivity: "base",
-      });
-    });
-  }, [holidayCalendars]);
   const sortedOrganizationTeams = useMemo(() => {
     return [...organizationTeams].sort((a, b) =>
       (a.name || a.slug).localeCompare(b.name || b.slug, undefined, {
@@ -538,11 +646,205 @@ export function SettingsView({
     setAllowedUsers([]);
   };
 
-  const handleHolidayCalendarSelect = (
+  const handleTogglePersonalHolidayCode = (code: HolidayCalendarCode) => {
+    setPersonalHolidayCodes((previous) => {
+      if (previous.includes(code)) {
+        return previous.filter((value) => value !== code);
+      }
+      const next = [...previous, code];
+      const order = new Map<HolidayCalendarCode, number>();
+      sortedHolidayCalendars.forEach((calendar, index) => {
+        order.set(calendar.code, index);
+      });
+      return next.sort((a, b) => {
+        const indexA = order.get(a) ?? Number.MAX_SAFE_INTEGER;
+        const indexB = order.get(b) ?? Number.MAX_SAFE_INTEGER;
+        return indexA - indexB;
+      });
+    });
+  };
+
+  const handleToggleOrganizationHolidayCode = (code: HolidayCalendarCode) => {
+    setOrganizationHolidayCodes((previous) => {
+      if (previous.includes(code)) {
+        return previous.filter((value) => value !== code);
+      }
+      const next = [...previous, code];
+      const order = new Map<HolidayCalendarCode, number>();
+      sortedHolidayCalendars.forEach((calendar, index) => {
+        order.set(calendar.code, index);
+      });
+      return next.sort((a, b) => {
+        const indexA = order.get(a) ?? Number.MAX_SAFE_INTEGER;
+        const indexB = order.get(b) ?? Number.MAX_SAFE_INTEGER;
+        return indexA - indexB;
+      });
+    });
+  };
+
+  const resetPersonalHolidayForm = () => {
+    setPersonalHolidayForm({
+      id: null,
+      label: "",
+      startDate: "",
+      endDate: "",
+    });
+    setPersonalHolidayError(null);
+  };
+
+  const handlePersonalHolidayFieldChange =
+    (field: "label" | "startDate" | "endDate") =>
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const value = event.target.value;
+      setPersonalHolidayForm((previous) => ({
+        ...previous,
+        [field]: value,
+      }));
+    };
+
+  const handleEditPersonalHoliday = (entry: PersonalHoliday) => {
+    setPersonalHolidayForm({
+      id: entry.id,
+      label: entry.label ?? "",
+      startDate: entry.startDate,
+      endDate: entry.endDate,
+    });
+    setPersonalHolidayError(null);
+  };
+
+  const handleCancelPersonalHolidayEdit = () => {
+    resetPersonalHolidayForm();
+  };
+
+  const handleSubmitPersonalHoliday = () => {
+    if (isSavingPersonalHolidayEntry) {
+      return;
+    }
+
+    const trimmedStart = personalHolidayForm.startDate.trim();
+    if (!trimmedStart) {
+      setPersonalHolidayError("시작일을 입력해 주세요.");
+      return;
+    }
+
+    const trimmedEnd = personalHolidayForm.endDate.trim();
+    const trimmedLabel = personalHolidayForm.label.trim();
+    const editingId = personalHolidayForm.id;
+
+    setPersonalHolidayError(null);
+    setIsSavingPersonalHolidayEntry(true);
+    const mutationId = personalHolidayMutationRef.current + 1;
+    personalHolidayMutationRef.current = mutationId;
+
+    const payloadBody = JSON.stringify({
+      label: trimmedLabel.length ? trimmedLabel : undefined,
+      startDate: trimmedStart,
+      endDate: trimmedEnd.length ? trimmedEnd : undefined,
+    });
+
+    const targetUrl = editingId
+      ? `/api/profile/holidays/${editingId}`
+      : `/api/profile/holidays`;
+    const method = editingId ? "PATCH" : "POST";
+
+    fetch(targetUrl, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: payloadBody,
+    })
+      .then(async (response) => {
+        const json = (await response.json()) as ApiResponse<PersonalHoliday>;
+        if (!response.ok || !json.success || !json.result) {
+          throw new Error(json.message ?? "개인 휴일을 저장하지 못했습니다.");
+        }
+        if (personalHolidayMutationRef.current !== mutationId) {
+          return;
+        }
+
+        const result = json.result;
+        setPersonalHolidays((previous) => {
+          if (editingId) {
+            return previous.map((entry) =>
+              entry.id === editingId ? result : entry,
+            );
+          }
+          const next = [...previous, result];
+          next.sort((a, b) => a.startDate.localeCompare(b.startDate));
+          return next;
+        });
+        setPersonalFeedback(
+          editingId ? "개인 휴일을 수정했어요." : "개인 휴일을 추가했어요.",
+        );
+        resetPersonalHolidayForm();
+      })
+      .catch((error) => {
+        console.error(error);
+        if (personalHolidayMutationRef.current !== mutationId) {
+          return;
+        }
+        setPersonalHolidayError(
+          error instanceof Error
+            ? error.message
+            : "개인 휴일을 저장하지 못했습니다.",
+        );
+      })
+      .finally(() => {
+        if (personalHolidayMutationRef.current === mutationId) {
+          setIsSavingPersonalHolidayEntry(false);
+        }
+      });
+  };
+
+  const handleDeletePersonalHoliday = (id: number) => {
+    if (isSavingPersonalHolidayEntry) {
+      return;
+    }
+
+    setPersonalHolidayError(null);
+    setIsSavingPersonalHolidayEntry(true);
+    const mutationId = personalHolidayMutationRef.current + 1;
+    personalHolidayMutationRef.current = mutationId;
+
+    fetch(`/api/profile/holidays/${id}`, { method: "DELETE" })
+      .then(async (response) => {
+        const json = (await response.json()) as ApiResponse<unknown>;
+        if (!response.ok || !json.success) {
+          throw new Error(json.message ?? "개인 휴일을 삭제하지 못했습니다.");
+        }
+        if (personalHolidayMutationRef.current !== mutationId) {
+          return;
+        }
+        setPersonalHolidays((previous) =>
+          previous.filter((entry) => entry.id !== id),
+        );
+        if (personalHolidayForm.id === id) {
+          resetPersonalHolidayForm();
+        }
+        setPersonalFeedback("개인 휴일을 삭제했어요.");
+      })
+      .catch((error) => {
+        console.error(error);
+        if (personalHolidayMutationRef.current !== mutationId) {
+          return;
+        }
+        setPersonalHolidayError(
+          error instanceof Error
+            ? error.message
+            : "개인 휴일을 삭제하지 못했습니다.",
+        );
+      })
+      .finally(() => {
+        if (personalHolidayMutationRef.current === mutationId) {
+          setIsSavingPersonalHolidayEntry(false);
+        }
+      });
+  };
+
+  const handlePreviewHolidaySelect = (
     event: React.ChangeEvent<HTMLSelectElement>,
   ) => {
     const code = event.target.value as HolidayCalendarCode;
-    setHolidayCalendarCode(code);
+    setPreviewHolidayCode(code);
     setHolidaySelectionError(null);
     const requestId = personalHolidayRequestRef.current + 1;
     personalHolidayRequestRef.current = requestId;
@@ -720,7 +1022,7 @@ export function SettingsView({
 
         const updatedEntries = await fetchHolidayEntries(targetCalendar);
         setAdminHolidayEntries(updatedEntries);
-        if (holidayCalendarCode === targetCalendar) {
+        if (previewHolidayCode === targetCalendar) {
           setHolidayEntries(updatedEntries);
         }
         resetHolidayForm();
@@ -760,7 +1062,7 @@ export function SettingsView({
 
         const updatedEntries = await fetchHolidayEntries(targetCalendar);
         setAdminHolidayEntries(updatedEntries);
-        if (holidayCalendarCode === targetCalendar) {
+        if (previewHolidayCode === targetCalendar) {
           setHolidayEntries(updatedEntries);
         }
         if (holidayForm.id === holidayId) {
@@ -982,7 +1284,7 @@ export function SettingsView({
             timezone,
             weekStart: weekStartValue,
             dateTimeFormat: dateTimeFormatValue,
-            holidayCalendarCode,
+            holidayCalendarCodes: personalHolidayCodes,
           }),
         });
         const data = (await response.json()) as ApiResponse<unknown>;
@@ -1033,6 +1335,7 @@ export function SettingsView({
             excludedPeople,
             allowedTeams,
             allowedUsers,
+            organizationHolidayCalendarCodes: organizationHolidayCodes,
           }),
         });
         const data = (await response.json()) as ApiResponse<unknown>;
@@ -1232,90 +1535,6 @@ export function SettingsView({
 
             <Card className="border-border/70">
               <CardHeader>
-                <CardTitle>공휴일 설정</CardTitle>
-                <CardDescription>
-                  개인 대시보드에서 사용할 공휴일 집합을 선택하세요.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-4 text-sm">
-                <label className="flex flex-col gap-2">
-                  <span className="text-muted-foreground">적용할 국가</span>
-                  <select
-                    value={holidayCalendarCode}
-                    onChange={handleHolidayCalendarSelect}
-                    className="rounded-md border border-border/60 bg-background p-2 text-sm"
-                  >
-                    {sortedHolidayCalendars.map((calendar) => {
-                      const cachedEntries = holidayCacheRef.current.get(
-                        calendar.code,
-                      );
-                      const count =
-                        cachedEntries?.length ?? calendar.holidayCount ?? 0;
-                      return (
-                        <option key={calendar.code} value={calendar.code}>
-                          {calendar.label}
-                          {count ? ` · ${count.toLocaleString()}일` : ""}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </label>
-                {holidaySelectionError ? (
-                  <p className="text-xs text-rose-600">
-                    {holidaySelectionError}
-                  </p>
-                ) : null}
-                <div className="overflow-hidden rounded-md border border-border/60">
-                  {isLoadingPersonalHolidays ? (
-                    <p className="p-4 text-sm text-muted-foreground">
-                      공휴일 목록을 불러오는 중입니다...
-                    </p>
-                  ) : holidayEntries.length ? (
-                    <table className="min-w-full divide-y divide-border/80 text-sm">
-                      <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
-                        <tr>
-                          <th className="px-3 py-2 text-left font-medium">
-                            날짜
-                          </th>
-                          <th className="px-3 py-2 text-left font-medium">
-                            요일
-                          </th>
-                          <th className="px-3 py-2 text-left font-medium">
-                            공휴일명
-                          </th>
-                          <th className="px-3 py-2 text-left font-medium">
-                            비고
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border/60 bg-background">
-                        {holidayEntries.map((entry) => (
-                          <tr key={entry.id}>
-                            <td className="px-3 py-2 font-mono text-xs">
-                              {entry.holidayDate}
-                            </td>
-                            <td className="px-3 py-2">
-                              {entry.weekday ?? "-"}
-                            </td>
-                            <td className="px-3 py-2">{entry.name}</td>
-                            <td className="px-3 py-2 text-muted-foreground">
-                              {entry.note ?? "-"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  ) : (
-                    <p className="p-4 text-sm text-muted-foreground">
-                      등록된 공휴일 정보가 없습니다.
-                    </p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-border/70">
-              <CardHeader>
                 <CardTitle>시간대 & 표시 형식</CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col gap-4 text-sm">
@@ -1371,6 +1590,296 @@ export function SettingsView({
                 </label>
               </CardContent>
             </Card>
+            <Card className="border-border/70">
+              <CardHeader>
+                <CardTitle>개인 휴무일</CardTitle>
+                <CardDescription>
+                  휴가나 정기 휴무일을 등록하면 해당 기간도 자동으로 제외돼요.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4 text-sm">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <label className="flex flex-col gap-2">
+                    <span className="text-muted-foreground">시작일</span>
+                    <input
+                      type="date"
+                      value={personalHolidayForm.startDate}
+                      onChange={handlePersonalHolidayFieldChange("startDate")}
+                      className="rounded-md border border-border/60 bg-background p-2 text-sm"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-2">
+                    <span className="text-muted-foreground">종료일</span>
+                    <input
+                      type="date"
+                      value={personalHolidayForm.endDate}
+                      onChange={handlePersonalHolidayFieldChange("endDate")}
+                      className="rounded-md border border-border/60 bg-background p-2 text-sm"
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      날짜를 비워두면 시작일 하루만 적용돼요.
+                    </span>
+                  </label>
+                  <div className="flex flex-col gap-2 sm:col-span-2 lg:col-span-2">
+                    <label
+                      htmlFor={personalHolidayNoteInputId}
+                      className="text-muted-foreground"
+                    >
+                      메모 (선택)
+                    </label>
+                    <Input
+                      id={personalHolidayNoteInputId}
+                      value={personalHolidayForm.label}
+                      onChange={handlePersonalHolidayFieldChange("label")}
+                      placeholder="예: 연차, 출장"
+                    />
+                  </div>
+                </div>
+                {personalHolidayError ? (
+                  <p className="text-xs text-rose-600">
+                    {personalHolidayError}
+                  </p>
+                ) : null}
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleSubmitPersonalHoliday}
+                    disabled={isSavingPersonalHolidayEntry}
+                    className="h-9"
+                  >
+                    {isSavingPersonalHolidayEntry ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        저장 중...
+                      </>
+                    ) : personalHolidayForm.id ? (
+                      "휴무일 수정"
+                    ) : (
+                      "휴무일 추가"
+                    )}
+                  </Button>
+                  {personalHolidayForm.id ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleCancelPersonalHolidayEdit}
+                      disabled={isSavingPersonalHolidayEntry}
+                      className="h-9"
+                    >
+                      취소
+                    </Button>
+                  ) : null}
+                </div>
+                <div className="overflow-hidden rounded-md border border-border/60">
+                  {personalHolidays.length ? (
+                    <table className="min-w-full divide-y divide-border/80 text-sm">
+                      <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-medium">
+                            기간
+                          </th>
+                          <th className="px-3 py-2 text-left font-medium">
+                            메모
+                          </th>
+                          <th className="px-3 py-2 text-right font-medium">
+                            작업
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/60 bg-background">
+                        {personalHolidays.map((entry) => {
+                          const period =
+                            entry.startDate === entry.endDate
+                              ? entry.startDate
+                              : `${entry.startDate} ~ ${entry.endDate}`;
+                          return (
+                            <tr key={entry.id}>
+                              <td className="px-3 py-2 font-mono text-xs">
+                                {period}
+                              </td>
+                              <td className="px-3 py-2">
+                                {entry.label ?? "-"}
+                              </td>
+                              <td className="px-3 py-2">
+                                <div className="flex justify-end gap-2">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() =>
+                                      handleEditPersonalHoliday(entry)
+                                    }
+                                    disabled={isSavingPersonalHolidayEntry}
+                                    className="h-8"
+                                  >
+                                    수정
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-8 text-rose-600 hover:bg-rose-50"
+                                    onClick={() =>
+                                      handleDeletePersonalHoliday(entry.id)
+                                    }
+                                    disabled={isSavingPersonalHolidayEntry}
+                                  >
+                                    삭제
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="p-4 text-sm text-muted-foreground">
+                      등록된 개인 휴무일이 없습니다.
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/70">
+              <CardHeader>
+                <CardTitle>공휴일 설정</CardTitle>
+                <CardDescription>
+                  선택한 공휴일 달력과 개인 휴무일은 응답 없는 리뷰 요청과 멘션
+                  계산에서 제외돼요.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4 text-sm">
+                <div className="flex flex-col gap-2">
+                  <span className="text-muted-foreground">
+                    적용할 공휴일 달력
+                  </span>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {sortedHolidayCalendars.map((calendar) => {
+                      const checkboxId = `personal-calendar-${calendar.code}`;
+                      const isChecked = personalHolidayCodes.includes(
+                        calendar.code,
+                      );
+                      const isOrgSelected = organizationHolidayCodes.includes(
+                        calendar.code,
+                      );
+                      const cachedEntries = holidayCacheRef.current.get(
+                        calendar.code,
+                      );
+                      const count =
+                        cachedEntries?.length ?? calendar.holidayCount ?? 0;
+
+                      return (
+                        <label
+                          key={calendar.code}
+                          htmlFor={checkboxId}
+                          className={cn(
+                            "flex items-center gap-2 rounded-md border border-border/60 bg-background px-3 py-2 text-sm shadow-sm transition",
+                            isChecked
+                              ? "border-primary/70 ring-1 ring-primary/30"
+                              : "hover:border-border",
+                          )}
+                        >
+                          <input
+                            id={checkboxId}
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-border text-primary focus-visible:ring-primary"
+                            checked={isChecked}
+                            onChange={() =>
+                              handleTogglePersonalHolidayCode(calendar.code)
+                            }
+                          />
+                          <div className="flex flex-col">
+                            <span className="font-medium">
+                              {calendar.label}
+                              {count ? ` · ${count.toLocaleString()}일` : ""}
+                            </span>
+                            {isOrgSelected ? (
+                              <span className="text-xs text-muted-foreground">
+                                조직 공휴일에도 포함됨
+                              </span>
+                            ) : null}
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    미선택 시 조직 공휴일이 그대로 적용돼요.
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <span className="text-muted-foreground">공휴일 미리보기</span>
+                  <select
+                    value={previewHolidayCode ?? ""}
+                    onChange={handlePreviewHolidaySelect}
+                    className="rounded-md border border-border/60 bg-background p-2 text-sm"
+                  >
+                    {sortedHolidayCalendars.map((calendar) => (
+                      <option key={calendar.code} value={calendar.code}>
+                        {calendar.label}
+                      </option>
+                    ))}
+                  </select>
+                  {holidaySelectionError ? (
+                    <p className="text-xs text-rose-600">
+                      {holidaySelectionError}
+                    </p>
+                  ) : null}
+                  <div className="overflow-hidden rounded-md border border-border/60">
+                    {isLoadingPersonalHolidays ? (
+                      <p className="p-4 text-sm text-muted-foreground">
+                        공휴일 목록을 불러오는 중입니다...
+                      </p>
+                    ) : previewHolidayCode && holidayEntries.length ? (
+                      <table className="min-w-full divide-y divide-border/80 text-sm">
+                        <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
+                          <tr>
+                            <th className="px-3 py-2 text-left font-medium">
+                              날짜
+                            </th>
+                            <th className="px-3 py-2 text-left font-medium">
+                              요일
+                            </th>
+                            <th className="px-3 py-2 text-left font-medium">
+                              공휴일명
+                            </th>
+                            <th className="px-3 py-2 text-left font-medium">
+                              비고
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border/60 bg-background">
+                          {holidayEntries.map((entry) => (
+                            <tr key={entry.id}>
+                              <td className="px-3 py-2 font-mono text-xs">
+                                {entry.holidayDate}
+                              </td>
+                              <td className="px-3 py-2">
+                                {entry.weekday ?? "-"}
+                              </td>
+                              <td className="px-3 py-2">{entry.name}</td>
+                              <td className="px-3 py-2 text-muted-foreground">
+                                {entry.note ?? "-"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <p className="p-4 text-sm text-muted-foreground">
+                        선택한 달력의 공휴일 정보가 없습니다.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             <div className="flex justify-end">
               <Button onClick={handleSavePersonal} disabled={isSavingPersonal}>
                 {isSavingPersonal ? "저장 중..." : "개인 설정 저장"}
@@ -1568,6 +2077,182 @@ export function SettingsView({
               </CardFooter>
             </Card>
 
+            <Card className="border-border/70">
+              <CardHeader>
+                <CardTitle>저장소 제외</CardTitle>
+                <CardDescription>
+                  제외된 저장소는 Analytics와 People 메뉴의 필터 목록에 표시되지
+                  않습니다.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4 text-sm">
+                {sortedRepositories.length === 0 ? (
+                  <p className="text-muted-foreground text-sm">
+                    동기화된 저장소가 없습니다.
+                  </p>
+                ) : (
+                  <label
+                    className="flex flex-col gap-2"
+                    htmlFor={excludeSelectId}
+                  >
+                    <span className="text-muted-foreground">
+                      제외할 저장소를 선택하세요
+                    </span>
+                    <select
+                      id={excludeSelectId}
+                      multiple
+                      value={excludedRepos}
+                      onChange={handleExcludedChange}
+                      className="h-48 rounded-md border border-border/60 bg-background p-2 text-sm"
+                      disabled={!canEditOrganization}
+                      title={
+                        !canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined
+                      }
+                    >
+                      {sortedRepositories.map((repo) => (
+                        <option key={repo.id} value={repo.id}>
+                          {repo.nameWithOwner ?? repo.name ?? repo.id}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-xs text-muted-foreground">
+                      여러 저장소를 선택하려면 ⌘/Ctrl 키를 눌러 복수 선택하세요.
+                    </span>
+                  </label>
+                )}
+              </CardContent>
+              <CardFooter className="flex justify-between">
+                <span className="text-xs text-muted-foreground">
+                  제외된 저장소: {excludedRepos.length}개
+                </span>
+                <Button
+                  variant="secondary"
+                  onClick={handleClearExcluded}
+                  disabled={!canEditOrganization || !excludedRepos.length}
+                  title={!canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined}
+                >
+                  제외 목록 비우기
+                </Button>
+              </CardFooter>
+            </Card>
+
+            <Card className="border-border/70">
+              <CardHeader>
+                <CardTitle>구성원 제외</CardTitle>
+                <CardDescription>
+                  제외된 구성원은 Analytics와 People 메뉴에 표시되지 않습니다.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4 text-sm">
+                {sortedMembers.length === 0 ? (
+                  <p className="text-muted-foreground text-sm">
+                    동기화된 구성원이 없습니다.
+                  </p>
+                ) : (
+                  <label
+                    className="flex flex-col gap-2"
+                    htmlFor={excludePeopleSelectId}
+                  >
+                    <span className="text-muted-foreground">
+                      제외할 구성원을 선택하세요
+                    </span>
+                    <select
+                      id={excludePeopleSelectId}
+                      multiple
+                      value={excludedPeople}
+                      onChange={handleExcludedPeopleChange}
+                      className="h-48 rounded-md border border-border/60 bg-background p-2 text-sm"
+                      disabled={!canEditOrganization}
+                      title={
+                        !canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined
+                      }
+                    >
+                      {sortedMembers.map((member) => (
+                        <option key={member.id} value={member.id}>
+                          {member.login ?? member.name ?? member.id}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-xs text-muted-foreground">
+                      여러 구성원을 선택하려면 ⌘/Ctrl 키를 눌러 복수 선택하세요.
+                    </span>
+                  </label>
+                )}
+              </CardContent>
+              <CardFooter className="flex justify-between">
+                <span className="text-xs text-muted-foreground">
+                  제외된 구성원: {excludedPeople.length}명
+                </span>
+                <Button
+                  variant="secondary"
+                  onClick={handleClearExcludedPeople}
+                  disabled={!canEditOrganization || !excludedPeople.length}
+                  title={!canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined}
+                >
+                  제외 목록 비우기
+                </Button>
+              </CardFooter>
+            </Card>
+
+            <Card className="border-border/70">
+              <CardHeader>
+                <CardTitle>조직 공휴일</CardTitle>
+                <CardDescription>
+                  조직 전체 지표 계산에서 제외할 공휴일 달력을 선택하세요.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-2 text-sm">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {sortedHolidayCalendars.map((calendar) => {
+                    const checkboxId = `organization-calendar-${calendar.code}`;
+                    const isChecked = organizationHolidayCodes.includes(
+                      calendar.code,
+                    );
+                    const cachedEntries = holidayCacheRef.current.get(
+                      calendar.code,
+                    );
+                    const count =
+                      cachedEntries?.length ?? calendar.holidayCount ?? 0;
+
+                    return (
+                      <label
+                        key={calendar.code}
+                        htmlFor={checkboxId}
+                        className={cn(
+                          "flex items-center gap-2 rounded-md border border-border/60 bg-background px-3 py-2 text-sm shadow-sm transition",
+                          isChecked
+                            ? "border-primary/70 ring-1 ring-primary/30"
+                            : "hover:border-border",
+                          !canEditOrganization && "opacity-60",
+                        )}
+                      >
+                        <input
+                          id={checkboxId}
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-border text-primary focus-visible:ring-primary"
+                          checked={isChecked}
+                          onChange={() =>
+                            handleToggleOrganizationHolidayCode(calendar.code)
+                          }
+                          disabled={!canEditOrganization}
+                        />
+                        <div className="flex flex-col">
+                          <span className="font-medium">
+                            {calendar.label}
+                            {count ? ` · ${count.toLocaleString()}일` : ""}
+                          </span>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  선택한 달력은 Activity 및 Follow-ups 메뉴의 Age · Idle
+                  계산에도 적용돼요.
+                </p>
+              </CardContent>
+            </Card>
+
             {canEditOrganization ? (
               <Card className="border-border/70">
                 <CardHeader>
@@ -1583,6 +2268,7 @@ export function SettingsView({
                       value={adminCalendarCode}
                       onChange={handleAdminCalendarSelect}
                       className="rounded-md border border-border/60 bg-background p-2 text-sm"
+                      disabled={!canEditOrganization}
                     >
                       {sortedHolidayCalendars.map((calendar) => {
                         const cachedEntries = holidayCacheRef.current.get(
@@ -1764,123 +2450,6 @@ export function SettingsView({
                 </CardContent>
               </Card>
             ) : null}
-
-            <Card className="border-border/70">
-              <CardHeader>
-                <CardTitle>저장소 제외</CardTitle>
-                <CardDescription>
-                  제외된 저장소는 Analytics와 People 메뉴의 필터 목록에 표시되지
-                  않습니다.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-4 text-sm">
-                {sortedRepositories.length === 0 ? (
-                  <p className="text-muted-foreground text-sm">
-                    동기화된 저장소가 없습니다.
-                  </p>
-                ) : (
-                  <label
-                    className="flex flex-col gap-2"
-                    htmlFor={excludeSelectId}
-                  >
-                    <span className="text-muted-foreground">
-                      제외할 저장소를 선택하세요
-                    </span>
-                    <select
-                      id={excludeSelectId}
-                      multiple
-                      value={excludedRepos}
-                      onChange={handleExcludedChange}
-                      className="h-48 rounded-md border border-border/60 bg-background p-2 text-sm"
-                      disabled={!canEditOrganization}
-                      title={
-                        !canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined
-                      }
-                    >
-                      {sortedRepositories.map((repo) => (
-                        <option key={repo.id} value={repo.id}>
-                          {repo.nameWithOwner ?? repo.name ?? repo.id}
-                        </option>
-                      ))}
-                    </select>
-                    <span className="text-xs text-muted-foreground">
-                      여러 저장소를 선택하려면 ⌘/Ctrl 키를 눌러 복수 선택하세요.
-                    </span>
-                  </label>
-                )}
-              </CardContent>
-              <CardFooter className="flex justify-between">
-                <span className="text-xs text-muted-foreground">
-                  제외된 저장소: {excludedRepos.length}개
-                </span>
-                <Button
-                  variant="secondary"
-                  onClick={handleClearExcluded}
-                  disabled={!canEditOrganization || !excludedRepos.length}
-                  title={!canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined}
-                >
-                  제외 목록 비우기
-                </Button>
-              </CardFooter>
-            </Card>
-
-            <Card className="border-border/70">
-              <CardHeader>
-                <CardTitle>구성원 제외</CardTitle>
-                <CardDescription>
-                  제외된 구성원은 Analytics와 People 메뉴에 표시되지 않습니다.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-4 text-sm">
-                {sortedMembers.length === 0 ? (
-                  <p className="text-muted-foreground text-sm">
-                    동기화된 구성원이 없습니다.
-                  </p>
-                ) : (
-                  <label
-                    className="flex flex-col gap-2"
-                    htmlFor={excludePeopleSelectId}
-                  >
-                    <span className="text-muted-foreground">
-                      제외할 구성원을 선택하세요
-                    </span>
-                    <select
-                      id={excludePeopleSelectId}
-                      multiple
-                      value={excludedPeople}
-                      onChange={handleExcludedPeopleChange}
-                      className="h-48 rounded-md border border-border/60 bg-background p-2 text-sm"
-                      disabled={!canEditOrganization}
-                      title={
-                        !canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined
-                      }
-                    >
-                      {sortedMembers.map((member) => (
-                        <option key={member.id} value={member.id}>
-                          {member.login ?? member.name ?? member.id}
-                        </option>
-                      ))}
-                    </select>
-                    <span className="text-xs text-muted-foreground">
-                      여러 구성원을 선택하려면 ⌘/Ctrl 키를 눌러 복수 선택하세요.
-                    </span>
-                  </label>
-                )}
-              </CardContent>
-              <CardFooter className="flex justify-between">
-                <span className="text-xs text-muted-foreground">
-                  제외된 구성원: {excludedPeople.length}명
-                </span>
-                <Button
-                  variant="secondary"
-                  onClick={handleClearExcludedPeople}
-                  disabled={!canEditOrganization || !excludedPeople.length}
-                  title={!canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined}
-                >
-                  제외 목록 비우기
-                </Button>
-              </CardFooter>
-            </Card>
 
             <div className="flex justify-end">
               <Button

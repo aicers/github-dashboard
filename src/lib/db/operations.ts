@@ -1,6 +1,9 @@
 import { refreshActivitySocialSignals } from "@/lib/activity/social-signals";
 import { query, withTransaction } from "@/lib/db/client";
-import type { HolidayCalendarCode } from "@/lib/holidays/constants";
+import {
+  type HolidayCalendarCode,
+  isHolidayCalendarCode,
+} from "@/lib/holidays/constants";
 import { emitSyncEvent } from "@/lib/sync/event-bus";
 
 type TableCountKey = "issues" | "pull_requests" | "reviews" | "comments";
@@ -771,7 +774,28 @@ export async function getSyncState(resource: string) {
 
 export async function getSyncConfig() {
   const result = await query(
-    `SELECT id, org_name, auto_sync_enabled, sync_interval_minutes, timezone, week_start, excluded_repository_ids, excluded_user_ids, allowed_team_slugs, allowed_user_ids, date_time_format, last_sync_started_at, last_sync_completed_at, last_successful_sync_at, backup_enabled, backup_hour_local, backup_timezone, backup_last_started_at, backup_last_completed_at, backup_last_status, backup_last_error
+    `SELECT id,
+            org_name,
+            auto_sync_enabled,
+            sync_interval_minutes,
+            timezone,
+            week_start,
+            excluded_repository_ids,
+            excluded_user_ids,
+            allowed_team_slugs,
+            allowed_user_ids,
+            date_time_format,
+            last_sync_started_at,
+            last_sync_completed_at,
+            last_successful_sync_at,
+            backup_enabled,
+            backup_hour_local,
+            backup_timezone,
+            backup_last_started_at,
+            backup_last_completed_at,
+            backup_last_status,
+            backup_last_error,
+            org_holiday_calendar_codes
      FROM sync_config
      WHERE id = 'default'`,
   );
@@ -790,6 +814,7 @@ export async function updateSyncConfig(params: {
   allowedTeams?: string[];
   allowedUsers?: string[];
   dateTimeFormat?: string;
+  orgHolidayCalendarCodes?: HolidayCalendarCode[];
   lastSyncStartedAt?: string | null;
   lastSyncCompletedAt?: string | null;
   lastSuccessfulSyncAt?: string | null;
@@ -852,6 +877,20 @@ export async function updateSyncConfig(params: {
   if (typeof params.dateTimeFormat === "string") {
     fields.push(`date_time_format = $${fields.length + 1}`);
     values.push(params.dateTimeFormat);
+  }
+
+  if (Array.isArray(params.orgHolidayCalendarCodes)) {
+    const normalized = Array.from(
+      new Set(
+        params.orgHolidayCalendarCodes
+          .map((code) => (typeof code === "string" ? code.trim() : ""))
+          .filter((code): code is HolidayCalendarCode =>
+            isHolidayCalendarCode(code),
+          ),
+      ),
+    );
+    fields.push(`org_holiday_calendar_codes = $${fields.length + 1}`);
+    values.push(normalized);
   }
 
   if (params.lastSyncStartedAt !== undefined) {
@@ -1348,6 +1387,7 @@ export type UserPreferencesRow = {
   weekStart: "sunday" | "monday";
   dateTimeFormat: string;
   holidayCalendarCode: HolidayCalendarCode | null;
+  holidayCalendarCodes: HolidayCalendarCode[];
 };
 
 export async function getUserPreferences(
@@ -1359,8 +1399,14 @@ export async function getUserPreferences(
     week_start: string;
     date_time_format: string;
     holiday_calendar_code: HolidayCalendarCode | null;
+    holiday_calendar_codes: HolidayCalendarCode[] | null;
   }>(
-    `SELECT user_id, timezone, week_start, date_time_format, holiday_calendar_code
+    `SELECT user_id,
+            timezone,
+            week_start,
+            date_time_format,
+            holiday_calendar_code,
+            holiday_calendar_codes
      FROM user_preferences
      WHERE user_id = $1`,
     [userId],
@@ -1376,13 +1422,118 @@ export async function getUserPreferences(
       ? row.week_start
       : "monday";
 
+  const normalizedCodes: HolidayCalendarCode[] = [];
+  const seenCodes = new Set<string>();
+  if (Array.isArray(row.holiday_calendar_codes)) {
+    for (const value of row.holiday_calendar_codes) {
+      if (typeof value !== "string") {
+        continue;
+      }
+      const trimmed = value.trim();
+      if (!isHolidayCalendarCode(trimmed) || seenCodes.has(trimmed)) {
+        continue;
+      }
+      seenCodes.add(trimmed);
+      normalizedCodes.push(trimmed);
+    }
+  }
+
+  let holidayCalendarCode: HolidayCalendarCode | null =
+    normalizedCodes[0] ?? null;
+
+  if (!holidayCalendarCode && row.holiday_calendar_code) {
+    if (isHolidayCalendarCode(row.holiday_calendar_code)) {
+      holidayCalendarCode = row.holiday_calendar_code;
+      if (!seenCodes.has(holidayCalendarCode)) {
+        normalizedCodes.push(holidayCalendarCode);
+      }
+    }
+  }
+
   return {
     userId: row.user_id,
     timezone: row.timezone,
     weekStart,
     dateTimeFormat: row.date_time_format,
-    holidayCalendarCode: row.holiday_calendar_code,
+    holidayCalendarCode,
+    holidayCalendarCodes: normalizedCodes,
   };
+}
+
+export async function getUserPreferencesByIds(
+  userIds: readonly string[],
+): Promise<Map<string, UserPreferencesRow>> {
+  if (!userIds.length) {
+    return new Map();
+  }
+
+  const uniqueIds = Array.from(new Set(userIds));
+  const result = await query<{
+    user_id: string;
+    timezone: string;
+    week_start: string;
+    date_time_format: string;
+    holiday_calendar_code: HolidayCalendarCode | null;
+    holiday_calendar_codes: HolidayCalendarCode[] | null;
+  }>(
+    `SELECT user_id,
+            timezone,
+            week_start,
+            date_time_format,
+            holiday_calendar_code,
+            holiday_calendar_codes
+     FROM user_preferences
+     WHERE user_id = ANY($1::text[])`,
+    [uniqueIds],
+  );
+
+  const map = new Map<string, UserPreferencesRow>();
+  for (const row of result.rows) {
+    const weekStart =
+      row.week_start === "sunday" || row.week_start === "monday"
+        ? row.week_start
+        : "monday";
+
+    const normalizedCodes: HolidayCalendarCode[] = [];
+    const seen = new Set<string>();
+    if (Array.isArray(row.holiday_calendar_codes)) {
+      for (const value of row.holiday_calendar_codes) {
+        if (typeof value !== "string") {
+          continue;
+        }
+        const trimmed = value.trim();
+        if (!isHolidayCalendarCode(trimmed) || seen.has(trimmed)) {
+          continue;
+        }
+        seen.add(trimmed);
+        normalizedCodes.push(trimmed);
+      }
+    }
+
+    let holidayCalendarCode: HolidayCalendarCode | null =
+      normalizedCodes[0] ?? null;
+
+    if (!holidayCalendarCode && row.holiday_calendar_code) {
+      if (isHolidayCalendarCode(row.holiday_calendar_code)) {
+        holidayCalendarCode = row.holiday_calendar_code;
+        if (!seen.has(holidayCalendarCode)) {
+          normalizedCodes.push(holidayCalendarCode);
+          seen.add(holidayCalendarCode);
+        }
+      }
+    }
+
+    map.set(row.user_id, {
+      userId: row.user_id,
+      timezone: row.timezone,
+      weekStart,
+      dateTimeFormat: row.date_time_format,
+      holidayCalendarCode,
+      holidayCalendarCodes: normalizedCodes,
+    });
+  }
+
+  return map;
 }
 
 export async function upsertUserPreferences(params: {
@@ -1390,25 +1541,221 @@ export async function upsertUserPreferences(params: {
   timezone: string;
   weekStart: "sunday" | "monday";
   dateTimeFormat: string;
-  holidayCalendarCode: HolidayCalendarCode;
+  holidayCalendarCodes: HolidayCalendarCode[];
 }) {
+  const uniqueCodes = Array.from(
+    new Set<HolidayCalendarCode>(params.holidayCalendarCodes),
+  );
+  const primaryCode = uniqueCodes[0] ?? null;
+
   await query(
-    `INSERT INTO user_preferences (user_id, timezone, week_start, date_time_format, holiday_calendar_code)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO user_preferences (
+       user_id,
+       timezone,
+       week_start,
+       date_time_format,
+       holiday_calendar_code,
+       holiday_calendar_codes
+     )
+     VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (user_id) DO UPDATE SET
        timezone = EXCLUDED.timezone,
        week_start = EXCLUDED.week_start,
        date_time_format = EXCLUDED.date_time_format,
        holiday_calendar_code = EXCLUDED.holiday_calendar_code,
+       holiday_calendar_codes = EXCLUDED.holiday_calendar_codes,
        updated_at = NOW()`,
     [
       params.userId,
       params.timezone,
       params.weekStart,
       params.dateTimeFormat,
-      params.holidayCalendarCode,
+      primaryCode,
+      uniqueCodes,
     ],
   );
+}
+
+export type UserPersonalHolidayRow = {
+  id: number;
+  userId: string;
+  label: string | null;
+  startDate: string;
+  endDate: string;
+};
+
+export async function listUserPersonalHolidays(
+  userId: string,
+): Promise<UserPersonalHolidayRow[]> {
+  if (!userId) {
+    return [];
+  }
+
+  const result = await query<{
+    id: number;
+    user_id: string;
+    label: string | null;
+    start_date: string;
+    end_date: string;
+  }>(
+    `SELECT id,
+            user_id,
+            label,
+            start_date::text AS start_date,
+            end_date::text AS end_date
+     FROM user_personal_holidays
+     WHERE user_id = $1
+     ORDER BY start_date, end_date, id`,
+    [userId],
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    userId: row.user_id,
+    label: row.label ?? null,
+    startDate: row.start_date,
+    endDate: row.end_date,
+  }));
+}
+
+export async function listUserPersonalHolidaysByIds(
+  userIds: readonly string[],
+): Promise<Map<string, UserPersonalHolidayRow[]>> {
+  if (!userIds.length) {
+    return new Map();
+  }
+
+  const uniqueIds = Array.from(new Set(userIds));
+  const result = await query<{
+    user_id: string;
+    id: number;
+    label: string | null;
+    start_date: string;
+    end_date: string;
+  }>(
+    `SELECT user_id,
+            id,
+            label,
+            start_date::text AS start_date,
+            end_date::text AS end_date
+     FROM user_personal_holidays
+     WHERE user_id = ANY($1::text[])
+     ORDER BY user_id, start_date, end_date, id`,
+    [uniqueIds],
+  );
+
+  const map = new Map<string, UserPersonalHolidayRow[]>();
+  for (const row of result.rows) {
+    const items = map.get(row.user_id) ?? [];
+    items.push({
+      id: row.id,
+      userId: row.user_id,
+      label: row.label,
+      startDate: row.start_date,
+      endDate: row.end_date,
+    });
+    map.set(row.user_id, items);
+  }
+
+  return map;
+}
+
+export async function createUserPersonalHoliday(params: {
+  userId: string;
+  label?: string | null;
+  startDate: string;
+  endDate: string;
+}): Promise<UserPersonalHolidayRow> {
+  const result = await query<{
+    id: number;
+    user_id: string;
+    label: string | null;
+    start_date: string;
+    end_date: string;
+  }>(
+    `INSERT INTO user_personal_holidays (user_id, label, start_date, end_date)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id,
+               user_id,
+               label,
+               start_date::text AS start_date,
+               end_date::text AS end_date`,
+    [params.userId, params.label ?? null, params.startDate, params.endDate],
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    throw new Error("Failed to insert personal holiday.");
+  }
+
+  return {
+    id: row.id,
+    userId: row.user_id,
+    label: row.label ?? null,
+    startDate: row.start_date,
+    endDate: row.end_date,
+  };
+}
+
+export async function updateUserPersonalHoliday(params: {
+  id: number;
+  userId: string;
+  label?: string | null;
+  startDate: string;
+  endDate: string;
+}): Promise<UserPersonalHolidayRow | null> {
+  const result = await query<{
+    id: number;
+    user_id: string;
+    label: string | null;
+    start_date: string;
+    end_date: string;
+  }>(
+    `UPDATE user_personal_holidays
+     SET label = $3,
+         start_date = $4,
+         end_date = $5,
+         updated_at = NOW()
+     WHERE id = $1 AND user_id = $2
+     RETURNING id,
+               user_id,
+               label,
+               start_date::text AS start_date,
+               end_date::text AS end_date`,
+    [
+      params.id,
+      params.userId,
+      params.label ?? null,
+      params.startDate,
+      params.endDate,
+    ],
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    userId: row.user_id,
+    label: row.label ?? null,
+    startDate: row.start_date,
+    endDate: row.end_date,
+  };
+}
+
+export async function deleteUserPersonalHoliday(params: {
+  id: number;
+  userId: string;
+}): Promise<boolean> {
+  const result = await query(
+    `DELETE FROM user_personal_holidays
+     WHERE id = $1 AND user_id = $2`,
+    [params.id, params.userId],
+  );
+
+  return (result.rowCount ?? 0) > 0;
 }
 
 export async function updateUserAvatarUrl(

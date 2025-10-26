@@ -33,6 +33,30 @@ export function loadHolidaySet(
   return loadHolidaySetFromService(calendarCode);
 }
 
+export async function loadCombinedHolidaySet(
+  calendarCodes: readonly HolidayCalendarCode[],
+): Promise<ReadonlySet<string>> {
+  if (!calendarCodes.length) {
+    return EMPTY_HOLIDAY_SET;
+  }
+
+  const sets = await Promise.all(
+    calendarCodes.map((code) => loadHolidaySetFromService(code)),
+  );
+
+  if (sets.length === 1) {
+    return sets[0];
+  }
+
+  const combined = new Set<string>();
+  for (const set of sets) {
+    for (const date of set) {
+      combined.add(date);
+    }
+  }
+  return combined;
+}
+
 export function isBusinessDay(
   date: Date,
   holidays: ReadonlySet<string> = EMPTY_HOLIDAY_SET,

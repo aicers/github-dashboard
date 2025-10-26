@@ -11,6 +11,7 @@ import {
   fetchOrganizationMembers,
   fetchOrganizationTeams,
 } from "@/lib/github/org";
+import { DEFAULT_HOLIDAY_CALENDAR } from "@/lib/holidays/constants";
 import {
   type CalendarHoliday,
   getCalendarHolidays,
@@ -26,13 +27,23 @@ export default async function SettingsPage() {
   const config = await fetchSyncConfig();
   const timeSettings = await readUserTimeSettings(session?.userId ?? null);
   const holidayCalendars = await listHolidayCalendars();
-  const selectedHolidayCode = timeSettings.holidayCalendarCode;
-  let selectedHolidayEntries: CalendarHoliday[] = [];
+  const personalHolidayCodes = timeSettings.holidayCalendarCodes;
+  const organizationHolidayCodes =
+    timeSettings.organizationHolidayCalendarCodes;
+  const knownCalendarCodes = new Set(
+    holidayCalendars.map((calendar) => calendar.code),
+  );
+  const previewHolidayCode =
+    personalHolidayCodes.find((code) => knownCalendarCodes.has(code)) ??
+    organizationHolidayCodes.find((code) => knownCalendarCodes.has(code)) ??
+    holidayCalendars[0]?.code ??
+    DEFAULT_HOLIDAY_CALENDAR;
+  let previewHolidayEntries: CalendarHoliday[] = [];
   try {
-    selectedHolidayEntries = await getCalendarHolidays(selectedHolidayCode);
+    previewHolidayEntries = await getCalendarHolidays(previewHolidayCode);
   } catch (error) {
     console.error("[settings] Failed to load holidays", error);
-    selectedHolidayEntries = [];
+    previewHolidayEntries = [];
   }
   const repositories = await listAllRepositories();
   const members = await listAllUsers();
@@ -86,9 +97,12 @@ export default async function SettingsPage() {
       timeZone={timeSettings.timezone}
       weekStart={timeSettings.weekStart}
       dateTimeFormat={timeSettings.dateTimeFormat}
-      holidayCalendarCode={timeSettings.holidayCalendarCode}
+      personalHolidayCalendarCodes={personalHolidayCodes}
+      organizationHolidayCalendarCodes={organizationHolidayCodes}
+      holidayPreviewCalendarCode={previewHolidayCode}
       holidayCalendars={holidayCalendars}
-      initialHolidayEntries={selectedHolidayEntries}
+      initialPreviewHolidayEntries={previewHolidayEntries}
+      personalHolidays={timeSettings.personalHolidays}
       repositories={repositories}
       excludedRepositoryIds={excludedRepositoryIds}
       members={members}

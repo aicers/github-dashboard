@@ -145,9 +145,12 @@ export default async function SettingsHarnessPage({
         timeZone="Asia/Seoul"
         weekStart="monday"
         dateTimeFormat="auto"
-        holidayCalendarCode="kr"
+        personalHolidayCalendarCodes={["kr"]}
+        organizationHolidayCalendarCodes={["kr"]}
+        holidayPreviewCalendarCode="kr"
         holidayCalendars={holidayCalendars}
-        initialHolidayEntries={holidayEntries}
+        initialPreviewHolidayEntries={holidayEntries}
+        personalHolidays={[]}
         repositories={repositories}
         excludedRepositoryIds={["repo-2"]}
         members={members}

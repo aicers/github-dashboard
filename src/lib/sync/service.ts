@@ -34,6 +34,11 @@ import {
   RESOURCE_KEYS,
   runCollection,
 } from "@/lib/github/collectors";
+import {
+  DEFAULT_HOLIDAY_CALENDAR,
+  type HolidayCalendarCode,
+  isHolidayCalendarCode,
+} from "@/lib/holidays/constants";
 import { withJobLock } from "@/lib/jobs/lock";
 import { emitSyncEvent } from "@/lib/sync/event-bus";
 import type { SyncRunSummaryEvent } from "@/lib/sync/events";
@@ -896,6 +901,7 @@ export async function updateSyncSettings(params: {
   allowedTeams?: string[];
   allowedUsers?: string[];
   dateTimeFormat?: string;
+  orgHolidayCalendarCodes?: (HolidayCalendarCode | string)[];
   backupHourLocal?: number;
   backupTimezone?: string;
 }) {
@@ -988,6 +994,37 @@ export async function updateSyncSettings(params: {
     );
 
     await updateSyncConfig({ allowedUsers: normalized });
+  }
+
+  if (params.orgHolidayCalendarCodes !== undefined) {
+    if (!Array.isArray(params.orgHolidayCalendarCodes)) {
+      throw new Error("Organization holiday calendars must be an array.");
+    }
+
+    const selected: HolidayCalendarCode[] = [];
+    const seen = new Set<string>();
+    for (const value of params.orgHolidayCalendarCodes) {
+      if (typeof value !== "string") {
+        throw new Error("Unsupported holiday calendar.");
+      }
+      const trimmed = value.trim();
+      if (!trimmed) {
+        continue;
+      }
+      if (!isHolidayCalendarCode(trimmed)) {
+        throw new Error("Unsupported holiday calendar.");
+      }
+      if (!seen.has(trimmed)) {
+        seen.add(trimmed);
+        selected.push(trimmed);
+      }
+    }
+
+    if (selected.length === 0) {
+      selected.push(DEFAULT_HOLIDAY_CALENDAR);
+    }
+
+    await updateSyncConfig({ orgHolidayCalendarCodes: selected });
   }
 
   if (params.dateTimeFormat !== undefined) {

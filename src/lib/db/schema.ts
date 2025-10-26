@@ -256,6 +256,27 @@ const SCHEMA_STATEMENTS = [
   `ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'UTC'`,
   `ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS week_start TEXT NOT NULL DEFAULT 'monday'`,
   `ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS date_time_format TEXT NOT NULL DEFAULT 'auto'`,
+  `ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS holiday_calendar_code TEXT`,
+  `ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS holiday_calendar_codes TEXT[] NOT NULL DEFAULT '{}'`,
+  `UPDATE user_preferences
+     SET holiday_calendar_codes = ARRAY[holiday_calendar_code]
+     WHERE COALESCE(array_length(holiday_calendar_codes, 1), 0) = 0
+       AND holiday_calendar_code IS NOT NULL`,
+  `UPDATE user_preferences
+     SET holiday_calendar_codes = ARRAY['${DEFAULT_HOLIDAY_CALENDAR}']
+     WHERE COALESCE(array_length(holiday_calendar_codes, 1), 0) = 0
+       AND (holiday_calendar_code IS NULL OR holiday_calendar_code = '')`,
+  `CREATE TABLE IF NOT EXISTS user_personal_holidays (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    label TEXT,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS user_personal_holidays_user_idx
+     ON user_personal_holidays(user_id, start_date, end_date)`,
   `CREATE TABLE IF NOT EXISTS holiday_calendars (
     id SERIAL PRIMARY KEY,
     code TEXT NOT NULL UNIQUE,
@@ -283,7 +304,6 @@ const SCHEMA_STATEMENTS = [
      ON calendar_holidays(calendar_code, holiday_date, name)`,
   `CREATE INDEX IF NOT EXISTS calendar_holidays_calendar_idx
      ON calendar_holidays(calendar_code, holiday_date)`,
-  `ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS holiday_calendar_code TEXT`,
   `CREATE TABLE IF NOT EXISTS repositories (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -552,6 +572,10 @@ const SCHEMA_STATEMENTS = [
   `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS backup_last_completed_at TIMESTAMPTZ`,
   `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS backup_last_status TEXT NOT NULL DEFAULT 'idle'`,
   `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS backup_last_error TEXT`,
+  `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS org_holiday_calendar_codes TEXT[] NOT NULL DEFAULT '{}'`,
+  `UPDATE sync_config
+     SET org_holiday_calendar_codes = ARRAY['${DEFAULT_HOLIDAY_CALENDAR}']
+     WHERE COALESCE(array_length(org_holiday_calendar_codes, 1), 0) = 0`,
   `ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE`,
   `CREATE TABLE IF NOT EXISTS db_backups (
     id SERIAL PRIMARY KEY,

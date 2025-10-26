@@ -10,6 +10,7 @@ import type {
 import {
   differenceInBusinessDays,
   differenceInBusinessDaysOrNull,
+  loadCombinedHolidaySet,
   loadHolidaySet,
 } from "@/lib/dashboard/business-days";
 import type { DateTimeDisplayFormat } from "@/lib/date-time-format";
@@ -17,11 +18,26 @@ import { ensureSchema } from "@/lib/db";
 import { query } from "@/lib/db/client";
 import {
   getSyncConfig,
+  getUserPreferences,
+  getUserPreferencesByIds,
   getUserProfiles,
+  listUserPersonalHolidays,
+  listUserPersonalHolidaysByIds,
+  type UserPersonalHolidayRow,
+  type UserPreferencesRow,
   type UserProfile,
 } from "@/lib/db/operations";
 import { env } from "@/lib/env";
-import { readUserTimeSettings } from "@/lib/user/time-settings";
+import {
+  DEFAULT_HOLIDAY_CALENDAR,
+  type HolidayCalendarCode,
+  isHolidayCalendarCode,
+} from "@/lib/holidays/constants";
+import {
+  expandPersonalHolidayDates,
+  type PersonalHoliday,
+  readUserTimeSettings,
+} from "@/lib/user/time-settings";
 
 export type UserReference = {
   id: string;
@@ -90,6 +106,122 @@ export type IssueAttentionItem = IssueReference & {
   issueTodoProjectInitiationOptions?: string | null;
   issueTodoProjectStartDate?: string | null;
 };
+
+function normalizeOrganizationHolidayCodes(
+  config: unknown,
+): HolidayCalendarCode[] {
+  if (
+    !config ||
+    !(config as { org_holiday_calendar_codes?: unknown })
+      .org_holiday_calendar_codes
+  ) {
+    return [DEFAULT_HOLIDAY_CALENDAR];
+  }
+
+  const raw = (config as { org_holiday_calendar_codes?: unknown })
+    .org_holiday_calendar_codes;
+  if (!Array.isArray(raw)) {
+    return [DEFAULT_HOLIDAY_CALENDAR];
+  }
+
+  const codes = raw
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0 && isHolidayCalendarCode(value));
+
+  if (!codes.length) {
+    return [DEFAULT_HOLIDAY_CALENDAR];
+  }
+
+  return Array.from(new Set(codes)) as HolidayCalendarCode[];
+}
+
+function mapPersonalHolidayRow(row: UserPersonalHolidayRow): PersonalHoliday {
+  return {
+    id: row.id,
+    label: row.label,
+    startDate: row.startDate,
+    endDate: row.endDate,
+  };
+}
+
+function buildPersonalHolidaySetLoader(options: {
+  organizationHolidayCodes: HolidayCalendarCode[];
+  organizationHolidaySet: ReadonlySet<string>;
+  preferencesMap?: Map<string, UserPreferencesRow>;
+  personalHolidayMap?: Map<string, UserPersonalHolidayRow[]>;
+}) {
+  const cache = new Map<string, Promise<ReadonlySet<string>>>();
+  const holidaySetCache = new Map<string, Promise<ReadonlySet<string>>>();
+
+  return async function getPersonalHolidaySet(
+    userId: string | null | undefined,
+  ): Promise<ReadonlySet<string>> {
+    if (!userId) {
+      return options.organizationHolidaySet;
+    }
+
+    const existing = cache.get(userId);
+    if (existing) {
+      return existing;
+    }
+
+    const loader = (async () => {
+      const preferences =
+        options.preferencesMap?.get(userId) ??
+        (await getUserPreferences(userId));
+      const preferredCodes = preferences?.holidayCalendarCodes?.length
+        ? preferences.holidayCalendarCodes
+        : options.organizationHolidayCodes;
+      const uniqueCodes = Array.from(new Set(preferredCodes));
+      const codesToLoad = uniqueCodes.length
+        ? uniqueCodes
+        : options.organizationHolidayCodes;
+
+      const holidaySets = await Promise.all(
+        codesToLoad.map((code) => {
+          const existingSet = holidaySetCache.get(code);
+          if (existingSet) {
+            return existingSet;
+          }
+          const promise = loadHolidaySet(code);
+          holidaySetCache.set(code, promise);
+          return promise;
+        }),
+      );
+      const combined = new Set<string>();
+      for (const set of holidaySets) {
+        for (const date of set) {
+          combined.add(date);
+        }
+      }
+
+      const personalRows =
+        options.personalHolidayMap?.get(userId) ??
+        (await listUserPersonalHolidays(userId));
+      const personalEntries = personalRows.map(mapPersonalHolidayRow);
+      const personalDates = expandPersonalHolidayDates(personalEntries);
+      for (const date of personalDates) {
+        combined.add(date);
+      }
+
+      const codesMatchOrganization =
+        codesToLoad.length === options.organizationHolidayCodes.length &&
+        codesToLoad.every((code) =>
+          options.organizationHolidayCodes.includes(code),
+        );
+
+      if (personalDates.size === 0 && codesMatchOrganization) {
+        return options.organizationHolidaySet;
+      }
+
+      return combined;
+    })();
+
+    cache.set(userId, loader);
+    return loader;
+  };
+}
 
 export type MentionAttentionItem = {
   commentId: string;
@@ -1016,9 +1148,9 @@ async function fetchStalePullRequests(
     const reviewers = reviewerMap.get(row.id) ?? new Set<string>();
     const reviewerIds = Array.from(reviewers);
     addUserId(userIds, row.author_id);
-    reviewerIds.forEach((id) => {
+    for (const id of reviewerIds) {
       addUserId(userIds, id);
-    });
+    }
 
     const inactivityDays =
       differenceInDaysOrNull(row.github_updated_at, now, holidays) ?? undefined;
@@ -1099,9 +1231,9 @@ async function fetchIdlePullRequests(
     const reviewers = reviewerMap.get(row.id) ?? new Set<string>();
     const reviewerIds = Array.from(reviewers);
     addUserId(userIds, row.author_id);
-    reviewerIds.forEach((id) => {
+    for (const id of reviewerIds) {
       addUserId(userIds, id);
-    });
+    }
 
     items.push({
       id: row.id,
@@ -1128,7 +1260,8 @@ async function fetchStuckReviewRequests(
   excludedRepositoryIds: readonly string[],
   excludedUserIds: readonly string[],
   now: Date,
-  holidays: ReadonlySet<string>,
+  organizationHolidayCodes: HolidayCalendarCode[],
+  organizationHolidaySet: ReadonlySet<string>,
 ): Promise<Dataset<ReviewRequestRawItem>> {
   const result = await query<ReviewRequestRow>(
     `WITH base AS (
@@ -1191,14 +1324,14 @@ async function fetchStuckReviewRequests(
        base.reviewer_id,
        base.requested_at,
        base.pr_number,
-     base.pr_title,
-     base.pr_url,
-      base.pr_created_at,
-      base.pr_updated_at,
-     base.pr_repository_id,
-     base.pr_author_id,
-     base.repository_name,
-     base.repository_name_with_owner,
+       base.pr_title,
+       base.pr_url,
+       base.pr_created_at,
+       base.pr_updated_at,
+       base.pr_repository_id,
+       base.pr_author_id,
+       base.repository_name,
+       base.repository_name_with_owner,
        ARRAY(SELECT DISTINCT reviewer_id
              FROM review_requests
              WHERE pull_request_id = base.pull_request_id
@@ -1223,12 +1356,37 @@ async function fetchStuckReviewRequests(
     fetchLinkedIssuesForPullRequests(prIds),
   ]);
 
+  const reviewerIds = Array.from(
+    new Set(
+      result.rows
+        .map((row) => row.reviewer_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+
+  const [preferencesMap, personalHolidayMap] = await Promise.all([
+    getUserPreferencesByIds(reviewerIds),
+    listUserPersonalHolidaysByIds(reviewerIds),
+  ]);
+
+  const getPersonalHolidaySet = buildPersonalHolidaySetLoader({
+    organizationHolidayCodes,
+    organizationHolidaySet,
+    preferencesMap,
+    personalHolidayMap,
+  });
+
   const items: ReviewRequestRawItem[] = [];
 
-  result.rows.forEach((row) => {
-    const waitingDays = differenceInDays(row.requested_at, now, holidays);
+  for (const row of result.rows) {
+    const reviewerHolidays = await getPersonalHolidaySet(row.reviewer_id);
+    const waitingDays = differenceInDays(
+      row.requested_at,
+      now,
+      reviewerHolidays,
+    );
     if (waitingDays < STUCK_REVIEW_BUSINESS_DAYS) {
-      return;
+      continue;
     }
 
     const reviewerSet =
@@ -1244,21 +1402,21 @@ async function fetchStuckReviewRequests(
     }
 
     const reviewerIds = Array.from(combinedReviewers);
-    reviewerIds.forEach((id) => {
+    for (const id of reviewerIds) {
       addUserId(userIds, id);
-    });
+    }
     addUserId(userIds, row.pr_author_id);
     addUserId(userIds, row.reviewer_id);
 
     const pullRequestAgeDays = differenceInDaysOrNull(
       row.pr_created_at,
       now,
-      holidays,
+      organizationHolidaySet,
     );
     const pullRequestInactivityDays = differenceInDaysOrNull(
       row.pr_updated_at,
       now,
-      holidays,
+      organizationHolidaySet,
     );
 
     items.push({
@@ -1279,11 +1437,11 @@ async function fetchStuckReviewRequests(
         linkedIssues: linkedIssuesMap.get(row.pull_request_id) ?? [],
       },
       pullRequestCreatedAt: row.pr_created_at,
-      pullRequestUpdatedAt: row.pr_updated_at,
       pullRequestAgeDays,
       pullRequestInactivityDays,
+      pullRequestUpdatedAt: row.pr_updated_at,
     });
-  });
+  }
 
   return { items, userIds };
 }
@@ -1409,7 +1567,8 @@ async function fetchUnansweredMentions(
   excludedRepositoryIds: readonly string[],
   excludedUserIds: readonly string[],
   now: Date,
-  holidays: ReadonlySet<string>,
+  organizationHolidayCodes: HolidayCalendarCode[],
+  organizationHolidaySet: ReadonlySet<string>,
 ): Promise<Dataset<MentionRawItem>> {
   const result = await query<MentionRow>(
     `WITH mention_candidates AS (
@@ -1505,10 +1664,35 @@ async function fetchUnansweredMentions(
   const userIds = new Set<string>();
   const items: MentionRawItem[] = [];
 
-  result.rows.forEach((row) => {
-    const waitingDays = differenceInDays(row.mentioned_at, now, holidays);
+  const mentionedUserIds = Array.from(
+    new Set(
+      result.rows
+        .map((row) => row.mentioned_user_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+
+  const [preferencesMap, personalHolidayMap] = await Promise.all([
+    getUserPreferencesByIds(mentionedUserIds),
+    listUserPersonalHolidaysByIds(mentionedUserIds),
+  ]);
+
+  const getPersonalHolidaySet = buildPersonalHolidaySetLoader({
+    organizationHolidayCodes,
+    organizationHolidaySet,
+    preferencesMap,
+    personalHolidayMap,
+  });
+
+  for (const row of result.rows) {
+    const personalHolidays = await getPersonalHolidaySet(row.mentioned_user_id);
+    const waitingDays = differenceInDays(
+      row.mentioned_at,
+      now,
+      personalHolidays,
+    );
     if (waitingDays < UNANSWERED_MENTION_BUSINESS_DAYS) {
-      return;
+      continue;
     }
 
     addUserId(userIds, row.mentioned_user_id);
@@ -1550,7 +1734,7 @@ async function fetchUnansweredMentions(
       },
       commentExcerpt: extractCommentExcerpt(row.comment_body),
     });
-  });
+  }
 
   return { items, userIds };
 }
@@ -1613,7 +1797,10 @@ export async function getAttentionInsights(options?: {
     getSyncConfig(),
     readUserTimeSettings(options?.userId ?? null),
   ]);
-  const holidaySet = await loadHolidaySet(userTimeSettings.holidayCalendarCode);
+  const organizationHolidayCodes = normalizeOrganizationHolidayCodes(config);
+  const organizationHolidaySet = await loadCombinedHolidaySet(
+    organizationHolidayCodes,
+  );
   const excludedUserIds = new Set<string>(
     Array.isArray(config?.excluded_user_ids)
       ? (config?.excluded_user_ids as string[]).filter(
@@ -1641,32 +1828,34 @@ export async function getAttentionInsights(options?: {
         excludedReposArray,
         excludedUsersArray,
         now,
-        holidaySet,
+        organizationHolidaySet,
       ),
       fetchIdlePullRequests(
         excludedReposArray,
         excludedUsersArray,
         now,
-        holidaySet,
+        organizationHolidaySet,
       ),
       fetchStuckReviewRequests(
         excludedReposArray,
         excludedUsersArray,
         now,
-        holidaySet,
+        organizationHolidayCodes,
+        organizationHolidaySet,
       ),
       fetchIssueInsights(
         excludedReposArray,
         excludedUsersArray,
         targetProject,
         now,
-        holidaySet,
+        organizationHolidaySet,
       ),
       fetchUnansweredMentions(
         excludedReposArray,
         excludedUsersArray,
         now,
-        holidaySet,
+        organizationHolidayCodes,
+        organizationHolidaySet,
       ),
     ]);
 
