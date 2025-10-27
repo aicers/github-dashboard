@@ -6,7 +6,9 @@ import { query } from "@/lib/db/client";
 import {
   type DbActor,
   getUserAvatarState,
+  listAllRepositories,
   replacePullRequestIssues,
+  replaceRepositoryMaintainers,
   updateUserAvatarUrl,
   upsertUser,
 } from "@/lib/db/operations";
@@ -101,6 +103,148 @@ describe("db operations", () => {
       "https://github.com/new-original.png",
     );
     expect(avatarState.customAvatarUrl).toBeNull();
+  });
+});
+
+describe("replaceRepositoryMaintainers", () => {
+  const repoAlpha = "repo_alpha";
+  const repoBeta = "repo_beta";
+  const maintainerA = "maintainer_a";
+  const maintainerB = "maintainer_b";
+
+  beforeEach(async () => {
+    await query(
+      `INSERT INTO repositories (
+         id,
+         name,
+         name_with_owner,
+         data,
+         github_created_at,
+         github_updated_at
+       ) VALUES ($1, $2, $3, '{}'::jsonb, NOW(), NOW())
+       ON CONFLICT (id) DO NOTHING`,
+      [repoAlpha, "alpha", "acme/alpha"],
+    );
+    await query(
+      `INSERT INTO repositories (
+         id,
+         name,
+         name_with_owner,
+         data,
+         github_created_at,
+         github_updated_at
+       ) VALUES ($1, $2, $3, '{}'::jsonb, NOW(), NOW())
+       ON CONFLICT (id) DO NOTHING`,
+      [repoBeta, "beta", "acme/beta"],
+    );
+
+    await upsertUser({
+      id: maintainerA,
+      login: maintainerA,
+      name: maintainerA,
+      avatarUrl: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    await upsertUser({
+      id: maintainerB,
+      login: maintainerB,
+      name: maintainerB,
+      avatarUrl: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+  });
+
+  afterEach(async () => {
+    await query("TRUNCATE TABLE repository_maintainers CASCADE");
+    await query("TRUNCATE TABLE repositories CASCADE");
+    await query("TRUNCATE TABLE users CASCADE");
+  });
+
+  it("replaces maintainers per repository, deduplicates, and filters unknown references", async () => {
+    await replaceRepositoryMaintainers([
+      {
+        repositoryId: repoAlpha,
+        maintainerIds: [
+          maintainerA,
+          maintainerB,
+          maintainerA,
+          maintainerB.toUpperCase(),
+          "unknown-user",
+          "",
+        ],
+      },
+      {
+        repositoryId: repoBeta,
+        maintainerIds: [maintainerB],
+      },
+    ]);
+
+    const initialRows = await query<{
+      repository_id: string;
+      user_id: string;
+    }>(
+      `SELECT repository_id, user_id
+         FROM repository_maintainers
+        ORDER BY repository_id, user_id`,
+    );
+    expect(initialRows.rows).toEqual([
+      { repository_id: repoAlpha, user_id: maintainerA },
+      { repository_id: repoAlpha, user_id: maintainerB },
+      { repository_id: repoBeta, user_id: maintainerB },
+    ]);
+
+    await replaceRepositoryMaintainers([
+      {
+        repositoryId: repoAlpha,
+        maintainerIds: [maintainerB],
+      },
+      {
+        repositoryId: repoBeta,
+        maintainerIds: [],
+      },
+    ]);
+
+    const finalRows = await query<{
+      repository_id: string;
+      user_id: string;
+    }>(
+      `SELECT repository_id, user_id
+         FROM repository_maintainers
+        ORDER BY repository_id, user_id`,
+    );
+    expect(finalRows.rows).toEqual([
+      { repository_id: repoAlpha, user_id: maintainerB },
+    ]);
+
+    const repositories = await listAllRepositories();
+    const alpha = repositories.find((repo) => repo.id === repoAlpha);
+    const beta = repositories.find((repo) => repo.id === repoBeta);
+    expect(alpha?.maintainerIds).toEqual([maintainerB]);
+    expect(beta?.maintainerIds).toEqual([]);
+  });
+
+  it("ignores assignments for unknown repositories without affecting existing data", async () => {
+    await replaceRepositoryMaintainers([
+      { repositoryId: repoAlpha, maintainerIds: [maintainerA] },
+    ]);
+
+    await replaceRepositoryMaintainers([
+      { repositoryId: "missing-repo", maintainerIds: [maintainerB] },
+    ]);
+
+    const rows = await query<{
+      repository_id: string;
+      user_id: string;
+    }>(
+      `SELECT repository_id, user_id
+         FROM repository_maintainers
+        ORDER BY repository_id, user_id`,
+    );
+    expect(rows.rows).toEqual([
+      { repository_id: repoAlpha, user_id: maintainerA },
+    ]);
   });
 });
 

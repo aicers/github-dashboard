@@ -6,16 +6,19 @@ const repositories: RepositoryProfile[] = [
     id: "repo-1",
     name: "Repo One",
     nameWithOwner: "acme/repo-one",
+    maintainerIds: [],
   },
   {
     id: "repo-2",
     name: "Repo Two",
     nameWithOwner: "acme/repo-two",
+    maintainerIds: [],
   },
   {
     id: "repo-3",
     name: "Repo Three",
     nameWithOwner: "acme/repo-three",
+    maintainerIds: [],
   },
 ];
 

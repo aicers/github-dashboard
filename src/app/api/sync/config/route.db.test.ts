@@ -31,7 +31,7 @@ const START_TIME = new Date("2024-06-01T00:00:00.000Z");
 async function resetDatabaseState() {
   await ensureSchema();
   await query(
-    "TRUNCATE TABLE users, user_preferences, repositories, sync_log, sync_state, db_backups RESTART IDENTITY CASCADE",
+    "TRUNCATE TABLE repository_maintainers, users, user_preferences, repositories, sync_log, sync_state, db_backups RESTART IDENTITY CASCADE",
   );
   await query(
     `UPDATE sync_config
@@ -208,6 +208,81 @@ describe("sync config API routes", () => {
     expect(users.map((user) => user.id)).toEqual(["user", "user-1", "user-2"]);
   });
 
+  it("updates repository maintainers when requested by an admin user", async () => {
+    await seedRepository("repo-1", "user");
+    await seedRepository("repo-2", "user");
+    await seedRepository("repo-3", "user");
+    await seedUser("maintainer-1");
+    await seedUser("maintainer-2");
+
+    const response = await handlers.PATCH(
+      new Request("http://localhost/api/sync/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          repositoryMaintainers: {
+            "repo-1": [" maintainer-2 ", "maintainer-1", "missing"],
+            "repo-2": [],
+          },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+
+    const repositoriesAfter = await listAllRepositories();
+    const repo1 = repositoriesAfter.find((repo) => repo.id === "repo-1");
+    const repo2 = repositoriesAfter.find((repo) => repo.id === "repo-2");
+    const repo3 = repositoriesAfter.find((repo) => repo.id === "repo-3");
+
+    expect(repo1).toBeDefined();
+    expect(repo2).toBeDefined();
+    expect(repo3).toBeDefined();
+    expect(repo1?.maintainerIds).toEqual(["maintainer-1", "maintainer-2"]);
+    expect(repo2?.maintainerIds).toEqual([]);
+    expect(repo3?.maintainerIds).toEqual([]);
+  });
+
+  it("allows clearing repository maintainer assignments on subsequent updates", async () => {
+    await seedRepository("repo-1", "user");
+    await seedUser("maintainer-1");
+    await seedUser("maintainer-2");
+
+    await handlers.PATCH(
+      new Request("http://localhost/api/sync/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          repositoryMaintainers: {
+            "repo-1": ["maintainer-1", "maintainer-2"],
+          },
+        }),
+      }),
+    );
+
+    let repositories = await listAllRepositories();
+    expect(
+      repositories.find((repo) => repo.id === "repo-1")?.maintainerIds,
+    ).toEqual(["maintainer-1", "maintainer-2"]);
+
+    await handlers.PATCH(
+      new Request("http://localhost/api/sync/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          repositoryMaintainers: {
+            "repo-1": [],
+          },
+        }),
+      }),
+    );
+
+    repositories = await listAllRepositories();
+    expect(
+      repositories.find((repo) => repo.id === "repo-1")?.maintainerIds,
+    ).toEqual([]);
+  });
+
   it("rejects organization control updates from non-admin users", async () => {
     vi.mocked(readActiveSession).mockResolvedValueOnce({
       id: "session",
@@ -227,6 +302,7 @@ describe("sync config API routes", () => {
         body: JSON.stringify({
           orgName: "unauthorized-update",
           excludedRepositories: ["repo-1"],
+          repositoryMaintainers: { "repo-1": ["user-1"] },
         }),
       }),
     );

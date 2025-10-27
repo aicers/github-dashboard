@@ -20,6 +20,7 @@ import {
   getSyncConfig,
   getSyncState,
   recordSyncLog,
+  replaceRepositoryMaintainers,
   resetData as resetDatabase,
   type SyncRunSummary,
   type SyncRunType,
@@ -904,6 +905,7 @@ export async function updateSyncSettings(params: {
   orgHolidayCalendarCodes?: (HolidayCalendarCode | string)[];
   backupHourLocal?: number;
   backupTimezone?: string;
+  repositoryMaintainers?: Record<string, string[]>;
 }) {
   await ensureSchema();
 
@@ -937,6 +939,16 @@ export async function updateSyncSettings(params: {
     }
 
     await updateSyncConfig({ timezone: tz });
+  }
+
+  if (params.repositoryMaintainers !== undefined) {
+    const assignments = Object.entries(params.repositoryMaintainers).map(
+      ([repositoryId, maintainerIds]) => ({
+        repositoryId,
+        maintainerIds: Array.isArray(maintainerIds) ? maintainerIds : [],
+      }),
+    );
+    await replaceRepositoryMaintainers(assignments);
   }
 
   if (params.weekStart !== undefined) {

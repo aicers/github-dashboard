@@ -61,11 +61,13 @@ const BASE_REPOSITORIES: RepositoryProfile[] = [
     id: "repo-1",
     name: "Repo Alpha",
     nameWithOwner: "acme/repo-alpha",
+    maintainerIds: [],
   },
   {
     id: "repo-2",
     name: "Repo Beta",
     nameWithOwner: "acme/repo-beta",
+    maintainerIds: [],
   },
 ];
 

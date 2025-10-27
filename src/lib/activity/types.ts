@@ -87,6 +87,7 @@ export type ActivityRepository = {
   id: string;
   name: string | null;
   nameWithOwner: string | null;
+  maintainerIds?: string[];
 };
 
 export type ActivityLabel = {
