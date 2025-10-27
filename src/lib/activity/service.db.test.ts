@@ -715,6 +715,52 @@ describe("activity service integration", () => {
     });
   });
 
+  it("excludes pull requests that no longer satisfy selected attention filters", async () => {
+    const { repoBeta, pullRequestBeta } = await seedBasicActivityData();
+
+    await query(
+      `UPDATE pull_requests
+         SET state = 'CLOSED',
+             merged = FALSE,
+             github_closed_at = '2024-02-01T00:00:00.000Z',
+             github_updated_at = '2024-02-01T00:00:00.000Z'
+       WHERE id = $1`,
+      [pullRequestBeta.id],
+    );
+    await refreshActivityItemsSnapshot();
+
+    const attention: AttentionInsights = {
+      ...emptyInsights(),
+      staleOpenPrs: [
+        {
+          id: pullRequestBeta.id,
+          number: pullRequestBeta.number,
+          title: pullRequestBeta.title ?? null,
+          url: `https://example.com/beta/${pullRequestBeta.number}`,
+          repository: {
+            id: repoBeta.id,
+            name: repoBeta.name,
+            nameWithOwner: repoBeta.nameWithOwner,
+          },
+          author: null,
+          reviewers: [],
+          linkedIssues: [],
+          createdAt: pullRequestBeta.createdAt,
+          updatedAt: pullRequestBeta.updatedAt,
+          ageDays: 30,
+        } satisfies PullRequestAttentionItem,
+      ],
+    };
+    mockedAttentionInsights.mockResolvedValueOnce(attention);
+
+    const result = await getActivityItems({
+      attention: ["pr_open_too_long"],
+    });
+
+    expect(result.items).toHaveLength(0);
+    expect(result.pageInfo.totalCount).toBe(0);
+  });
+
   it("populates linked pull requests and issues for activity items", async () => {
     const { repoAlpha, issueAlpha, pullRequestBeta } =
       await seedBasicActivityData();

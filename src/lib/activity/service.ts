@@ -66,6 +66,20 @@ const DEFAULT_THRESHOLDS: Required<ActivityThresholds> = {
   stalledIssueDays: 20,
 };
 
+type AttentionFilterWithoutNone = Exclude<
+  ActivityAttentionFilter,
+  "no_attention"
+>;
+
+const ATTENTION_FILTER_KEYS: AttentionFilterWithoutNone[] = [
+  "unanswered_mentions",
+  "review_requests_pending",
+  "pr_open_too_long",
+  "pr_inactive",
+  "issue_backlog",
+  "issue_stalled",
+];
+
 function normalizeOrganizationHolidayCodes(
   config: unknown,
 ): HolidayCalendarCode[] {
@@ -1195,7 +1209,6 @@ function coerceSearch(value: string | null | undefined) {
 
 function buildQueryFilters(
   params: ActivityListParams,
-  attentionSelection: AttentionFilterSelection | null,
   attentionSets: AttentionSets,
   excludedRepositoryIds: string[] = [],
 ): {
@@ -1303,47 +1316,104 @@ function buildQueryFilters(
     }
   }
 
-  if (attentionSelection) {
-    const { includeIds, includeNone } = attentionSelection;
-    const ensureExclusionClause = () => {
-      const fragments: string[] = [];
-      const setsInOrder: Array<Set<string>> = [
-        attentionSets.unansweredMentions,
-        attentionSets.reviewRequests,
-        attentionSets.stalePullRequests,
-        attentionSets.idlePullRequests,
-        attentionSets.backlogIssues,
-        attentionSets.stalledIssues,
-      ];
-      setsInOrder.forEach((set) => {
-        if (!set.size) {
-          return;
-        }
-        values.push(Array.from(set));
-        fragments.push(`items.id = ANY($${values.length}::text[])`);
-      });
-      return fragments;
+  const applyAttentionFilters = () => {
+    if (!params.attention?.length) {
+      return;
+    }
+
+    const uniqueFilters = Array.from(new Set(params.attention));
+    if (uniqueFilters.length === 0) {
+      return;
+    }
+
+    const includeNone = uniqueFilters.includes("no_attention");
+    const activeFilters = uniqueFilters.filter(
+      (value): value is AttentionFilterWithoutNone => value !== "no_attention",
+    );
+
+    const buildAttentionClause = (
+      filter: AttentionFilterWithoutNone,
+    ): string | null => {
+      let ids: string[] = [];
+      const constraints: string[] = [];
+
+      switch (filter) {
+        case "unanswered_mentions":
+          ids = Array.from(attentionSets.unansweredMentions);
+          break;
+        case "review_requests_pending":
+          ids = Array.from(attentionSets.reviewRequests);
+          constraints.push(`items.item_type = 'pull_request'`);
+          break;
+        case "pr_open_too_long":
+          ids = Array.from(attentionSets.stalePullRequests);
+          constraints.push(`items.item_type = 'pull_request'`);
+          constraints.push(`items.status = 'open'`);
+          break;
+        case "pr_inactive":
+          ids = Array.from(attentionSets.idlePullRequests);
+          constraints.push(`items.item_type = 'pull_request'`);
+          constraints.push(`items.status = 'open'`);
+          break;
+        case "issue_backlog":
+          ids = Array.from(attentionSets.backlogIssues);
+          constraints.push(`items.item_type = 'issue'`);
+          break;
+        case "issue_stalled":
+          ids = Array.from(attentionSets.stalledIssues);
+          constraints.push(`items.item_type = 'issue'`);
+          break;
+        default:
+          return null;
+      }
+
+      if (ids.length === 0) {
+        return null;
+      }
+
+      values.push(ids);
+      const parameterIndex = values.length;
+      const baseClause = `items.id = ANY($${parameterIndex}::text[])`;
+      if (!constraints.length) {
+        return baseClause;
+      }
+      return `(${baseClause} AND ${constraints.join(" AND ")})`;
     };
 
-    if (!includeNone && includeIds.length > 0) {
-      values.push(includeIds);
-      clauses.push(`items.id = ANY($${values.length}::text[])`);
-    } else if (includeNone && includeIds.length === 0) {
-      const exclusionClauses = ensureExclusionClause();
-      if (exclusionClauses.length > 0) {
-        clauses.push(`NOT (${exclusionClauses.join(" OR ")})`);
+    const attentionClauses = activeFilters
+      .map((filter) => buildAttentionClause(filter))
+      .filter((clause): clause is string => Boolean(clause));
+
+    if (!includeNone) {
+      if (attentionClauses.length === 0 && activeFilters.length > 0) {
+        clauses.push("FALSE");
+        return;
       }
-    } else if (includeNone && includeIds.length > 0) {
-      values.push(includeIds);
-      const includeIndex = values.length;
-      const exclusionClauses = ensureExclusionClause();
-      let condition = `items.id = ANY($${includeIndex}::text[])`;
-      if (exclusionClauses.length > 0) {
-        condition = `(${condition} OR NOT (${exclusionClauses.join(" OR ")}))`;
+      if (attentionClauses.length > 0) {
+        clauses.push(`(${attentionClauses.join(" OR ")})`);
       }
-      clauses.push(condition);
+      return;
     }
-  }
+
+    const exclusionClauses = ATTENTION_FILTER_KEYS.map((filter) =>
+      buildAttentionClause(filter),
+    ).filter((clause): clause is string => Boolean(clause));
+
+    const combinedMatch =
+      attentionClauses.length > 0 ? `(${attentionClauses.join(" OR ")})` : null;
+    const combinedExclusion =
+      exclusionClauses.length > 0 ? `(${exclusionClauses.join(" OR ")})` : null;
+
+    if (combinedMatch && combinedExclusion) {
+      clauses.push(`(${combinedMatch} OR NOT ${combinedExclusion})`);
+    } else if (combinedMatch) {
+      clauses.push(combinedMatch);
+    } else if (combinedExclusion) {
+      clauses.push(`NOT ${combinedExclusion}`);
+    }
+  };
+
+  applyAttentionFilters();
 
   if (params.types?.length) {
     values.push(params.types);
@@ -1993,7 +2063,6 @@ export async function getActivityItems(
 
   const { clauses, values } = buildQueryFilters(
     params,
-    attentionSelection,
     attentionSets,
     excludedRepositoryIds,
   );
