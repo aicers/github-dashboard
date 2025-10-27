@@ -131,17 +131,17 @@ export function DashboardHeader({
   return (
     <header className="flex flex-col gap-2 pb-0.5">
       <div className="flex items-center justify-between gap-4 -mt-0.5">
-        <div className="flex items-center gap-2.5 -ml-2 -translate-y-[1px] transform">
+        <div className="flex items-center gap-2.5 -ml-2 -translate-y-px transform">
           {/* biome-ignore lint/performance/noImgElement: Next Image clips the drop shadow for this SVG */}
           <img
             src="/entrance-icon.svg"
             alt="GitHub Dashboard icon"
             width={88}
             height={88}
-            className="h-16 w-16 translate-y-[4px] transform"
+            className="h-16 w-16 translate-y-1 transform"
             loading="lazy"
           />
-          <div className="space-y-1 -translate-x-[1px] -translate-y-[3px] transform">
+          <div className="space-y-1 -translate-x-px -translate-y-0.5 transform">
             <h1 className="text-xl font-semibold tracking-tight text-slate-900">
               GitHub Dashboard
             </h1>
@@ -150,11 +150,11 @@ export function DashboardHeader({
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3 -translate-y-[2px] transform">
+        <div className="flex items-center gap-3 -translate-y-0.5 transform">
           <button
             type="button"
             aria-label={ariaLabel}
-            className="relative flex size-10 items-center justify-center rounded-xl bg-white text-slate-600 shadow-[0px_8px_20px_rgba(37,0,105,0.15)] ring-1 ring-black/5 transition hover:translate-y-[-1px] hover:shadow-[0px_12px_28px_rgba(37,0,105,0.18)]"
+            className="relative flex size-10 items-center justify-center rounded-xl bg-white text-slate-600 shadow-[0px_8px_20px_rgba(37,0,105,0.15)] ring-1 ring-black/5 transition hover:-translate-y-px hover:shadow-[0px_12px_28px_rgba(37,0,105,0.18)]"
             onClick={() => {
               router.push(notificationsRoute);
             }}
@@ -169,7 +169,7 @@ export function DashboardHeader({
           <button
             type="button"
             onClick={() => router.push("/dashboard/settings")}
-            className="group relative flex size-10 items-center justify-center rounded-full text-sm font-semibold uppercase tracking-wide text-white shadow-[0px_10px_20px_rgba(88,28,135,0.2)] ring-1 ring-black/5 transition hover:translate-y-[-1px] hover:shadow-[0px_12px_28px_rgba(88,28,135,0.25)]"
+            className="group relative flex size-10 items-center justify-center rounded-full text-sm font-semibold uppercase tracking-wide text-white shadow-[0px_10px_20px_rgba(88,28,135,0.2)] ring-1 ring-black/5 transition hover:-translate-y-px hover:shadow-[0px_12px_28px_rgba(88,28,135,0.25)]"
             aria-label="프로필 설정 열기"
           >
             {userAvatarUrl ? (
@@ -183,7 +183,7 @@ export function DashboardHeader({
                 unoptimized
               />
             ) : (
-              <span className="flex h-full w-full items-center justify-center rounded-full bg-gradient-to-br from-[#5f3bff] to-[#8e52ff]">
+              <span className="flex h-full w-full items-center justify-center rounded-full bg-linear-to-br from-[#5f3bff] to-[#8e52ff]">
                 {initials}
               </span>
             )}
