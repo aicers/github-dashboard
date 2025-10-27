@@ -327,3 +327,152 @@ test.describe("ActivityView (Playwright)", () => {
     await expect(page.getByRole("button", { name: "다음" })).toBeDisabled();
   });
 });
+
+const PERSON_PARAM_KEYS = [
+  "authorId",
+  "assigneeId",
+  "reviewerId",
+  "mentionedUserId",
+  "commenterId",
+  "reactorId",
+  "maintainerId",
+] as const;
+
+type PersonParamKey = (typeof PERSON_PARAM_KEYS)[number];
+
+const ATTENTION_SCENARIOS: Array<{
+  name: string;
+  attentionLabels: string[];
+  attentionValues: string[];
+  expected: Partial<Record<PersonParamKey, string[]>>;
+}> = [
+  {
+    name: "issue_stalled",
+    attentionLabels: ["정체된 In Progress 이슈"],
+    attentionValues: ["issue_stalled"],
+    expected: { assigneeId: ["user-alice"] },
+  },
+  {
+    name: "pr_open_too_long",
+    attentionLabels: ["오래된 PR"],
+    attentionValues: ["pr_open_too_long"],
+    expected: {
+      authorId: ["user-alice"],
+      assigneeId: ["user-alice"],
+      reviewerId: ["user-alice"],
+    },
+  },
+  {
+    name: "pr_inactive",
+    attentionLabels: ["업데이트 없는 PR"],
+    attentionValues: ["pr_inactive"],
+    expected: {
+      authorId: ["user-alice"],
+      assigneeId: ["user-alice"],
+      reviewerId: ["user-alice"],
+    },
+  },
+  {
+    name: "review_requests_pending",
+    attentionLabels: ["응답 없는 리뷰 요청"],
+    attentionValues: ["review_requests_pending"],
+    expected: {
+      reviewerId: ["user-alice"],
+    },
+  },
+  {
+    name: "unanswered_mentions",
+    attentionLabels: ["응답 없는 멘션"],
+    attentionValues: ["unanswered_mentions"],
+    expected: {
+      mentionedUserId: ["user-alice"],
+    },
+  },
+  {
+    name: "issue_backlog",
+    attentionLabels: ["정체된 Backlog 이슈"],
+    attentionValues: ["issue_backlog"],
+    expected: {
+      maintainerId: ["user-alice"],
+    },
+  },
+  {
+    name: "backlog_and_mentions",
+    attentionLabels: ["정체된 Backlog 이슈", "응답 없는 멘션"],
+    attentionValues: ["issue_backlog", "unanswered_mentions"],
+    expected: {},
+  },
+];
+
+test.describe("ActivityView attention + people query mapping", () => {
+  for (const scenario of ATTENTION_SCENARIOS) {
+    test(`maps ${scenario.name} to expected query params`, async ({ page }) => {
+      await page.goto("/test-harness/auth/session?userId=activity-user");
+
+      await page.route("**/api/activity/filters**", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ filters: [], limit: 5 }),
+        });
+      });
+
+      await page.route("**/api/activity?**", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(buildActivityListResultFixture()),
+        });
+      });
+
+      await page.goto(ACTIVITY_PATH);
+
+      await page.waitForResponse(
+        (response) =>
+          response.url().includes("/api/activity/filters") &&
+          response.request().method() === "GET",
+      );
+
+      await page.getByRole("button", { name: "alice" }).click();
+      for (const label of scenario.attentionLabels) {
+        await page.getByRole("button", { name: label }).click();
+      }
+
+      await page.getByRole("button", { name: "고급 필터 보기" }).click();
+
+      const applyButton = page.getByRole("button", { name: "필터 적용" });
+      await expect(applyButton).toBeEnabled();
+
+      const applyResponse = page.waitForResponse((response) => {
+        if (!response.url().includes("/api/activity")) {
+          return false;
+        }
+        if (response.request().method() !== "GET") {
+          return false;
+        }
+        return scenario.attentionValues.every((value) =>
+          response.url().includes(`attention=${value}`),
+        );
+      });
+
+      await applyButton.click();
+      const response = await applyResponse;
+      const url = new URL(response.url());
+
+      expect(url.searchParams.getAll("attention")).toEqual(
+        scenario.attentionValues,
+      );
+
+      for (const [key, expectedValues] of Object.entries(scenario.expected)) {
+        expect(url.searchParams.getAll(key)).toEqual(expectedValues);
+      }
+
+      const absentKeys = PERSON_PARAM_KEYS.filter(
+        (key) => !(key in scenario.expected),
+      );
+      for (const key of absentKeys) {
+        expect(url.searchParams.has(key)).toBe(false);
+      }
+    });
+  }
+});

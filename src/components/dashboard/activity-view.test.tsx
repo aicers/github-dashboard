@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -198,6 +199,344 @@ describe("ActivityView", () => {
 
     await waitFor(() => {
       expect(screen.getByText("두번째")).toBeVisible();
+    });
+  });
+
+  it("locks advanced people filters and clears chips for backlog attention", async () => {
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+    const props = createDefaultProps({
+      initialParams: buildActivityListParams({
+        attention: ["issue_backlog"],
+        peopleSelection: ["user-alice"],
+      }),
+    });
+
+    render(<ActivityView {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
+
+    expect(screen.queryByLabelText("Remove optional alice")).toBeNull();
+    expect(screen.queryByLabelText("Remove alice")).toBeNull();
+
+    expect(
+      await screen.findByText(
+        /사람 필터는 자동으로 적용되며 고급 필터에서 수정할 수 없어요/,
+      ),
+    ).toBeVisible();
+
+    expect(screen.getByPlaceholderText("@user")).toBeDisabled();
+    expect(screen.getByPlaceholderText("@assignee")).toBeDisabled();
+    expect(screen.getByPlaceholderText("@reviewer")).toBeDisabled();
+    expect(screen.getByPlaceholderText("@mention")).toBeDisabled();
+    expect(screen.getByPlaceholderText("@commenter")).toBeDisabled();
+    expect(screen.getByPlaceholderText("@reactor")).toBeDisabled();
+  });
+
+  it("restores manual people filter control when attention filters are removed", async () => {
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+    const props = createDefaultProps({
+      initialParams: buildActivityListParams({
+        attention: ["issue_backlog"],
+        peopleSelection: ["user-alice"],
+      }),
+    });
+
+    render(<ActivityView {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
+
+    const attentionLabel = screen.getByText("주의");
+    const attentionSection = attentionLabel.parentElement;
+    expect(attentionSection).not.toBeNull();
+    if (!attentionSection) {
+      return;
+    }
+
+    const clearAttentionButton = within(attentionSection).getByRole("button", {
+      name: "미적용",
+    });
+    fireEvent.click(clearAttentionButton);
+
+    await waitFor(() => {
+      expect(
+        screen.queryByText(
+          /사람 필터는 자동으로 적용되며 고급 필터에서 수정할 수 없어요/,
+        ),
+      ).toBeNull();
+    });
+
+    expect(screen.getByPlaceholderText("@user")).not.toBeDisabled();
+    expect(screen.getByPlaceholderText("@assignee")).not.toBeDisabled();
+    expect(screen.getByPlaceholderText("@reviewer")).not.toBeDisabled();
+    expect(screen.getByPlaceholderText("@mention")).not.toBeDisabled();
+    expect(screen.getByPlaceholderText("@commenter")).not.toBeDisabled();
+    expect(screen.getByPlaceholderText("@reactor")).not.toBeDisabled();
+  });
+
+  it("demotes conflicting roles to optional chips when attentions disagree", async () => {
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+    const props = createDefaultProps();
+    render(<ActivityView {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "alice" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "정체된 Backlog 이슈" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "응답 없는 멘션" }));
+    fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
+
+    const optionalButtons = await screen.findAllByLabelText(
+      "Remove optional alice",
+    );
+    expect(optionalButtons).toHaveLength(1);
+    expect(screen.queryByLabelText("Remove alice")).toBeNull();
+
+    mockFetchJsonOnce(buildActivityListResultFixture());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "필터 적용" }));
+    });
+
+    await waitFor(() => {
+      const request = getLastActivityCall();
+      expect(request).toBeTruthy();
+      if (!request) return;
+      const url = new URL(request.url);
+      expect(url.searchParams.getAll("attention")).toEqual([
+        "issue_backlog",
+        "unanswered_mentions",
+      ]);
+      expect(url.searchParams.has("maintainerId")).toBe(false);
+      expect(url.searchParams.has("assigneeId")).toBe(false);
+      expect(url.searchParams.has("authorId")).toBe(false);
+      expect(url.searchParams.has("reviewerId")).toBe(false);
+      expect(url.searchParams.has("mentionedUserId")).toBe(false);
+      expect(url.searchParams.has("commenterId")).toBe(false);
+      expect(url.searchParams.has("reactorId")).toBe(false);
+    });
+  });
+
+  it("shows assignee as applied and author as optional for stalled issue attention", async () => {
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+    const props = createDefaultProps();
+    render(<ActivityView {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "alice" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "정체된 In Progress 이슈" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
+
+    await waitFor(() => {
+      expect(screen.getAllByLabelText("Remove optional alice")).toHaveLength(1);
+    });
+    expect(screen.getAllByLabelText("Remove alice")).toHaveLength(1);
+
+    mockFetchJsonOnce(buildActivityListResultFixture());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "필터 적용" }));
+    });
+
+    await waitFor(() => {
+      const request = getLastActivityCall();
+      expect(request).toBeTruthy();
+      if (!request) return;
+      const url = new URL(request.url);
+      expect(url.searchParams.getAll("attention")).toEqual(["issue_stalled"]);
+      expect(url.searchParams.getAll("assigneeId")).toEqual(["user-alice"]);
+      expect(url.searchParams.has("authorId")).toBe(false);
+      expect(url.searchParams.has("maintainerId")).toBe(false);
+      expect(url.searchParams.has("reviewerId")).toBe(false);
+      expect(url.searchParams.has("mentionedUserId")).toBe(false);
+      expect(url.searchParams.has("commenterId")).toBe(false);
+      expect(url.searchParams.has("reactorId")).toBe(false);
+    });
+  });
+
+  it("applies author, assignee, and reviewer for stale PR attention", async () => {
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+    const props = createDefaultProps();
+    render(<ActivityView {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "alice" }));
+    fireEvent.click(screen.getByRole("button", { name: "오래된 PR" }));
+    fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
+
+    await waitFor(() => {
+      expect(screen.getAllByLabelText("Remove alice")).toHaveLength(3);
+    });
+    expect(screen.queryAllByLabelText("Remove optional alice")).toHaveLength(0);
+
+    mockFetchJsonOnce(buildActivityListResultFixture());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "필터 적용" }));
+    });
+
+    await waitFor(() => {
+      const request = getLastActivityCall();
+      expect(request).toBeTruthy();
+      if (!request) return;
+      const url = new URL(request.url);
+      expect(url.searchParams.getAll("attention")).toEqual([
+        "pr_open_too_long",
+      ]);
+      expect(url.searchParams.getAll("authorId")).toEqual(["user-alice"]);
+      expect(url.searchParams.getAll("assigneeId")).toEqual(["user-alice"]);
+      expect(url.searchParams.getAll("reviewerId")).toEqual(["user-alice"]);
+      expect(url.searchParams.has("maintainerId")).toBe(false);
+      expect(url.searchParams.has("mentionedUserId")).toBe(false);
+      expect(url.searchParams.has("commenterId")).toBe(false);
+      expect(url.searchParams.has("reactorId")).toBe(false);
+    });
+  });
+
+  it("applies author, assignee, and reviewer for inactive PR attention", async () => {
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+    const props = createDefaultProps();
+    render(<ActivityView {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "alice" }));
+    fireEvent.click(screen.getByRole("button", { name: "업데이트 없는 PR" }));
+    fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
+
+    await waitFor(() => {
+      expect(screen.getAllByLabelText("Remove alice")).toHaveLength(3);
+    });
+    expect(screen.queryAllByLabelText("Remove optional alice")).toHaveLength(0);
+
+    mockFetchJsonOnce(buildActivityListResultFixture());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "필터 적용" }));
+    });
+
+    await waitFor(() => {
+      const request = getLastActivityCall();
+      expect(request).toBeTruthy();
+      if (!request) return;
+      const url = new URL(request.url);
+      expect(url.searchParams.getAll("attention")).toEqual(["pr_inactive"]);
+      expect(url.searchParams.getAll("authorId")).toEqual(["user-alice"]);
+      expect(url.searchParams.getAll("assigneeId")).toEqual(["user-alice"]);
+      expect(url.searchParams.getAll("reviewerId")).toEqual(["user-alice"]);
+      expect(url.searchParams.has("maintainerId")).toBe(false);
+      expect(url.searchParams.has("mentionedUserId")).toBe(false);
+      expect(url.searchParams.has("commenterId")).toBe(false);
+      expect(url.searchParams.has("reactorId")).toBe(false);
+    });
+  });
+
+  it("applies only reviewer for review request attention", async () => {
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+    const props = createDefaultProps();
+    render(<ActivityView {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "alice" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "응답 없는 리뷰 요청" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
+
+    await waitFor(() => {
+      expect(screen.getAllByLabelText("Remove alice")).toHaveLength(1);
+    });
+    expect(screen.queryAllByLabelText("Remove optional alice")).toHaveLength(0);
+
+    mockFetchJsonOnce(buildActivityListResultFixture());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "필터 적용" }));
+    });
+
+    await waitFor(() => {
+      const request = getLastActivityCall();
+      expect(request).toBeTruthy();
+      if (!request) return;
+      const url = new URL(request.url);
+      expect(url.searchParams.getAll("attention")).toEqual([
+        "review_requests_pending",
+      ]);
+      expect(url.searchParams.getAll("reviewerId")).toEqual(["user-alice"]);
+      expect(url.searchParams.has("authorId")).toBe(false);
+      expect(url.searchParams.has("assigneeId")).toBe(false);
+      expect(url.searchParams.has("maintainerId")).toBe(false);
+      expect(url.searchParams.has("mentionedUserId")).toBe(false);
+      expect(url.searchParams.has("commenterId")).toBe(false);
+      expect(url.searchParams.has("reactorId")).toBe(false);
+    });
+  });
+
+  it("applies only mentioned user for unanswered mention attention", async () => {
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+    const props = createDefaultProps();
+    render(<ActivityView {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "alice" }));
+    fireEvent.click(screen.getByRole("button", { name: "응답 없는 멘션" }));
+    fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
+
+    await waitFor(() => {
+      expect(screen.getAllByLabelText("Remove alice")).toHaveLength(1);
+    });
+    expect(screen.queryAllByLabelText("Remove optional alice")).toHaveLength(0);
+
+    mockFetchJsonOnce(buildActivityListResultFixture());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "필터 적용" }));
+    });
+
+    await waitFor(() => {
+      const request = getLastActivityCall();
+      expect(request).toBeTruthy();
+      if (!request) return;
+      const url = new URL(request.url);
+      expect(url.searchParams.getAll("attention")).toEqual([
+        "unanswered_mentions",
+      ]);
+      expect(url.searchParams.getAll("mentionedUserId")).toEqual([
+        "user-alice",
+      ]);
+      expect(url.searchParams.has("authorId")).toBe(false);
+      expect(url.searchParams.has("assigneeId")).toBe(false);
+      expect(url.searchParams.has("reviewerId")).toBe(false);
+      expect(url.searchParams.has("maintainerId")).toBe(false);
+      expect(url.searchParams.has("commenterId")).toBe(false);
+      expect(url.searchParams.has("reactorId")).toBe(false);
+    });
+  });
+
+  it("applies maintainer-only filtering when backlog attention is active", async () => {
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+    const props = createDefaultProps();
+
+    render(<ActivityView {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "alice" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "정체된 Backlog 이슈" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
+
+    expect(screen.queryByLabelText("Remove optional alice")).toBeNull();
+
+    mockFetchJsonOnce(buildActivityListResultFixture());
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "필터 적용" }));
+    });
+
+    await waitFor(() => {
+      const request = getLastActivityCall();
+      expect(request).toBeTruthy();
+      if (!request) {
+        return;
+      }
+      const url = new URL(request.url);
+      expect(url.searchParams.getAll("maintainerId")).toEqual(["user-alice"]);
+      expect(url.searchParams.get("assigneeId")).toBeNull();
+      expect(url.searchParams.get("authorId")).toBeNull();
+      expect(url.searchParams.get("reviewerId")).toBeNull();
+      expect(url.searchParams.get("mentionedUserId")).toBeNull();
+      expect(url.searchParams.get("commenterId")).toBeNull();
+      expect(url.searchParams.get("reactorId")).toBeNull();
+      expect(url.searchParams.getAll("attention")).toEqual(["issue_backlog"]);
     });
   });
 });

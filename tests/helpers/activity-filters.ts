@@ -32,6 +32,9 @@ export function buildActivityListParams(
     mentionedUserIds: [],
     commenterIds: [],
     reactorIds: [],
+    maintainerIds: [],
+    peopleSelection: [],
+    optionalPersonIds: {},
     statuses: DEFAULT_STATUSES,
     attention: [],
     linkedIssueStates: [],
@@ -45,6 +48,15 @@ export function buildActivityFilterState(
   overrides: Partial<ActivityFilterState> = {},
 ): ActivityFilterState {
   const { thresholds, ...restOverrides } = overrides;
+  const basePeopleFilters = {
+    authorIds: [] as string[],
+    assigneeIds: [] as string[],
+    reviewerIds: [] as string[],
+    mentionedUserIds: [] as string[],
+    commenterIds: [] as string[],
+    reactorIds: [] as string[],
+    maintainerIds: [] as string[],
+  };
 
   return {
     page: 1,
@@ -64,10 +76,14 @@ export function buildActivityFilterState(
     mentionedUserIds: [],
     commenterIds: [],
     reactorIds: [],
+    maintainerIds: [],
+    peopleSelection: [],
+    peopleFilters: basePeopleFilters,
     statuses: [],
     attention: [],
     linkedIssueStates: [],
     search: "",
+    optionalPersonIds: {},
     ...restOverrides,
     thresholds: {
       ...DEFAULT_THRESHOLD_VALUES,
