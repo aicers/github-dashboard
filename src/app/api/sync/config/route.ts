@@ -81,6 +81,22 @@ const patchSchema = z.object({
     .array(z.string().min(1))
     .optional()
     .transform((value) => (value ? Array.from(new Set(value)) : undefined)),
+  repositoryMaintainers: z
+    .record(
+      z.string().min(1),
+      z
+        .array(z.string())
+        .transform((value) =>
+          Array.from(
+            new Set(
+              value
+                .map((item) => (typeof item === "string" ? item.trim() : ""))
+                .filter((item) => item.length > 0),
+            ),
+          ),
+        ),
+    )
+    .optional(),
   activityRowsPerPage: z.number().int().min(1).max(100).optional(),
 });
 
@@ -132,6 +148,7 @@ export async function PATCH(request: Request) {
       excludedPeople,
       allowedTeams,
       allowedUsers,
+      repositoryMaintainers,
       timezone,
       weekStart,
       dateTimeFormat,
@@ -158,6 +175,7 @@ export async function PATCH(request: Request) {
         excludedPeople !== undefined ||
         allowedTeams !== undefined ||
         allowedUsers !== undefined ||
+        repositoryMaintainers !== undefined ||
         backupHour !== undefined ||
         organizationHolidayCalendarCodes !== undefined;
 
@@ -226,6 +244,7 @@ export async function PATCH(request: Request) {
         orgHolidayCalendarCodes: organizationHolidayCalendarCodes,
         backupHourLocal: backupHour,
         backupTimezone: backupScheduleTimezone,
+        repositoryMaintainers,
       });
     }
 

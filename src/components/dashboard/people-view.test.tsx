@@ -20,7 +20,7 @@ import type {
   OrganizationAnalytics,
   RepoComparisonRow,
 } from "@/lib/dashboard/types";
-import type { UserProfile } from "@/lib/db/operations";
+import type { RepositoryProfile, UserProfile } from "@/lib/db/operations";
 
 vi.mock("@/components/dashboard/use-dashboard-analytics", async () => {
   const actual = await vi.importActual<
@@ -181,11 +181,12 @@ function createLeaderboardSummary(): LeaderboardSummary {
 }
 
 function createMockAnalytics(): DashboardAnalytics {
-  const repository = {
+  const repository: RepositoryProfile = {
     id: "repo-1",
     name: "Repo One",
     nameWithOwner: "acme/repo-one",
-  } as const;
+    maintainerIds: [],
+  };
 
   const contributor = {
     id: "user-1",

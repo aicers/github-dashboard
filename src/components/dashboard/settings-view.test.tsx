@@ -27,16 +27,19 @@ const repositories: RepositoryProfile[] = [
     id: "repo-1",
     name: "Repo One",
     nameWithOwner: "acme/repo-one",
+    maintainerIds: [],
   },
   {
     id: "repo-2",
     name: "Repo Two",
     nameWithOwner: "acme/repo-two",
+    maintainerIds: [],
   },
   {
     id: "repo-3",
     name: "Repo Three",
     nameWithOwner: "acme/repo-three",
+    maintainerIds: [],
   },
 ];
 
@@ -263,6 +266,15 @@ describe("SettingsView", () => {
       ),
     ).toBeInTheDocument();
     expect(
+      within(organizationSection as HTMLElement).getByText("저장소 책임자"),
+    ).toBeInTheDocument();
+    expect(
+      within(organizationSection as HTMLElement).getByText(
+        "책임자 지정된 저장소: 0 / 3",
+        { selector: "span" },
+      ),
+    ).toBeInTheDocument();
+    expect(
       within(organizationSection as HTMLElement).getByLabelText(/한국/),
     ).toBeChecked();
     expect(
@@ -327,6 +339,22 @@ describe("SettingsView", () => {
     await user.deselectOptions(memberSelect, ["user-3"]);
     await user.selectOptions(memberSelect, ["user-1", "user-2"]);
 
+    const maintainerSelectRepo1 = within(organizationSection).getByLabelText(
+      /acme\/repo-one/,
+    ) as HTMLSelectElement;
+    await user.selectOptions(maintainerSelectRepo1, ["user-1"]);
+
+    const maintainerSelectRepo2 = within(organizationSection).getByLabelText(
+      /acme\/repo-two/,
+    ) as HTMLSelectElement;
+    await user.selectOptions(maintainerSelectRepo2, ["user-2"]);
+
+    expect(
+      within(organizationSection).getByText("책임자 지정된 저장소: 2 / 3", {
+        selector: "span",
+      }),
+    ).toBeInTheDocument();
+
     await user.click(screen.getByRole("button", { name: "조직 설정 저장" }));
 
     await waitFor(() => {
@@ -351,6 +379,11 @@ describe("SettingsView", () => {
     expect([...payload.excludedPeople].sort()).toEqual(["user-1", "user-2"]);
     expect([...payload.allowedTeams].sort()).toEqual(["core-team"]);
     expect([...payload.allowedUsers].sort()).toEqual(["MDQ6VXNlcjEwMA=="]);
+    expect(payload.repositoryMaintainers).toEqual({
+      "repo-1": ["user-1"],
+      "repo-2": ["user-2"],
+      "repo-3": [],
+    });
 
     await waitFor(() => {
       expect(routerRefreshMock).toHaveBeenCalled();
@@ -475,6 +508,45 @@ describe("SettingsView", () => {
       }),
     ).toBeInTheDocument();
     expect(clearMembers).toBeDisabled();
+  });
+
+  it("clears repository maintainer selections", async () => {
+    const user = userEvent.setup();
+
+    renderSettings();
+
+    await user.click(screen.getByRole("button", { name: "Organization" }));
+
+    const organizationSection = (
+      await screen.findByRole("button", { name: "조직 설정 저장" })
+    ).closest("section") as HTMLElement;
+
+    const maintainerSelectRepo1 = within(organizationSection).getByLabelText(
+      /acme\/repo-one/,
+    ) as HTMLSelectElement;
+    const maintainerSelectRepo2 = within(organizationSection).getByLabelText(
+      /acme\/repo-two/,
+    ) as HTMLSelectElement;
+
+    await user.selectOptions(maintainerSelectRepo1, ["user-1"]);
+    await user.selectOptions(maintainerSelectRepo2, ["user-2"]);
+
+    const clearMaintainersButton = within(organizationSection).getByRole(
+      "button",
+      { name: "책임자 모두 비우기" },
+    );
+    expect(clearMaintainersButton).toBeEnabled();
+
+    await user.click(clearMaintainersButton);
+
+    expect(
+      within(organizationSection).getByText("책임자 지정된 저장소: 0 / 3", {
+        selector: "span",
+      }),
+    ).toBeInTheDocument();
+    expect(Array.from(maintainerSelectRepo1.selectedOptions)).toHaveLength(0);
+    expect(Array.from(maintainerSelectRepo2.selectedOptions)).toHaveLength(0);
+    expect(clearMaintainersButton).toBeDisabled();
   });
 
   it("updates personal settings independently", async () => {

@@ -326,6 +326,13 @@ const SCHEMA_STATEMENTS = [
   )`,
   `CREATE INDEX IF NOT EXISTS repositories_owner_idx ON repositories(owner_id)`,
   `CREATE INDEX IF NOT EXISTS repositories_updated_idx ON repositories(github_updated_at)`,
+  `CREATE TABLE IF NOT EXISTS repository_maintainers (
+    repository_id TEXT NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (repository_id, user_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS repository_maintainers_user_idx ON repository_maintainers(user_id)`,
   `CREATE TABLE IF NOT EXISTS issues (
     id TEXT PRIMARY KEY,
     number INTEGER NOT NULL,

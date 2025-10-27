@@ -293,6 +293,18 @@ export function SettingsView({
   const [allowedUsers, setAllowedUsers] = useState<string[]>(
     normalizedAllowedUsers,
   );
+  const initialRepositoryMaintainers = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const repository of repositories) {
+      map[repository.id] = Array.isArray(repository.maintainerIds)
+        ? [...repository.maintainerIds]
+        : [];
+    }
+    return map;
+  }, [repositories]);
+  const [repositoryMaintainers, setRepositoryMaintainers] = useState<
+    Record<string, string[]>
+  >(initialRepositoryMaintainers);
   const [adminCalendarCode, setAdminCalendarCode] =
     useState<HolidayCalendarCode>(initialAdminCalendarCode);
   const [adminHolidayEntries, setAdminHolidayEntries] = useState<
@@ -331,6 +343,7 @@ export function SettingsView({
   const excludePeopleSelectId = useId();
   const allowedTeamsSelectId = useId();
   const allowedUsersSelectId = useId();
+  const repositoryMaintainersSelectBaseId = useId();
   const holidayDateInputId = useId();
   const holidayWeekdayInputId = useId();
   const holidayNameInputId = useId();
@@ -404,6 +417,10 @@ export function SettingsView({
   useEffect(() => {
     setAllowedUsers(normalizedAllowedUsers);
   }, [normalizedAllowedUsers]);
+
+  useEffect(() => {
+    setRepositoryMaintainers(initialRepositoryMaintainers);
+  }, [initialRepositoryMaintainers]);
 
   useEffect(() => {
     setDateTimeFormatValue(normalizeDateTimeDisplayFormat(dateTimeFormat));
@@ -610,6 +627,12 @@ export function SettingsView({
       }),
     );
   }, [members]);
+  const maintainedRepositoryCount = useMemo(() => {
+    return repositories.reduce((count, repository) => {
+      const assigned = repositoryMaintainers[repository.id] ?? [];
+      return assigned.length > 0 ? count + 1 : count;
+    }, 0);
+  }, [repositories, repositoryMaintainers]);
   const sortedOrganizationTeams = useMemo(() => {
     return [...organizationTeams].sort((a, b) =>
       (a.name || a.slug).localeCompare(b.name || b.slug, undefined, {
@@ -629,6 +652,32 @@ export function SettingsView({
   const hasCustomAvatar = Boolean(persistedCustomAvatarUrl);
   const hasSelectedAvatar = Boolean(avatarFile);
   const isAvatarMutating = isUploadingAvatar || isRemovingAvatar;
+
+  const handleRepositoryMaintainersChange = (
+    repositoryId: string,
+    event: React.ChangeEvent<HTMLSelectElement>,
+  ) => {
+    const selected = Array.from(event.target.selectedOptions).map(
+      (option) => option.value,
+    );
+    const normalized = Array.from(
+      new Set(selected.filter((value) => value.length > 0)),
+    );
+    setRepositoryMaintainers((previous) => ({
+      ...previous,
+      [repositoryId]: normalized,
+    }));
+  };
+
+  const handleClearAllRepositoryMaintainers = () => {
+    setRepositoryMaintainers((_previous) => {
+      const cleared: Record<string, string[]> = {};
+      for (const repository of repositories) {
+        cleared[repository.id] = [];
+      }
+      return cleared;
+    });
+  };
 
   const handleExcludedChange = (
     event: React.ChangeEvent<HTMLSelectElement>,
@@ -1347,6 +1396,15 @@ export function SettingsView({
           throw new Error("Organization 이름을 입력하세요.");
         }
 
+        const repositoryMaintainersPayload = Object.fromEntries(
+          repositories.map((repository) => [
+            repository.id,
+            (repositoryMaintainers[repository.id] ?? []).filter(
+              (id) => typeof id === "string" && id.length > 0,
+            ),
+          ]),
+        );
+
         const response = await fetch("/api/sync/config", {
           method: "PATCH",
           headers: {
@@ -1360,6 +1418,7 @@ export function SettingsView({
             allowedTeams,
             allowedUsers,
             organizationHolidayCalendarCodes: organizationHolidayCodes,
+            repositoryMaintainers: repositoryMaintainersPayload,
           }),
         });
         const data = (await response.json()) as ApiResponse<unknown>;
@@ -2124,6 +2183,104 @@ export function SettingsView({
                     허용 구성원 비우기
                   </Button>
                 </div>
+              </CardFooter>
+            </Card>
+
+            <Card className="border-border/70">
+              <CardHeader>
+                <CardTitle>저장소 책임자</CardTitle>
+                <CardDescription>
+                  주의 필터에서 maintainer로 사용할 저장소별 책임자를 미리
+                  지정하세요.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4 text-sm">
+                {sortedRepositories.length === 0 ? (
+                  <p className="text-muted-foreground text-sm">
+                    동기화된 저장소가 없습니다.
+                  </p>
+                ) : sortedMembers.length === 0 ? (
+                  <p className="text-muted-foreground text-sm">
+                    지정할 구성원 정보가 없습니다. 먼저 사용자 동기화를 확인해
+                    주세요.
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-xs text-muted-foreground">
+                      책임자로 지정된 구성원은 해당 저장소의 maintainer로
+                      간주됩니다. 지정하지 않으면 책임자가 없는 것으로 처리돼요.
+                    </p>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {sortedRepositories.map((repository) => {
+                        const selectId = `${repositoryMaintainersSelectBaseId}-${repository.id}`;
+                        const selectedMaintainers =
+                          repositoryMaintainers[repository.id] ?? [];
+                        return (
+                          <label
+                            key={repository.id}
+                            className="flex flex-col gap-2"
+                            htmlFor={selectId}
+                          >
+                            <span className="font-medium text-foreground">
+                              {repository.nameWithOwner ??
+                                repository.name ??
+                                repository.id}
+                            </span>
+                            <select
+                              id={selectId}
+                              multiple
+                              value={selectedMaintainers}
+                              onChange={(event) =>
+                                handleRepositoryMaintainersChange(
+                                  repository.id,
+                                  event,
+                                )
+                              }
+                              className="h-32 rounded-md border border-border/60 bg-background p-2 text-sm"
+                              disabled={
+                                !canEditOrganization ||
+                                sortedMembers.length === 0
+                              }
+                              title={
+                                !canEditOrganization
+                                  ? ADMIN_ONLY_MESSAGE
+                                  : sortedMembers.length === 0
+                                    ? "지정할 구성원 정보가 없습니다."
+                                    : undefined
+                              }
+                            >
+                              {sortedMembers.map((member) => (
+                                <option key={member.id} value={member.id}>
+                                  {member.login ?? member.name ?? member.id}
+                                </option>
+                              ))}
+                            </select>
+                            <span className="text-xs text-muted-foreground">
+                              여러 책임자를 지정하려면 ⌘/Ctrl 키를 눌러 복수
+                              선택하세요.
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </CardContent>
+              <CardFooter className="flex flex-col gap-2 text-xs text-muted-foreground md:flex-row md:items-center md:justify-between">
+                <span>
+                  책임자 지정된 저장소: {maintainedRepositoryCount} /{" "}
+                  {sortedRepositories.length}
+                </span>
+                <Button
+                  variant="secondary"
+                  onClick={handleClearAllRepositoryMaintainers}
+                  disabled={
+                    !canEditOrganization || maintainedRepositoryCount === 0
+                  }
+                  title={!canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined}
+                >
+                  책임자 모두 비우기
+                </Button>
               </CardFooter>
             </Card>
 

@@ -74,6 +74,7 @@ export function buildActivityItemFixture(
       id: "repo-alpha",
       name: "alpha",
       nameWithOwner: "acme/alpha",
+      maintainerIds: [],
     },
     author: BASE_USERS[0],
     assignees: [BASE_USERS[1]],
@@ -256,11 +257,13 @@ export function buildActivityFilterOptionsFixture(): ActivityFilterOptions {
         id: "repo-alpha",
         name: "alpha",
         nameWithOwner: "acme/alpha",
+        maintainerIds: [],
       },
       {
         id: "repo-beta",
         name: "beta",
         nameWithOwner: "acme/beta",
+        maintainerIds: [],
       },
     ],
     labels: [

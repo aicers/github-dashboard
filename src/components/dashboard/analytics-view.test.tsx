@@ -128,6 +128,7 @@ function createRepository(id: string, name: string): RepositoryProfile {
     id,
     name,
     nameWithOwner: `org/${name}`,
+    maintainerIds: [],
   };
 }
 
