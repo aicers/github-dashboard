@@ -1343,6 +1343,12 @@ export function ActivityView({
     setDraft((current) => convertFilterLabelKeysToNames(current));
     setApplied((current) => convertFilterLabelKeysToNames(current));
   }, [convertFilterLabelKeysToNames]);
+
+  useEffect(() => {
+    setDraft(initialState);
+    setApplied(initialState);
+    setListData(initialData);
+  }, [initialData, initialState]);
   const activeTimezone = listData.timezone ?? null;
   const activeDateTimeFormat = listData.dateTimeFormat;
   const trimmedTimezone = activeTimezone?.trim() ?? "";
