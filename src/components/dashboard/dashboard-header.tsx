@@ -1,6 +1,7 @@
 "use client";
 
 import { Bell } from "lucide-react";
+import type { Route } from "next";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -99,16 +100,25 @@ export function DashboardHeader({
     if (!userId) {
       return "/dashboard/activity";
     }
-    return "/dashboard/activity?quick=my_attention";
+
+    const params = new URLSearchParams();
+    params.append("attention", "review_requests_pending");
+    params.append("attention", "unanswered_mentions");
+    params.append("reviewerId", userId);
+    params.append("mentionedUserId", userId);
+
+    return `/dashboard/activity?${params.toString()}`;
   }, [userId]);
+
+  const notificationsRoute = notificationsHref as Route;
 
   useEffect(() => {
     try {
-      router.prefetch(notificationsHref);
+      router.prefetch(notificationsRoute);
     } catch {
       // ignore router prefetch errors
     }
-  }, [notificationsHref, router]);
+  }, [notificationsRoute, router]);
 
   const effectiveCount = Math.max(notificationCount, 0);
   const displayCount =
@@ -146,7 +156,7 @@ export function DashboardHeader({
             aria-label={ariaLabel}
             className="relative flex size-10 items-center justify-center rounded-xl bg-white text-slate-600 shadow-[0px_8px_20px_rgba(37,0,105,0.15)] ring-1 ring-black/5 transition hover:translate-y-[-1px] hover:shadow-[0px_12px_28px_rgba(37,0,105,0.18)]"
             onClick={() => {
-              router.push(notificationsHref);
+              router.push(notificationsRoute);
             }}
           >
             <Bell className="size-5" strokeWidth={1.8} />
