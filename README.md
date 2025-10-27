@@ -184,6 +184,38 @@ repeats the same steps for each day slice in the requested range.
   with automatic reconnection. Expect a single SSE connection per browser tab
   (~50 concurrent clients are well within the Node runtime budget).
 
+### Activity filters and optional people chips
+
+The Activity view’s advanced filters now distinguish between applied users and
+people who are only conditionally relevant to the selected attention type.
+
+- When you combine a 주의 type with one or more 구성원, only the roles that
+  matter for that attention are sent to the API (e.g., 정체된 Backlog 이슈 →
+  maintainerIds). Other people fields keep the same users as gray chips but stay
+  out of the query.
+- Gray chips represent a “selected but conditional” state. They persist when you
+  reload or restore a saved filter, but they do not affect the query until you
+  remove them or reselect them to promote them back into blue chips.
+- Clearing the 주의 filter removes every gray chip and returns the people
+  filters to the regular applied state (blue chips).
+- Even when you pick multiple 구성원, each person contributes only the roles they
+  satisfy, combined with OR logic, so the team stays focused on items they truly
+  own.
+- While a 주의 type and 구성원 are both selected, the six advanced 사람 필터 inputs
+  become read-only with a helper message; the dashboard manages their chips
+  automatically.
+- Role mapping by attention:
+  - 정체된 Backlog 이슈 → `maintainerIds` blue, all other 사람 필터 fields empty.
+  - 정체된 In Progress 이슈 → `assigneeIds` blue, `authorIds` gray, the remaining four
+    사람 필터 fields empty.
+  - 오래된 PR / 업데이트 없는 PR → `authorIds`, `assigneeIds`, `reviewerIds` blue,
+    other 사람 필터 fields empty.
+  - 응답 없는 리뷰 요청 → `reviewerIds` blue, all other 사람 필터 fields empty.
+  - 응답 없는 멘션 → `mentionedUserIds` blue, all other 사람 필터 fields empty.
+  - Conflicting attentions (예: 정체된 Backlog 이슈 + 응답 없는 멘션) degrade the
+    overlapping 사람 필터 roles to gray chips so the UI reflects that the selection is
+    optional for that combination.
+
 ### Optional GitHub to-do project integration
 
 If you want issue status, priority, start date, or other metadata to mirror a

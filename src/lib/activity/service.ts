@@ -80,6 +80,33 @@ const ATTENTION_FILTER_KEYS: AttentionFilterWithoutNone[] = [
   "issue_stalled",
 ];
 
+async function fetchRepositoryMaintainers(repositoryIds: string[]) {
+  if (!repositoryIds.length) {
+    return new Map<string, string[]>();
+  }
+
+  const result = await query<{
+    repository_id: string;
+    maintainer_ids: string[] | null;
+  }>(
+    `SELECT repository_id,
+            ARRAY_AGG(user_id ORDER BY user_id) AS maintainer_ids
+       FROM repository_maintainers
+      WHERE repository_id = ANY($1::text[])
+      GROUP BY repository_id`,
+    [repositoryIds],
+  );
+
+  const map = new Map<string, string[]>();
+  result.rows.forEach((row) => {
+    map.set(
+      row.repository_id,
+      Array.isArray(row.maintainer_ids) ? row.maintainer_ids : [],
+    );
+  });
+  return map;
+}
+
 function normalizeOrganizationHolidayCodes(
   config: unknown,
 ): HolidayCalendarCode[] {
@@ -1215,10 +1242,14 @@ function buildQueryFilters(
   clauses: string[];
   values: unknown[];
   issueProjectStatuses: IssueProjectStatus[];
+  peopleSelection: string[];
+  peopleSelectionParamIndex: number | null;
 } {
   const clauses: string[] = [];
   const values: unknown[] = [];
   const issueProjectStatuses: IssueProjectStatus[] = [];
+  let peopleSelection: string[] = [];
+  let peopleSelectionParamIndex: number | null = null;
   const excludedRepoIds = excludedRepositoryIds.filter(
     (id) => typeof id === "string" && id.length > 0,
   );
@@ -1289,6 +1320,16 @@ function buildQueryFilters(
       buildClause: (parameterIndex: number) =>
         `COALESCE(items.reactor_ids && $${parameterIndex}::text[], FALSE)`,
     },
+    {
+      values: params.maintainerIds ?? [],
+      buildClause: (parameterIndex: number) =>
+        `EXISTS (
+           SELECT 1
+           FROM repository_maintainers rm
+           WHERE rm.repository_id = items.repository_id
+             AND rm.user_id = ANY($${parameterIndex}::text[])
+         )`,
+    },
   ] as const;
 
   const populatedPeopleFilters = peopleFiltersConfig.filter(
@@ -1306,6 +1347,7 @@ function buildQueryFilters(
     );
 
     if (isSyncedSelection) {
+      peopleSelection = baselineValues;
       values.push(baselineValues);
       const parameterIndex = values.length;
       const peopleClauses = populatedPeopleFilters.map((entry) =>
@@ -1313,6 +1355,7 @@ function buildQueryFilters(
       );
       clauses.push(`(${peopleClauses.join(" OR ")})`);
       peopleFiltersHandled = true;
+      peopleSelectionParamIndex = parameterIndex;
     }
   }
 
@@ -1336,32 +1379,79 @@ function buildQueryFilters(
     ): string | null => {
       let ids: string[] = [];
       const constraints: string[] = [];
+      const hasSynchronizedPeopleSelection =
+        peopleSelectionParamIndex !== null && peopleSelection.length > 0;
+      const peopleParamIndex = peopleSelectionParamIndex ?? 0;
+
+      const assigneeCardinalityExpr =
+        "COALESCE(array_length(items.assignee_ids, 1), 0)";
+      const hasAssigneeExpr = `${assigneeCardinalityExpr} > 0`;
+      const noAssigneeExpr = `${assigneeCardinalityExpr} = 0`;
+      const personIsAssigneeExpr = `COALESCE(items.assignee_ids && $${peopleParamIndex}::text[], FALSE)`;
+      const personIsReviewerExpr = `COALESCE(items.reviewer_ids && $${peopleParamIndex}::text[], FALSE)`;
+      const personIsMentionedExpr = `COALESCE(items.mentioned_ids && $${peopleParamIndex}::text[], FALSE)`;
+      const personIsAuthorExpr = `items.author_id = ANY($${peopleParamIndex}::text[])`;
+      const personIsMaintainerExpr = `EXISTS (
+         SELECT 1
+         FROM repository_maintainers rm
+         WHERE rm.repository_id = items.repository_id
+           AND rm.user_id = ANY($${peopleParamIndex}::text[])
+       )`;
+      const maintainerExistsExpr = `EXISTS (
+         SELECT 1
+         FROM repository_maintainers rm
+         WHERE rm.repository_id = items.repository_id
+       )`;
 
       switch (filter) {
         case "unanswered_mentions":
           ids = Array.from(attentionSets.unansweredMentions);
+          if (hasSynchronizedPeopleSelection) {
+            constraints.push(personIsMentionedExpr);
+          }
           break;
         case "review_requests_pending":
           ids = Array.from(attentionSets.reviewRequests);
           constraints.push(`items.item_type = 'pull_request'`);
+          if (hasSynchronizedPeopleSelection) {
+            constraints.push(personIsReviewerExpr);
+          }
           break;
         case "pr_open_too_long":
           ids = Array.from(attentionSets.stalePullRequests);
           constraints.push(`items.item_type = 'pull_request'`);
           constraints.push(`items.status = 'open'`);
+          if (hasSynchronizedPeopleSelection) {
+            constraints.push(
+              `(${personIsAssigneeExpr} OR ${personIsAuthorExpr} OR ${personIsReviewerExpr})`,
+            );
+          }
           break;
         case "pr_inactive":
           ids = Array.from(attentionSets.idlePullRequests);
           constraints.push(`items.item_type = 'pull_request'`);
           constraints.push(`items.status = 'open'`);
+          if (hasSynchronizedPeopleSelection) {
+            constraints.push(
+              `(${personIsAssigneeExpr} OR ${personIsAuthorExpr} OR ${personIsReviewerExpr})`,
+            );
+          }
           break;
         case "issue_backlog":
           ids = Array.from(attentionSets.backlogIssues);
           constraints.push(`items.item_type = 'issue'`);
+          if (hasSynchronizedPeopleSelection) {
+            constraints.push(personIsMaintainerExpr);
+          }
           break;
         case "issue_stalled":
           ids = Array.from(attentionSets.stalledIssues);
           constraints.push(`items.item_type = 'issue'`);
+          if (hasSynchronizedPeopleSelection) {
+            constraints.push(
+              `((${hasAssigneeExpr} AND ${personIsAssigneeExpr}) OR (${noAssigneeExpr} AND ${maintainerExistsExpr} AND ${personIsMaintainerExpr}) OR (${noAssigneeExpr} AND NOT ${maintainerExistsExpr} AND ${personIsAuthorExpr}))`,
+            );
+          }
           break;
         default:
           return null;
@@ -1607,7 +1697,13 @@ function buildQueryFilters(
     );
   }
 
-  return { clauses, values, issueProjectStatuses };
+  return {
+    clauses,
+    values,
+    issueProjectStatuses,
+    peopleSelection,
+    peopleSelectionParamIndex,
+  };
 }
 
 async function fetchJumpPage(
@@ -1693,6 +1789,7 @@ function buildActivityItem(
   activityStatusHistory: Map<string, ActivityStatusEvent[]>,
   linkedIssuesMap: Map<string, ActivityLinkedIssue[]>,
   linkedPullRequestsMap: Map<string, ActivityLinkedPullRequest[]>,
+  repositoryMaintainers: Map<string, string[]>,
 ): ActivityItem {
   const status = toStatus(row.status);
   let issueProjectStatus: IssueProjectStatus | null = null;
@@ -1923,6 +2020,9 @@ function buildActivityItem(
           id: row.repository_id,
           name: row.repository_name,
           nameWithOwner: row.repository_name_with_owner,
+          maintainerIds: [
+            ...(repositoryMaintainers.get(row.repository_id) ?? []),
+          ],
         }
       : null,
     author,
@@ -2106,16 +2206,25 @@ export async function getActivityItems(
   const pullRequestIds = rows
     .filter((row) => row.item_type === "pull_request")
     .map((row) => row.id);
+  const repositoryIds = Array.from(
+    new Set(
+      rows
+        .map((row) => row.repository_id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0),
+    ),
+  );
   const [
     activityStatusHistory,
     projectOverrides,
     linkedPullRequestsMap,
     linkedIssuesMap,
+    repositoryMaintainers,
   ] = await Promise.all([
     getActivityStatusHistory(issueIds),
     getProjectFieldOverrides(issueIds),
     getLinkedPullRequestsMap(issueIds),
     getLinkedIssuesMap(pullRequestIds),
+    fetchRepositoryMaintainers(repositoryIds),
   ]);
 
   const userIds = new Set<string>();
@@ -2157,6 +2266,7 @@ export async function getActivityItems(
       activityStatusHistory,
       linkedIssuesMap,
       linkedPullRequestsMap,
+      repositoryMaintainers,
     ),
   );
 
@@ -2246,11 +2356,17 @@ export async function getActivityItemDetail(
     projectOverrides,
     linkedPullRequestsMap,
     linkedIssuesMap,
+    repositoryMaintainers,
   ] = await Promise.all([
     getActivityStatusHistory(issueIds),
     getProjectFieldOverrides(issueIds),
     getLinkedPullRequestsMap(issueIds),
     getLinkedIssuesMap(pullRequestIds),
+    fetchRepositoryMaintainers(
+      row.repository_id && row.repository_id.length > 0
+        ? [row.repository_id]
+        : [],
+    ),
   ]);
   const item = buildActivityItem(
     row,
@@ -2263,6 +2379,7 @@ export async function getActivityItemDetail(
     activityStatusHistory,
     linkedIssuesMap,
     linkedPullRequestsMap,
+    repositoryMaintainers,
   );
   const rawIssue = parseIssueRaw(row.raw_data);
   let todoStatusTimes: Partial<

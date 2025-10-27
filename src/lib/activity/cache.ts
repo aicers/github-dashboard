@@ -731,10 +731,20 @@ async function computeFilterOptionsSnapshot(
       id: string;
       name: string | null;
       name_with_owner: string | null;
+      maintainer_ids: string[] | null;
     }>(
-      `SELECT id, name, name_with_owner
-         FROM repositories
-         ORDER BY name_with_owner`,
+      `SELECT
+         repo.id,
+         repo.name,
+         repo.name_with_owner,
+         COALESCE(rm.maintainer_ids, '{}'::text[]) AS maintainer_ids
+       FROM repositories repo
+       LEFT JOIN (
+         SELECT repository_id, ARRAY_AGG(user_id ORDER BY user_id) AS maintainer_ids
+         FROM repository_maintainers
+         GROUP BY repository_id
+       ) rm ON rm.repository_id = repo.id
+       ORDER BY repo.name_with_owner`,
     ),
     query<{
       repository_id: string;
@@ -817,6 +827,9 @@ async function computeFilterOptionsSnapshot(
         id: row.id,
         name: row.name,
         nameWithOwner: row.name_with_owner,
+        maintainerIds: Array.isArray(row.maintainer_ids)
+          ? row.maintainer_ids
+          : [],
       }));
 
   const labels: ActivityLabel[] = labelsResult.rows

@@ -9,6 +9,9 @@ import type {
   ActivityPullRequestStatusFilter,
   ActivityStatusFilter,
   ActivityThresholds,
+  OptionalPeopleMap,
+  PeopleFilterMap,
+  PeopleRoleKey,
 } from "@/lib/activity/types";
 
 export type ActivityFilterState = {
@@ -29,11 +32,15 @@ export type ActivityFilterState = {
   mentionedUserIds: string[];
   commenterIds: string[];
   reactorIds: string[];
+  maintainerIds: string[];
+  peopleSelection: string[];
+  peopleFilters: PeopleFilterMap;
   statuses: ActivityStatusFilter[];
   attention: ActivityAttentionFilter[];
   linkedIssueStates: ActivityLinkedIssueFilter[];
   search: string;
   thresholds: Required<ActivityThresholds>;
+  optionalPersonIds: OptionalPeopleMap;
 };
 
 export const DEFAULT_THRESHOLD_VALUES: Required<ActivityThresholds> = {
@@ -49,6 +56,34 @@ export function buildFilterState(
   params: ActivityListParams,
   perPageFallback: number,
 ): ActivityFilterState {
+  const peopleFilters: PeopleFilterMap = {
+    authorIds: Array.isArray(params.authorIds) ? [...params.authorIds] : [],
+    assigneeIds: Array.isArray(params.assigneeIds)
+      ? [...params.assigneeIds]
+      : [],
+    reviewerIds: Array.isArray(params.reviewerIds)
+      ? [...params.reviewerIds]
+      : [],
+    mentionedUserIds: Array.isArray(params.mentionedUserIds)
+      ? [...params.mentionedUserIds]
+      : [],
+    commenterIds: Array.isArray(params.commenterIds)
+      ? [...params.commenterIds]
+      : [],
+    reactorIds: Array.isArray(params.reactorIds) ? [...params.reactorIds] : [],
+    maintainerIds: Array.isArray(params.maintainerIds)
+      ? [...params.maintainerIds]
+      : [],
+  };
+
+  const optionalPersonIds = cloneOptionalPeopleMap(
+    params.optionalPersonIds as OptionalPeopleMap | undefined,
+  );
+
+  const peopleSelection = Array.isArray(params.peopleSelection)
+    ? Array.from(new Set(params.peopleSelection))
+    : [];
+
   return {
     page: params.page && params.page > 0 ? params.page : 1,
     perPage:
@@ -62,12 +97,15 @@ export function buildFilterState(
     milestoneIds: params.milestoneIds ?? [],
     prStatuses: params.pullRequestStatuses ?? [],
     issueBaseStatuses: params.issueBaseStatuses ?? [],
-    authorIds: params.authorIds ?? [],
-    assigneeIds: params.assigneeIds ?? [],
-    reviewerIds: params.reviewerIds ?? [],
-    mentionedUserIds: params.mentionedUserIds ?? [],
-    commenterIds: params.commenterIds ?? [],
-    reactorIds: params.reactorIds ?? [],
+    authorIds: [...peopleFilters.authorIds],
+    assigneeIds: [...peopleFilters.assigneeIds],
+    reviewerIds: [...peopleFilters.reviewerIds],
+    mentionedUserIds: [...peopleFilters.mentionedUserIds],
+    commenterIds: [...peopleFilters.commenterIds],
+    reactorIds: [...peopleFilters.reactorIds],
+    maintainerIds: [...peopleFilters.maintainerIds],
+    peopleSelection,
+    peopleFilters,
     statuses: params.statuses ?? [],
     attention: params.attention ?? [],
     linkedIssueStates: params.linkedIssueStates ?? [],
@@ -76,7 +114,22 @@ export function buildFilterState(
       ...DEFAULT_THRESHOLD_VALUES,
       ...(params.thresholds ?? {}),
     },
+    optionalPersonIds,
   };
+}
+
+function cloneOptionalPeopleMap(source?: OptionalPeopleMap): OptionalPeopleMap {
+  if (!source) {
+    return {};
+  }
+  const result: OptionalPeopleMap = {};
+  for (const role of Object.keys(source) as PeopleRoleKey[]) {
+    const values = source[role];
+    if (Array.isArray(values) && values.length > 0) {
+      result[role] = [...values];
+    }
+  }
+  return result;
 }
 
 export function buildSavedFilterPayload(
@@ -143,6 +196,24 @@ export function buildSavedFilterPayload(
       ? [...filters.commenterIds]
       : undefined,
     reactorIds: filters.reactorIds.length ? [...filters.reactorIds] : undefined,
+    maintainerIds: filters.maintainerIds.length
+      ? [...filters.maintainerIds]
+      : undefined,
+    peopleSelection: filters.peopleSelection.length
+      ? [...filters.peopleSelection]
+      : undefined,
+    optionalPersonIds:
+      filters.optionalPersonIds &&
+      Object.values(filters.optionalPersonIds).some(
+        (value) => Array.isArray(value) && value.length > 0,
+      )
+        ? Object.fromEntries(
+            Object.entries(filters.optionalPersonIds).map(([key, value]) => [
+              key,
+              Array.isArray(value) ? [...value] : [],
+            ]),
+          )
+        : undefined,
     statuses: filters.statuses.length ? [...filters.statuses] : undefined,
     attention: filters.attention.length ? [...filters.attention] : undefined,
     linkedIssueStates: filters.linkedIssueStates.length
@@ -204,6 +275,7 @@ export function normalizeSearchParams(
   appendAll("mentionedUserId", filters.mentionedUserIds);
   appendAll("commenterId", filters.commenterIds);
   appendAll("reactorId", filters.reactorIds);
+  appendAll("maintainerId", filters.maintainerIds);
   appendAll(
     "status",
     filters.statuses.map((value) => value),

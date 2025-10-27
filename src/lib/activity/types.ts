@@ -45,6 +45,18 @@ export type ActivityThresholds = {
   stalledIssueDays?: number;
 };
 
+export type PeopleRoleKey =
+  | "authorIds"
+  | "assigneeIds"
+  | "reviewerIds"
+  | "mentionedUserIds"
+  | "commenterIds"
+  | "reactorIds"
+  | "maintainerIds";
+
+export type OptionalPeopleMap = Partial<Record<PeopleRoleKey, string[]>>;
+export type PeopleFilterMap = Record<PeopleRoleKey, string[]>;
+
 export type ActivityFilters = {
   types?: ActivityItemType[];
   repositoryIds?: string[];
@@ -61,6 +73,9 @@ export type ActivityFilters = {
   mentionedUserIds?: string[];
   commenterIds?: string[];
   reactorIds?: string[];
+  maintainerIds?: string[];
+  peopleSelection?: string[];
+  optionalPersonIds?: OptionalPeopleMap;
   statuses?: ActivityStatusFilter[];
   attention?: ActivityAttentionFilter[];
   linkedIssueStates?: ActivityLinkedIssueFilter[];

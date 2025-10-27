@@ -96,7 +96,8 @@ type PeopleRoleKey =
   | "reviewerIds"
   | "mentionedUserIds"
   | "commenterIds"
-  | "reactorIds";
+  | "reactorIds"
+  | "maintainerIds";
 
 type MultiSelectOption = {
   value: string;
@@ -171,7 +172,331 @@ const PEOPLE_ROLE_KEYS: PeopleRoleKey[] = [
   "mentionedUserIds",
   "commenterIds",
   "reactorIds",
+  "maintainerIds",
 ];
+
+const ATTENTION_ROLE_RULES: Record<
+  ActivityAttentionFilter,
+  {
+    applied: PeopleRoleKey[];
+    optional: PeopleRoleKey[];
+    cleared: PeopleRoleKey[];
+  }
+> = {
+  no_attention: { applied: [], optional: [], cleared: [] },
+  issue_backlog: {
+    applied: ["maintainerIds"],
+    optional: [],
+    cleared: [
+      "authorIds",
+      "assigneeIds",
+      "reviewerIds",
+      "mentionedUserIds",
+      "commenterIds",
+      "reactorIds",
+    ],
+  },
+  issue_stalled: {
+    applied: ["assigneeIds"],
+    optional: ["authorIds"],
+    cleared: [
+      "reviewerIds",
+      "mentionedUserIds",
+      "commenterIds",
+      "reactorIds",
+      "maintainerIds",
+    ],
+  },
+  pr_open_too_long: {
+    applied: ["authorIds", "assigneeIds", "reviewerIds"],
+    optional: [],
+    cleared: [
+      "mentionedUserIds",
+      "commenterIds",
+      "reactorIds",
+      "maintainerIds",
+    ],
+  },
+  pr_inactive: {
+    applied: ["authorIds", "assigneeIds", "reviewerIds"],
+    optional: [],
+    cleared: [
+      "mentionedUserIds",
+      "commenterIds",
+      "reactorIds",
+      "maintainerIds",
+    ],
+  },
+  review_requests_pending: {
+    applied: ["reviewerIds"],
+    optional: [],
+    cleared: [
+      "authorIds",
+      "assigneeIds",
+      "mentionedUserIds",
+      "commenterIds",
+      "reactorIds",
+      "maintainerIds",
+    ],
+  },
+  unanswered_mentions: {
+    applied: ["mentionedUserIds"],
+    optional: [],
+    cleared: [
+      "authorIds",
+      "assigneeIds",
+      "reviewerIds",
+      "commenterIds",
+      "reactorIds",
+      "maintainerIds",
+    ],
+  },
+};
+
+function getPeopleRoleValues(
+  state: FilterState,
+  role: PeopleRoleKey,
+): string[] {
+  const mapValues = state.peopleFilters?.[role];
+  if (Array.isArray(mapValues)) {
+    return mapValues;
+  }
+  switch (role) {
+    case "authorIds":
+      return state.authorIds ?? [];
+    case "assigneeIds":
+      return state.assigneeIds ?? [];
+    case "reviewerIds":
+      return state.reviewerIds ?? [];
+    case "mentionedUserIds":
+      return state.mentionedUserIds ?? [];
+    case "commenterIds":
+      return state.commenterIds ?? [];
+    case "reactorIds":
+      return state.reactorIds ?? [];
+    case "maintainerIds":
+      return state.maintainerIds ?? [];
+    default:
+      return [];
+  }
+}
+
+function setOptionalPersonValues(
+  state: FilterState,
+  role: PeopleRoleKey,
+  values: string[],
+): FilterState {
+  const unique = Array.from(new Set(values));
+  const currentMap = state.optionalPersonIds ?? {};
+  const hasRole = role in currentMap;
+  const currentValues = currentMap[role] ?? [];
+  if (arraysShallowEqual(currentValues, unique)) {
+    if (unique.length === 0 && !hasRole) {
+      return state;
+    }
+    if (unique.length === 0 && hasRole) {
+      const nextOptional = { ...currentMap };
+      delete nextOptional[role];
+      return {
+        ...state,
+        optionalPersonIds: nextOptional,
+      };
+    }
+    return state;
+  }
+
+  const nextOptional = { ...currentMap };
+  if (unique.length > 0) {
+    nextOptional[role] = unique;
+  } else if (hasRole) {
+    delete nextOptional[role];
+  } else {
+    return state;
+  }
+
+  return {
+    ...state,
+    optionalPersonIds: nextOptional,
+  };
+}
+
+function setPeopleRoleValues(
+  state: FilterState,
+  role: PeopleRoleKey,
+  values: string[],
+): FilterState {
+  const normalized = Array.from(new Set(values));
+  if (arraysShallowEqual(getPeopleRoleValues(state, role), normalized)) {
+    return setOptionalPersonValues(state, role, []);
+  }
+
+  const clonedValues = [...normalized];
+  const next: FilterState = {
+    ...state,
+    peopleFilters: {
+      ...state.peopleFilters,
+      [role]: clonedValues,
+    },
+  };
+
+  switch (role) {
+    case "authorIds":
+      next.authorIds = clonedValues;
+      break;
+    case "assigneeIds":
+      next.assigneeIds = clonedValues;
+      break;
+    case "reviewerIds":
+      next.reviewerIds = clonedValues;
+      break;
+    case "mentionedUserIds":
+      next.mentionedUserIds = clonedValues;
+      break;
+    case "commenterIds":
+      next.commenterIds = clonedValues;
+      break;
+    case "reactorIds":
+      next.reactorIds = clonedValues;
+      break;
+    case "maintainerIds":
+      next.maintainerIds = clonedValues;
+      break;
+  }
+
+  return setOptionalPersonValues(next, role, []);
+}
+
+function clearPeopleRoleValues(state: FilterState, role: PeopleRoleKey) {
+  if (getPeopleRoleValues(state, role).length > 0) {
+    return setPeopleRoleValues(state, role, []);
+  }
+  return setOptionalPersonValues(state, role, []);
+}
+
+function syncPeopleFiltersWithAttention(state: FilterState): FilterState {
+  const selection = Array.from(new Set(state.peopleSelection ?? []));
+  if (selection.length === 0) {
+    let nextState = state;
+    PEOPLE_ROLE_KEYS.forEach((role) => {
+      nextState = setPeopleRoleValues(nextState, role, []);
+    });
+    PEOPLE_ROLE_KEYS.forEach((role) => {
+      nextState = setOptionalPersonValues(nextState, role, []);
+    });
+    return nextState;
+  }
+
+  const attentions = state.attention.filter(
+    (value) => value !== "no_attention",
+  );
+  const appliedRoles = new Set<PeopleRoleKey>();
+  const optionalRoles = new Set<PeopleRoleKey>();
+
+  if (attentions.length === 0) {
+    for (const role of getPeopleRoleTargets(state.categories)) {
+      appliedRoles.add(role);
+    }
+  } else {
+    type RoleState = {
+      applied: boolean;
+      optional: boolean;
+      cleared: boolean;
+    };
+    const roleStates = new Map<PeopleRoleKey, RoleState>();
+    attentions.forEach((attention) => {
+      const rule = ATTENTION_ROLE_RULES[attention];
+      if (!rule) {
+        return;
+      }
+      rule.applied.forEach((role) => {
+        const state: RoleState = roleStates.get(role) ?? {
+          applied: false,
+          optional: false,
+          cleared: false,
+        };
+        state.applied = true;
+        roleStates.set(role, state);
+      });
+      rule.optional.forEach((role) => {
+        const state: RoleState = roleStates.get(role) ?? {
+          applied: false,
+          optional: false,
+          cleared: false,
+        };
+        state.optional = true;
+        roleStates.set(role, state);
+      });
+      rule.cleared.forEach((role) => {
+        const state: RoleState = roleStates.get(role) ?? {
+          applied: false,
+          optional: false,
+          cleared: false,
+        };
+        state.cleared = true;
+        roleStates.set(role, state);
+      });
+    });
+
+    const finalApplied = new Set<PeopleRoleKey>();
+    const finalOptional = new Set<PeopleRoleKey>();
+
+    PEOPLE_ROLE_KEYS.forEach((role) => {
+      const state = roleStates.get(role) ?? {
+        applied: false,
+        optional: false,
+        cleared: false,
+      };
+
+      const hasApplied = state.applied;
+      const hasOptional = state.optional;
+      const hasCleared = state.cleared || !roleStates.has(role);
+
+      if (hasApplied && (hasOptional || hasCleared)) {
+        finalOptional.add(role);
+      } else if (hasApplied) {
+        finalApplied.add(role);
+      } else if (hasOptional) {
+        finalOptional.add(role);
+      }
+    });
+
+    let nextState = state;
+    PEOPLE_ROLE_KEYS.forEach((role) => {
+      if (finalApplied.has(role)) {
+        nextState = setPeopleRoleValues(nextState, role, selection);
+      } else {
+        nextState = setPeopleRoleValues(nextState, role, []);
+      }
+    });
+    PEOPLE_ROLE_KEYS.forEach((role) => {
+      if (finalOptional.has(role) && !finalApplied.has(role)) {
+        nextState = setOptionalPersonValues(nextState, role, selection);
+      } else {
+        nextState = setOptionalPersonValues(nextState, role, []);
+      }
+    });
+
+    return nextState;
+  }
+
+  let nextState = state;
+  PEOPLE_ROLE_KEYS.forEach((role) => {
+    if (appliedRoles.has(role)) {
+      nextState = setPeopleRoleValues(nextState, role, selection);
+    } else {
+      nextState = setPeopleRoleValues(nextState, role, []);
+    }
+  });
+  PEOPLE_ROLE_KEYS.forEach((role) => {
+    if (optionalRoles.has(role) && !appliedRoles.has(role)) {
+      nextState = setOptionalPersonValues(nextState, role, selection);
+    } else {
+      nextState = setOptionalPersonValues(nextState, role, []);
+    }
+  });
+
+  return nextState;
+}
 
 const ATTENTION_CATEGORY_MAP = {
   no_attention: [],
@@ -304,7 +629,7 @@ function derivePeopleState(
   let inSync = true;
 
   for (const role of targets) {
-    const values = state[role];
+    const values = getPeopleRoleValues(state, role);
     if (baseline === null) {
       baseline = values;
       continue;
@@ -320,15 +645,25 @@ function derivePeopleState(
       if (targets.includes(role)) {
         continue;
       }
-      if (state[role].length > 0) {
+      if (getPeopleRoleValues(state, role).length > 0) {
         inSync = false;
         break;
       }
     }
   }
 
+  const baselineValues = baseline ? [...baseline] : [];
+  const selectionValues =
+    state.peopleSelection.length > 0
+      ? Array.from(new Set(state.peopleSelection))
+      : baselineValues;
+
+  if (inSync && !arraysShallowEqual(selectionValues, baselineValues)) {
+    inSync = false;
+  }
+
   return {
-    selection: inSync && baseline ? [...baseline] : [],
+    selection: selectionValues,
     isSynced: inSync,
     targets,
   };
@@ -342,12 +677,13 @@ function applyPeopleSelection(
   const resolvedCategories = categoriesOverride ?? state.categories;
   const targets = getPeopleRoleTargets(resolvedCategories);
   const unique = Array.from(new Set(peopleIds));
+  let nextState = state;
   let changed = false;
-  const next: FilterState = { ...state };
 
   targets.forEach((role) => {
-    if (!arraysShallowEqual(state[role], unique)) {
-      next[role] = unique;
+    const updated = setPeopleRoleValues(nextState, role, unique);
+    if (updated !== nextState) {
+      nextState = updated;
       changed = true;
     }
   });
@@ -356,44 +692,90 @@ function applyPeopleSelection(
     if (targets.includes(role)) {
       return;
     }
-    if (state[role].length > 0) {
-      next[role] = [];
+    const updated = clearPeopleRoleValues(nextState, role);
+    if (updated !== nextState) {
+      nextState = updated;
       changed = true;
     }
   });
 
-  if (!changed) {
-    return state;
+  if (!arraysShallowEqual(nextState.peopleSelection, unique)) {
+    nextState = {
+      ...nextState,
+      peopleSelection: unique,
+    };
+    changed = true;
   }
 
-  return next;
+  if (changed) {
+    nextState = {
+      ...nextState,
+      optionalPersonIds: {},
+    };
+  }
+
+  return changed ? syncPeopleFiltersWithAttention(nextState) : state;
 }
 
 function sanitizePeopleIds(
   state: FilterState,
   allowed: ReadonlySet<string>,
 ): FilterState {
+  let nextState = state;
   let changed = false;
-  const next: FilterState = { ...state };
 
   PEOPLE_ROLE_KEYS.forEach((role) => {
-    const filtered = state[role].filter((id) => allowed.has(id));
-    if (!arraysShallowEqual(state[role], filtered)) {
-      next[role] = filtered;
+    const current = getPeopleRoleValues(nextState, role);
+    const filtered = current.filter((id) => allowed.has(id));
+    if (!arraysShallowEqual(current, filtered)) {
+      nextState = setPeopleRoleValues(nextState, role, filtered);
       changed = true;
     }
   });
+
+  const filteredSelection = nextState.peopleSelection.filter((id) =>
+    allowed.has(id),
+  );
+  if (!arraysShallowEqual(nextState.peopleSelection, filteredSelection)) {
+    nextState = {
+      ...nextState,
+      peopleSelection: filteredSelection,
+    };
+    changed = true;
+  }
 
   if (!changed) {
     return state;
   }
 
-  const peopleState = derivePeopleState(next);
-  if (peopleState.isSynced) {
-    return applyPeopleSelection(next, peopleState.selection);
+  let optionalChanged = false;
+  const updatedOptional: FilterState["optionalPersonIds"] = {};
+  PEOPLE_ROLE_KEYS.forEach((role) => {
+    const optionalValues = nextState.optionalPersonIds[role];
+    if (Array.isArray(optionalValues) && optionalValues.length > 0) {
+      const filteredOptional = optionalValues.filter((id) => allowed.has(id));
+      if (filteredOptional.length > 0) {
+        updatedOptional[role] = filteredOptional;
+      }
+      if (!arraysShallowEqual(optionalValues, filteredOptional)) {
+        optionalChanged = true;
+      }
+    }
+  });
+
+  if (optionalChanged) {
+    nextState = {
+      ...nextState,
+      optionalPersonIds: updatedOptional,
+    };
   }
 
-  return next;
+  const peopleState = derivePeopleState(nextState);
+  if (peopleState.isSynced) {
+    return applyPeopleSelection(nextState, peopleState.selection);
+  }
+
+  return syncPeopleFiltersWithAttention(nextState);
 }
 
 function canonicalizeActivityParams(params: ActivityListParams) {
@@ -493,16 +875,20 @@ function avatarFallback(user: ActivityItem["author"]) {
 function MultiSelectInput({
   label,
   placeholder,
-  value,
+  appliedValues,
+  optionalValues = [],
   onChange,
+  onOptionalChange,
   options,
   emptyLabel,
   disabled = false,
 }: {
   label: ReactNode;
   placeholder?: string;
-  value: string[];
+  appliedValues: string[];
+  optionalValues?: string[];
   onChange: (next: string[]) => void;
+  onOptionalChange?: (next: string[]) => void;
   options: MultiSelectOption[];
   emptyLabel?: string;
   disabled?: boolean;
@@ -526,12 +912,16 @@ function MultiSelectInput({
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const selectedSet = useMemo(() => new Set(value), [value]);
+  const optionalSet = useMemo(() => new Set(optionalValues), [optionalValues]);
+  const allSelectedSet = useMemo(
+    () => new Set([...appliedValues, ...optionalValues]),
+    [appliedValues, optionalValues],
+  );
 
   const filteredOptions = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return options.filter((option) => {
-      if (selectedSet.has(option.value)) {
+      if (allSelectedSet.has(option.value)) {
         return false;
       }
       if (!normalized.length) {
@@ -541,20 +931,36 @@ function MultiSelectInput({
         `${option.label} ${option.description ?? ""}`.toLowerCase();
       return haystack.includes(normalized);
     });
-  }, [options, query, selectedSet]);
+  }, [allSelectedSet, options, query]);
 
   const addValue = useCallback(
     (nextValue: string) => {
       if (disabled) {
         return;
       }
-      if (selectedSet.has(nextValue)) {
+      if (allSelectedSet.has(nextValue)) {
+        if (optionalSet.has(nextValue) && onOptionalChange) {
+          onOptionalChange(
+            optionalValues.filter((entry) => entry !== nextValue),
+          );
+        }
         return;
       }
-      onChange([...value, nextValue]);
+      if (optionalSet.has(nextValue) && onOptionalChange) {
+        onOptionalChange(optionalValues.filter((entry) => entry !== nextValue));
+      }
+      onChange([...appliedValues, nextValue]);
       setQuery("");
     },
-    [disabled, onChange, selectedSet, value],
+    [
+      allSelectedSet,
+      appliedValues,
+      disabled,
+      onChange,
+      onOptionalChange,
+      optionalSet,
+      optionalValues,
+    ],
   );
 
   const removeValue = useCallback(
@@ -562,9 +968,19 @@ function MultiSelectInput({
       if (disabled) {
         return;
       }
-      onChange(value.filter((entry) => entry !== target));
+      onChange(appliedValues.filter((entry) => entry !== target));
     },
-    [disabled, onChange, value],
+    [appliedValues, disabled, onChange],
+  );
+
+  const removeOptionalValue = useCallback(
+    (target: string) => {
+      if (disabled || !onOptionalChange) {
+        return;
+      }
+      onOptionalChange(optionalValues.filter((entry) => entry !== target));
+    },
+    [disabled, onOptionalChange, optionalValues],
   );
 
   const handleKeyDown = useCallback(
@@ -572,9 +988,9 @@ function MultiSelectInput({
       if (disabled) {
         return;
       }
-      if (event.key === "Backspace" && !query.length && value.length) {
+      if (event.key === "Backspace" && !query.length && appliedValues.length) {
         event.preventDefault();
-        const next = [...value];
+        const next = [...appliedValues];
         next.pop();
         onChange(next);
       }
@@ -586,13 +1002,20 @@ function MultiSelectInput({
         }
       }
     },
-    [addValue, disabled, filteredOptions, onChange, query.length, value],
+    [
+      addValue,
+      appliedValues,
+      disabled,
+      filteredOptions,
+      onChange,
+      query.length,
+    ],
   );
 
   return (
     <div
       ref={containerRef}
-      className={cn("space-y-2", disabled && "opacity-50")}
+      className={cn("space-y-2", disabled && "cursor-not-allowed")}
       aria-disabled={disabled}
       data-disabled={disabled ? "true" : undefined}
     >
@@ -611,16 +1034,36 @@ function MultiSelectInput({
         )}
       >
         <div className="flex flex-wrap items-center gap-1">
-          {value.length === 0 && (
+          {appliedValues.length === 0 && optionalValues.length === 0 && (
             <span className="text-xs text-muted-foreground/70">
               {emptyLabel ?? "미적용"}
             </span>
           )}
-          {value.map((entry) => {
+          {optionalValues.map((entry) => {
             const option = options.find((item) => item.value === entry);
             return (
               <span
-                key={entry}
+                key={`optional-${entry}`}
+                className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-1 text-xs text-muted-foreground"
+              >
+                {option?.label ?? entry}
+                <button
+                  type="button"
+                  className="rounded-full p-0.5 hover:bg-muted/70"
+                  onClick={() => removeOptionalValue(entry)}
+                  aria-label={`Remove optional ${option?.label ?? entry}`}
+                  disabled={disabled || !onOptionalChange}
+                >
+                  ×
+                </button>
+              </span>
+            );
+          })}
+          {appliedValues.map((entry) => {
+            const option = options.find((item) => item.value === entry);
+            return (
+              <span
+                key={`applied-${entry}`}
                 className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-1 text-xs text-primary"
               >
                 {option?.label ?? entry}
@@ -735,11 +1178,6 @@ function PeopleToggleList({
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <Label className="text-xs font-semibold text-foreground">{label}</Label>
-        {!synced && (
-          <span className="text-[11px] text-muted-foreground/70">
-            고급 필터와 동기화되지 않음
-          </span>
-        )}
       </div>
       <div className="max-h-48 overflow-y-auto rounded-md border border-border bg-background p-2">
         <div className="flex flex-wrap gap-2">
@@ -1276,12 +1714,15 @@ export function ActivityView({
     [labelMetadata],
   );
 
+  const normalizeFilterState = useCallback(
+    (raw: FilterState): FilterState =>
+      syncPeopleFiltersWithAttention(convertFilterLabelKeysToNames(raw)),
+    [convertFilterLabelKeysToNames],
+  );
+
   const initialState = useMemo(
-    () =>
-      convertFilterLabelKeysToNames(
-        buildFilterState(initialParams, perPageDefault),
-      ),
-    [convertFilterLabelKeysToNames, initialParams, perPageDefault],
+    () => normalizeFilterState(buildFilterState(initialParams, perPageDefault)),
+    [initialParams, normalizeFilterState, perPageDefault],
   );
 
   const perPageChoices = useMemo(() => {
@@ -1340,9 +1781,9 @@ export function ActivityView({
   const jumpDateInputId = useId();
 
   useEffect(() => {
-    setDraft((current) => convertFilterLabelKeysToNames(current));
-    setApplied((current) => convertFilterLabelKeysToNames(current));
-  }, [convertFilterLabelKeysToNames]);
+    setDraft((current) => normalizeFilterState(current));
+    setApplied((current) => normalizeFilterState(current));
+  }, [normalizeFilterState]);
 
   useEffect(() => {
     setDraft(initialState);
@@ -1714,7 +2155,7 @@ export function ActivityView({
   const quickFilterCanonicalSet = useMemo(() => {
     const keys = new Set<string>();
     quickFilterDefinitions.forEach((definition) => {
-      const baseState = convertFilterLabelKeysToNames({
+      const baseState = normalizeFilterState({
         ...definition.buildState(draft.perPage),
         page: 1,
       });
@@ -1722,7 +2163,7 @@ export function ActivityView({
       keys.add(canonicalizeActivityParams(payload));
     });
     return keys;
-  }, [convertFilterLabelKeysToNames, draft.perPage, quickFilterDefinitions]);
+  }, [draft.perPage, normalizeFilterState, quickFilterDefinitions]);
 
   const canonicalDraftKey = useMemo(
     () =>
@@ -1748,7 +2189,7 @@ export function ActivityView({
   const savedFilterCanonicalEntries = useMemo(
     () =>
       savedFilters.map((filter) => {
-        const state = convertFilterLabelKeysToNames(
+        const state = normalizeFilterState(
           buildFilterState(filter.payload, perPageDefault),
         );
         return {
@@ -1756,12 +2197,12 @@ export function ActivityView({
           key: canonicalizeActivityParams(buildSavedFilterPayload(state)),
         };
       }),
-    [convertFilterLabelKeysToNames, perPageDefault, savedFilters],
+    [normalizeFilterState, perPageDefault, savedFilters],
   );
 
   const activeQuickFilterId = useMemo(() => {
     for (const definition of quickFilterDefinitions) {
-      const baseState = convertFilterLabelKeysToNames({
+      const baseState = normalizeFilterState({
         ...definition.buildState(draft.perPage),
         page: 1,
       });
@@ -1773,8 +2214,8 @@ export function ActivityView({
     return null;
   }, [
     canonicalDraftKey,
-    convertFilterLabelKeysToNames,
     draft.perPage,
+    normalizeFilterState,
     quickFilterDefinitions,
   ]);
 
@@ -1943,6 +2384,10 @@ export function ActivityView({
   const peopleState = useMemo(() => derivePeopleState(draft), [draft]);
   const peopleSelection = peopleState.selection;
   const peopleSynced = peopleState.isSynced;
+  const hasActiveAttention = draft.attention.some(
+    (value) => value !== "no_attention",
+  );
+  const peopleFiltersLocked = peopleSelection.length > 0 && hasActiveAttention;
   const handlePeopleChange = useCallback(
     (next: string[]) => {
       const filtered = next.filter((id) => allowedUserIds.has(id));
@@ -2095,7 +2540,7 @@ export function ActivityView({
 
   const handleApplyQuickFilter = useCallback(
     (definition: QuickFilterDefinition) => {
-      const nextState = convertFilterLabelKeysToNames({
+      const nextState = normalizeFilterState({
         ...definition.buildState(draft.perPage),
         page: 1,
       });
@@ -2113,12 +2558,7 @@ export function ActivityView({
       setJumpDate("");
       void fetchActivity(nextState);
     },
-    [
-      canonicalDraftKey,
-      convertFilterLabelKeysToNames,
-      draft.perPage,
-      fetchActivity,
-    ],
+    [canonicalDraftKey, draft.perPage, fetchActivity, normalizeFilterState],
   );
 
   useEffect(() => {
@@ -2157,7 +2597,7 @@ export function ActivityView({
       return;
     }
 
-    const nextState = convertFilterLabelKeysToNames({
+    const nextState = normalizeFilterState({
       ...definition.buildState(draft.perPage),
       page: 1,
     });
@@ -2174,9 +2614,9 @@ export function ActivityView({
     handleApplyQuickFilter(definition);
   }, [
     canonicalDraftKey,
-    convertFilterLabelKeysToNames,
     draft.perPage,
     handleApplyQuickFilter,
+    normalizeFilterState,
     quickFilterDefinitions,
     router,
     searchParams,
@@ -2188,10 +2628,9 @@ export function ActivityView({
         ...filter.payload,
         page: 1,
       };
-      const nextState = convertFilterLabelKeysToNames({
-        ...buildFilterState(params, perPageDefault),
-        page: 1,
-      });
+      const nextState = normalizeFilterState(
+        buildFilterState(params, perPageDefault),
+      );
       setDraft(nextState);
       setApplied(nextState);
       setSelectedSavedFilterId(filter.id);
@@ -2199,7 +2638,7 @@ export function ActivityView({
       setJumpDate("");
       void fetchActivity(nextState);
     },
-    [convertFilterLabelKeysToNames, fetchActivity, perPageDefault],
+    [fetchActivity, normalizeFilterState, perPageDefault],
   );
 
   const saveCurrentFilters = useCallback(async () => {
@@ -2529,11 +2968,9 @@ export function ActivityView({
   );
 
   const resetFilters = useCallback(() => {
-    const base = convertFilterLabelKeysToNames(
-      buildFilterState({}, perPageDefault),
-    );
+    const base = normalizeFilterState(buildFilterState({}, perPageDefault));
     setDraft(base);
-  }, [convertFilterLabelKeysToNames, perPageDefault]);
+  }, [normalizeFilterState, perPageDefault]);
 
   const applyDraftFilters = useCallback(() => {
     if (!hasPendingChanges) {
@@ -3412,10 +3849,12 @@ export function ActivityView({
                     active={allSelected}
                     variant={allSelected ? "active" : "inactive"}
                     onClick={() => {
-                      setDraft((current) => ({
-                        ...current,
-                        attention: [],
-                      }));
+                      setDraft((current) =>
+                        syncPeopleFiltersWithAttention({
+                          ...current,
+                          attention: [],
+                        }),
+                      );
                     }}
                   >
                     미적용
@@ -3481,7 +3920,7 @@ export function ActivityView({
                                 );
                               }
                             }
-                            return nextState;
+                            return syncPeopleFiltersWithAttention(nextState);
                           });
                         }}
                       >
@@ -3501,15 +3940,24 @@ export function ActivityView({
             synced={peopleSynced}
           />
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="px-2"
-              onClick={() => setShowAdvancedFilters((value) => !value)}
-            >
-              {showAdvancedFilters ? "숨기기" : "고급 필터 보기"}
-            </Button>
+            <div className="flex items-center gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="px-2"
+                onClick={() => setShowAdvancedFilters((value) => !value)}
+              >
+                {showAdvancedFilters ? "숨기기" : "고급 필터 보기"}
+              </Button>
+              {peopleFiltersLocked && (
+                <span className="text-xs text-muted-foreground/80">
+                  주의와 구성원이 선택되면 작성자, 담당자, 리뷰어, 멘션된
+                  구성원, 코멘터, 리액션 남긴 구성원 항목은 사용자가 제어할 수
+                  없습니다.
+                </span>
+              )}
+            </div>
             <div className="flex flex-wrap items-center gap-3">
               <Button
                 onClick={applyDraftFilters}
@@ -3533,7 +3981,7 @@ export function ActivityView({
                 <MultiSelectInput
                   label="저장소"
                   placeholder="저장소 선택"
-                  value={draft.repositoryIds}
+                  appliedValues={draft.repositoryIds}
                   onChange={(next) =>
                     setDraft((current) => ({
                       ...current,
@@ -3546,7 +3994,7 @@ export function ActivityView({
                 <MultiSelectInput
                   label="라벨"
                   placeholder="라벨 선택"
-                  value={draft.labelKeys}
+                  appliedValues={draft.labelKeys}
                   onChange={(next) =>
                     setDraft((current) => ({ ...current, labelKeys: next }))
                   }
@@ -3556,7 +4004,7 @@ export function ActivityView({
                 <MultiSelectInput
                   label="마일스톤"
                   placeholder="마일스톤 선택"
-                  value={draft.milestoneIds}
+                  appliedValues={draft.milestoneIds}
                   onChange={(next) =>
                     setDraft((current) => ({ ...current, milestoneIds: next }))
                   }
@@ -3566,7 +4014,7 @@ export function ActivityView({
                 <MultiSelectInput
                   label={<span className="normal-case">이슈 Type</span>}
                   placeholder="이슈 Type 선택"
-                  value={draft.issueTypeIds}
+                  appliedValues={draft.issueTypeIds}
                   onChange={(next) =>
                     setDraft((current) => ({ ...current, issueTypeIds: next }))
                   }
@@ -3577,7 +4025,7 @@ export function ActivityView({
                 <MultiSelectInput
                   label={<span className="normal-case">이슈 Priority</span>}
                   placeholder="Priority 선택"
-                  value={draft.issuePriorities}
+                  appliedValues={draft.issuePriorities}
                   onChange={(next) =>
                     setDraft((current) => ({
                       ...current,
@@ -3591,7 +4039,7 @@ export function ActivityView({
                 <MultiSelectInput
                   label={<span className="normal-case">이슈 Weight</span>}
                   placeholder="Weight 선택"
-                  value={draft.issueWeights}
+                  appliedValues={draft.issueWeights}
                   onChange={(next) =>
                     setDraft((current) => ({
                       ...current,
@@ -3602,69 +4050,133 @@ export function ActivityView({
                   emptyLabel="미적용"
                   disabled={issueFiltersDisabled}
                 />
+                {peopleFiltersLocked && (
+                  <div className="md:col-span-3 lg:col-span-3">
+                    <div className="rounded-md border border-dashed border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground/80">
+                      주의 type과 구성원을 함께 선택하면 사람 필터는 자동으로
+                      적용되며 고급 필터에서 수정할 수 없어요.
+                    </div>
+                  </div>
+                )}
                 <MultiSelectInput
                   label="작성자"
                   placeholder="@user"
-                  value={draft.authorIds}
+                  appliedValues={draft.authorIds}
+                  optionalValues={draft.optionalPersonIds?.authorIds ?? []}
                   onChange={(next) =>
-                    setDraft((current) => ({ ...current, authorIds: next }))
+                    setDraft((current) =>
+                      setPeopleRoleValues(current, "authorIds", next),
+                    )
+                  }
+                  onOptionalChange={(next) =>
+                    setDraft((current) =>
+                      setOptionalPersonValues(current, "authorIds", next),
+                    )
                   }
                   options={userOptions}
                   emptyLabel="미적용"
+                  disabled={peopleFiltersLocked}
                 />
                 <MultiSelectInput
                   label="담당자"
                   placeholder="@assignee"
-                  value={draft.assigneeIds}
+                  appliedValues={draft.assigneeIds}
+                  optionalValues={draft.optionalPersonIds?.assigneeIds ?? []}
                   onChange={(next) =>
-                    setDraft((current) => ({ ...current, assigneeIds: next }))
+                    setDraft((current) =>
+                      setPeopleRoleValues(current, "assigneeIds", next),
+                    )
+                  }
+                  onOptionalChange={(next) =>
+                    setDraft((current) =>
+                      setOptionalPersonValues(current, "assigneeIds", next),
+                    )
                   }
                   options={userOptions}
                   emptyLabel="미적용"
+                  disabled={peopleFiltersLocked}
                 />
                 <MultiSelectInput
                   label="리뷰어"
                   placeholder="@reviewer"
-                  value={draft.reviewerIds}
+                  appliedValues={draft.reviewerIds}
+                  optionalValues={draft.optionalPersonIds?.reviewerIds ?? []}
                   onChange={(next) =>
-                    setDraft((current) => ({ ...current, reviewerIds: next }))
+                    setDraft((current) =>
+                      setPeopleRoleValues(current, "reviewerIds", next),
+                    )
+                  }
+                  onOptionalChange={(next) =>
+                    setDraft((current) =>
+                      setOptionalPersonValues(current, "reviewerIds", next),
+                    )
                   }
                   options={userOptions}
                   emptyLabel="미적용"
-                  disabled={prFiltersDisabled}
+                  disabled={prFiltersDisabled || peopleFiltersLocked}
                 />
                 <MultiSelectInput
                   label="멘션된 구성원"
                   placeholder="@mention"
-                  value={draft.mentionedUserIds}
+                  appliedValues={draft.mentionedUserIds}
+                  optionalValues={
+                    draft.optionalPersonIds?.mentionedUserIds ?? []
+                  }
                   onChange={(next) =>
-                    setDraft((current) => ({
-                      ...current,
-                      mentionedUserIds: next,
-                    }))
+                    setDraft((current) =>
+                      setPeopleRoleValues(current, "mentionedUserIds", next),
+                    )
+                  }
+                  onOptionalChange={(next) =>
+                    setDraft((current) =>
+                      setOptionalPersonValues(
+                        current,
+                        "mentionedUserIds",
+                        next,
+                      ),
+                    )
                   }
                   options={userOptions}
                   emptyLabel="미적용"
+                  disabled={peopleFiltersLocked}
                 />
                 <MultiSelectInput
                   label="코멘터"
                   placeholder="@commenter"
-                  value={draft.commenterIds}
+                  appliedValues={draft.commenterIds}
+                  optionalValues={draft.optionalPersonIds?.commenterIds ?? []}
                   onChange={(next) =>
-                    setDraft((current) => ({ ...current, commenterIds: next }))
+                    setDraft((current) =>
+                      setPeopleRoleValues(current, "commenterIds", next),
+                    )
+                  }
+                  onOptionalChange={(next) =>
+                    setDraft((current) =>
+                      setOptionalPersonValues(current, "commenterIds", next),
+                    )
                   }
                   options={userOptions}
                   emptyLabel="미적용"
+                  disabled={peopleFiltersLocked}
                 />
                 <MultiSelectInput
                   label="리액션 남긴 구성원"
                   placeholder="@reactor"
-                  value={draft.reactorIds}
+                  appliedValues={draft.reactorIds}
+                  optionalValues={draft.optionalPersonIds?.reactorIds ?? []}
                   onChange={(next) =>
-                    setDraft((current) => ({ ...current, reactorIds: next }))
+                    setDraft((current) =>
+                      setPeopleRoleValues(current, "reactorIds", next),
+                    )
+                  }
+                  onOptionalChange={(next) =>
+                    setDraft((current) =>
+                      setOptionalPersonValues(current, "reactorIds", next),
+                    )
                   }
                   options={userOptions}
                   emptyLabel="미적용"
+                  disabled={peopleFiltersLocked}
                 />
                 <div className="space-y-2 md:col-span-2 lg:col-span-2">
                   <Label className="text-xs font-semibold uppercase text-foreground">
