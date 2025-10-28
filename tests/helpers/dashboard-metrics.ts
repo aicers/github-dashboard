@@ -67,7 +67,7 @@ export function buildPeriodRanges(startIso: string, endIso: string): PeriodMap {
 
 export async function resetDashboardTables() {
   await query(
-    "TRUNCATE TABLE issues, pull_requests, reviews, comments, reactions, review_requests, repositories, users RESTART IDENTITY CASCADE",
+    "TRUNCATE TABLE issues, pull_requests, reviews, comments, reactions, review_requests, repositories, users, unanswered_mention_classifications RESTART IDENTITY CASCADE",
   );
 }
 

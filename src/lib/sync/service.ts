@@ -8,6 +8,7 @@ import {
   type BackupRuntimeInfo,
   getBackupRuntimeInfo,
 } from "@/lib/backup/service";
+import { runUnansweredMentionClassification } from "@/lib/dashboard/unanswered-mention-classifier";
 import { isValidDateTimeDisplayFormat } from "@/lib/date-time-format";
 import { ensureSchema } from "@/lib/db";
 import {
@@ -449,6 +450,43 @@ async function executeSync(params: {
           console.info("[activity-cache] Refreshed caches after sync run", {
             runId,
             caches: cacheSummary,
+          });
+        },
+      });
+
+      await logSyncStep({
+        runId,
+        resource: "unanswered-mentions",
+        message: "Classifying unanswered mentions",
+        step: async () => {
+          const summary = await runUnansweredMentionClassification({
+            logger: ({ level, message, meta }) => {
+              const details = meta ? { ...meta, runId } : { runId };
+              if (level === "error") {
+                console.error(
+                  "[unanswered-mentions] Classification error",
+                  message,
+                  details,
+                );
+              } else if (level === "warn") {
+                console.warn(
+                  "[unanswered-mentions] Classification warning",
+                  message,
+                  details,
+                );
+              } else {
+                console.info(
+                  "[unanswered-mentions] Classification info",
+                  message,
+                  details,
+                );
+              }
+            },
+          });
+
+          console.info("[unanswered-mentions] Classification summary", {
+            runId,
+            ...summary,
           });
         },
       });

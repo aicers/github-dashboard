@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import {
   getLinkedIssuesMap,
   getLinkedPullRequestsMap,
@@ -13,6 +15,11 @@ import {
   loadCombinedHolidaySet,
 } from "@/lib/dashboard/business-days";
 import { createPersonalHolidaySetLoader } from "@/lib/dashboard/personal-holidays";
+import {
+  buildMentionClassificationKey,
+  fetchMentionClassifications,
+  UNANSWERED_MENTION_PROMPT_VERSION,
+} from "@/lib/dashboard/unanswered-mention-classifications";
 import type { DateTimeDisplayFormat } from "@/lib/date-time-format";
 import { ensureSchema } from "@/lib/db";
 import { query } from "@/lib/db/client";
@@ -99,7 +106,7 @@ export type IssueAttentionItem = IssueReference & {
   issueTodoProjectStartDate?: string | null;
 };
 
-function normalizeOrganizationHolidayCodes(
+export function normalizeOrganizationHolidayCodes(
   config: unknown,
 ): HolidayCalendarCode[] {
   if (
@@ -246,6 +253,12 @@ type MentionRawItem = {
   commentExcerpt: string | null;
 };
 
+export type MentionDatasetItem = MentionRawItem & {
+  commentBody: string | null;
+  commentBodyHash: string;
+  mentionedLogin: string | null;
+};
+
 type PullRequestRow = {
   id: string;
   number: number;
@@ -321,6 +334,7 @@ type MentionRow = {
   comment_body: string | null;
   comment_author_id: string | null;
   mentioned_user_id: string | null;
+  mentioned_login: string | null;
   pr_id: string | null;
   pr_number: number | null;
   pr_title: string | null;
@@ -957,6 +971,12 @@ function extractCommentExcerpt(body: string | null) {
   return `${normalized.slice(0, 137)}...`;
 }
 
+function computeCommentBodyHash(body: string | null | undefined) {
+  return createHash("sha256")
+    .update(body ?? "", "utf8")
+    .digest("hex");
+}
+
 async function fetchReviewerMap(
   prIds: string[],
   excludedUserIds: readonly string[],
@@ -1468,13 +1488,13 @@ async function fetchIssueInsights(
   };
 }
 
-async function fetchUnansweredMentions(
+export async function fetchUnansweredMentionCandidates(
   excludedRepositoryIds: readonly string[],
   excludedUserIds: readonly string[],
   now: Date,
   organizationHolidayCodes: HolidayCalendarCode[],
   organizationHolidaySet: ReadonlySet<string>,
-): Promise<Dataset<MentionRawItem>> {
+): Promise<MentionDatasetItem[]> {
   const result = await query<MentionRow>(
     `WITH mention_candidates AS (
        SELECT
@@ -1503,6 +1523,7 @@ async function fetchUnansweredMentions(
        mc.comment_body,
        mc.comment_author_id,
        mc.mentioned_user_id,
+       mc.mentioned_login,
        mc.pr_id,
        pr.number AS pr_number,
        pr.title AS pr_title,
@@ -1566,8 +1587,7 @@ async function fetchUnansweredMentions(
     [excludedRepositoryIds, excludedUserIds],
   );
 
-  const userIds = new Set<string>();
-  const items: MentionRawItem[] = [];
+  const items: MentionDatasetItem[] = [];
 
   const mentionedUserIds = Array.from(
     new Set(
@@ -1599,9 +1619,6 @@ async function fetchUnansweredMentions(
     if (waitingDays < UNANSWERED_MENTION_BUSINESS_DAYS) {
       continue;
     }
-
-    addUserId(userIds, row.mentioned_user_id);
-    addUserId(userIds, row.comment_author_id);
 
     const containerType: MentionAttentionItem["container"]["type"] = row.pr_id
       ? "pull_request"
@@ -1638,10 +1655,81 @@ async function fetchUnansweredMentions(
         repositoryNameWithOwner: row.repository_name_with_owner,
       },
       commentExcerpt: extractCommentExcerpt(row.comment_body),
+      commentBody: row.comment_body ?? null,
+      commentBodyHash: computeCommentBodyHash(row.comment_body),
+      mentionedLogin: row.mentioned_login ?? null,
     });
   }
 
-  return { items, userIds };
+  return items;
+}
+
+async function fetchUnansweredMentions(
+  excludedRepositoryIds: readonly string[],
+  excludedUserIds: readonly string[],
+  now: Date,
+  organizationHolidayCodes: HolidayCalendarCode[],
+  organizationHolidaySet: ReadonlySet<string>,
+): Promise<Dataset<MentionRawItem>> {
+  const candidates = await fetchUnansweredMentionCandidates(
+    excludedRepositoryIds,
+    excludedUserIds,
+    now,
+    organizationHolidayCodes,
+    organizationHolidaySet,
+  );
+
+  const classificationInputs = candidates
+    .filter((item) => Boolean(item.targetUserId))
+    .map((item) => ({
+      commentId: item.commentId,
+      mentionedUserId: item.targetUserId as string,
+    }));
+
+  if (!classificationInputs.length) {
+    return { items: [], userIds: new Set() };
+  }
+
+  const classifications =
+    await fetchMentionClassifications(classificationInputs);
+  const filteredItems: MentionRawItem[] = [];
+  const userIds = new Set<string>();
+
+  for (const item of candidates) {
+    const targetUserId = item.targetUserId;
+    if (!targetUserId) {
+      continue;
+    }
+    const key = buildMentionClassificationKey(item.commentId, targetUserId);
+    const record = classifications.get(key);
+    if (!record) {
+      continue;
+    }
+    if (record.promptVersion !== UNANSWERED_MENTION_PROMPT_VERSION) {
+      continue;
+    }
+    if (record.commentBodyHash !== item.commentBodyHash) {
+      continue;
+    }
+    if (!record.requiresResponse) {
+      continue;
+    }
+
+    filteredItems.push({
+      commentId: item.commentId,
+      url: item.url,
+      mentionedAt: item.mentionedAt,
+      waitingDays: item.waitingDays,
+      commentAuthorId: item.commentAuthorId,
+      targetUserId,
+      container: item.container,
+      commentExcerpt: item.commentExcerpt,
+    });
+    addUserId(userIds, item.commentAuthorId);
+    addUserId(userIds, targetUserId);
+  }
+
+  return { items: filteredItems, userIds };
 }
 
 function toPullRequestReference(

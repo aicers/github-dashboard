@@ -71,6 +71,8 @@ const envSchema = z.object({
         .max(10, "DB_BACKUP_RETENTION cannot exceed 10.")
         .optional(),
     ),
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_API_BASE_URL: z.string().url().optional(),
 });
 
 const parsed = envSchema.parse({
@@ -87,6 +89,8 @@ const parsed = envSchema.parse({
   DASHBOARD_ADMIN_IDS: process.env.DASHBOARD_ADMIN_IDS,
   DB_BACKUP_DIRECTORY: process.env.DB_BACKUP_DIRECTORY,
   DB_BACKUP_RETENTION: process.env.DB_BACKUP_RETENTION,
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+  OPENAI_API_BASE_URL: process.env.OPENAI_API_BASE_URL,
 });
 
 const defaultBackupDirectory = path.resolve(process.cwd(), "backups");
@@ -107,4 +111,6 @@ export const env = {
     : [],
   DB_BACKUP_DIRECTORY: resolvedBackupDirectory,
   DB_BACKUP_RETENTION: parsed.DB_BACKUP_RETENTION ?? 3,
+  OPENAI_API_KEY: coerceOptionalString(parsed.OPENAI_API_KEY),
+  OPENAI_API_BASE_URL: coerceOptionalString(parsed.OPENAI_API_BASE_URL),
 };
