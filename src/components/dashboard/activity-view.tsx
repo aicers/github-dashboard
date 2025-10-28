@@ -4,6 +4,7 @@ import {
   Activity as ActivityIcon,
   AlertTriangle,
   ChevronDown,
+  Info,
   type LucideIcon,
   User,
   UserCheck,
@@ -88,6 +89,21 @@ type ActivityViewProps = {
   filterOptions: ActivityFilterOptions;
   initialParams: ActivityListParams;
   currentUserId: string | null;
+};
+
+const ATTENTION_TOOLTIPS: Partial<Record<ActivityAttentionFilter, string>> = {
+  issue_backlog:
+    "구성원 선택 시, 구성원이 이슈의 해당 저장소 책임자인 항목만 표시합니다.",
+  issue_stalled:
+    "구성원 선택 시, 구성원이 이슈의 담당자이거나, 담당자 미정 시 해당 저장소 책임자이거나, 담당자/저장소 미지정 시 작성자인 항목만 표시합니다.",
+  pr_open_too_long:
+    "구성원 선택 시, 구성원이 PR의 작성자, 담당자, 또는 리뷰어인 항목만 표시합니다.",
+  pr_inactive:
+    "구성원 선택 시, 구성원이 PR의 작성자, 담당자, 또는 리뷰어인 항목만 표시합니다.",
+  review_requests_pending:
+    "구성원 선택 시, 구성원이 리뷰 요청을 받은 항목만 표시합니다.",
+  unanswered_mentions:
+    "구성원 선택 시, 구성원이 멘션된 구성원인 항목만 표시합니다.",
 };
 
 type PeopleRoleKey =
@@ -1218,12 +1234,14 @@ function TogglePill({
   onClick,
   variant,
   disabled = false,
+  ariaDescribedBy,
 }: {
   active: boolean;
   children: React.ReactNode;
   onClick: () => void;
   variant?: "active" | "inactive" | "muted";
   disabled?: boolean;
+  ariaDescribedBy?: string;
 }) {
   const resolvedVariant = disabled
     ? "disabled"
@@ -1241,10 +1259,11 @@ function TogglePill({
     <button
       type="button"
       className={cn(
-        "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+        "group rounded-full border px-3 py-1 text-xs font-medium transition-colors",
         variantClass,
       )}
       aria-pressed={active}
+      aria-describedby={ariaDescribedBy}
       onClick={onClick}
       disabled={disabled}
     >
@@ -1397,7 +1416,7 @@ const SavedFiltersManager = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-background/80 backdrop-blur">
+    <div className="fixed inset-0 z-70 flex items-center justify-center bg-background/80 backdrop-blur">
       <div
         role="dialog"
         aria-modal="true"
@@ -1779,6 +1798,7 @@ export function ActivityView({
   >(null);
   const savedFilterSelectId = useId();
   const jumpDateInputId = useId();
+  const attentionTooltipPrefix = useId();
 
   useEffect(() => {
     setDraft((current) => normalizeFilterState(current));
@@ -3866,11 +3886,16 @@ export function ActivityView({
                       : active
                         ? "active"
                         : "inactive";
+                    const tooltip = ATTENTION_TOOLTIPS[option.value];
+                    const tooltipId = tooltip
+                      ? `${attentionTooltipPrefix}-${option.value}`
+                      : undefined;
                     return (
                       <TogglePill
                         key={option.value}
                         active={active}
                         variant={variant}
+                        ariaDescribedBy={tooltipId}
                         onClick={() => {
                           setDraft((current) => {
                             const nextSet = new Set(current.attention);
@@ -3924,7 +3949,24 @@ export function ActivityView({
                           });
                         }}
                       >
-                        <span>{option.label}</span>
+                        <span className="flex items-center gap-1">
+                          <span>{option.label}</span>
+                          {tooltip ? (
+                            <span
+                              className="relative inline-flex cursor-help items-center text-muted-foreground group-hover:text-foreground group-focus-visible:text-foreground"
+                              aria-hidden="true"
+                            >
+                              <Info className="h-3 w-3" aria-hidden="true" />
+                              <span
+                                id={tooltipId}
+                                role="tooltip"
+                                className="pointer-events-none absolute left-1/2 top-full z-20 w-56 -translate-x-1/2 translate-y-2 rounded-md border border-border/60 bg-background px-2 py-1 text-xs text-muted-foreground opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+                              >
+                                {tooltip}
+                              </span>
+                            </span>
+                          ) : null}
+                        </span>
                       </TogglePill>
                     );
                   })}
