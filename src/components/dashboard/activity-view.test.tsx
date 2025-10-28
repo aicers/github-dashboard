@@ -315,6 +315,40 @@ describe("ActivityView", () => {
     });
   });
 
+  it("provides canonical tooltips for attention filters", async () => {
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+    const props = createDefaultProps();
+
+    render(<ActivityView {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "alice" }));
+    fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
+
+    const backlogButton = screen.getByRole("button", {
+      name: "정체된 Backlog 이슈",
+    });
+    const backlogTooltipId = backlogButton.getAttribute("aria-describedby");
+    expect(backlogTooltipId).toBeTruthy();
+    if (backlogTooltipId) {
+      const backlogTooltip = document.getElementById(backlogTooltipId);
+      expect(backlogTooltip?.textContent).toContain(
+        "구성원이 이슈의 해당 저장소 책임자인 항목만 표시합니다.",
+      );
+    }
+
+    const stalledButton = screen.getByRole("button", {
+      name: "정체된 In Progress 이슈",
+    });
+    const stalledTooltipId = stalledButton.getAttribute("aria-describedby");
+    expect(stalledTooltipId).toBeTruthy();
+    if (stalledTooltipId) {
+      const stalledTooltip = document.getElementById(stalledTooltipId);
+      expect(stalledTooltip?.textContent).toContain(
+        "구성원이 이슈의 담당자이거나, 담당자 미정 시 해당 저장소 책임자이거나, 담당자/저장소 미지정 시 작성자인 항목만 표시합니다.",
+      );
+    }
+  });
+
   it("shows assignee as applied and author as optional for stalled issue attention", async () => {
     mockFetchJsonOnce({ filters: [], limit: 5 });
     const props = createDefaultProps();
