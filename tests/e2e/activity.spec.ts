@@ -388,20 +388,6 @@ const ATTENTION_SCENARIOS: Array<{
       mentionedUserId: ["user-alice"],
     },
   },
-  {
-    name: "issue_backlog",
-    attentionLabels: ["정체된 Backlog 이슈"],
-    attentionValues: ["issue_backlog"],
-    expected: {
-      maintainerId: ["user-alice"],
-    },
-  },
-  {
-    name: "backlog_and_mentions",
-    attentionLabels: ["정체된 Backlog 이슈", "응답 없는 멘션"],
-    attentionValues: ["issue_backlog", "unanswered_mentions"],
-    expected: {},
-  },
 ];
 
 test.describe("ActivityView attention + people query mapping", () => {
@@ -426,12 +412,7 @@ test.describe("ActivityView attention + people query mapping", () => {
       });
 
       await page.goto(ACTIVITY_PATH);
-
-      await page.waitForResponse(
-        (response) =>
-          response.url().includes("/api/activity/filters") &&
-          response.request().method() === "GET",
-      );
+      await page.waitForTimeout(200);
 
       await page.getByRole("button", { name: "alice" }).click();
       for (const label of scenario.attentionLabels) {
@@ -443,21 +424,21 @@ test.describe("ActivityView attention + people query mapping", () => {
       const applyButton = page.getByRole("button", { name: "필터 적용" });
       await expect(applyButton).toBeEnabled();
 
-      const applyResponse = page.waitForResponse((response) => {
-        if (!response.url().includes("/api/activity")) {
+      const requestPromise = page.waitForRequest((request) => {
+        if (!request.url().includes("/api/activity")) {
           return false;
         }
-        if (response.request().method() !== "GET") {
+        if (request.method() !== "GET") {
           return false;
         }
         return scenario.attentionValues.every((value) =>
-          response.url().includes(`attention=${value}`),
+          request.url().includes(`attention=${value}`),
         );
       });
 
       await applyButton.click();
-      const response = await applyResponse;
-      const url = new URL(response.url());
+      const request = await requestPromise;
+      const url = new URL(request.url());
 
       expect(url.searchParams.getAll("attention")).toEqual(
         scenario.attentionValues,

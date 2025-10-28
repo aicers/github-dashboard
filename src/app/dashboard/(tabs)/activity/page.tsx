@@ -1,5 +1,9 @@
 import { ActivityView } from "@/components/dashboard/activity-view";
 import {
+  buildActivityFilterOptionsFixture,
+  buildActivityListResultFixture,
+} from "@/components/test-harness/activity-fixtures";
+import {
   createSearchParamsFromRecord,
   parseActivityListParams,
 } from "@/lib/activity/params";
@@ -23,14 +27,22 @@ export default async function ActivityPage({
     createSearchParamsFromRecord(resolvedSearchParams),
   );
 
+  const skipDatabase = process.env.PLAYWRIGHT_SKIP_DB === "1";
+
   const sessionPromise = readActiveSession();
+  const filterOptionsPromise = skipDatabase
+    ? Promise.resolve(buildActivityFilterOptionsFixture())
+    : getActivityFilterOptions();
+
   const [filterOptions, session] = await Promise.all([
-    getActivityFilterOptions(),
+    filterOptionsPromise,
     sessionPromise,
   ]);
-  const initialData = await getActivityItems(params, {
-    userId: session?.userId ?? null,
-  });
+  const initialData = skipDatabase
+    ? buildActivityListResultFixture()
+    : await getActivityItems(params, {
+        userId: session?.userId ?? null,
+      });
 
   return (
     <ActivityView
