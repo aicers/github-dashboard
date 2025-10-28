@@ -1,3 +1,4 @@
+import { buildActivityListResultFixture } from "@/components/test-harness/activity-fixtures";
 import { expect, test } from "./harness/test";
 
 const DASHBOARD_ROOT = "/dashboard";
@@ -15,6 +16,20 @@ test.describe("Dashboard navigation (Playwright)", () => {
 
   test("redirects /dashboard to /dashboard/activity", async ({ page }) => {
     await page.goto("/test-harness/auth/session?userId=e2e-user");
+    await page.route("**/api/activity?**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(buildActivityListResultFixture()),
+      });
+    });
+    await page.route("**/api/activity/filters**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ filters: [], limit: 5 }),
+      });
+    });
     await page.goto(DASHBOARD_ROOT);
     await expect(page).toHaveURL(/\/dashboard\/activity$/);
   });
