@@ -2,10 +2,13 @@
 
 import "../../../tests/helpers/postgres-container";
 
+import { createHash } from "node:crypto";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getAttentionInsights } from "@/lib/dashboard/attention";
 import { buildFollowUpSummaries } from "@/lib/dashboard/attention-summaries";
+import { upsertMentionClassification } from "@/lib/dashboard/unanswered-mention-classifications";
 import { ensureSchema } from "@/lib/db";
 import {
   type DbComment,
@@ -118,6 +121,16 @@ function buildMentionComment(params: {
       body,
     },
   } satisfies DbComment;
+}
+
+function getCommentBody(comment: DbComment): string {
+  const raw = comment.raw as { body?: unknown };
+  const body = raw?.body;
+  return typeof body === "string" ? body : "";
+}
+
+function hashCommentBody(body: string): string {
+  return createHash("sha256").update(body, "utf8").digest("hex");
 }
 
 describe("follow-up overview summaries (db)", () => {
@@ -406,6 +419,21 @@ describe("follow-up overview summaries (db)", () => {
 
     for (const comment of [unansweredPrComment, unansweredIssueComment]) {
       await upsertComment(comment);
+    }
+
+    const mentionTargets = [
+      { comment: unansweredPrComment, mentionedUserId: grace.id },
+      { comment: unansweredIssueComment, mentionedUserId: hank.id },
+    ];
+    for (const { comment, mentionedUserId } of mentionTargets) {
+      await upsertMentionClassification({
+        commentId: comment.id,
+        mentionedUserId,
+        commentBodyHash: hashCommentBody(getCommentBody(comment)),
+        requiresResponse: true,
+        model: "test",
+        rawResponse: { from: "test" },
+      });
     }
 
     const insights = await getAttentionInsights();

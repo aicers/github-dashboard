@@ -2099,6 +2099,10 @@ export async function getActivityItems(
     ...DEFAULT_THRESHOLDS,
     ...params.thresholds,
   };
+  thresholds.unansweredMentionDays = Math.max(
+    DEFAULT_THRESHOLDS.unansweredMentionDays,
+    thresholds.unansweredMentionDays,
+  );
 
   const targetProject = normalizeProjectTarget(env.TODO_PROJECT_NAME);
 

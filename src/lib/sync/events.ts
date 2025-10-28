@@ -64,6 +64,29 @@ export type SyncStreamEvent =
       finishedAt: string;
     }
   | {
+      type: "unanswered-mentions-status";
+      status: "running" | "success" | "failed" | "partial" | "skipped";
+      startedAt?: string | null;
+      completedAt?: string | null;
+      successAt?: string | null;
+      totals?: {
+        totalCandidates: number;
+        attempted: number;
+        updated: number;
+        errors: number;
+        skipped: number;
+      };
+      message?: string | null;
+    }
+  | {
+      type: "unanswered-mentions-batch";
+      status: "queued" | "success" | "failed";
+      batchSize: number;
+      commentIds: string[];
+      timestamp: string;
+      error?: string | null;
+    }
+  | {
       type: "heartbeat";
       timestamp: string;
     };

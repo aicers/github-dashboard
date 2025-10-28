@@ -1,11 +1,14 @@
 // @vitest-environment node
 
+import { createHash } from "node:crypto";
+
 import "../../../tests/helpers/postgres-container";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getAttentionInsights } from "@/lib/dashboard/attention";
 import { differenceInBusinessDays } from "@/lib/dashboard/business-days";
+import { upsertMentionClassification } from "@/lib/dashboard/unanswered-mention-classifications";
 import { ensureSchema } from "@/lib/db";
 import {
   type DbComment,
@@ -73,6 +76,16 @@ function buildIssue(params: IssueParams): DbIssue {
       url: `https://github.com/${repositoryNameWithOwner}/issues/${number.toString()}`,
     },
   } satisfies DbIssue;
+}
+
+function getCommentBody(comment: DbComment): string {
+  const raw = comment.raw as { body?: unknown };
+  const body = raw?.body;
+  return typeof body === "string" ? body : "";
+}
+
+function hashCommentBody(body: string): string {
+  return createHash("sha256").update(body, "utf8").digest("hex");
 }
 
 function buildDiscussion(params: IssueParams): DbIssue {
@@ -303,6 +316,36 @@ describe("attention insights for unanswered mentions", () => {
       },
     } satisfies DbComment;
 
+    const courtesyMentionComment: DbComment = {
+      id: "comment-courtesy-mention",
+      issueId: null,
+      pullRequestId: mainPr.id,
+      reviewId: null,
+      authorId: alice.id,
+      createdAt: "2024-02-06T09:00:00.000Z",
+      updatedAt: "2024-02-06T09:00:00.000Z",
+      raw: {
+        id: "comment-courtesy-mention",
+        url: "https://github.com/acme/main/pull/501#discussion_r2",
+        body: "@frank FYI, deployment is scheduled for Thursday.",
+      },
+    } satisfies DbComment;
+
+    const unclassifiedMentionComment: DbComment = {
+      id: "comment-unclassified-mention",
+      issueId: null,
+      pullRequestId: mainPr.id,
+      reviewId: null,
+      authorId: alice.id,
+      createdAt: "2024-02-05T09:00:00.000Z",
+      updatedAt: "2024-02-05T09:00:00.000Z",
+      raw: {
+        id: "comment-unclassified-mention",
+        url: "https://github.com/acme/main/pull/501#discussion_r3",
+        body: "@erin Just looping you in for visibility.",
+      },
+    } satisfies DbComment;
+
     const respondedByCommentMention: DbComment = {
       id: "comment-responded-comment",
       issueId: null,
@@ -444,6 +487,8 @@ describe("attention insights for unanswered mentions", () => {
       unansweredPrComment,
       unansweredIssueComment,
       unansweredDiscussionComment,
+      courtesyMentionComment,
+      unclassifiedMentionComment,
       respondedByCommentMention,
       commentResponse,
       respondedByReviewMention,
@@ -457,6 +502,33 @@ describe("attention insights for unanswered mentions", () => {
     }
 
     await upsertReaction(reactionResponse);
+
+    const classificationTargets = [
+      { comment: unansweredPrComment, mentionedUserId: bob.id },
+      { comment: unansweredIssueComment, mentionedUserId: carol.id },
+      { comment: unansweredDiscussionComment, mentionedUserId: bob.id },
+    ];
+
+    for (const target of classificationTargets) {
+      const body = getCommentBody(target.comment);
+      await upsertMentionClassification({
+        commentId: target.comment.id,
+        mentionedUserId: target.mentionedUserId,
+        commentBodyHash: hashCommentBody(body),
+        requiresResponse: true,
+        model: "test",
+        rawResponse: { from: "test" },
+      });
+    }
+
+    await upsertMentionClassification({
+      commentId: courtesyMentionComment.id,
+      mentionedUserId: frank.id,
+      commentBodyHash: hashCommentBody(getCommentBody(courtesyMentionComment)),
+      requiresResponse: false,
+      model: "test",
+      rawResponse: { from: "test" },
+    });
 
     const insights = await getAttentionInsights();
 
@@ -478,6 +550,18 @@ describe("attention insights for unanswered mentions", () => {
     if (!prItem || !issueItem || !discussionItem) {
       throw new Error("Expected unanswered mention items to be present");
     }
+
+    expect(
+      insights.unansweredMentions.find(
+        (item) => item.commentId === courtesyMentionComment.id,
+      ),
+    ).toBeUndefined();
+
+    expect(
+      insights.unansweredMentions.find(
+        (item) => item.commentId === unclassifiedMentionComment.id,
+      ),
+    ).toBeUndefined();
 
     const now = new Date(FIXED_NOW);
     const expectedPrWaiting = differenceInBusinessDays(

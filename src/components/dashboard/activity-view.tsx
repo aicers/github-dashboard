@@ -4548,16 +4548,19 @@ export function ActivityView({
                     />
                     <Input
                       type="number"
-                      min={1}
+                      min={5}
                       value={draft.thresholds.unansweredMentionDays}
                       onChange={(event) =>
                         setDraft((current) => ({
                           ...current,
                           thresholds: {
                             ...current.thresholds,
-                            unansweredMentionDays: toPositiveInt(
-                              event.target.value,
-                              DEFAULT_THRESHOLD_VALUES.unansweredMentionDays,
+                            unansweredMentionDays: Math.max(
+                              5,
+                              toPositiveInt(
+                                event.target.value,
+                                DEFAULT_THRESHOLD_VALUES.unansweredMentionDays,
+                              ),
                             ),
                           },
                         }))

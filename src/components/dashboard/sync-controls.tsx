@@ -49,6 +49,19 @@ type IssueStatusAutomationPostResult = {
   summary: IssueStatusAutomationSummary | null;
 };
 
+type MentionClassificationSummary = {
+  status: "completed" | "skipped";
+  totalCandidates: number;
+  attempted: number;
+  updated: number;
+  unchanged: number;
+  skipped: number;
+  requiresResponseCount: number;
+  notRequiringResponseCount: number;
+  errors: number;
+  message?: string;
+};
+
 async function parseApiResponse<T>(
   response: Response,
 ): Promise<ApiResponse<T>> {
@@ -104,6 +117,37 @@ const backupStatusColors: Record<string, string> = {
   restored: "text-sky-600",
   idle: "text-muted-foreground",
 };
+
+type UnansweredMentionStatusValue =
+  | "running"
+  | "success"
+  | "failed"
+  | "partial"
+  | "skipped";
+
+const unansweredMentionStatusLabels: Record<
+  UnansweredMentionStatusValue,
+  string
+> = {
+  running: "실행 중",
+  success: "성공",
+  failed: "실패",
+  partial: "부분 완료",
+  skipped: "건너뜀",
+};
+
+function isUnansweredMentionStatusValue(
+  value: unknown,
+): value is UnansweredMentionStatusValue {
+  return (
+    typeof value === "string" &&
+    (value === "running" ||
+      value === "success" ||
+      value === "failed" ||
+      value === "partial" ||
+      value === "skipped")
+  );
+}
 
 const backupTriggerLabels: Record<string, string> = {
   automatic: "자동",
@@ -379,6 +423,7 @@ export function SyncControls({
     useState(false);
   const [isRunningStatusAutomation, setIsRunningStatusAutomation] =
     useState(false);
+  const [isClassifyingMentions, setIsClassifyingMentions] = useState(false);
   const activityCacheFilterCounts = activityCacheSummary
     ? parseFilterCounts(activityCacheSummary.filterOptions.metadata)
     : null;
@@ -662,6 +707,30 @@ export function SyncControls({
       lastCompleted.getTime() + intervalMinutes * 60 * 1000,
     ).toISOString();
   }, [autoEnabled, config?.sync_interval_minutes, latestSyncCompletedAt]);
+
+  const unansweredStatusValue = isUnansweredMentionStatusValue(
+    config?.unanswered_mentions_last_status,
+  )
+    ? config?.unanswered_mentions_last_status
+    : null;
+  const unansweredStatusLabel = unansweredStatusValue
+    ? (unansweredMentionStatusLabels[unansweredStatusValue] ??
+      unansweredStatusValue)
+    : null;
+  const unansweredLastStartedAtIso = toIsoString(
+    config?.unanswered_mentions_last_started_at ?? null,
+  );
+  const unansweredLastCompletedAtIso = toIsoString(
+    config?.unanswered_mentions_last_completed_at ?? null,
+  );
+  const unansweredLastSuccessAtIso = toIsoString(
+    config?.unanswered_mentions_last_success_at ?? null,
+  );
+  const unansweredLastError =
+    typeof config?.unanswered_mentions_last_error === "string" &&
+    config.unanswered_mentions_last_error
+      ? config.unanswered_mentions_last_error
+      : null;
 
   async function handleBackfill() {
     if (!canManageSync) {
@@ -980,6 +1049,58 @@ export function SyncControls({
     }
   }
 
+  async function handleMentionClassification() {
+    if (!canManageSync) {
+      setFeedback(ADMIN_ONLY_MESSAGE);
+      return;
+    }
+
+    setIsClassifyingMentions(true);
+    try {
+      const response = await fetch(
+        "/api/attention/unanswered-mentions/classify",
+        {
+          method: "POST",
+        },
+      );
+      const data =
+        await parseApiResponse<MentionClassificationSummary>(response);
+      if (!data.success) {
+        throw new Error(data.message ?? "응답 없는 멘션 분류에 실패했습니다.");
+      }
+
+      const summary = data.result ?? null;
+      if (summary) {
+        const detailParts = [
+          `후보 ${summary.totalCandidates.toLocaleString()}건`,
+          `새 평가 ${summary.updated.toLocaleString()}건`,
+          `유지 ${summary.unchanged.toLocaleString()}건`,
+        ];
+        if (summary.skipped > 0) {
+          detailParts.push(`건너뜀 ${summary.skipped.toLocaleString()}건`);
+        }
+        if (summary.errors > 0) {
+          detailParts.push(`오류 ${summary.errors.toLocaleString()}건`);
+        }
+        const detail = detailParts.join(", ");
+        const baseMessage =
+          summary.message ?? "응답 없는 멘션 분류를 완료했습니다.";
+        setFeedback(detail.length ? `${baseMessage} (${detail})` : baseMessage);
+      } else {
+        setFeedback("응답 없는 멘션 분류를 완료했습니다.");
+      }
+      router.refresh();
+    } catch (error) {
+      setFeedback(
+        error instanceof Error
+          ? error.message
+          : "응답 없는 멘션 분류 중 오류가 발생했습니다.",
+      );
+    } finally {
+      setIsClassifyingMentions(false);
+    }
+  }
+
   async function handleIssueStatusAutomation() {
     if (!canManageSync) {
       setFeedback(ADMIN_ONLY_MESSAGE);
@@ -1250,6 +1371,62 @@ export function SyncControls({
                 {isRefreshingActivityCache
                   ? "Activity 캐시 새로 고치는 중..."
                   : "Activity 캐시 새로고침"}
+              </Button>
+            </CardFooter>
+          </Card>
+
+          <Card className="border-border/70">
+            <CardHeader>
+              <CardTitle>응답 없는 멘션 분류</CardTitle>
+              <CardDescription>
+                OpenAI를 사용해 멘션이 실제 응답 요청인지 판별합니다.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm text-muted-foreground">
+              <p>
+                분류 결과는 데이터베이스에 저장되어 Activity 화면의 멘션 주의
+                항목에 반영됩니다.
+              </p>
+              <p>OpenAI API 키가 설정되어 있어야 실행됩니다.</p>
+              <dl className="space-y-1 text-xs">
+                <div className="flex justify-between">
+                  <dt className="text-muted-foreground">상태</dt>
+                  <dd className="text-foreground">
+                    {unansweredStatusLabel ?? "정보 없음"}
+                  </dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-muted-foreground">최근 실행</dt>
+                  <dd className="text-foreground">
+                    {formatDateTime(unansweredLastStartedAtIso) ?? "-"}
+                  </dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-muted-foreground">최근 완료</dt>
+                  <dd className="text-foreground">
+                    {formatDateTime(unansweredLastCompletedAtIso) ?? "-"}
+                  </dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-muted-foreground">최근 성공</dt>
+                  <dd className="text-foreground">
+                    {formatDateTime(unansweredLastSuccessAtIso) ?? "-"}
+                  </dd>
+                </div>
+              </dl>
+              {unansweredLastError ? (
+                <p className="text-xs text-red-600 dark:text-red-300">
+                  최근 오류: {unansweredLastError}
+                </p>
+              ) : null}
+            </CardContent>
+            <CardFooter>
+              <Button
+                onClick={handleMentionClassification}
+                disabled={isClassifyingMentions || !canManageSync}
+                title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+              >
+                {isClassifyingMentions ? "분류 실행 중..." : "분류 실행"}
               </Button>
             </CardFooter>
           </Card>

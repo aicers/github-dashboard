@@ -510,6 +510,21 @@ const SCHEMA_STATEMENTS = [
     mentioned_ids TEXT[] NOT NULL DEFAULT '{}',
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
+  `CREATE TABLE IF NOT EXISTS unanswered_mention_classifications (
+    comment_id TEXT NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
+    mentioned_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    comment_body_hash TEXT NOT NULL,
+    prompt_version TEXT NOT NULL DEFAULT 'v1',
+    requires_response BOOLEAN NOT NULL,
+    model TEXT,
+    raw_response JSONB,
+    last_evaluated_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (comment_id, mentioned_user_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS unanswered_mention_classifications_hash_idx
+     ON unanswered_mention_classifications(comment_body_hash)`,
   `CREATE TABLE IF NOT EXISTS activity_reaction_users (
     item_id TEXT PRIMARY KEY,
     item_type TEXT NOT NULL,
@@ -568,6 +583,11 @@ const SCHEMA_STATEMENTS = [
     backup_last_completed_at TIMESTAMPTZ,
     backup_last_status TEXT NOT NULL DEFAULT 'idle',
     backup_last_error TEXT,
+    unanswered_mentions_last_started_at TIMESTAMPTZ,
+    unanswered_mentions_last_completed_at TIMESTAMPTZ,
+    unanswered_mentions_last_success_at TIMESTAMPTZ,
+    unanswered_mentions_last_status TEXT,
+    unanswered_mentions_last_error TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
@@ -585,6 +605,11 @@ const SCHEMA_STATEMENTS = [
   `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS backup_last_completed_at TIMESTAMPTZ`,
   `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS backup_last_status TEXT NOT NULL DEFAULT 'idle'`,
   `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS backup_last_error TEXT`,
+  `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS unanswered_mentions_last_started_at TIMESTAMPTZ`,
+  `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS unanswered_mentions_last_completed_at TIMESTAMPTZ`,
+  `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS unanswered_mentions_last_success_at TIMESTAMPTZ`,
+  `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS unanswered_mentions_last_status TEXT`,
+  `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS unanswered_mentions_last_error TEXT`,
   `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS org_holiday_calendar_codes TEXT[] NOT NULL DEFAULT '{}'`,
   `UPDATE sync_config
      SET org_holiday_calendar_codes = ARRAY['${DEFAULT_HOLIDAY_CALENDAR}']

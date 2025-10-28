@@ -48,9 +48,19 @@ const optionalPositiveIntegerField = z
     return value;
   });
 
+const unansweredMentionThresholdField =
+  optionalPositiveIntegerField.superRefine((value, ctx) => {
+    if (typeof value === "number" && value < 5) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Unanswered mention threshold must be at least 5 days.",
+      });
+    }
+  });
+
 const thresholdsSchema = z
   .object({
-    unansweredMentionDays: optionalPositiveIntegerField,
+    unansweredMentionDays: unansweredMentionThresholdField,
     reviewRequestDays: optionalPositiveIntegerField,
     stalePrDays: optionalPositiveIntegerField,
     idlePrDays: optionalPositiveIntegerField,

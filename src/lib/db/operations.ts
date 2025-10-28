@@ -796,6 +796,11 @@ export async function getSyncConfig() {
             backup_last_completed_at,
             backup_last_status,
             backup_last_error,
+            unanswered_mentions_last_started_at,
+            unanswered_mentions_last_completed_at,
+            unanswered_mentions_last_success_at,
+            unanswered_mentions_last_status,
+            unanswered_mentions_last_error,
             org_holiday_calendar_codes
      FROM sync_config
      WHERE id = 'default'`,
@@ -826,6 +831,11 @@ export async function updateSyncConfig(params: {
   backupLastCompletedAt?: string | null;
   backupLastStatus?: string;
   backupLastError?: string | null;
+  unansweredMentionsLastStartedAt?: string | null;
+  unansweredMentionsLastCompletedAt?: string | null;
+  unansweredMentionsLastSuccessAt?: string | null;
+  unansweredMentionsLastStatus?: string | null;
+  unansweredMentionsLastError?: string | null;
 }) {
   const fields = [] as string[];
   const values = [] as unknown[];
@@ -942,6 +952,33 @@ export async function updateSyncConfig(params: {
   if (params.backupLastError !== undefined) {
     fields.push(`backup_last_error = $${fields.length + 1}`);
     values.push(params.backupLastError);
+  }
+
+  if (params.unansweredMentionsLastStartedAt !== undefined) {
+    fields.push(`unanswered_mentions_last_started_at = $${fields.length + 1}`);
+    values.push(params.unansweredMentionsLastStartedAt);
+  }
+
+  if (params.unansweredMentionsLastCompletedAt !== undefined) {
+    fields.push(
+      `unanswered_mentions_last_completed_at = $${fields.length + 1}`,
+    );
+    values.push(params.unansweredMentionsLastCompletedAt);
+  }
+
+  if (params.unansweredMentionsLastSuccessAt !== undefined) {
+    fields.push(`unanswered_mentions_last_success_at = $${fields.length + 1}`);
+    values.push(params.unansweredMentionsLastSuccessAt);
+  }
+
+  if (params.unansweredMentionsLastStatus !== undefined) {
+    fields.push(`unanswered_mentions_last_status = $${fields.length + 1}`);
+    values.push(params.unansweredMentionsLastStatus);
+  }
+
+  if (params.unansweredMentionsLastError !== undefined) {
+    fields.push(`unanswered_mentions_last_error = $${fields.length + 1}`);
+    values.push(params.unansweredMentionsLastError);
   }
 
   if (!fields.length) {

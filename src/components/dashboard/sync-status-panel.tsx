@@ -61,6 +61,14 @@ type ApiRun = {
   logs?: ApiRunLog[];
 };
 
+type ApiConfig = {
+  unanswered_mentions_last_started_at?: unknown;
+  unanswered_mentions_last_completed_at?: unknown;
+  unanswered_mentions_last_success_at?: unknown;
+  unanswered_mentions_last_status?: unknown;
+  unanswered_mentions_last_error?: unknown;
+};
+
 type ApiStatusResponse = {
   success: boolean;
   status?: {
@@ -73,8 +81,40 @@ type ApiStatusResponse = {
       started_at?: string | null;
       finished_at?: string | null;
     }>;
+    config?: ApiConfig;
   };
   message?: string;
+};
+
+type MentionStatusValue =
+  | "running"
+  | "success"
+  | "failed"
+  | "partial"
+  | "skipped";
+
+type MentionBatchState = {
+  status: "queued" | "success" | "failed";
+  batchSize: number;
+  commentIds: string[];
+  timestamp: string;
+  error?: string | null;
+};
+
+type MentionStatusState = {
+  status: MentionStatusValue;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  successAt?: string | null;
+  message?: string | null;
+  totals?: {
+    totalCandidates: number;
+    attempted: number;
+    updated: number;
+    errors: number;
+    skipped: number;
+  };
+  lastBatch?: MentionBatchState;
 };
 
 const RUN_TYPE_LABELS: Record<SyncRunType, string> = {
@@ -114,6 +154,34 @@ const LOG_STATUS_STYLES: Record<SyncLogStatus, string> = {
   success: "text-emerald-600 dark:text-emerald-300",
   failed: "text-red-600 dark:text-red-300",
 };
+
+const MENTION_STATUS_LABELS: Record<MentionStatusValue, string> = {
+  running: "Running",
+  success: "Success",
+  failed: "Failed",
+  partial: "Partial",
+  skipped: "Skipped",
+};
+
+function normalizeTimestampValue(value: unknown): string | null {
+  if (!value) {
+    return null;
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  return null;
+}
+
+function isMentionStatusValue(value: unknown): value is MentionStatusValue {
+  return (
+    typeof value === "string" &&
+    ["running", "success", "failed", "partial", "skipped"].includes(value)
+  );
+}
 
 const STALE_RUN_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -208,6 +276,9 @@ export function SyncStatusPanel() {
   const [runs, setRuns] = useState<Map<number, RunState>>(new Map());
   const [runOrder, setRunOrder] = useState<number[]>([]);
   const [orphanLogs, setOrphanLogs] = useState<ResourceStatus[]>([]);
+  const [mentionStatus, setMentionStatus] = useState<MentionStatusState | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -293,6 +364,40 @@ export function SyncStatusPanel() {
       }
 
       setOrphanLogs(orphanEntries.slice(0, 10));
+
+      if (payload.status.config) {
+        const config = payload.status.config;
+        const startedAt = normalizeTimestampValue(
+          config.unanswered_mentions_last_started_at,
+        );
+        const completedAt = normalizeTimestampValue(
+          config.unanswered_mentions_last_completed_at,
+        );
+        const successAt = normalizeTimestampValue(
+          config.unanswered_mentions_last_success_at,
+        );
+        const statusValue = isMentionStatusValue(
+          config.unanswered_mentions_last_status,
+        )
+          ? config.unanswered_mentions_last_status
+          : undefined;
+        const message =
+          typeof config.unanswered_mentions_last_error === "string"
+            ? config.unanswered_mentions_last_error
+            : null;
+
+        if (statusValue || startedAt || completedAt || successAt || message) {
+          setMentionStatus((previous) => ({
+            status: statusValue ?? previous?.status ?? "skipped",
+            startedAt: startedAt ?? previous?.startedAt ?? null,
+            completedAt: completedAt ?? previous?.completedAt ?? null,
+            successAt: successAt ?? previous?.successAt ?? null,
+            message: message ?? previous?.message ?? null,
+            totals: previous?.totals,
+            lastBatch: previous?.lastBatch,
+          }));
+        }
+      }
     } catch (cause) {
       console.error("[sync-status-panel] Failed to load initial status", cause);
       setError(
@@ -307,6 +412,38 @@ export function SyncStatusPanel() {
     (event: SyncStreamEvent) => {
       if (event.type === "heartbeat") {
         setLastHeartbeat(event.timestamp);
+        return;
+      }
+
+      if (event.type === "unanswered-mentions-status") {
+        setMentionStatus((previous) => ({
+          status: event.status,
+          startedAt: event.startedAt ?? previous?.startedAt ?? null,
+          completedAt: event.completedAt ?? previous?.completedAt ?? null,
+          successAt: event.successAt ?? previous?.successAt ?? null,
+          message: event.message ?? previous?.message ?? null,
+          totals: event.totals ?? previous?.totals,
+          lastBatch: previous?.lastBatch,
+        }));
+        return;
+      }
+
+      if (event.type === "unanswered-mentions-batch") {
+        setMentionStatus((previous) => ({
+          status: previous?.status ?? "running",
+          startedAt: previous?.startedAt ?? null,
+          completedAt: previous?.completedAt ?? null,
+          successAt: previous?.successAt ?? null,
+          message: previous?.message ?? null,
+          totals: previous?.totals,
+          lastBatch: {
+            status: event.status,
+            batchSize: event.batchSize,
+            commentIds: event.commentIds,
+            timestamp: event.timestamp,
+            error: event.error ?? null,
+          },
+        }));
         return;
       }
 
@@ -790,6 +927,55 @@ export function SyncStatusPanel() {
                   </ul>
                 )}
               </div>
+              {mentionStatus ? (
+                <div className="rounded-md border border-primary/40 bg-primary/5 p-3 text-xs text-primary dark:border-primary/30 dark:bg-primary/10">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-primary">
+                    <span className="font-semibold">
+                      Unanswered mentions ·{" "}
+                      {MENTION_STATUS_LABELS[mentionStatus.status]}
+                    </span>
+                    <span className="text-muted-foreground">
+                      Started {formatTimestamp(mentionStatus.startedAt ?? null)}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex flex-col gap-1 text-muted-foreground">
+                    <span>
+                      Last success:{" "}
+                      {formatTimestamp(mentionStatus.successAt ?? null)}
+                    </span>
+                    <span>
+                      Last completed:{" "}
+                      {formatTimestamp(mentionStatus.completedAt ?? null)}
+                    </span>
+                    {mentionStatus.totals ? (
+                      <span>
+                        Totals · candidates{" "}
+                        {mentionStatus.totals.totalCandidates}, attempted{" "}
+                        {mentionStatus.totals.attempted}, updated{" "}
+                        {mentionStatus.totals.updated}, errors{" "}
+                        {mentionStatus.totals.errors}, skipped{" "}
+                        {mentionStatus.totals.skipped}
+                      </span>
+                    ) : null}
+                    {mentionStatus.lastBatch ? (
+                      <span>
+                        Last batch ({mentionStatus.lastBatch.batchSize}){" "}
+                        {mentionStatus.lastBatch.status}
+                        {" · "}
+                        {formatTimestamp(mentionStatus.lastBatch.timestamp)}
+                        {mentionStatus.lastBatch.error
+                          ? ` · ${mentionStatus.lastBatch.error}`
+                          : ""}
+                      </span>
+                    ) : null}
+                    {mentionStatus.message ? (
+                      <span className="text-red-600 dark:text-red-300">
+                        {mentionStatus.message}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
               {activeRun.summary ? (
                 <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-500/60 dark:bg-emerald-500/10 dark:text-emerald-200">
                   <span className="font-medium">Totals:</span>{" "}
