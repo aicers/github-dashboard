@@ -164,18 +164,27 @@ export function parseActivityListParams(
       "pending",
       "canceled",
     ]),
-    attention: parseEnumValues<ActivityAttentionFilter>(
-      searchParams,
-      "attention",
-      [
-        "unanswered_mentions",
-        "review_requests_pending",
-        "pr_open_too_long",
-        "pr_inactive",
-        "issue_backlog",
-        "issue_stalled",
-        "no_attention",
-      ],
+    attention: Array.from(
+      new Set(
+        (
+          parseEnumValues<ActivityAttentionFilter>(searchParams, "attention", [
+            "unanswered_mentions",
+            "review_requests_pending",
+            "pr_open_too_long",
+            "pr_inactive",
+            "issue_backlog",
+            "issue_stalled",
+            "no_attention",
+          ]) ?? []
+        )
+          .filter(
+            (value): value is ActivityAttentionFilter =>
+              typeof value === "string",
+          )
+          .map((value) =>
+            value === "pr_open_too_long" ? "pr_inactive" : value,
+          ),
+      ),
     ),
     linkedIssueStates: parseEnumValues<ActivityLinkedIssueFilter>(
       searchParams,

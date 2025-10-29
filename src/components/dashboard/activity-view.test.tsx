@@ -388,43 +388,6 @@ describe("ActivityView", () => {
     });
   });
 
-  it("applies author, assignee, and reviewer for stale PR attention", async () => {
-    mockFetchJsonOnce({ filters: [], limit: 5 });
-    const props = createDefaultProps();
-    render(<ActivityView {...props} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "alice" }));
-    fireEvent.click(screen.getByRole("button", { name: "오래된 PR" }));
-    fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
-
-    await waitFor(() => {
-      expect(screen.getAllByLabelText("Remove alice")).toHaveLength(3);
-    });
-    expect(screen.queryAllByLabelText("Remove optional alice")).toHaveLength(0);
-
-    mockFetchJsonOnce(buildActivityListResultFixture());
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "필터 적용" }));
-    });
-
-    await waitFor(() => {
-      const request = getLastActivityCall();
-      expect(request).toBeTruthy();
-      if (!request) return;
-      const url = new URL(request.url);
-      expect(url.searchParams.getAll("attention")).toEqual([
-        "pr_open_too_long",
-      ]);
-      expect(url.searchParams.getAll("authorId")).toEqual(["user-alice"]);
-      expect(url.searchParams.getAll("assigneeId")).toEqual(["user-alice"]);
-      expect(url.searchParams.getAll("reviewerId")).toEqual(["user-alice"]);
-      expect(url.searchParams.getAll("maintainerId")).toEqual(["user-alice"]);
-      expect(url.searchParams.has("mentionedUserId")).toBe(false);
-      expect(url.searchParams.has("commenterId")).toBe(false);
-      expect(url.searchParams.has("reactorId")).toBe(false);
-    });
-  });
-
   it("applies author, assignee, and reviewer for inactive PR attention", async () => {
     mockFetchJsonOnce({ filters: [], limit: 5 });
     const props = createDefaultProps();
@@ -576,7 +539,7 @@ describe("ActivityView", () => {
     });
   });
 
-  it("applies multiple selected people across blue roles for stale PR attention", async () => {
+  it("applies multiple selected people across blue roles for inactive PR attention", async () => {
     mockFetchJsonOnce({ filters: [], limit: 5 });
     const props = createDefaultProps();
 
@@ -584,7 +547,7 @@ describe("ActivityView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "alice" }));
     fireEvent.click(screen.getByRole("button", { name: "bob" }));
-    fireEvent.click(screen.getByRole("button", { name: "오래된 PR" }));
+    fireEvent.click(screen.getByRole("button", { name: "업데이트 없는 PR" }));
     fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
 
     await waitFor(() => {
@@ -618,6 +581,7 @@ describe("ActivityView", () => {
       expect(url.searchParams.has("mentionedUserId")).toBe(false);
       expect(url.searchParams.has("commenterId")).toBe(false);
       expect(url.searchParams.has("reactorId")).toBe(false);
+      expect(url.searchParams.getAll("attention")).toEqual(["pr_inactive"]);
     });
   });
 
@@ -628,8 +592,8 @@ describe("ActivityView", () => {
     render(<ActivityView {...props} />);
 
     fireEvent.click(screen.getByRole("button", { name: "alice" }));
-    fireEvent.click(screen.getByRole("button", { name: "오래된 PR" }));
-    fireEvent.click(screen.getByRole("button", { name: "오래된 PR" }));
+    fireEvent.click(screen.getByRole("button", { name: "업데이트 없는 PR" }));
+    fireEvent.click(screen.getByRole("button", { name: "업데이트 없는 PR" }));
     fireEvent.click(screen.getByRole("button", { name: "alice" }));
     fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
 
