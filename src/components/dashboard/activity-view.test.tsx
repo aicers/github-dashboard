@@ -14,7 +14,10 @@ import {
   buildActivityItemFixture,
   buildActivityListResultFixture,
 } from "@/components/test-harness/activity-fixtures";
-import type { ActivityListParams } from "@/lib/activity/types";
+import type {
+  ActivityFilterOptions,
+  ActivityListParams,
+} from "@/lib/activity/types";
 
 import { buildActivityListParams } from "../../../tests/helpers/activity-filters";
 import {
@@ -60,6 +63,7 @@ function createDefaultProps(overrides?: {
   initialParams?: ActivityListParams;
   currentUserId?: string | null;
   currentUserIsAdmin?: boolean;
+  filterOptions?: ActivityFilterOptions;
 }) {
   const initialData =
     overrides?.initialData ??
@@ -74,7 +78,8 @@ function createDefaultProps(overrides?: {
 
   return {
     initialData,
-    filterOptions: buildActivityFilterOptionsFixture(),
+    filterOptions:
+      overrides?.filterOptions ?? buildActivityFilterOptionsFixture(),
     initialParams:
       overrides?.initialParams ?? buildActivityListParams({ page: 1 }),
     currentUserId: overrides?.currentUserId ?? "user-1",
@@ -707,5 +712,29 @@ describe("ActivityView", () => {
     );
 
     expect(screen.getByRole("button", { name: "필터 적용" })).toBeDisabled();
+  });
+
+  it("surfaces current user chip even when filter options do not include the user", async () => {
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+    const baseOptions = buildActivityFilterOptionsFixture();
+    const customOptions: ActivityFilterOptions = {
+      ...baseOptions,
+      users: [],
+    };
+
+    const props = createDefaultProps({
+      filterOptions: customOptions,
+      currentUserId: "user-missing",
+      initialParams: buildActivityListParams({
+        peopleSelection: ["user-missing"],
+      }),
+    });
+
+    render(<ActivityView {...props} />);
+
+    const userChip = await screen.findByRole("button", {
+      name: "user-missing",
+    });
+    expect(userChip).toHaveAttribute("aria-pressed", "true");
   });
 });

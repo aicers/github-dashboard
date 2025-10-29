@@ -448,3 +448,95 @@ test.describe("ActivityView attention + people query mapping", () => {
     });
   }
 });
+
+test.describe("ActivityView thresholds & tooltips", () => {
+  test.setTimeout(30000);
+
+  test("renders five threshold inputs with expected labels in advanced filter", async ({
+    page,
+  }) => {
+    await page.goto("/test-harness/auth/session?userId=activity-user");
+
+    await page.route("**/api/activity/filters**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ filters: [], limit: 5 }),
+      });
+    });
+
+    await page.route("**/api/activity?**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(buildActivityListResultFixture()),
+      });
+    });
+
+    await page.goto(ACTIVITY_PATH);
+    await page.waitForTimeout(200);
+
+    await page.getByRole("button", { name: "고급 필터 보기" }).click();
+
+    const labels = [
+      "정체 Backlog 이슈 기준일",
+      "정체 In Progress 이슈 기준일",
+      "업데이트 없는 PR 기준일",
+      "응답 없는 리뷰 기준일",
+      "응답 없는 멘션 기준일",
+    ];
+
+    const placeholders = [
+      "Backlog 정체",
+      "In Progress 정체",
+      "PR 정체",
+      "리뷰 무응답",
+      "멘션 무응답",
+    ];
+
+    for (const label of labels) {
+      await expect(page.getByText(label)).toBeVisible();
+    }
+
+    for (const placeholder of placeholders) {
+      await expect(page.getByPlaceholder(placeholder)).toBeVisible();
+    }
+  });
+
+  test("shows updated tooltip text for 업데이트 없는 PR attention chip", async ({
+    page,
+  }) => {
+    await page.goto("/test-harness/auth/session?userId=activity-user");
+
+    await page.route("**/api/activity/filters**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ filters: [], limit: 5 }),
+      });
+    });
+
+    await page.route("**/api/activity?**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(buildActivityListResultFixture()),
+      });
+    });
+
+    await page.goto(ACTIVITY_PATH);
+    await page.waitForTimeout(200);
+
+    const attentionChip = page.getByRole("button", {
+      name: "업데이트 없는 PR",
+    });
+    await attentionChip.hover();
+
+    const tooltipText =
+      "구성원 선택 시, 구성원이 PR의 작성자, 담당자, 리뷰어, 또는 저장소 책임자인 항목만 표시합니다. octoaide가 남긴 활동은 업데이트로 간주하지 않습니다.";
+    await expect(page.getByText(tooltipText)).toBeVisible();
+    await expect(page.getByText(tooltipText)).toHaveText(
+      "구성원 선택 시, 구성원이 PR의 작성자, 담당자, 리뷰어, 또는 저장소 책임자인 항목만 표시합니다. octoaide가 남긴 활동은 업데이트로 간주하지 않습니다.",
+    );
+  });
+});
