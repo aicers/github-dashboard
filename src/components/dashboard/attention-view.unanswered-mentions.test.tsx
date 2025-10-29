@@ -75,6 +75,13 @@ function buildMentionItem(params: {
     target,
     container,
     commentExcerpt,
+    classification: {
+      requiresResponse: true,
+      manualRequiresResponse: null,
+      manualRequiresResponseAt: null,
+      manualDecisionIsStale: false,
+      lastEvaluatedAt: null,
+    },
   } satisfies MentionAttentionItem;
 }
 

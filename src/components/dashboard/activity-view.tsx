@@ -3,6 +3,7 @@
 import {
   Activity as ActivityIcon,
   AlertTriangle,
+  Bot,
   ChevronDown,
   Info,
   type LucideIcon,
@@ -12,6 +13,7 @@ import {
 import { DateTime } from "luxon";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  Fragment,
   type KeyboardEvent,
   type ReactNode,
   useCallback,
@@ -49,6 +51,7 @@ import type {
   ActivityLinkedIssueFilter,
   ActivityListParams,
   ActivityListResult,
+  ActivityMentionWait,
   ActivityPullRequestStatusFilter,
   ActivitySavedFilter,
   IssueProjectStatus,
@@ -65,6 +68,7 @@ import {
   ISSUE_STATUS_LABEL_MAP,
   ISSUE_STATUS_OPTIONS,
   ISSUE_STATUS_VALUE_SET,
+  MentionOverrideControls,
   normalizeProjectFieldForComparison,
   PROJECT_FIELD_BADGE_CLASS,
   PROJECT_FIELD_LABELS,
@@ -89,6 +93,7 @@ type ActivityViewProps = {
   filterOptions: ActivityFilterOptions;
   initialParams: ActivityListParams;
   currentUserId: string | null;
+  currentUserIsAdmin: boolean;
 };
 
 const ATTENTION_TOOLTIPS: Partial<Record<ActivityAttentionFilter, string>> = {
@@ -857,26 +862,70 @@ function toPositiveInt(value: string, fallback: number) {
   return parsed;
 }
 
-function buildAttentionBadges(item: ActivityItem) {
-  const badges: string[] = [];
+type AttentionBadgeDescriptor = {
+  key: string;
+  label: string;
+  variant: "default" | "manual" | "ai-soft";
+  tooltip?: string;
+};
+
+function buildAttentionBadges(
+  item: ActivityItem,
+  options: { useMentionAi: boolean },
+) {
+  const badges: AttentionBadgeDescriptor[] = [];
+  const push = (
+    key: string,
+    label: string,
+    variant: AttentionBadgeDescriptor["variant"] = "default",
+    tooltip?: string,
+  ) => {
+    badges.push({ key, label, variant, tooltip });
+  };
+
+  const hasManualSuppress = item.mentionWaits?.some(
+    (wait) => wait.manualRequiresResponse === false,
+  );
+  const hasAiSoftBadge =
+    !options.useMentionAi &&
+    item.mentionWaits?.some((wait) => {
+      if (wait.manualRequiresResponse === true) {
+        return false;
+      }
+      return wait.requiresResponse === false;
+    });
+
   if (item.attention.unansweredMention) {
-    badges.push("응답 없는 멘션");
+    if (hasAiSoftBadge) {
+      push(
+        "unanswered-mention",
+        "응답 없는 멘션",
+        "ai-soft",
+        "AI는 응답을 요구하지 않은 멘션으로 생각합니다.",
+      );
+    } else {
+      push("unanswered-mention", "응답 없는 멘션");
+    }
   }
   if (item.attention.reviewRequestPending) {
-    badges.push("응답 없는 리뷰 요청");
+    push("review-request", "응답 없는 리뷰 요청");
   }
   if (item.attention.staleOpenPr) {
-    badges.push("오래된 PR");
+    push("stale-pr", "오래된 PR");
   }
   if (item.attention.idlePr) {
-    badges.push("업데이트 없는 PR");
+    push("idle-pr", "업데이트 없는 PR");
   }
   if (item.attention.backlogIssue) {
-    badges.push("정체된 Backlog 이슈");
+    push("backlog-issue", "정체된 Backlog 이슈");
   }
   if (item.attention.stalledIssue) {
-    badges.push("정체된 In Progress 이슈");
+    push("stalled-issue", "정체된 In Progress 이슈");
   }
+  if (hasManualSuppress) {
+    push("manual-suppress", "응답 요구가 아님", "manual");
+  }
+
   return badges;
 }
 
@@ -1272,6 +1321,96 @@ function TogglePill({
   );
 }
 
+function AiFilterControl({
+  checked,
+  onToggle,
+  tooltipId,
+  tooltipText,
+}: {
+  checked: boolean;
+  onToggle: () => void;
+  tooltipId?: string;
+  tooltipText: string;
+}) {
+  const buttonClass = checked
+    ? "border-sky-500 bg-sky-500 text-white shadow-md shadow-sky-500/30"
+    : "bg-transparent text-muted-foreground hover:bg-muted/30 hover:text-foreground";
+
+  const staticGlowClass = checked
+    ? "bg-sky-500/25 opacity-70"
+    : "bg-sky-500/10 opacity-0 group-hover:opacity-40";
+  const pulseRingClass = checked
+    ? "bg-sky-400/30 opacity-70"
+    : "bg-sky-400/15 opacity-0 group-hover:opacity-45";
+
+  return (
+    <>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-describedby={tooltipId}
+        onClick={onToggle}
+        className={cn(
+          "group relative inline-flex h-7 w-7 items-center justify-center rounded-full border border-border/60 transition-colors duration-150 ease-out",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+          buttonClass,
+        )}
+      >
+        <span className="relative z-10">
+          <Bot
+            className="h-3.5 w-3.5 transition-transform duration-300 group-hover:scale-110 group-active:scale-95"
+            aria-hidden="true"
+          />
+        </span>
+        <span
+          className={cn(
+            "pointer-events-none absolute -inset-1 z-0 rounded-full blur-md transition duration-[900ms]",
+            staticGlowClass,
+          )}
+          aria-hidden="true"
+        />
+        <span
+          className={cn(
+            "pointer-events-none absolute -inset-0.5 z-0 rounded-full",
+            pulseRingClass,
+          )}
+          aria-hidden="true"
+          style={{
+            animation: `aiPulse ${checked ? "3.1s" : "4s"} ease-out infinite`,
+          }}
+        />
+        <span
+          id={tooltipId}
+          role="tooltip"
+          className="pointer-events-none absolute left-1/2 top-full z-20 w-52 -translate-x-1/2 translate-y-2 rounded-md border border-border/60 bg-background px-2 py-1 text-xs text-muted-foreground opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+        >
+          {tooltipText}
+        </span>
+        <span className="sr-only">
+          {checked ? "AI 분류 사용 중" : "AI 분류 사용 안 함"}
+        </span>
+      </button>
+      <style jsx>{`
+        @keyframes aiPulse {
+          0% {
+            transform: scale(1);
+            opacity: 0.6;
+          }
+          55% {
+            transform: scale(1.4);
+            opacity: 0.12;
+          }
+          100% {
+            transform: scale(1.5);
+            opacity: 0;
+          }
+        }
+      `}</style>
+    </>
+  );
+}
+
 function QuickFilterButton({
   active,
   label,
@@ -1599,6 +1738,7 @@ export function ActivityView({
   filterOptions,
   initialParams,
   currentUserId,
+  currentUserIsAdmin,
 }: ActivityViewProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1779,6 +1919,9 @@ export function ActivityView({
   const [savedFiltersError, setSavedFiltersError] = useState<string | null>(
     null,
   );
+  const [pendingMentionOverrideKey, setPendingMentionOverrideKey] = useState<
+    string | null
+  >(null);
   const [selectedSavedFilterId, setSelectedSavedFilterId] = useState("");
   const [saveFilterName, setSaveFilterName] = useState("");
   const [saveFilterError, setSaveFilterError] = useState<string | null>(null);
@@ -1799,6 +1942,8 @@ export function ActivityView({
   const savedFilterSelectId = useId();
   const jumpDateInputId = useId();
   const attentionTooltipPrefix = useId();
+  const mentionAiTooltipId = `${attentionTooltipPrefix}-mention-ai`;
+  const mentionAiTooltipText = "응답을 요구한 멘션인지 여부를 AI가 판단합니다.";
 
   useEffect(() => {
     setDraft((current) => normalizeFilterState(current));
@@ -2558,6 +2703,167 @@ export function ActivityView({
     [perPageDefault, resolveLabelKeys, router, showNotification],
   );
 
+  const handleMentionOverride = useCallback(
+    async (params: {
+      itemId: string;
+      commentId: string;
+      mentionedUserId: string;
+      state: "suppress" | "force" | "clear";
+    }) => {
+      const { itemId, commentId, mentionedUserId, state } = params;
+      const overrideKey = `${commentId}::${mentionedUserId}`;
+      setPendingMentionOverrideKey(overrideKey);
+
+      try {
+        const response = await fetch(
+          "/api/attention/unanswered-mentions/manual",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              commentId,
+              mentionedUserId,
+              state,
+              syncCompletedAt: listData.lastSyncCompletedAt ?? undefined,
+            }),
+          },
+        );
+
+        let payload: unknown;
+        try {
+          payload = await response.json();
+        } catch {
+          payload = {};
+        }
+
+        const result = (payload as {
+          success?: boolean;
+          result?: {
+            manualRequiresResponse: boolean | null;
+            manualRequiresResponseAt: string | null;
+            manualDecisionIsStale: boolean;
+            requiresResponse: boolean | null;
+            lastEvaluatedAt: string | null;
+          };
+          message?: string;
+        }) ?? { success: false };
+
+        if (!response.ok || !result.success || !result.result) {
+          throw new Error(
+            result.message ?? "응답 없는 멘션 상태를 업데이트하지 못했습니다.",
+          );
+        }
+
+        const classification = result.result;
+        const manualEffective = classification.manualDecisionIsStale
+          ? null
+          : classification.manualRequiresResponse;
+
+        const computeNextAttention = (fallback: boolean) => {
+          if (manualEffective === false) {
+            return false;
+          }
+          if (manualEffective === true) {
+            return true;
+          }
+          if (classification.requiresResponse !== null) {
+            return classification.requiresResponse;
+          }
+          return fallback;
+        };
+
+        const updateMentionWait = (
+          wait: ActivityMentionWait,
+        ): ActivityMentionWait => {
+          const waitUserId = wait.user?.id ?? wait.userId;
+          if (wait.id !== commentId || waitUserId !== mentionedUserId) {
+            return wait;
+          }
+
+          return {
+            ...wait,
+            manualRequiresResponse: manualEffective,
+            manualRequiresResponseAt:
+              classification.manualRequiresResponseAt ?? null,
+            manualDecisionIsStale: classification.manualDecisionIsStale,
+            classifierEvaluatedAt: classification.lastEvaluatedAt ?? null,
+            requiresResponse:
+              classification.requiresResponse ?? wait.requiresResponse,
+          } satisfies ActivityMentionWait;
+        };
+
+        setDetailMap((current) => {
+          const existing = current[itemId];
+          if (!existing || !existing.item) {
+            return current;
+          }
+          const nextItem: ActivityItem = {
+            ...existing.item,
+            attention: {
+              ...existing.item.attention,
+              unansweredMention: computeNextAttention(
+                existing.item.attention.unansweredMention,
+              ),
+            },
+            mentionWaits: existing.item.mentionWaits?.map((wait) =>
+              updateMentionWait(wait),
+            ),
+          };
+
+          return {
+            ...current,
+            [itemId]: {
+              ...existing,
+              item: nextItem,
+            },
+          };
+        });
+
+        setListData((current) => ({
+          ...current,
+          items: current.items.map((listItem) => {
+            if (listItem.id !== itemId) {
+              return listItem;
+            }
+            return {
+              ...listItem,
+              attention: {
+                ...listItem.attention,
+                unansweredMention: computeNextAttention(
+                  listItem.attention.unansweredMention,
+                ),
+              },
+              mentionWaits: listItem.mentionWaits?.map((wait) =>
+                updateMentionWait(wait),
+              ),
+            } satisfies ActivityItem;
+          }),
+        }));
+
+        showNotification(
+          state === "suppress"
+            ? "이 멘션을 응답 필요 목록에서 제외했습니다."
+            : state === "force"
+              ? "이 멘션을 응답 필요 목록으로 고정했습니다."
+              : "이 멘션에 대한 응답 필요 수동 설정을 해제했습니다.",
+        );
+
+        void fetchActivity(applied, {});
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "응답 없는 멘션 상태를 업데이트하지 못했습니다.";
+        showNotification(message);
+      } finally {
+        setPendingMentionOverrideKey(null);
+      }
+    },
+    [applied, fetchActivity, listData.lastSyncCompletedAt, showNotification],
+  );
+
   const handleApplyQuickFilter = useCallback(
     (definition: QuickFilterDefinition) => {
       const nextState = normalizeFilterState({
@@ -3075,56 +3381,59 @@ export function ActivityView({
     fetchActivity({ ...applied }, { jumpToDate: effectiveJump });
   }, [activeTimezone, applied, fetchActivity, jumpDate]);
 
-  const loadDetail = useCallback(async (id: string) => {
-    if (!id) {
-      return;
-    }
-
-    setLoadingDetailIds((current) => {
-      if (current.has(id)) {
-        return current;
-      }
-      const next = new Set(current);
-      next.add(id);
-      return next;
-    });
-
-    const existing = detailControllersRef.current.get(id);
-    existing?.abort();
-
-    const controller = new AbortController();
-    detailControllersRef.current.set(id, controller);
-
-    try {
-      const detail = await fetchActivityDetail(id, {
-        signal: controller.signal,
-      });
-      setDetailMap((current) => ({
-        ...current,
-        [id]: detail,
-      }));
-    } catch (detailError) {
-      if ((detailError as Error).name === "AbortError") {
+  const loadDetail = useCallback(
+    async (id: string) => {
+      if (!id) {
         return;
       }
-      console.error(detailError);
-      setDetailMap((current) => ({
-        ...current,
-        [id]: null,
-      }));
-    } finally {
-      detailControllersRef.current.delete(id);
+
       setLoadingDetailIds((current) => {
-        if (!current.has(id)) {
+        if (current.has(id)) {
           return current;
         }
         const next = new Set(current);
-        next.delete(id);
+        next.add(id);
         return next;
       });
-    }
-  }, []);
 
+      const existing = detailControllersRef.current.get(id);
+      existing?.abort();
+
+      const controller = new AbortController();
+      detailControllersRef.current.set(id, controller);
+
+      try {
+        const detail = await fetchActivityDetail(id, {
+          signal: controller.signal,
+          useMentionAi: applied.useMentionAi,
+        });
+        setDetailMap((current) => ({
+          ...current,
+          [id]: detail,
+        }));
+      } catch (detailError) {
+        if ((detailError as Error).name === "AbortError") {
+          return;
+        }
+        console.error(detailError);
+        setDetailMap((current) => ({
+          ...current,
+          [id]: null,
+        }));
+      } finally {
+        detailControllersRef.current.delete(id);
+        setLoadingDetailIds((current) => {
+          if (!current.has(id)) {
+            return current;
+          }
+          const next = new Set(current);
+          next.delete(id);
+          return next;
+        });
+      }
+    },
+    [applied.useMentionAi],
+  );
   const handleUpdateIssueStatus = useCallback(
     async (item: ActivityItem, nextStatus: IssueProjectStatus) => {
       if (item.type !== "issue") {
@@ -3891,83 +4200,99 @@ export function ActivityView({
                       ? `${attentionTooltipPrefix}-${option.value}`
                       : undefined;
                     return (
-                      <TogglePill
-                        key={option.value}
-                        active={active}
-                        variant={variant}
-                        ariaDescribedBy={tooltipId}
-                        onClick={() => {
-                          setDraft((current) => {
-                            const nextSet = new Set(current.attention);
-                            const wasActive = nextSet.has(option.value);
-                            if (wasActive) {
-                              nextSet.delete(option.value);
-                            } else {
-                              nextSet.add(option.value);
-                            }
-                            let nextAttention = Array.from(nextSet);
-                            if (
-                              nextAttention.length === ATTENTION_OPTIONS.length
-                            ) {
-                              nextAttention = [];
-                            }
-                            let nextCategories = current.categories;
-                            if (!wasActive) {
-                              const requiredCategories =
-                                collectRequiredCategoriesFromAttention(
-                                  nextAttention,
-                                );
-                              nextCategories = mergeCategoriesWithRequirements(
-                                current.categories,
-                                requiredCategories,
-                              );
-                            }
-                            let nextState: FilterState = {
-                              ...current,
-                              attention: nextAttention,
-                            };
-                            if (
-                              !arraysShallowEqual(
-                                nextCategories,
-                                current.categories,
-                              )
-                            ) {
-                              nextState = {
-                                ...nextState,
-                                categories: nextCategories,
-                              };
-                              const peopleState = derivePeopleState(current);
-                              if (peopleState.isSynced) {
-                                nextState = applyPeopleSelection(
-                                  nextState,
-                                  peopleState.selection,
-                                  nextCategories,
-                                );
+                      <Fragment key={option.value}>
+                        <TogglePill
+                          active={active}
+                          variant={variant}
+                          ariaDescribedBy={tooltipId}
+                          onClick={() => {
+                            setDraft((current) => {
+                              const nextSet = new Set(current.attention);
+                              const wasActive = nextSet.has(option.value);
+                              if (wasActive) {
+                                nextSet.delete(option.value);
+                              } else {
+                                nextSet.add(option.value);
                               }
-                            }
-                            return syncPeopleFiltersWithAttention(nextState);
-                          });
-                        }}
-                      >
-                        <span className="flex items-center gap-1">
-                          <span>{option.label}</span>
-                          {tooltip ? (
-                            <span
-                              className="relative inline-flex cursor-help items-center text-muted-foreground group-hover:text-foreground group-focus-visible:text-foreground"
-                              aria-hidden="true"
-                            >
-                              <Info className="h-3 w-3" aria-hidden="true" />
+                              let nextAttention = Array.from(nextSet);
+                              if (
+                                nextAttention.length ===
+                                ATTENTION_OPTIONS.length
+                              ) {
+                                nextAttention = [];
+                              }
+                              let nextCategories = current.categories;
+                              if (!wasActive) {
+                                const requiredCategories =
+                                  collectRequiredCategoriesFromAttention(
+                                    nextAttention,
+                                  );
+                                nextCategories =
+                                  mergeCategoriesWithRequirements(
+                                    current.categories,
+                                    requiredCategories,
+                                  );
+                              }
+                              let nextState: FilterState = {
+                                ...current,
+                                attention: nextAttention,
+                              };
+                              if (
+                                !arraysShallowEqual(
+                                  nextCategories,
+                                  current.categories,
+                                )
+                              ) {
+                                nextState = {
+                                  ...nextState,
+                                  categories: nextCategories,
+                                };
+                                const peopleState = derivePeopleState(current);
+                                if (peopleState.isSynced) {
+                                  nextState = applyPeopleSelection(
+                                    nextState,
+                                    peopleState.selection,
+                                    nextCategories,
+                                  );
+                                }
+                              }
+                              return syncPeopleFiltersWithAttention(nextState);
+                            });
+                          }}
+                        >
+                          <span className="flex items-center gap-1">
+                            <span>{option.label}</span>
+                            {tooltip ? (
                               <span
-                                id={tooltipId}
-                                role="tooltip"
-                                className="pointer-events-none absolute left-1/2 top-full z-20 w-56 -translate-x-1/2 translate-y-2 rounded-md border border-border/60 bg-background px-2 py-1 text-xs text-muted-foreground opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+                                className="relative inline-flex cursor-help items-center text-muted-foreground group-hover:text-foreground group-focus-visible:text-foreground"
+                                aria-hidden="true"
                               >
-                                {tooltip}
+                                <Info className="h-3 w-3" aria-hidden="true" />
+                                <span
+                                  id={tooltipId}
+                                  role="tooltip"
+                                  className="pointer-events-none absolute left-1/2 top-full z-20 w-56 -translate-x-1/2 translate-y-2 rounded-md border border-border/60 bg-background px-2 py-1 text-xs text-muted-foreground opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+                                >
+                                  {tooltip}
+                                </span>
                               </span>
-                            </span>
-                          ) : null}
-                        </span>
-                      </TogglePill>
+                            ) : null}
+                          </span>
+                        </TogglePill>
+                        {option.value === "unanswered_mentions" ? (
+                          <AiFilterControl
+                            checked={draft.useMentionAi}
+                            onToggle={() => {
+                              setDraft((current) => ({
+                                ...current,
+                                useMentionAi: !current.useMentionAi,
+                              }));
+                            }}
+                            tooltipId={mentionAiTooltipId}
+                            tooltipText={mentionAiTooltipText}
+                          />
+                        ) : null}
+                      </Fragment>
                     );
                   })}
                 </>
@@ -4650,12 +4975,22 @@ export function ActivityView({
                   const isSelected = openItemId === item.id;
                   const detail = detailMap[item.id] ?? undefined;
                   const isDetailLoading = loadingDetailIds.has(item.id);
-                  const badges = buildAttentionBadges(item);
+                  const badges = buildAttentionBadges(item, {
+                    useMentionAi: applied.useMentionAi,
+                  });
                   if (item.hasParentIssue) {
-                    badges.push("Child 이슈");
+                    badges.push({
+                      key: "child-issue",
+                      label: "Child 이슈",
+                      variant: "default",
+                    });
                   }
                   if (item.hasSubIssues) {
-                    badges.push("Parent 이슈");
+                    badges.push({
+                      key: "parent-issue",
+                      label: "Parent 이슈",
+                      variant: "default",
+                    });
                   }
                   const repositoryLabel =
                     item.repository?.nameWithOwner ?? null;
@@ -4729,6 +5064,8 @@ export function ActivityView({
                     },
                   );
                   const metrics = buildActivityMetricEntries(item);
+                  const overlayItem = detail?.item ?? item;
+                  const badgeExtras = null;
                   const linkedPullRequestsInline =
                     item.linkedPullRequests.length > 0
                       ? renderLinkedReferenceInline({
@@ -4841,14 +5178,42 @@ export function ActivityView({
                                         {todoPriorityLabel}
                                       </span>
                                     )}
-                                  {badges.map((badge) => (
-                                    <span
-                                      key={badge}
-                                      className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-700"
-                                    >
-                                      {badge}
-                                    </span>
-                                  ))}
+                                  {badges.map((badge) => {
+                                    const variantClass =
+                                      badge.variant === "manual"
+                                        ? "border border-slate-300 bg-slate-100 text-slate-700"
+                                        : badge.variant === "ai-soft"
+                                          ? "border border-sky-300 bg-sky-50 text-sky-700 shadow-[0_0_0.65rem_rgba(56,189,248,0.25)]"
+                                          : "bg-amber-100 text-amber-700";
+                                    const tooltipId = badge.tooltip
+                                      ? `${item.id}-${badge.key}-tooltip`
+                                      : undefined;
+                                    return (
+                                      <span
+                                        key={badge.key}
+                                        className={cn(
+                                          "relative inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
+                                          variantClass,
+                                          badge.tooltip
+                                            ? "group cursor-help focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                                            : "",
+                                        )}
+                                        tabIndex={badge.tooltip ? 0 : undefined}
+                                        aria-describedby={tooltipId}
+                                      >
+                                        {badge.label}
+                                        {badge.tooltip ? (
+                                          <span
+                                            id={tooltipId}
+                                            role="tooltip"
+                                            className="pointer-events-none absolute left-1/2 top-full z-20 w-60 -translate-x-1/2 translate-y-2 rounded-md border border-border/60 bg-background px-2 py-1 text-[11px] text-muted-foreground opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+                                          >
+                                            {badge.tooltip}
+                                          </span>
+                                        ) : null}
+                                      </span>
+                                    );
+                                  })}
                                   {item.labels.slice(0, 2).map((label) => (
                                     <span
                                       key={label.key}
@@ -4887,6 +5252,7 @@ export function ActivityView({
                           item={item}
                           iconInfo={iconInfo}
                           badges={badges}
+                          badgeExtras={badgeExtras}
                           onClose={handleCloseItem}
                         >
                           {isDetailLoading ? (
@@ -5063,6 +5429,123 @@ export function ActivityView({
                                   className="mt-3"
                                 />
                               </div>
+                              {overlayItem.mentionWaits?.length ? (
+                                <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-xs">
+                                  <h4 className="text-sm font-semibold text-foreground">
+                                    응답 없는 멘션
+                                  </h4>
+                                  <div className="mt-2 space-y-3">
+                                    {overlayItem.mentionWaits.map(
+                                      (wait, index) => {
+                                        const mentionUserId =
+                                          wait.user?.id ?? wait.userId ?? "";
+                                        const mentionHandle =
+                                          wait.user?.name ??
+                                          (wait.user?.login
+                                            ? `@${wait.user.login}`
+                                            : mentionUserId);
+                                        const aiStatus =
+                                          wait.requiresResponse === false
+                                            ? "AI 판단: 응답 요구 아님"
+                                            : wait.requiresResponse === true
+                                              ? "AI 판단: 응답 필요"
+                                              : "AI 판단: 정보 없음";
+                                        const aiStatusClass =
+                                          wait.requiresResponse === false
+                                            ? "text-amber-600"
+                                            : "text-muted-foreground/70";
+                                        const manualState =
+                                          wait.manualRequiresResponse === false
+                                            ? "suppress"
+                                            : wait.manualRequiresResponse ===
+                                                true
+                                              ? "force"
+                                              : null;
+                                        const manualTimestamp =
+                                          wait.manualRequiresResponseAt
+                                            ? formatDateTimeWithSettings(
+                                                wait.manualRequiresResponseAt,
+                                              )
+                                            : null;
+                                        const mentionKey = `${wait.id}::${mentionUserId}`;
+
+                                        return (
+                                          <div
+                                            key={`${wait.id}-${mentionUserId || index}`}
+                                            className="rounded-md border border-border/60 bg-background px-3 py-2"
+                                          >
+                                            <div className="flex flex-wrap items-center justify-between gap-3 text-foreground">
+                                              <div className="flex flex-col gap-1">
+                                                <span className="font-semibold">
+                                                  대상:{" "}
+                                                  {mentionHandle ||
+                                                    "알 수 없음"}
+                                                </span>
+                                                <span className="text-muted-foreground/70">
+                                                  언급일:{" "}
+                                                  {wait.mentionedAt
+                                                    ? (formatDateTimeWithSettings(
+                                                        wait.mentionedAt,
+                                                      ) ?? "-")
+                                                    : "-"}
+                                                </span>
+                                              </div>
+                                              <span
+                                                className={cn(
+                                                  "text-xs font-medium",
+                                                  aiStatusClass,
+                                                )}
+                                              >
+                                                {aiStatus}
+                                              </span>
+                                            </div>
+                                            {wait.manualDecisionIsStale && (
+                                              <p className="mt-1 text-[11px] text-amber-600">
+                                                최근 분류 이후 관리자 설정이
+                                                다시 필요합니다.
+                                              </p>
+                                            )}
+                                            {manualTimestamp &&
+                                              !wait.manualDecisionIsStale && (
+                                                <p className="mt-1 text-[11px] text-muted-foreground/70">
+                                                  관리자 설정: {manualTimestamp}
+                                                </p>
+                                              )}
+                                            {currentUserIsAdmin &&
+                                            mentionUserId ? (
+                                              <div className="mt-2">
+                                                <MentionOverrideControls
+                                                  value={manualState}
+                                                  pending={
+                                                    pendingMentionOverrideKey ===
+                                                    mentionKey
+                                                  }
+                                                  onChange={(next) => {
+                                                    void handleMentionOverride({
+                                                      itemId: item.id,
+                                                      commentId: wait.id,
+                                                      mentionedUserId:
+                                                        mentionUserId,
+                                                      state: next,
+                                                    });
+                                                  }}
+                                                />
+                                              </div>
+                                            ) : null}
+                                            {!mentionUserId && (
+                                              <p className="mt-2 text-[11px] text-muted-foreground">
+                                                멘션된 사용자를 확인할 수 없어
+                                                관리자 설정을 적용할 수
+                                                없습니다.
+                                              </p>
+                                            )}
+                                          </div>
+                                        );
+                                      },
+                                    )}
+                                  </div>
+                                </div>
+                              ) : null}
                               <ActivityCommentSection
                                 comments={detail.comments}
                                 timezone={activeTimezone}

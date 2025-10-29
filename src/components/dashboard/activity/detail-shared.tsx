@@ -9,6 +9,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
@@ -17,6 +18,7 @@ import type {
   ActivityItem,
   ActivityItemComment,
   ActivityItemDetail,
+  ActivityMentionWait,
   ActivityReactionGroup,
   ActivityStatusFilter,
   ActivityUser,
@@ -96,6 +98,67 @@ const REACTION_LABEL_MAP: Record<string, string> = {
   ROCKET: "Rocket",
   EYES: "Eyes",
 };
+
+export function MentionOverrideControls({
+  value,
+  pending,
+  onChange,
+}: {
+  value: "suppress" | "force" | null;
+  pending: boolean;
+  onChange: (next: "suppress" | "force" | "clear") => void;
+}) {
+  const suppressId = useId();
+  const forceId = useId();
+
+  const buildOption = (
+    id: string,
+    checked: boolean,
+    label: string,
+    nextState: "suppress" | "force",
+  ) => (
+    <label
+      key={id}
+      htmlFor={id}
+      className={cn(
+        "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition",
+        pending
+          ? "cursor-wait opacity-70 border-border/60"
+          : checked
+            ? "cursor-pointer border-sky-500/60 bg-sky-500/10 text-sky-700"
+            : "cursor-pointer border-border/60 bg-background text-muted-foreground hover:border-sky-400 hover:text-foreground",
+      )}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <input
+        id={id}
+        type="checkbox"
+        className="h-3.5 w-3.5 rounded border-border text-sky-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
+        checked={checked}
+        disabled={pending}
+        onChange={(event) => {
+          event.stopPropagation();
+          onChange(event.currentTarget.checked ? nextState : "clear");
+        }}
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+      />
+      <span className="select-none">{label}</span>
+    </label>
+  );
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {buildOption(
+        suppressId,
+        value === "suppress",
+        "응답 요구가 아님",
+        "suppress",
+      )}
+      {buildOption(forceId, value === "force", "응답 요구가 맞음", "force")}
+    </div>
+  );
+}
 
 function escapeHtml(value: string) {
   return value
@@ -709,10 +772,25 @@ export function ActivityCommentSection({
   comments,
   timezone,
   dateTimeFormat,
+  mentionControls,
 }: {
   comments?: ActivityItemComment[] | null;
   timezone?: string | null;
   dateTimeFormat?: DateTimeDisplayFormat | null;
+  mentionControls?: {
+    byCommentId: Record<string, ActivityMentionWait[]>;
+    canManageMentions?: boolean;
+    pendingOverrideKey?: string | null;
+    onUpdateMentionOverride?: (params: {
+      itemId: string;
+      commentId: string;
+      mentionedUserId: string;
+      state: "suppress" | "force" | "clear";
+      syncCompletedAt?: string | null;
+    }) => void;
+    mentionSyncCompletedAt?: string | null;
+    detailItemId?: string;
+  };
 }) {
   const list = comments ?? [];
   const hasComments = list.length > 0;
@@ -724,7 +802,7 @@ export function ActivityCommentSection({
       </h4>
       {hasComments ? (
         <div className="space-y-3">
-          {list.map((comment) => {
+          {list.map((comment, index) => {
             const createdLabel = formatDateTime(
               comment.createdAt,
               timezone,
@@ -764,61 +842,172 @@ export function ActivityCommentSection({
             const content = renderedBody
               ? renderMarkdownHtml(renderedBody)
               : null;
+            const mentionWaitsForComment =
+              comment.id && mentionControls?.byCommentId
+                ? (mentionControls.byCommentId[comment.id] ?? [])
+                : [];
 
             return (
-              <article
-                key={comment.id}
-                className="rounded-md border border-border bg-background px-4 py-3"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground/70">
-                  <span className="font-semibold text-foreground">
-                    {authorLabel}
-                  </span>
-                  <span title={timestampTitle} className="text-right">
-                    {displayTimestamp}
-                    {isEdited ? (
-                      <span className="ml-1 text-[0.7rem] text-muted-foreground/70">
-                        (수정됨)
-                      </span>
-                    ) : null}
-                  </span>
-                </div>
-                {badges.length > 0 ? (
-                  <div className="mt-2 flex flex-wrap gap-2 text-[0.7rem] text-amber-600">
-                    {badges.map((badge) => (
-                      <span
-                        key={`${comment.id}-${badge}`}
-                        className="rounded-full bg-amber-100 px-2 py-0.5"
-                      >
-                        {badge}
-                      </span>
-                    ))}
+              <Fragment key={comment.id ?? `comment-${index}`}>
+                <article className="rounded-md border border-border bg-background px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground/70">
+                    <span className="font-semibold text-foreground">
+                      {authorLabel}
+                    </span>
+                    <span title={timestampTitle} className="text-right">
+                      {displayTimestamp}
+                      {isEdited ? (
+                        <span className="ml-1 text-[0.7rem] text-muted-foreground/70">
+                          (수정됨)
+                        </span>
+                      ) : null}
+                    </span>
+                  </div>
+                  {badges.length > 0 ? (
+                    <div className="mt-2 flex flex-wrap gap-2 text-[0.7rem] text-amber-600">
+                      {badges.map((badge) => (
+                        <span
+                          key={`${comment.id}-${badge}`}
+                          className="rounded-full bg-amber-100 px-2 py-0.5"
+                        >
+                          {badge}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                  {content ? (
+                    <div className="mt-2 space-y-4 text-sm leading-relaxed [&_a]:text-primary [&_a]:underline-offset-2 [&_a:hover]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_.user-mention]:font-semibold">
+                      {content}
+                    </div>
+                  ) : (
+                    <div className="mt-2 text-sm text-muted-foreground/80">
+                      내용을 표시할 수 없습니다.
+                    </div>
+                  )}
+                  <ReactionSummaryList
+                    reactions={comment.reactions}
+                    className="mt-3"
+                  />
+                  {comment.url ? (
+                    <a
+                      href={comment.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-3 inline-flex text-xs font-medium text-primary hover:underline"
+                    >
+                      GitHub에서 보기
+                    </a>
+                  ) : null}
+                </article>
+                {mentionWaitsForComment.length > 0 ? (
+                  <div className="mt-2 space-y-2 pl-4">
+                    {mentionWaitsForComment.map((wait, mentionIndex) => {
+                      const mentionUserId = wait.user?.id ?? wait.userId ?? "";
+                      const mentionHandle =
+                        wait.user?.name ??
+                        (wait.user?.login
+                          ? `@${wait.user.login}`
+                          : mentionUserId);
+                      const aiStatus =
+                        wait.requiresResponse === false
+                          ? "AI 판단: 응답 요구 아님"
+                          : wait.requiresResponse === true
+                            ? "AI 판단: 응답 필요"
+                            : "AI 판단: 정보 없음";
+                      const aiStatusClass =
+                        wait.requiresResponse === false
+                          ? "text-amber-600"
+                          : "text-muted-foreground/70";
+                      const manualState =
+                        wait.manualRequiresResponse === false
+                          ? "suppress"
+                          : wait.manualRequiresResponse === true
+                            ? "force"
+                            : null;
+                      const manualTimestamp = wait.manualRequiresResponseAt
+                        ? formatDateTime(
+                            wait.manualRequiresResponseAt,
+                            timezone,
+                            dateTimeFormat,
+                          )
+                        : null;
+                      const mentionKey = `${wait.id}::${mentionUserId}`;
+                      const pendingOverride =
+                        mentionControls?.pendingOverrideKey === mentionKey;
+
+                      return (
+                        <div
+                          key={`${comment.id ?? "unknown"}-${mentionUserId || mentionIndex}`}
+                          className="rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-3 text-foreground">
+                            <div className="flex flex-col gap-1">
+                              <span className="font-semibold">
+                                대상: {mentionHandle || "알 수 없음"}
+                              </span>
+                              <span className="text-muted-foreground/70">
+                                언급일:{" "}
+                                {formatDateTime(
+                                  wait.mentionedAt,
+                                  timezone,
+                                  dateTimeFormat,
+                                ) ?? "-"}
+                              </span>
+                            </div>
+                            <span
+                              className={cn(
+                                "text-xs font-medium",
+                                aiStatusClass,
+                              )}
+                            >
+                              {aiStatus}
+                            </span>
+                          </div>
+                          {wait.manualDecisionIsStale ? (
+                            <p className="mt-1 text-[11px] text-amber-600">
+                              최근 분류 이후 관리자 설정이 다시 필요합니다.
+                            </p>
+                          ) : manualTimestamp ? (
+                            <p className="mt-1 text-[11px] text-muted-foreground/70">
+                              관리자 설정: {manualTimestamp}
+                            </p>
+                          ) : null}
+                          {mentionControls?.canManageMentions &&
+                          mentionControls.onUpdateMentionOverride &&
+                          mentionUserId ? (
+                            <div className="mt-2">
+                              <MentionOverrideControls
+                                value={manualState}
+                                pending={pendingOverride ?? false}
+                                onChange={(next) => {
+                                  mentionControls.onUpdateMentionOverride?.({
+                                    itemId:
+                                      mentionControls.detailItemId ??
+                                      comment.id ??
+                                      "",
+                                    commentId: wait.id ?? comment.id ?? "",
+                                    mentionedUserId: mentionUserId,
+                                    state: next,
+                                    syncCompletedAt:
+                                      mentionControls.mentionSyncCompletedAt ??
+                                      undefined,
+                                  });
+                                }}
+                              />
+                            </div>
+                          ) : null}
+                          {!mentionUserId && (
+                            <p className="mt-2 text-[11px] text-muted-foreground">
+                              멘션된 사용자를 확인할 수 없어 관리자 설정을
+                              적용할 수 없습니다.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : null}
-                {content ? (
-                  <div className="mt-2 space-y-4 text-sm leading-relaxed [&_a]:text-primary [&_a]:underline-offset-2 [&_a:hover]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_.user-mention]:font-semibold">
-                    {content}
-                  </div>
-                ) : (
-                  <div className="mt-2 text-sm text-muted-foreground/80">
-                    내용을 표시할 수 없습니다.
-                  </div>
-                )}
-                <ReactionSummaryList
-                  reactions={comment.reactions}
-                  className="mt-3"
-                />
-                {comment.url ? (
-                  <a
-                    href={comment.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-3 inline-flex text-xs font-medium text-primary hover:underline"
-                  >
-                    GitHub에서 보기
-                  </a>
-                ) : null}
-              </article>
+              </Fragment>
             );
           })}
         </div>

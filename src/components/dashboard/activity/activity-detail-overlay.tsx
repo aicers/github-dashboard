@@ -16,10 +16,18 @@ import { type ActivityIconInfo, CATEGORY_LABELS } from "./shared";
 
 export const DETAIL_PANEL_TRANSITION_MS = 300;
 
+export type OverlayBadgeDescriptor = {
+  key?: string;
+  label: string;
+  variant?: "default" | "manual" | "ai-soft";
+  tooltip?: string;
+};
+
 export type ActivityDetailOverlayProps = {
   item: ActivityItem;
   iconInfo: ActivityIconInfo;
-  badges: string[];
+  badges: Array<string | OverlayBadgeDescriptor>;
+  badgeExtras?: ReactNode;
   onClose: () => void;
   children: ReactNode;
 };
@@ -28,6 +36,7 @@ export function ActivityDetailOverlay({
   item,
   iconInfo,
   badges,
+  badgeExtras,
   onClose,
   children,
 }: ActivityDetailOverlayProps) {
@@ -86,6 +95,24 @@ export function ActivityDetailOverlay({
     : `${CATEGORY_LABELS[item.type]} 상세`;
   const statusLabel = item.state ?? item.status ?? null;
   const labelBadges = Array.isArray(item.labels) ? item.labels : [];
+  const normalizedBadges = badges.map((badge, index) => {
+    if (typeof badge === "string") {
+      return {
+        key: `badge-${index}-${badge}`,
+        label: badge,
+        variant: "default" as const,
+        tooltip: undefined,
+      };
+    }
+    return {
+      key:
+        badge.key ??
+        `badge-${index}-${badge.label.replace(/\s+/g, "-").toLowerCase()}`,
+      label: badge.label,
+      variant: badge.variant ?? "default",
+      tooltip: badge.tooltip,
+    };
+  });
 
   return (
     <div className="fixed inset-0 z-[60] flex justify-end">
@@ -135,14 +162,38 @@ export function ActivityDetailOverlay({
               </h3>
               <div className="flex flex-wrap gap-2 text-xs text-muted-foreground/80">
                 {statusLabel ? <span>{statusLabel}</span> : null}
-                {badges.map((badge) => (
-                  <span
-                    key={badge}
-                    className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-700"
-                  >
-                    {badge}
-                  </span>
-                ))}
+                {normalizedBadges.map((badge) => {
+                  const variantClass =
+                    badge.variant === "manual"
+                      ? "border border-slate-300 bg-slate-100 text-slate-700"
+                      : badge.variant === "ai-soft"
+                        ? "border border-sky-300 bg-sky-50 text-sky-700 shadow-[0_0_0.65rem_rgba(56,189,248,0.25)]"
+                        : "bg-amber-100 text-amber-700";
+                  return (
+                    <span
+                      key={badge.key}
+                      className={cn(
+                        "relative inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
+                        variantClass,
+                        badge.tooltip
+                          ? "group cursor-help focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                          : "",
+                      )}
+                      tabIndex={badge.tooltip ? 0 : undefined}
+                    >
+                      {badge.label}
+                      {badge.tooltip ? (
+                        <span
+                          role="tooltip"
+                          className="pointer-events-none absolute left-1/2 top-full z-20 w-60 -translate-x-1/2 translate-y-2 rounded-md border border-border/60 bg-background px-2 py-1 text-[11px] text-muted-foreground opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+                        >
+                          {badge.tooltip}
+                        </span>
+                      ) : null}
+                    </span>
+                  );
+                })}
+                {badgeExtras ?? null}
                 {labelBadges.map((label) => {
                   const display =
                     label.name ??

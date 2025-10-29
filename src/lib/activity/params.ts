@@ -104,6 +104,17 @@ export function parseActivityListParams(
       "discussion",
     ]);
 
+  const mentionAiParam =
+    searchParams.get("mentionAi") ?? searchParams.get("useMentionAi");
+  const mentionAiNormalized = mentionAiParam
+    ? mentionAiParam.trim().toLowerCase()
+    : null;
+  const useMentionAi =
+    mentionAiNormalized &&
+    ["0", "false", "off", "no"].includes(mentionAiNormalized)
+      ? false
+      : undefined;
+
   return {
     page: parsePositiveInteger(searchParams, "page", { min: 1 }),
     perPage: parsePositiveInteger(searchParams, "perPage", {
@@ -174,6 +185,7 @@ export function parseActivityListParams(
     search: searchParams.get("search"),
     jumpToDate: searchParams.get("jumpTo"),
     thresholds: parseThresholds(searchParams),
+    useMentionAi,
   };
 }
 

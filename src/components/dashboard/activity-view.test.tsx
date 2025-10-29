@@ -59,6 +59,7 @@ function createDefaultProps(overrides?: {
   initialData?: ReturnType<typeof buildActivityListResult>;
   initialParams?: ActivityListParams;
   currentUserId?: string | null;
+  currentUserIsAdmin?: boolean;
 }) {
   const initialData =
     overrides?.initialData ??
@@ -77,6 +78,7 @@ function createDefaultProps(overrides?: {
     initialParams:
       overrides?.initialParams ?? buildActivityListParams({ page: 1 }),
     currentUserId: overrides?.currentUserId ?? "user-1",
+    currentUserIsAdmin: overrides?.currentUserIsAdmin ?? true,
   } satisfies React.ComponentProps<typeof ActivityView>;
 }
 

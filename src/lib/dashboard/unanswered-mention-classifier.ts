@@ -574,6 +574,8 @@ export async function runUnansweredMentionClassification(
           continue;
         }
 
+        const previous = existingMap.get(item.key);
+
         await upsertMentionClassification({
           commentId: item.candidate.commentId,
           mentionedUserId: item.targetUserId,
@@ -594,6 +596,8 @@ export async function runUnansweredMentionClassification(
           model: result.model,
           rawResponse: result.raw,
           lastEvaluatedAt: now.toISOString(),
+          manualRequiresResponse: previous?.manualRequiresResponse ?? null,
+          manualRequiresResponseAt: previous?.manualRequiresResponseAt ?? null,
         });
 
         summary.updated += 1;

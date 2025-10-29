@@ -909,6 +909,13 @@ describe("activity service integration", () => {
             },
           },
           commentExcerpt: null,
+          classification: {
+            requiresResponse: true,
+            manualRequiresResponse: null,
+            manualRequiresResponseAt: null,
+            manualDecisionIsStale: false,
+            lastEvaluatedAt: null,
+          },
         },
       ],
     };

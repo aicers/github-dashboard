@@ -360,7 +360,8 @@ export function buildActivityMetricEntries(
   if (item.mentionWaits?.length) {
     const mentionWaits = sortByBusinessDays(item.mentionWaits);
     const parts = mentionWaits.map((wait) => {
-      const handle = formatUserHandle(wait.user) ?? "-";
+      const handle =
+        formatUserHandle(wait.user) ?? (wait.userId ? `@${wait.userId}` : "-");
       const waitLabel = differenceLabel(wait.businessDaysWaiting, "일") ?? "-";
       return `${handle} ${waitLabel}`;
     });

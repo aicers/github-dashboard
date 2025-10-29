@@ -41,6 +41,7 @@ export type ActivityFilterState = {
   search: string;
   thresholds: Required<ActivityThresholds>;
   optionalPersonIds: OptionalPeopleMap;
+  useMentionAi: boolean;
 };
 
 export const DEFAULT_THRESHOLD_VALUES: Required<ActivityThresholds> = {
@@ -114,6 +115,7 @@ export function buildFilterState(
       ...DEFAULT_THRESHOLD_VALUES,
       ...(params.thresholds ?? {}),
     },
+    useMentionAi: params.useMentionAi ?? true,
     optionalPersonIds,
   };
 }
@@ -157,7 +159,7 @@ export function buildSavedFilterPayload(
 
   const trimmedSearch = filters.search.trim();
 
-  return {
+  const payload: ActivityListParams = {
     perPage: filters.perPage,
     types: filters.categories.length ? [...filters.categories] : undefined,
     repositoryIds: filters.repositoryIds.length
@@ -222,6 +224,12 @@ export function buildSavedFilterPayload(
     search: trimmedSearch.length ? trimmedSearch : undefined,
     thresholds,
   };
+
+  if (filters.useMentionAi === false) {
+    payload.useMentionAi = false;
+  }
+
+  return payload;
 }
 
 export function normalizeSearchParams(
@@ -303,6 +311,10 @@ export function normalizeSearchParams(
       params.set(key, value.toString());
     }
   });
+
+  if (filters.useMentionAi === false) {
+    params.set("mentionAi", "0");
+  }
 
   return params;
 }

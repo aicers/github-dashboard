@@ -518,6 +518,8 @@ const SCHEMA_STATEMENTS = [
     requires_response BOOLEAN NOT NULL,
     model TEXT,
     raw_response JSONB,
+    manual_requires_response BOOLEAN,
+    manual_requires_response_at TIMESTAMPTZ,
     last_evaluated_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -610,6 +612,8 @@ const SCHEMA_STATEMENTS = [
   `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS unanswered_mentions_last_success_at TIMESTAMPTZ`,
   `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS unanswered_mentions_last_status TEXT`,
   `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS unanswered_mentions_last_error TEXT`,
+  `ALTER TABLE unanswered_mention_classifications ADD COLUMN IF NOT EXISTS manual_requires_response BOOLEAN`,
+  `ALTER TABLE unanswered_mention_classifications ADD COLUMN IF NOT EXISTS manual_requires_response_at TIMESTAMPTZ`,
   `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS org_holiday_calendar_codes TEXT[] NOT NULL DEFAULT '{}'`,
   `UPDATE sync_config
      SET org_holiday_calendar_codes = ARRAY['${DEFAULT_HOLIDAY_CALENDAR}']

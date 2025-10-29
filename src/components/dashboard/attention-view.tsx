@@ -34,6 +34,7 @@ import { fetchActivityDetail } from "@/lib/activity/client";
 import type {
   ActivityItem,
   ActivityItemDetail,
+  ActivityMentionWait,
   ActivityRepository,
   ActivityUser,
   IssueProjectStatus,
@@ -66,6 +67,7 @@ import {
   formatProjectField,
   ISSUE_STATUS_LABEL_MAP,
   ISSUE_STATUS_OPTIONS,
+  MentionOverrideControls,
   normalizeProjectFieldForComparison,
   PROJECT_FIELD_BADGE_CLASS,
   PROJECT_FIELD_LABELS,
@@ -167,8 +169,16 @@ function toActivityMentionWaits(
   return entries.map((entry) => ({
     id: entry.commentId,
     user: toActivityUser(entry.target ?? null),
+    userId: entry.target?.id ?? null,
     mentionedAt: entry.mentionedAt ?? null,
     businessDaysWaiting: entry.waitingDays ?? null,
+    requiresResponse: entry.classification?.requiresResponse ?? null,
+    manualRequiresResponse:
+      entry.classification?.manualRequiresResponse ?? null,
+    manualRequiresResponseAt:
+      entry.classification?.manualRequiresResponseAt ?? null,
+    manualDecisionIsStale: entry.classification?.manualDecisionIsStale ?? false,
+    classifierEvaluatedAt: entry.classification?.lastEvaluatedAt ?? null,
   }));
 }
 
@@ -447,6 +457,10 @@ export function FollowUpDetailContent({
   isUpdatingProjectFields,
   onUpdateStatus,
   onUpdateProjectField,
+  canManageMentions = false,
+  pendingMentionOverrideKey = null,
+  mentionSyncCompletedAt = null,
+  onUpdateMentionOverride,
 }: {
   item: ActivityItem;
   detail: ActivityItemDetail | undefined;
@@ -461,6 +475,16 @@ export function FollowUpDetailContent({
     field: ProjectFieldKey,
     value: string | null,
   ) => Promise<boolean>;
+  canManageMentions?: boolean;
+  pendingMentionOverrideKey?: string | null;
+  onUpdateMentionOverride?: (params: {
+    itemId: string;
+    commentId: string;
+    mentionedUserId: string;
+    state: "suppress" | "force" | "clear";
+    syncCompletedAt?: string | null;
+  }) => void;
+  mentionSyncCompletedAt?: string | null;
 }) {
   if (isLoading) {
     return (
@@ -546,6 +570,41 @@ export function FollowUpDetailContent({
   const renderedContent = renderedBody
     ? renderMarkdownHtml(renderedBody)
     : null;
+  const mentionWaits = detailItem.mentionWaits ?? [];
+  const commentsList = detail.comments ?? [];
+  const commentIdSet = new Set(
+    commentsList
+      .map((comment) => comment.id?.trim())
+      .filter((value): value is string => Boolean(value)),
+  );
+  const mentionWaitsByCommentId = new Map<string, ActivityMentionWait[]>();
+  const orphanMentionWaits: ActivityMentionWait[] = [];
+
+  mentionWaits.forEach((wait) => {
+    const commentKey = wait.id?.trim();
+    if (commentKey && commentIdSet.has(commentKey)) {
+      const current = mentionWaitsByCommentId.get(commentKey);
+      if (current) {
+        current.push(wait);
+      } else {
+        mentionWaitsByCommentId.set(commentKey, [wait]);
+      }
+      return;
+    }
+    orphanMentionWaits.push(wait);
+  });
+
+  const mentionControlsProps =
+    mentionWaits.length > 0
+      ? {
+          byCommentId: Object.fromEntries(mentionWaitsByCommentId.entries()),
+          canManageMentions,
+          pendingOverrideKey: pendingMentionOverrideKey,
+          onUpdateMentionOverride,
+          mentionSyncCompletedAt,
+          detailItemId: detailItem.id,
+        }
+      : undefined;
 
   return (
     <div className="space-y-3 text-sm">
@@ -674,10 +733,104 @@ export function FollowUpDetailContent({
         })()}
         <ReactionSummaryList reactions={detail.reactions} className="mt-3" />
       </div>
+      {orphanMentionWaits.length > 0 && (
+        <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-xs">
+          <h4 className="text-sm font-semibold text-foreground">
+            응답 없는 멘션
+          </h4>
+          <div className="mt-2 space-y-3">
+            {orphanMentionWaits.map((wait, index) => {
+              const mentionUserId = wait.user?.id ?? wait.userId ?? "";
+              const mentionHandle =
+                wait.user?.name ??
+                (wait.user?.login ? `@${wait.user.login}` : mentionUserId);
+              const aiStatus =
+                wait.requiresResponse === false
+                  ? "AI 판단: 응답 요구 아님"
+                  : wait.requiresResponse === true
+                    ? "AI 판단: 응답 필요"
+                    : "AI 판단: 정보 없음";
+              const aiStatusClass =
+                wait.requiresResponse === false
+                  ? "text-amber-600"
+                  : "text-muted-foreground/70";
+              const manualState =
+                wait.manualRequiresResponse === false
+                  ? "suppress"
+                  : wait.manualRequiresResponse === true
+                    ? "force"
+                    : null;
+              const manualTimestamp = formatOptionalDateTime(
+                wait.manualRequiresResponseAt,
+              );
+              const mentionKey = `${wait.id}::${mentionUserId}`;
+              const pendingOverride = pendingMentionOverrideKey === mentionKey;
+
+              return (
+                <div
+                  key={`${wait.id}-${mentionUserId || index}`}
+                  className="rounded-md border border-border/60 bg-background px-3 py-2"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3 text-foreground">
+                    <div className="flex flex-col gap-1">
+                      <span className="font-semibold">
+                        대상: {mentionHandle || "알 수 없음"}
+                      </span>
+                      <span className="text-muted-foreground/70">
+                        언급일:{" "}
+                        {formatOptionalDateTime(wait.mentionedAt) ?? "-"}
+                      </span>
+                    </div>
+                    <span className={cn("text-xs font-medium", aiStatusClass)}>
+                      {aiStatus}
+                    </span>
+                  </div>
+                  {wait.manualDecisionIsStale && (
+                    <p className="mt-1 text-[11px] text-amber-600">
+                      최근 분류 이후 관리자 설정이 다시 필요합니다.
+                    </p>
+                  )}
+                  {manualTimestamp && !wait.manualDecisionIsStale && (
+                    <p className="mt-1 text-[11px] text-muted-foreground/70">
+                      관리자 설정: {manualTimestamp}
+                    </p>
+                  )}
+                  {canManageMentions &&
+                  onUpdateMentionOverride &&
+                  mentionUserId ? (
+                    <div className="mt-2">
+                      <MentionOverrideControls
+                        value={manualState}
+                        pending={pendingOverride}
+                        onChange={(next) => {
+                          onUpdateMentionOverride({
+                            itemId: detailItem.id,
+                            commentId: wait.id,
+                            mentionedUserId: mentionUserId,
+                            state: next,
+                            syncCompletedAt: mentionSyncCompletedAt,
+                          });
+                        }}
+                      />
+                    </div>
+                  ) : null}
+                  {!mentionUserId && (
+                    <p className="mt-2 text-[11px] text-muted-foreground">
+                      멘션된 사용자를 확인할 수 없어 관리자 설정을 적용할 수
+                      없습니다.
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
       <ActivityCommentSection
         comments={detail.comments}
         timezone={timezone}
         dateTimeFormat={dateTimeFormat}
+        mentionControls={mentionControlsProps}
       />
       {detailItem.type === "issue" &&
       detailItem.linkedPullRequests.length > 0 ? (
@@ -2360,12 +2513,33 @@ function MentionList({
   timezone,
   dateTimeFormat,
   segmented = false,
+  isAdmin,
+  pendingOverrideKey,
+  setPendingOverrideKey,
+  latestSyncCompletedAt,
+  onOverrideSuccess,
 }: {
   items: MentionAttentionItem[];
   emptyText: string;
   timezone: string;
   dateTimeFormat: DateTimeDisplayFormat;
   segmented?: boolean;
+  isAdmin: boolean;
+  pendingOverrideKey: string | null;
+  setPendingOverrideKey: (key: string | null) => void;
+  latestSyncCompletedAt: string | null;
+  onOverrideSuccess: (params: {
+    commentId: string;
+    mentionedUserId: string;
+    suppress: boolean;
+    classification: {
+      manualRequiresResponse: boolean | null;
+      manualRequiresResponseAt: string | null;
+      manualDecisionIsStale: boolean;
+      requiresResponse: boolean | null;
+      lastEvaluatedAt: string | null;
+    };
+  }) => void;
 }) {
   const [targetFilter, setTargetFilter] = useState("all");
   const [authorFilter, setAuthorFilter] = useState("all");
@@ -2456,8 +2630,14 @@ function MentionList({
 
   const metricLabel = "경과일수";
 
-  const { openItemId, detailMap, loadingDetailIds, selectItem, closeItem } =
-    useActivityDetailState();
+  const {
+    openItemId,
+    detailMap,
+    loadingDetailIds,
+    selectItem,
+    closeItem,
+    updateDetailItem,
+  } = useActivityDetailState();
 
   if (!items.length && !segmented) {
     return <p className="text-sm text-muted-foreground">{emptyText}</p>;
@@ -2562,7 +2742,6 @@ function MentionList({
         )} 코멘트`;
         const isSelected = openItemId === selectionId;
         const isDetailLoading = loadingDetailIds.has(selectionId);
-        const badges = ["응답 없는 멘션"];
         const metrics = buildActivityMetricEntries(activityItem);
         const updatedRelativeLabel = item.mentionedAt
           ? formatRelative(item.mentionedAt)
@@ -2586,6 +2765,143 @@ function MentionList({
             ) : null}
           </div>
         );
+        const primaryMention = overlayItem.mentionWaits?.find(
+          (wait) => wait.id && (wait.user?.id ?? wait.userId),
+        );
+        const primaryMentionUserId =
+          primaryMention?.user?.id ?? primaryMention?.userId ?? null;
+        const mentionSuppressed =
+          primaryMention?.manualRequiresResponse === false;
+
+        const badges = ["응답 없는 멘션"];
+        if (mentionSuppressed) {
+          badges.push("응답 요구가 아님");
+        }
+
+        const handleMentionToggle = async (
+          nextState: "suppress" | "force" | "clear",
+        ) => {
+          if (!primaryMention?.id) {
+            return;
+          }
+          const user = primaryMention.user;
+          const userId = user?.id ?? primaryMentionUserId;
+          if (!userId) {
+            return;
+          }
+          const key = `${primaryMention.id}::${userId}`;
+          setPendingOverrideKey(key);
+          try {
+            const response = await fetch(
+              "/api/attention/unanswered-mentions/manual",
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  commentId: primaryMention.id,
+                  mentionedUserId: userId,
+                  state: nextState,
+                  syncCompletedAt: latestSyncCompletedAt ?? undefined,
+                }),
+              },
+            );
+
+            let payload: unknown;
+            try {
+              payload = await response.json();
+            } catch {
+              payload = {};
+            }
+
+            const result = (payload as {
+              success?: boolean;
+              result?: {
+                manualRequiresResponse: boolean | null;
+                manualRequiresResponseAt: string | null;
+                manualDecisionIsStale: boolean;
+                requiresResponse: boolean | null;
+                lastEvaluatedAt: string | null;
+              };
+              message?: string;
+            }) ?? { success: false };
+
+            if (!response.ok || !result.success || !result.result) {
+              throw new Error(
+                result.message ??
+                  "응답 없는 멘션 상태를 업데이트하지 못했습니다.",
+              );
+            }
+
+            const classification = result.result;
+            const manualEffective = classification.manualDecisionIsStale
+              ? null
+              : classification.manualRequiresResponse;
+
+            const nextOverlayItem: ActivityItem = {
+              ...overlayItem,
+              attention: {
+                ...overlayItem.attention,
+                unansweredMention:
+                  manualEffective === false
+                    ? false
+                    : manualEffective === true
+                      ? true
+                      : (classification.requiresResponse ??
+                        overlayItem.attention.unansweredMention),
+              },
+              mentionWaits:
+                overlayItem.mentionWaits?.map((wait) => {
+                  const waitUserId = wait.user?.id ?? wait.userId;
+                  if (wait.id === primaryMention.id && waitUserId === userId) {
+                    return {
+                      ...wait,
+                      manualRequiresResponse: manualEffective,
+                      manualRequiresResponseAt:
+                        classification.manualRequiresResponseAt ?? null,
+                      manualDecisionIsStale:
+                        classification.manualDecisionIsStale ?? false,
+                      classifierEvaluatedAt:
+                        classification.lastEvaluatedAt ?? null,
+                      requiresResponse: classification.requiresResponse ?? null,
+                    } satisfies NonNullable<
+                      ActivityItem["mentionWaits"]
+                    >[number];
+                  }
+                  return wait;
+                }) ?? undefined,
+            } satisfies ActivityItem;
+
+            updateDetailItem(nextOverlayItem);
+
+            onOverrideSuccess({
+              commentId: primaryMention.id,
+              mentionedUserId: userId,
+              suppress: nextState === "suppress",
+              classification: {
+                manualRequiresResponse: manualEffective,
+                manualRequiresResponseAt:
+                  classification.manualRequiresResponseAt ?? null,
+                manualDecisionIsStale:
+                  classification.manualDecisionIsStale ?? false,
+                requiresResponse: classification.requiresResponse ?? null,
+                lastEvaluatedAt: classification.lastEvaluatedAt ?? null,
+              },
+            });
+
+            if (nextState === "suppress" && !mentionSuppressed) {
+              closeItem();
+            }
+          } catch (error) {
+            console.error(
+              "[unanswered-mentions] Failed to update manual override",
+              error,
+            );
+          } finally {
+            setPendingOverrideKey(null);
+          }
+        };
 
         return (
           <li
@@ -2633,6 +2949,7 @@ function MentionList({
                   item={overlayItem}
                   iconInfo={iconInfo}
                   badges={badges}
+                  badgeExtras={null}
                   onClose={closeItem}
                 >
                   <FollowUpDetailContent
@@ -2647,6 +2964,15 @@ function MentionList({
                       /* no-op for mentions */
                     }}
                     onUpdateProjectField={async () => false}
+                    canManageMentions={isAdmin}
+                    pendingMentionOverrideKey={pendingOverrideKey}
+                    onUpdateMentionOverride={(next) => {
+                      if (!next) {
+                        return;
+                      }
+                      void handleMentionToggle(next.state);
+                    }}
+                    mentionSyncCompletedAt={latestSyncCompletedAt}
                   />
                 </ActivityDetailOverlay>
               ) : null}
@@ -2693,7 +3019,17 @@ type FollowUpSection = {
   content: ReactNode;
 };
 
-export function AttentionView({ insights }: { insights: AttentionInsights }) {
+export function AttentionView({
+  insights: initialInsights,
+  isAdmin = false,
+}: {
+  insights: AttentionInsights;
+  isAdmin?: boolean;
+}) {
+  const [insights, setInsights] = useState(initialInsights);
+  const latestSyncRef = useRef<string | null>(
+    initialInsights.generatedAt ?? null,
+  );
   const trimmedTimezone = insights.timezone.trim();
   const timezoneTitle = trimmedTimezone.length ? trimmedTimezone : undefined;
   const generatedAtLabel = formatTimestamp(
@@ -2703,6 +3039,73 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
   );
   const router = useRouter();
   const [isRefreshing, startTransition] = useTransition();
+  const [pendingMentionOverrideKey, setPendingMentionOverrideKey] = useState<
+    string | null
+  >(null);
+
+  useEffect(() => {
+    latestSyncRef.current = insights.generatedAt ?? null;
+  }, [insights.generatedAt]);
+
+  const handleMentionOverrideSuccess = useCallback(
+    (params: {
+      commentId: string;
+      mentionedUserId: string;
+      suppress: boolean;
+      classification: {
+        manualRequiresResponse: boolean | null;
+        manualRequiresResponseAt: string | null;
+        manualDecisionIsStale: boolean;
+        requiresResponse: boolean | null;
+        lastEvaluatedAt: string | null;
+      };
+    }) => {
+      const { commentId, mentionedUserId, classification } = params;
+      setInsights((current) => {
+        const nextUnanswered: MentionAttentionItem[] = [];
+        current.unansweredMentions.forEach((entry) => {
+          if (
+            entry.commentId === commentId &&
+            entry.target?.id === mentionedUserId
+          ) {
+            const manualEffective = classification.manualDecisionIsStale
+              ? null
+              : classification.manualRequiresResponse;
+            const requiresValue = classification.requiresResponse;
+            const shouldInclude =
+              manualEffective === false
+                ? false
+                : manualEffective === true
+                  ? true
+                  : requiresValue === true;
+            if (!shouldInclude) {
+              return;
+            }
+            nextUnanswered.push({
+              ...entry,
+              classification: {
+                requiresResponse: requiresValue ?? null,
+                manualRequiresResponse: manualEffective,
+                manualRequiresResponseAt:
+                  classification.manualRequiresResponseAt ?? null,
+                manualDecisionIsStale:
+                  classification.manualDecisionIsStale ?? false,
+                lastEvaluatedAt: classification.lastEvaluatedAt ?? null,
+              },
+            });
+          } else {
+            nextUnanswered.push(entry);
+          }
+        });
+
+        return {
+          ...current,
+          unansweredMentions: nextUnanswered,
+        } satisfies AttentionInsights;
+      });
+    },
+    [],
+  );
 
   const reviewWaitMap = useMemo(() => {
     const map = new Map<string, ReviewRequestAttentionItem[]>();
@@ -2855,6 +3258,11 @@ export function AttentionView({ insights }: { insights: AttentionInsights }) {
           timezone={insights.timezone}
           dateTimeFormat={insights.dateTimeFormat}
           segmented
+          isAdmin={isAdmin}
+          pendingOverrideKey={pendingMentionOverrideKey}
+          setPendingOverrideKey={setPendingMentionOverrideKey}
+          latestSyncCompletedAt={latestSyncRef.current}
+          onOverrideSuccess={handleMentionOverrideSuccess}
         />
       ),
     },

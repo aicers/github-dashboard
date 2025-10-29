@@ -9,5 +9,7 @@ export default async function AttentionPage() {
   const insights = await getAttentionInsights({
     userId: session?.userId ?? null,
   });
-  return <AttentionView insights={insights} />;
+  return (
+    <AttentionView insights={insights} isAdmin={session?.isAdmin ?? false} />
+  );
 }

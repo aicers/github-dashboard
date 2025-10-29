@@ -19,6 +19,7 @@ export default function ActivityHarnessPage() {
           filterOptions={filterOptions}
           initialParams={initialParams}
           currentUserId="user-self"
+          currentUserIsAdmin
         />
       </Suspense>
     </main>

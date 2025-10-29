@@ -40,6 +40,7 @@ export function buildActivityListParams(
     linkedIssueStates: [],
     search: "",
     thresholds: {},
+    useMentionAi: true,
     ...overrides,
   };
 }
@@ -47,7 +48,7 @@ export function buildActivityListParams(
 export function buildActivityFilterState(
   overrides: Partial<ActivityFilterState> = {},
 ): ActivityFilterState {
-  const { thresholds, ...restOverrides } = overrides;
+  const { thresholds, useMentionAi, ...restOverrides } = overrides;
   const basePeopleFilters = {
     authorIds: [] as string[],
     assigneeIds: [] as string[],
@@ -82,6 +83,7 @@ export function buildActivityFilterState(
     statuses: [],
     attention: [],
     linkedIssueStates: [],
+    useMentionAi: useMentionAi ?? true,
     search: "",
     optionalPersonIds: {},
     ...restOverrides,
