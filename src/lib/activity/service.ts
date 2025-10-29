@@ -1418,7 +1418,7 @@ function buildQueryFilters(
           constraints.push(`items.status = 'open'`);
           if (hasSynchronizedPeopleSelection) {
             constraints.push(
-              `(${personIsAssigneeExpr} OR ${personIsAuthorExpr} OR ${personIsReviewerExpr})`,
+              `(${personIsAssigneeExpr} OR ${personIsAuthorExpr} OR ${personIsReviewerExpr} OR ${personIsMaintainerExpr})`,
             );
           }
           break;
@@ -1428,7 +1428,7 @@ function buildQueryFilters(
           constraints.push(`items.status = 'open'`);
           if (hasSynchronizedPeopleSelection) {
             constraints.push(
-              `(${personIsAssigneeExpr} OR ${personIsAuthorExpr} OR ${personIsReviewerExpr})`,
+              `(${personIsAssigneeExpr} OR ${personIsAuthorExpr} OR ${personIsReviewerExpr} OR ${personIsMaintainerExpr})`,
             );
           }
           break;

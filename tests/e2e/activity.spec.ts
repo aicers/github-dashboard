@@ -360,6 +360,7 @@ const ATTENTION_SCENARIOS: Array<{
       authorId: ["user-alice"],
       assigneeId: ["user-alice"],
       reviewerId: ["user-alice"],
+      maintainerId: ["user-alice"],
     },
   },
   {
@@ -370,6 +371,7 @@ const ATTENTION_SCENARIOS: Array<{
       authorId: ["user-alice"],
       assigneeId: ["user-alice"],
       reviewerId: ["user-alice"],
+      maintainerId: ["user-alice"],
     },
   },
   {
