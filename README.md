@@ -579,6 +579,7 @@ Environment variables are parsed through `src/lib/env.ts`:
 | `GITHUB_OAUTH_CLIENT_ID` | ✅ | GitHub OAuth App client identifier |
 | `GITHUB_OAUTH_CLIENT_SECRET` | ✅ | GitHub OAuth App client secret |
 | `GITHUB_ALLOWED_ORG` | ✅ | GitHub organization slug allowed to sign in; non-admin users stay blocked until allowed teams or members are configured in Settings |
+| `GITHUB_ALLOWED_BOT_LOGINS` | ⛔ | Comma-separated GitHub logins that may sign in even if they are not organization members (for example `octoaide`) |
 | `DASHBOARD_ADMIN_IDS` | ⛔ | Comma-separated GitHub logins or node IDs with admin privileges |
 | `APP_BASE_URL` | ✅ | Absolute origin used to build OAuth callback URLs |
 | `SESSION_SECRET` | ✅ | Secret key for signing session cookies |

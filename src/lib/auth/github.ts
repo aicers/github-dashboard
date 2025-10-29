@@ -259,6 +259,15 @@ export async function verifyOrganizationMembership({
     return { allowed: true, orgSlug: null };
   }
 
+  const allowedBotLogins = env.GITHUB_ALLOWED_BOT_LOGINS ?? [];
+  if (
+    login &&
+    allowedBotLogins.length > 0 &&
+    allowedBotLogins.includes(login.toLowerCase())
+  ) {
+    return { allowed: true, orgSlug: targetOrg };
+  }
+
   if (!login) {
     return { allowed: false, orgSlug: targetOrg };
   }

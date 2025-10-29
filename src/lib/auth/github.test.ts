@@ -176,6 +176,24 @@ describe("GitHub OAuth helpers", () => {
     expect(result).toEqual({ allowed: false, orgSlug: "acme" });
   });
 
+  test("verifyOrganizationMembership allows configured bot logins without membership", async () => {
+    process.env.GITHUB_ALLOWED_ORG = "acme";
+    process.env.GITHUB_ALLOWED_BOT_LOGINS = "octoaide";
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(null, { status: 404 })),
+    );
+
+    const { verifyOrganizationMembership } = await import("./github");
+    const result = await verifyOrganizationMembership({
+      accessToken: "token",
+      login: "octoaide",
+    });
+
+    expect(result).toEqual({ allowed: true, orgSlug: "acme" });
+  });
+
   test("verifyOrganizationMembership denies non-admins when no allow-list is configured", async () => {
     process.env.GITHUB_ALLOWED_ORG = "acme";
 
