@@ -1,5 +1,6 @@
 "use client";
 
+import { Check } from "lucide-react";
 import { DateTime } from "luxon";
 import {
   type ChangeEvent,
@@ -113,7 +114,7 @@ export function MentionOverrideControls({
 
   const buildOption = (
     id: string,
-    checked: boolean,
+    active: boolean,
     label: string,
     nextState: "suppress" | "force",
   ) => (
@@ -121,20 +122,22 @@ export function MentionOverrideControls({
       key={id}
       htmlFor={id}
       className={cn(
-        "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition",
+        "inline-flex items-center gap-2 text-xs font-medium transition",
         pending
-          ? "cursor-wait opacity-70 border-border/60"
-          : checked
-            ? "cursor-pointer border-sky-500/60 bg-sky-500/10 text-sky-700"
-            : "cursor-pointer border-border/60 bg-background text-muted-foreground hover:border-sky-400 hover:text-foreground",
+          ? "cursor-wait opacity-70 text-muted-foreground"
+          : active && nextState === "suppress"
+            ? "cursor-pointer text-amber-700"
+            : active && nextState === "force"
+              ? "cursor-pointer text-sky-700"
+              : "cursor-pointer text-muted-foreground hover:text-foreground",
       )}
       onPointerDown={(event) => event.stopPropagation()}
     >
       <input
         id={id}
         type="checkbox"
-        className="h-3.5 w-3.5 rounded border-border text-sky-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
-        checked={checked}
+        className="sr-only"
+        checked={active}
         disabled={pending}
         onChange={(event) => {
           event.stopPropagation();
@@ -143,7 +146,30 @@ export function MentionOverrideControls({
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}
       />
-      <span className="select-none">{label}</span>
+      <span className="flex items-center gap-2">
+        <span
+          aria-hidden="true"
+          className={cn(
+            "flex h-4 w-4 items-center justify-center rounded-[4px] border-2 transition",
+            pending
+              ? "border-border/60 bg-white/70 text-border/60"
+              : active && nextState === "suppress"
+                ? "border-amber-500 bg-amber-50 text-amber-600"
+                : active && nextState === "force"
+                  ? "border-sky-500 bg-sky-50 text-sky-600"
+                  : "border-border bg-background text-transparent",
+          )}
+        >
+          <Check
+            className={cn(
+              "h-3 w-3 transition",
+              active ? "opacity-100" : "opacity-0",
+            )}
+            strokeWidth={3}
+          />
+        </span>
+        <span className="select-none">{label}</span>
+      </span>
     </label>
   );
 
@@ -786,9 +812,7 @@ export function ActivityCommentSection({
       commentId: string;
       mentionedUserId: string;
       state: "suppress" | "force" | "clear";
-      syncCompletedAt?: string | null;
     }) => void;
-    mentionSyncCompletedAt?: string | null;
     detailItemId?: string;
   };
 }) {
@@ -863,20 +887,145 @@ export function ActivityCommentSection({
                       ) : null}
                     </span>
                   </div>
+                  {mentionWaitsForComment.length > 0 ? (
+                    <div className="mt-2 space-y-2 rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs">
+                      {mentionWaitsForComment.map((wait, mentionIndex) => {
+                        const mentionUserId =
+                          wait.user?.id ?? wait.userId ?? "";
+                        const mentionHandle =
+                          wait.user?.name ??
+                          (wait.user?.login
+                            ? `@${wait.user.login}`
+                            : mentionUserId);
+                        const mentionLogin =
+                          wait.user?.login ?? (mentionUserId || "");
+                        const aiStatus =
+                          wait.requiresResponse === false
+                            ? "AI 판단: 응답 요구 아님"
+                            : wait.requiresResponse === true
+                              ? "AI 판단: 응답 필요"
+                              : "AI 판단: 정보 없음";
+                        const aiStatusTheme =
+                          wait.requiresResponse === false
+                            ? "border border-amber-400 bg-amber-50 text-amber-700"
+                            : wait.requiresResponse === true
+                              ? "border border-sky-400 bg-sky-50 text-sky-700"
+                              : "border border-slate-300 bg-slate-100 text-slate-700";
+                        const manualState =
+                          wait.manualRequiresResponse === false
+                            ? "suppress"
+                            : wait.manualRequiresResponse === true
+                              ? "force"
+                              : null;
+                        const manualTimestamp = wait.manualRequiresResponseAt
+                          ? formatDateTime(
+                              wait.manualRequiresResponseAt,
+                              timezone,
+                              dateTimeFormat,
+                            )
+                          : null;
+                        const mentionKey = `${wait.id}::${mentionUserId}`;
+                        const pendingOverride =
+                          mentionControls?.pendingOverrideKey === mentionKey;
+                        const mentionOverrideHandler =
+                          mentionControls?.onUpdateMentionOverride ?? null;
+                        const mentionOverridesEnabled =
+                          (mentionControls?.canManageMentions ?? false) &&
+                          Boolean(mentionOverrideHandler) &&
+                          Boolean(mentionUserId);
+                        const mentionDetailItemId =
+                          mentionControls?.detailItemId ?? comment.id ?? "";
+
+                        return (
+                          <div
+                            key={`${comment.id ?? "unknown"}-${mentionUserId || mentionIndex}`}
+                            className="space-y-2"
+                          >
+                            <div className="flex flex-wrap items-start gap-3 text-foreground">
+                              <div className="flex flex-col gap-1 min-w-0 flex-1">
+                                <span className="inline-flex flex-wrap items-center gap-2 text-xs font-medium text-foreground">
+                                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                                    응답 없는 멘션
+                                  </span>
+                                  <span>
+                                    응답 대상: {mentionHandle || "알 수 없음"}
+                                    {mentionHandle && mentionLogin
+                                      ? ` (${mentionLogin.startsWith("@") ? mentionLogin : `@${mentionLogin}`})`
+                                      : ""}
+                                  </span>
+                                </span>
+                                <div className="flex flex-wrap items-center gap-3">
+                                  <span
+                                    className={cn(
+                                      "inline-flex items-center gap-1 rounded px-2 py-1 text-[0.7rem] font-semibold",
+                                      aiStatusTheme,
+                                    )}
+                                  >
+                                    {aiStatus}
+                                  </span>
+                                  {mentionOverridesEnabled &&
+                                  mentionOverrideHandler &&
+                                  mentionUserId ? (
+                                    <MentionOverrideControls
+                                      value={manualState}
+                                      pending={pendingOverride ?? false}
+                                      onChange={(next) => {
+                                        mentionOverrideHandler({
+                                          itemId: mentionDetailItemId,
+                                          commentId:
+                                            wait.id ?? comment.id ?? "",
+                                          mentionedUserId: mentionUserId,
+                                          state: next,
+                                        });
+                                      }}
+                                    />
+                                  ) : null}
+                                </div>
+                              </div>
+                            </div>
+                            {wait.manualDecisionIsStale ? (
+                              <p className="text-[11px] text-amber-600">
+                                최근 분류 이후 관리자 설정이 다시 필요합니다.
+                              </p>
+                            ) : manualTimestamp ? (
+                              <p className="text-[11px] text-muted-foreground/70">
+                                관리자 설정: {manualTimestamp}
+                              </p>
+                            ) : null}
+                            {!mentionUserId && (
+                              <p className="text-[11px] text-muted-foreground">
+                                멘션된 사용자를 확인할 수 없어 관리자 설정을
+                                적용할 수 없습니다.
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                   {badges.length > 0 ? (
-                    <div className="mt-2 flex flex-wrap gap-2 text-[0.7rem] text-amber-600">
-                      {badges.map((badge) => (
-                        <span
-                          key={`${comment.id}-${badge}`}
-                          className="rounded-full bg-amber-100 px-2 py-0.5"
-                        >
-                          {badge}
-                        </span>
-                      ))}
+                    <div className="mt-2 flex flex-wrap gap-2 text-[0.7rem]">
+                      {badges.map((badge) => {
+                        const badgeClass =
+                          badge === "리뷰 댓글"
+                            ? "bg-blue-100 text-blue-700 border border-blue-200"
+                            : "bg-amber-100 text-amber-700";
+                        return (
+                          <span
+                            key={`${comment.id}-${badge}`}
+                            className={cn(
+                              "inline-flex items-center rounded-full px-2 py-0.5 font-medium",
+                              badgeClass,
+                            )}
+                          >
+                            {badge}
+                          </span>
+                        );
+                      })}
                     </div>
                   ) : null}
                   {content ? (
-                    <div className="mt-2 space-y-4 text-sm leading-relaxed [&_a]:text-primary [&_a]:underline-offset-2 [&_a:hover]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_.user-mention]:font-semibold">
+                    <div className="mt-2 space-y-4 text-sm leading-relaxed [&_a]:text-slate-700 [&_a]:underline-offset-2 [&_a:hover]:text-foreground [&_a:hover]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_.user-mention]:font-semibold [&_.user-mention]:text-sky-700">
                       {content}
                     </div>
                   ) : (
@@ -893,120 +1042,12 @@ export function ActivityCommentSection({
                       href={comment.url}
                       target="_blank"
                       rel="noreferrer"
-                      className="mt-3 inline-flex text-xs font-medium text-primary hover:underline"
+                      className="mt-3 inline-flex text-xs font-medium text-slate-600 hover:text-foreground hover:underline"
                     >
                       GitHub에서 보기
                     </a>
                   ) : null}
                 </article>
-                {mentionWaitsForComment.length > 0 ? (
-                  <div className="mt-2 space-y-2 pl-4">
-                    {mentionWaitsForComment.map((wait, mentionIndex) => {
-                      const mentionUserId = wait.user?.id ?? wait.userId ?? "";
-                      const mentionHandle =
-                        wait.user?.name ??
-                        (wait.user?.login
-                          ? `@${wait.user.login}`
-                          : mentionUserId);
-                      const aiStatus =
-                        wait.requiresResponse === false
-                          ? "AI 판단: 응답 요구 아님"
-                          : wait.requiresResponse === true
-                            ? "AI 판단: 응답 필요"
-                            : "AI 판단: 정보 없음";
-                      const aiStatusClass =
-                        wait.requiresResponse === false
-                          ? "text-amber-600"
-                          : "text-muted-foreground/70";
-                      const manualState =
-                        wait.manualRequiresResponse === false
-                          ? "suppress"
-                          : wait.manualRequiresResponse === true
-                            ? "force"
-                            : null;
-                      const manualTimestamp = wait.manualRequiresResponseAt
-                        ? formatDateTime(
-                            wait.manualRequiresResponseAt,
-                            timezone,
-                            dateTimeFormat,
-                          )
-                        : null;
-                      const mentionKey = `${wait.id}::${mentionUserId}`;
-                      const pendingOverride =
-                        mentionControls?.pendingOverrideKey === mentionKey;
-
-                      return (
-                        <div
-                          key={`${comment.id ?? "unknown"}-${mentionUserId || mentionIndex}`}
-                          className="rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs"
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-3 text-foreground">
-                            <div className="flex flex-col gap-1">
-                              <span className="font-semibold">
-                                대상: {mentionHandle || "알 수 없음"}
-                              </span>
-                              <span className="text-muted-foreground/70">
-                                언급일:{" "}
-                                {formatDateTime(
-                                  wait.mentionedAt,
-                                  timezone,
-                                  dateTimeFormat,
-                                ) ?? "-"}
-                              </span>
-                            </div>
-                            <span
-                              className={cn(
-                                "text-xs font-medium",
-                                aiStatusClass,
-                              )}
-                            >
-                              {aiStatus}
-                            </span>
-                          </div>
-                          {wait.manualDecisionIsStale ? (
-                            <p className="mt-1 text-[11px] text-amber-600">
-                              최근 분류 이후 관리자 설정이 다시 필요합니다.
-                            </p>
-                          ) : manualTimestamp ? (
-                            <p className="mt-1 text-[11px] text-muted-foreground/70">
-                              관리자 설정: {manualTimestamp}
-                            </p>
-                          ) : null}
-                          {mentionControls?.canManageMentions &&
-                          mentionControls.onUpdateMentionOverride &&
-                          mentionUserId ? (
-                            <div className="mt-2">
-                              <MentionOverrideControls
-                                value={manualState}
-                                pending={pendingOverride ?? false}
-                                onChange={(next) => {
-                                  mentionControls.onUpdateMentionOverride?.({
-                                    itemId:
-                                      mentionControls.detailItemId ??
-                                      comment.id ??
-                                      "",
-                                    commentId: wait.id ?? comment.id ?? "",
-                                    mentionedUserId: mentionUserId,
-                                    state: next,
-                                    syncCompletedAt:
-                                      mentionControls.mentionSyncCompletedAt ??
-                                      undefined,
-                                  });
-                                }}
-                              />
-                            </div>
-                          ) : null}
-                          {!mentionUserId && (
-                            <p className="mt-2 text-[11px] text-muted-foreground">
-                              멘션된 사용자를 확인할 수 없어 관리자 설정을
-                              적용할 수 없습니다.
-                            </p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : null}
               </Fragment>
             );
           })}
