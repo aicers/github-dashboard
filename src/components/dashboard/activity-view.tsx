@@ -2229,9 +2229,30 @@ export function ActivityView({
     });
   }, [allowedIssueWeights]);
 
+  const augmentedUsers = useMemo(() => {
+    if (!currentUserId) {
+      return filterOptions.users;
+    }
+    const hasCurrentUser = filterOptions.users.some(
+      (user) => user.id === currentUserId,
+    );
+    if (hasCurrentUser) {
+      return filterOptions.users;
+    }
+    return [
+      ...filterOptions.users,
+      {
+        id: currentUserId,
+        login: null,
+        name: null,
+        avatarUrl: null,
+      },
+    ];
+  }, [currentUserId, filterOptions.users]);
+
   const userOptions = useMemo<MultiSelectOption[]>(
     () =>
-      filterOptions.users.map((user) => ({
+      augmentedUsers.map((user) => ({
         value: user.id,
         label: user.login?.length ? user.login : (user.name ?? user.id),
         description:
@@ -2239,12 +2260,12 @@ export function ActivityView({
             ? user.name
             : null,
       })),
-    [filterOptions.users],
+    [augmentedUsers],
   );
 
   const allowedUserIds = useMemo(
-    () => new Set(filterOptions.users.map((user) => user.id)),
-    [filterOptions.users],
+    () => new Set(augmentedUsers.map((user) => user.id)),
+    [augmentedUsers],
   );
 
   useEffect(() => {
