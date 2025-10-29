@@ -102,9 +102,9 @@ const ATTENTION_TOOLTIPS: Partial<Record<ActivityAttentionFilter, string>> = {
   issue_stalled:
     "구성원 선택 시, 구성원이 이슈의 담당자이거나, 담당자 미정 시 해당 저장소 책임자이거나, 담당자/저장소 미지정 시 작성자인 항목만 표시합니다.",
   pr_open_too_long:
-    "구성원 선택 시, 구성원이 PR의 작성자, 담당자, 또는 리뷰어인 항목만 표시합니다.",
+    "구성원 선택 시, 구성원이 PR의 작성자, 담당자, 리뷰어, 또는 저장소 책임자인 항목만 표시합니다.",
   pr_inactive:
-    "구성원 선택 시, 구성원이 PR의 작성자, 담당자, 또는 리뷰어인 항목만 표시합니다.",
+    "구성원 선택 시, 구성원이 PR의 작성자, 담당자, 리뷰어, 또는 저장소 책임자인 항목만 표시합니다.",
   review_requests_pending:
     "구성원 선택 시, 구성원이 리뷰 요청을 받은 항목만 표시합니다.",
   unanswered_mentions:
@@ -229,24 +229,14 @@ const ATTENTION_ROLE_RULES: Record<
     ],
   },
   pr_open_too_long: {
-    applied: ["authorIds", "assigneeIds", "reviewerIds"],
+    applied: ["authorIds", "assigneeIds", "reviewerIds", "maintainerIds"],
     optional: [],
-    cleared: [
-      "mentionedUserIds",
-      "commenterIds",
-      "reactorIds",
-      "maintainerIds",
-    ],
+    cleared: ["mentionedUserIds", "commenterIds", "reactorIds"],
   },
   pr_inactive: {
-    applied: ["authorIds", "assigneeIds", "reviewerIds"],
+    applied: ["authorIds", "assigneeIds", "reviewerIds", "maintainerIds"],
     optional: [],
-    cleared: [
-      "mentionedUserIds",
-      "commenterIds",
-      "reactorIds",
-      "maintainerIds",
-    ],
+    cleared: ["mentionedUserIds", "commenterIds", "reactorIds"],
   },
   review_requests_pending: {
     applied: ["reviewerIds"],

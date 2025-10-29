@@ -418,7 +418,7 @@ describe("ActivityView", () => {
       expect(url.searchParams.getAll("authorId")).toEqual(["user-alice"]);
       expect(url.searchParams.getAll("assigneeId")).toEqual(["user-alice"]);
       expect(url.searchParams.getAll("reviewerId")).toEqual(["user-alice"]);
-      expect(url.searchParams.has("maintainerId")).toBe(false);
+      expect(url.searchParams.getAll("maintainerId")).toEqual(["user-alice"]);
       expect(url.searchParams.has("mentionedUserId")).toBe(false);
       expect(url.searchParams.has("commenterId")).toBe(false);
       expect(url.searchParams.has("reactorId")).toBe(false);
@@ -453,7 +453,7 @@ describe("ActivityView", () => {
       expect(url.searchParams.getAll("authorId")).toEqual(["user-alice"]);
       expect(url.searchParams.getAll("assigneeId")).toEqual(["user-alice"]);
       expect(url.searchParams.getAll("reviewerId")).toEqual(["user-alice"]);
-      expect(url.searchParams.has("maintainerId")).toBe(false);
+      expect(url.searchParams.getAll("maintainerId")).toEqual(["user-alice"]);
       expect(url.searchParams.has("mentionedUserId")).toBe(false);
       expect(url.searchParams.has("commenterId")).toBe(false);
       expect(url.searchParams.has("reactorId")).toBe(false);
@@ -614,7 +614,7 @@ describe("ActivityView", () => {
       assertParam("authorId");
       assertParam("assigneeId");
       assertParam("reviewerId");
-      expect(url.searchParams.has("maintainerId")).toBe(false);
+      assertParam("maintainerId");
       expect(url.searchParams.has("mentionedUserId")).toBe(false);
       expect(url.searchParams.has("commenterId")).toBe(false);
       expect(url.searchParams.has("reactorId")).toBe(false);

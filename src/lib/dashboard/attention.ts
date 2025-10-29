@@ -328,6 +328,11 @@ type PullRequestRow = {
   repository_name_with_owner: string | null;
 };
 
+type IdlePullRequestRow = PullRequestRow & {
+  last_non_octoaide_activity_at: string | null;
+  last_octoaide_activity_at: string | null;
+};
+
 type ReviewRequestRow = {
   id: string;
   pull_request_id: string;
@@ -457,6 +462,7 @@ const STUCK_REVIEW_BUSINESS_DAYS = 5;
 const BACKLOG_ISSUE_BUSINESS_DAYS = 40;
 const STALLED_IN_PROGRESS_BUSINESS_DAYS = 20;
 const UNANSWERED_MENTION_BUSINESS_DAYS = 5;
+const OCTOAIDE_LOGINS = ["octoaide"];
 
 function parseDate(value: Maybe<string>) {
   if (!value) {
@@ -481,6 +487,50 @@ function differenceInDaysOrNull(
   holidays: ReadonlySet<string>,
 ) {
   return differenceInBusinessDaysOrNull(value ?? null, now, holidays);
+}
+
+function maxIsoDate(values: Array<Maybe<string>>): string | null {
+  let latest: string | null = null;
+  for (const value of values) {
+    if (!value) {
+      continue;
+    }
+    if (!latest || value > latest) {
+      latest = value;
+    }
+  }
+  return latest;
+}
+
+async function fetchUserIdsByLogins(
+  logins: readonly string[],
+): Promise<string[]> {
+  const normalized = Array.from(
+    new Set(
+      logins
+        .map((login) => login?.trim().toLowerCase() ?? "")
+        .filter((login): login is string => login.length > 0),
+    ),
+  );
+  if (!normalized.length) {
+    return [];
+  }
+
+  const result = await query<{ id: string }>(
+    `SELECT id
+       FROM users
+      WHERE LOWER(login) = ANY($1::text[])`,
+    [normalized],
+  );
+
+  const ids = new Set<string>();
+  for (const row of result.rows) {
+    if (row.id) {
+      ids.add(row.id);
+    }
+  }
+
+  return Array.from(ids);
 }
 
 function toUserReference(
@@ -1163,7 +1213,9 @@ async function fetchIdlePullRequests(
   now: Date,
   holidays: ReadonlySet<string>,
 ): Promise<Dataset<RawPullRequestItem>> {
-  const result = await query<PullRequestRow>(
+  const octoaideUserIds = await fetchUserIdsByLogins(OCTOAIDE_LOGINS);
+
+  const result = await query<IdlePullRequestRow>(
     `SELECT
        pr.id,
        pr.number,
@@ -1174,16 +1226,51 @@ async function fetchIdlePullRequests(
        pr.github_updated_at,
        pr.data->>'url' AS url,
        repo.name AS repository_name,
-       repo.name_with_owner AS repository_name_with_owner
+       repo.name_with_owner AS repository_name_with_owner,
+       non_octoaide_activity.last_activity_at AS last_non_octoaide_activity_at,
+       octoaide_activity.last_activity_at AS last_octoaide_activity_at
     FROM pull_requests pr
     JOIN repositories repo ON repo.id = pr.repository_id
+    LEFT JOIN LATERAL (
+       SELECT MAX(activity_at) AS last_activity_at
+         FROM (
+           SELECT c.github_created_at AS activity_at
+             FROM comments c
+            WHERE c.pull_request_id = pr.id
+              AND (c.author_id IS NULL OR NOT (c.author_id = ANY($2::text[])))
+              AND (c.author_id IS NULL OR NOT (c.author_id = ANY($3::text[])))
+           UNION ALL
+           SELECT r.github_submitted_at AS activity_at
+             FROM reviews r
+            WHERE r.pull_request_id = pr.id
+              AND r.github_submitted_at IS NOT NULL
+              AND (r.author_id IS NULL OR NOT (r.author_id = ANY($2::text[])))
+              AND (r.author_id IS NULL OR NOT (r.author_id = ANY($3::text[])))
+         ) AS activities
+     ) AS non_octoaide_activity ON TRUE
+    LEFT JOIN LATERAL (
+       SELECT MAX(activity_at) AS last_activity_at
+         FROM (
+           SELECT c.github_created_at AS activity_at
+             FROM comments c
+            WHERE c.pull_request_id = pr.id
+              AND c.author_id IS NOT NULL
+              AND c.author_id = ANY($3::text[])
+           UNION ALL
+           SELECT r.github_submitted_at AS activity_at
+             FROM reviews r
+            WHERE r.pull_request_id = pr.id
+              AND r.github_submitted_at IS NOT NULL
+              AND r.author_id IS NOT NULL
+              AND r.author_id = ANY($3::text[])
+         ) AS activities
+     ) AS octoaide_activity ON TRUE
     WHERE pr.github_closed_at IS NULL
-       AND pr.github_updated_at <= NOW() - INTERVAL '12 days'
        AND pr.github_created_at <= NOW() - INTERVAL '12 days'
        AND NOT (pr.repository_id = ANY($1::text[]))
        AND (pr.author_id IS NULL OR NOT (pr.author_id = ANY($2::text[])))
      ORDER BY pr.github_updated_at ASC NULLS LAST`,
-    [excludedRepositoryIds, excludedUserIds],
+    [excludedRepositoryIds, excludedUserIds, octoaideUserIds],
   );
 
   const prIds = result.rows.map((row) => row.id);
@@ -1194,18 +1281,54 @@ async function fetchIdlePullRequests(
 
   const userIds = new Set<string>();
   const items: RawPullRequestItem[] = [];
+  const hasOctoaide = octoaideUserIds.length > 0;
 
   result.rows.forEach((row) => {
     const ageDays = differenceInDays(row.github_created_at, now, holidays);
-    const inactivityDays = differenceInDays(
-      row.github_updated_at,
-      now,
-      holidays,
-    );
-    if (
-      ageDays < IDLE_PR_BUSINESS_DAYS ||
-      inactivityDays < IDLE_PR_BUSINESS_DAYS
-    ) {
+    if (ageDays < IDLE_PR_BUSINESS_DAYS) {
+      return;
+    }
+
+    const latestNonOctoaideActivity = row.last_non_octoaide_activity_at;
+    let effectiveUpdatedAt = row.github_updated_at ?? row.github_created_at;
+
+    if (hasOctoaide && row.last_octoaide_activity_at) {
+      const latestKnownActivity = maxIsoDate([
+        row.github_updated_at,
+        latestNonOctoaideActivity,
+        row.last_octoaide_activity_at,
+      ]);
+      const latestKnownActivityTime = latestKnownActivity
+        ? Date.parse(latestKnownActivity)
+        : Number.NaN;
+      const lastOctoaideActivityTime = Date.parse(
+        row.last_octoaide_activity_at,
+      );
+
+      if (
+        Number.isFinite(latestKnownActivityTime) &&
+        Number.isFinite(lastOctoaideActivityTime) &&
+        latestKnownActivityTime === lastOctoaideActivityTime
+      ) {
+        const candidateHumanDates: Array<Maybe<string>> = [
+          row.github_updated_at &&
+          Date.parse(row.github_updated_at) !== lastOctoaideActivityTime
+            ? row.github_updated_at
+            : null,
+          latestNonOctoaideActivity,
+          row.github_created_at,
+        ];
+        effectiveUpdatedAt =
+          maxIsoDate(candidateHumanDates) ?? row.github_created_at;
+      }
+    }
+
+    if (!effectiveUpdatedAt) {
+      effectiveUpdatedAt = row.github_created_at;
+    }
+
+    const inactivityDays = differenceInDays(effectiveUpdatedAt, now, holidays);
+    if (inactivityDays < IDLE_PR_BUSINESS_DAYS) {
       return;
     }
 
@@ -1228,7 +1351,7 @@ async function fetchIdlePullRequests(
       reviewerIds,
       linkedIssues: linkedIssuesMap.get(row.id) ?? [],
       createdAt: row.github_created_at,
-      updatedAt: row.github_updated_at,
+      updatedAt: effectiveUpdatedAt,
       ageDays,
       inactivityDays,
     });

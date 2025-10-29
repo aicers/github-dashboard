@@ -97,6 +97,9 @@ function evaluateStaleOrIdlePr(
   if (context.isAssignee) {
     applied.push("assignee");
   }
+  if (context.isMaintainer) {
+    applied.push("maintainer");
+  }
   if (context.isAuthor) {
     applied.push("author");
   }

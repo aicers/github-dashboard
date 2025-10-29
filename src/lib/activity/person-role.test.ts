@@ -95,12 +95,25 @@ describe("evaluateAttentionPersonRule", () => {
       context({
         isAuthor: true,
         isReviewer: true,
+        isMaintainer: true,
       }),
     );
     expect(result.match).toBe(true);
     expect(result.appliedRoles).toEqual(
-      expect.arrayContaining(["author", "reviewer"]),
+      expect.arrayContaining(["author", "reviewer", "maintainer"]),
     );
+    expect(result.optionalRoles).toEqual([]);
+  });
+
+  it("matches maintainers for stale or idle PR attentions", () => {
+    const result = evaluateAttentionPersonRule(
+      "pr_inactive",
+      context({
+        isMaintainer: true,
+      }),
+    );
+    expect(result.match).toBe(true);
+    expect(result.appliedRoles).toEqual(["maintainer"]);
     expect(result.optionalRoles).toEqual([]);
   });
 

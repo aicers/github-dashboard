@@ -2,13 +2,22 @@
 
 import "../../../tests/helpers/postgres-container";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 import { getAttentionInsights } from "@/lib/dashboard/attention";
 import { differenceInBusinessDays } from "@/lib/dashboard/business-days";
 import { ensureSchema } from "@/lib/db";
 import {
   updateSyncConfig,
+  upsertComment,
   upsertPullRequest,
   upsertRepository,
   upsertReview,
@@ -26,19 +35,22 @@ import { resetDashboardTables } from "../../../tests/helpers/dashboard-metrics";
 
 const FIXED_NOW = "2024-02-20T00:00:00.000Z";
 
-describe("attention insights for idle pull requests", () => {
+describe.sequential("attention insights for idle pull requests", () => {
+  beforeAll(async () => {
+    await ensureSchema();
+  });
+
   beforeEach(async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(FIXED_NOW));
 
-    await ensureSchema();
     await resetDashboardTables();
     await updateSyncConfig({
       timezone: "Asia/Seoul",
       excludedRepositories: ["repo-excluded"],
       excludedUsers: ["user-excluded"],
     });
-  });
+  }, 120000);
 
   afterEach(() => {
     vi.useRealTimers();
@@ -155,7 +167,6 @@ describe("attention insights for idle pull requests", () => {
     await upsertReview(submittedReview);
 
     const insights = await getAttentionInsights();
-
     expect(insights.timezone).toBe("Asia/Seoul");
     expect(insights.idleOpenPrs).toHaveLength(1);
 
@@ -200,5 +211,92 @@ describe("attention insights for idle pull requests", () => {
 
     const generatedAt = new Date(insights.generatedAt).toISOString();
     expect(generatedAt).toBe(FIXED_NOW);
+  });
+
+  it("ignores octoaide-only updates when calculating inactivity", async () => {
+    const owner = buildActor("user-owner", "owner", "Owner");
+    const author = buildActor("user-author", "author", "Author");
+    const octoaide = buildActor("user-octoaide", "octoaide", "octoaide");
+
+    for (const actor of [owner, author, octoaide]) {
+      await upsertUser(actor);
+    }
+
+    const repository = buildRepository(
+      "repo-octoaide",
+      "octoaide-repo",
+      owner.id,
+      owner.login ?? "owner",
+    );
+    await upsertRepository(repository);
+
+    const createdAt = "2023-12-01T00:00:00.000Z";
+    const humanUpdatedAt = "2024-02-01T09:00:00.000Z";
+    const octoaideUpdatedAt = "2024-02-18T09:00:00.000Z";
+
+    const pullRequestUrl = "https://github.com/acme/octoaide-repo/pull/202";
+
+    const basePullRequest = buildPullRequest({
+      id: "pr-octoaide-ignore",
+      number: 202,
+      repository,
+      authorId: author.id,
+      title: "AI helper follow-up",
+      url: pullRequestUrl,
+      createdAt,
+      updatedAt: humanUpdatedAt,
+    });
+    await upsertPullRequest(basePullRequest);
+
+    await upsertComment({
+      id: "comment-human",
+      pullRequestId: basePullRequest.id,
+      authorId: author.id,
+      createdAt: humanUpdatedAt,
+      raw: {
+        id: "comment-human",
+        __typename: "IssueComment",
+        body: "Manual update",
+      },
+    });
+
+    const octoaidePullRequest = buildPullRequest({
+      id: basePullRequest.id,
+      number: basePullRequest.number,
+      repository,
+      authorId: author.id,
+      title: basePullRequest.title ?? "",
+      url: pullRequestUrl,
+      createdAt,
+      updatedAt: octoaideUpdatedAt,
+    });
+    await upsertPullRequest(octoaidePullRequest);
+
+    await upsertComment({
+      id: "comment-octoaide",
+      pullRequestId: basePullRequest.id,
+      authorId: octoaide.id,
+      createdAt: octoaideUpdatedAt,
+      raw: {
+        id: "comment-octoaide",
+        __typename: "IssueComment",
+        body: "Automated suggestion",
+      },
+    });
+
+    const insights = await getAttentionInsights();
+    expect(insights.idleOpenPrs).toHaveLength(1);
+
+    const [item] = insights.idleOpenPrs;
+    expect(item.id).toBe(basePullRequest.id);
+    expect(new Date(item.updatedAt as string).toISOString()).toBe(
+      humanUpdatedAt,
+    );
+
+    const expectedInactivity = differenceInBusinessDays(
+      humanUpdatedAt,
+      new Date(FIXED_NOW),
+    );
+    expect(item.inactivityDays).toBe(expectedInactivity);
   });
 });
