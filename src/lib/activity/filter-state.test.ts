@@ -83,6 +83,16 @@ describe("buildSavedFilterPayload", () => {
       stalePrDays: DEFAULT_THRESHOLD_VALUES.stalePrDays + 5,
     });
   });
+
+  it("preserves people selection when building payload", () => {
+    const filters = buildActivityFilterState({
+      peopleSelection: ["user-alice", "user-bob"],
+    });
+
+    const payload = buildSavedFilterPayload(filters);
+
+    expect(payload.peopleSelection).toEqual(["user-alice", "user-bob"]);
+  });
 });
 
 describe("normalizeSearchParams", () => {
@@ -130,5 +140,15 @@ describe("normalizeSearchParams", () => {
         (DEFAULT_THRESHOLD_VALUES.backlogIssueDays + 3).toString(),
       ],
     ]);
+  });
+
+  it("serialises people selection into search params", () => {
+    const filters = buildActivityFilterState({
+      peopleSelection: ["user-1", "user-2"],
+    });
+
+    const params = normalizeSearchParams(filters, 25);
+
+    expect(params.getAll("peopleSelection")).toEqual(["user-1", "user-2"]);
   });
 });
