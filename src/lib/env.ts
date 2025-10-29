@@ -31,6 +31,7 @@ const envSchema = z.object({
     .min(1, "Set GITHUB_OAUTH_CLIENT_SECRET to enable GitHub OAuth.")
     .optional(),
   GITHUB_ALLOWED_ORG: z.string().optional(),
+  GITHUB_ALLOWED_BOT_LOGINS: z.string().optional(),
   APP_BASE_URL: z
     .string()
     .url(
@@ -81,6 +82,7 @@ const parsed = envSchema.parse({
   GITHUB_OAUTH_CLIENT_ID: process.env.GITHUB_OAUTH_CLIENT_ID,
   GITHUB_OAUTH_CLIENT_SECRET: process.env.GITHUB_OAUTH_CLIENT_SECRET,
   GITHUB_ALLOWED_ORG: process.env.GITHUB_ALLOWED_ORG,
+  GITHUB_ALLOWED_BOT_LOGINS: process.env.GITHUB_ALLOWED_BOT_LOGINS,
   APP_BASE_URL: process.env.APP_BASE_URL,
   SESSION_SECRET: process.env.SESSION_SECRET,
   DATABASE_URL: process.env.DATABASE_URL,
@@ -113,4 +115,9 @@ export const env = {
   DB_BACKUP_RETENTION: parsed.DB_BACKUP_RETENTION ?? 3,
   OPENAI_API_KEY: coerceOptionalString(parsed.OPENAI_API_KEY),
   OPENAI_API_BASE_URL: coerceOptionalString(parsed.OPENAI_API_BASE_URL),
+  GITHUB_ALLOWED_BOT_LOGINS: parsed.GITHUB_ALLOWED_BOT_LOGINS
+    ? parsed.GITHUB_ALLOWED_BOT_LOGINS.split(",")
+        .map((value) => value.trim().toLowerCase())
+        .filter((value) => value.length > 0)
+    : [],
 };
