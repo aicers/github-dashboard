@@ -4253,14 +4253,14 @@ export function ActivityView({
                             <span>{option.label}</span>
                             {tooltip ? (
                               <span
-                                className="relative inline-flex cursor-help items-center text-muted-foreground group-hover:text-foreground group-focus-visible:text-foreground"
+                                className="group/tooltip relative inline-flex cursor-help items-center text-muted-foreground transition-colors duration-150 hover:text-foreground focus-visible:text-foreground"
                                 aria-hidden="true"
                               >
                                 <Info className="h-3 w-3" aria-hidden="true" />
                                 <span
                                   id={tooltipId}
                                   role="tooltip"
-                                  className="pointer-events-none absolute left-1/2 top-full z-20 w-56 -translate-x-1/2 translate-y-2 rounded-md border border-border/60 bg-background px-2 py-1 text-xs text-muted-foreground opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+                                  className="pointer-events-none absolute left-1/2 top-full z-20 w-56 -translate-x-1/2 translate-y-2 rounded-md border border-border/60 bg-background px-2 py-1 text-xs text-muted-foreground opacity-0 shadow-md transition-opacity duration-150 group-hover/tooltip:opacity-100 group-focus-visible/tooltip:opacity-100"
                                 >
                                   {tooltip}
                                 </span>
