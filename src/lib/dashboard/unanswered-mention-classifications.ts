@@ -11,6 +11,8 @@ export type MentionClassificationRecord = {
   model: string | null;
   rawResponse: unknown;
   lastEvaluatedAt: string | null;
+  manualRequiresResponse: boolean | null;
+  manualRequiresResponseAt: string | null;
 };
 
 export type MentionClassificationUpsert = {
@@ -22,6 +24,8 @@ export type MentionClassificationUpsert = {
   rawResponse: unknown;
   promptVersion?: string;
   evaluatedAt?: Date;
+  manualRequiresResponse?: boolean | null;
+  manualRequiresResponseAt?: Date | null;
 };
 
 type ClassificationRow = {
@@ -33,6 +37,8 @@ type ClassificationRow = {
   model: string | null;
   raw_response: unknown;
   last_evaluated_at: string | null;
+  manual_requires_response: boolean | null;
+  manual_requires_response_at: string | null;
 };
 
 type ClassificationKeyInput = {
@@ -66,7 +72,9 @@ export async function fetchMentionClassifications(
        requires_response,
        model,
        raw_response,
-       last_evaluated_at
+       last_evaluated_at,
+       manual_requires_response,
+       manual_requires_response_at
      FROM unanswered_mention_classifications
     WHERE (comment_id, mentioned_user_id) IN (
       SELECT * FROM UNNEST($1::text[], $2::text[])
@@ -89,6 +97,8 @@ export async function fetchMentionClassifications(
       model: row.model,
       rawResponse: row.raw_response,
       lastEvaluatedAt: row.last_evaluated_at,
+      manualRequiresResponse: row.manual_requires_response,
+      manualRequiresResponseAt: row.manual_requires_response_at,
     });
   });
 
@@ -139,6 +149,69 @@ export async function upsertMentionClassification(
       input.model,
       rawResponseJson,
       evaluatedAt.toISOString(),
+    ],
+  );
+}
+
+export async function upsertMentionManualOverride(input: {
+  commentId: string;
+  mentionedUserId: string;
+  commentBodyHash: string;
+  manualRequiresResponse: boolean | null;
+  requiresResponse?: boolean | null;
+  evaluatedAt?: Date;
+  manualAt?: Date | null;
+}): Promise<void> {
+  const evaluatedAt = input.evaluatedAt ?? new Date();
+  const manualAt =
+    input.manualRequiresResponse === null
+      ? null
+      : (input.manualAt ?? new Date());
+  await query(
+    `INSERT INTO unanswered_mention_classifications (
+       comment_id,
+       mentioned_user_id,
+       comment_body_hash,
+       prompt_version,
+       requires_response,
+       model,
+       raw_response,
+       last_evaluated_at,
+       manual_requires_response,
+       manual_requires_response_at,
+       created_at,
+       updated_at
+     )
+     VALUES (
+       $1,
+       $2,
+       $3,
+       $4,
+       COALESCE($5, FALSE),
+       NULL,
+       NULL,
+       $6,
+       $7,
+       $8,
+       NOW(),
+       NOW()
+     )
+     ON CONFLICT (comment_id, mentioned_user_id)
+     DO UPDATE SET
+       comment_body_hash = EXCLUDED.comment_body_hash,
+       manual_requires_response = EXCLUDED.manual_requires_response,
+       manual_requires_response_at = EXCLUDED.manual_requires_response_at,
+       last_evaluated_at = EXCLUDED.last_evaluated_at,
+       updated_at = NOW()`,
+    [
+      input.commentId,
+      input.mentionedUserId,
+      input.commentBodyHash,
+      UNANSWERED_MENTION_PROMPT_VERSION,
+      input.requiresResponse ?? null,
+      evaluatedAt.toISOString(),
+      input.manualRequiresResponse,
+      manualAt ? manualAt.toISOString() : null,
     ],
   );
 }

@@ -432,29 +432,23 @@ function dedupeReviewRequestDetails(details: ReviewRequestAttentionItem[]) {
 }
 
 function dedupeMentionDetails(details: MentionAttentionItem[]) {
-  const byTarget = new Map<string, MentionAttentionItem>();
-  const fallback = new Map<string, MentionAttentionItem>();
+  const byMention = new Map<string, MentionAttentionItem>();
 
-  details.forEach((detail) => {
-    const targetId = detail.target?.id?.trim();
-    const key = targetId && targetId.length > 0 ? targetId : detail.commentId;
-    const targetMap = targetId ? byTarget : fallback;
-    const existing = targetMap.get(key);
+  details.forEach((detail, index) => {
+    const commentKey = detail.commentId?.trim() ?? `comment-${index}`;
+    const targetKey = detail.target?.id?.trim();
+    const tieBreaker =
+      targetKey && targetKey.length > 0
+        ? targetKey
+        : (detail.mentionedAt?.trim() ?? `unknown-${index}`);
+    const key = `${commentKey}::${tieBreaker}`;
+    const existing = byMention.get(key);
     if (!existing || detail.waitingDays > existing.waitingDays) {
-      targetMap.set(key, detail);
+      byMention.set(key, detail);
     }
   });
 
-  return [
-    ...byTarget.values(),
-    ...fallback.values().filter((detail) => {
-      const fallbackKey = detail.commentId;
-      if (!fallbackKey) {
-        return true;
-      }
-      return !byTarget.has(fallbackKey);
-    }),
-  ];
+  return Array.from(byMention.values());
 }
 
 function buildLabels(row: ActivityRow): ActivityLabel[] {
@@ -1049,10 +1043,11 @@ function extractTodoProjectFieldValues(
 
 async function resolveAttentionSets(
   thresholds: Required<ActivityThresholds>,
-  options?: { userId?: string | null },
+  options?: { userId?: string | null; useMentionClassifier?: boolean },
 ): Promise<AttentionSets> {
   const insights = await getAttentionInsights({
     userId: options?.userId ?? null,
+    useMentionClassifier: options?.useMentionClassifier ?? true,
   });
   const unansweredMentions = new Set<string>();
   const reviewRequests = new Set<string>();
@@ -1969,8 +1964,17 @@ function buildActivityItem(
     ? dedupedMentions.map((detail) => ({
         id: detail.commentId,
         user: mapReferencedUser(detail.target ?? null, users),
+        userId: detail.target?.id ?? null,
         mentionedAt: toIso(detail.mentionedAt),
         businessDaysWaiting: detail.waitingDays ?? null,
+        requiresResponse: detail.classification?.requiresResponse ?? null,
+        manualRequiresResponse:
+          detail.classification?.manualRequiresResponse ?? null,
+        manualRequiresResponseAt:
+          detail.classification?.manualRequiresResponseAt ?? null,
+        manualDecisionIsStale:
+          detail.classification?.manualDecisionIsStale ?? false,
+        classifierEvaluatedAt: detail.classification?.lastEvaluatedAt ?? null,
       }))
     : undefined;
   const linkedPullRequests =
@@ -2110,6 +2114,7 @@ export async function getActivityItems(
 
   const attentionSets = await resolveAttentionSets(thresholds, {
     userId: options?.userId ?? null,
+    useMentionClassifier: params.useMentionAi !== false,
   });
   const attentionSelection = collectAttentionFilterIds(
     params.attention,
@@ -2305,11 +2310,14 @@ export async function getActivityItems(
 
 export async function getActivityItemDetail(
   id: string,
+  options?: { useMentionClassifier?: boolean },
 ): Promise<ActivityItemDetail | null> {
   await ensureSchema();
 
   const thresholds: Required<ActivityThresholds> = { ...DEFAULT_THRESHOLDS };
-  const attentionSets = await resolveAttentionSets(thresholds);
+  const attentionSets = await resolveAttentionSets(thresholds, {
+    useMentionClassifier: options?.useMentionClassifier ?? true,
+  });
   const targetProject = normalizeProjectTarget(env.TODO_PROJECT_NAME);
   const config = await getSyncConfig();
   const organizationHolidayCodes = normalizeOrganizationHolidayCodes(config);

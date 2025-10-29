@@ -18,6 +18,7 @@ import { createPersonalHolidaySetLoader } from "@/lib/dashboard/personal-holiday
 import {
   buildMentionClassificationKey,
   fetchMentionClassifications,
+  type MentionClassificationRecord,
   UNANSWERED_MENTION_PROMPT_VERSION,
 } from "@/lib/dashboard/unanswered-mention-classifications";
 import type { DateTimeDisplayFormat } from "@/lib/date-time-format";
@@ -151,6 +152,7 @@ export type MentionAttentionItem = {
     repository: RepositoryReference | null;
   };
   commentExcerpt: string | null;
+  classification: MentionClassificationView | null;
 };
 
 export type AttentionInsights = {
@@ -171,6 +173,59 @@ type Dataset<T> = {
   items: T[];
   userIds: Set<string>;
 };
+
+type MentionClassificationView = {
+  requiresResponse: boolean | null;
+  manualRequiresResponse: boolean | null;
+  manualRequiresResponseAt: string | null;
+  manualDecisionIsStale: boolean;
+  lastEvaluatedAt: string | null;
+};
+
+type ResolvedManualDecision = {
+  value: boolean | null;
+  isStale: boolean;
+  appliedAt: string | null;
+};
+
+function resolveManualDecision(
+  record: MentionClassificationRecord | undefined,
+): ResolvedManualDecision {
+  if (!record) {
+    return { value: null, isStale: false, appliedAt: null };
+  }
+
+  const manualValue = record.manualRequiresResponse;
+  const manualAtIso = record.manualRequiresResponseAt;
+  if (manualValue === null || !manualAtIso) {
+    return { value: null, isStale: false, appliedAt: null };
+  }
+
+  const manualAt = new Date(manualAtIso);
+  if (Number.isNaN(manualAt.getTime())) {
+    return { value: manualValue, isStale: false, appliedAt: null };
+  }
+
+  const evaluatedAtIso = record.lastEvaluatedAt;
+  if (evaluatedAtIso) {
+    const evaluatedAt = new Date(evaluatedAtIso);
+    if (!Number.isNaN(evaluatedAt.getTime())) {
+      if (manualAt.getTime() < evaluatedAt.getTime()) {
+        return {
+          value: null,
+          isStale: true,
+          appliedAt: manualAt.toISOString(),
+        };
+      }
+    }
+  }
+
+  return {
+    value: manualValue,
+    isStale: false,
+    appliedAt: manualAt.toISOString(),
+  };
+}
 
 type PullRequestReferenceRaw = {
   id: string;
@@ -251,6 +306,7 @@ type MentionRawItem = {
     repositoryNameWithOwner: string | null;
   };
   commentExcerpt: string | null;
+  classification?: MentionClassificationView | null;
 };
 
 export type MentionDatasetItem = MentionRawItem & {
@@ -1670,6 +1726,7 @@ async function fetchUnansweredMentions(
   now: Date,
   organizationHolidayCodes: HolidayCalendarCode[],
   organizationHolidaySet: ReadonlySet<string>,
+  options?: { useClassifier?: boolean },
 ): Promise<Dataset<MentionRawItem>> {
   const candidates = await fetchUnansweredMentionCandidates(
     excludedRepositoryIds,
@@ -1686,12 +1743,10 @@ async function fetchUnansweredMentions(
       mentionedUserId: item.targetUserId as string,
     }));
 
-  if (!classificationInputs.length) {
-    return { items: [], userIds: new Set() };
-  }
-
-  const classifications =
-    await fetchMentionClassifications(classificationInputs);
+  const classifications = classificationInputs.length
+    ? await fetchMentionClassifications(classificationInputs)
+    : new Map<string, MentionClassificationRecord>();
+  const useClassifier = options?.useClassifier ?? true;
   const filteredItems: MentionRawItem[] = [];
   const userIds = new Set<string>();
 
@@ -1702,17 +1757,24 @@ async function fetchUnansweredMentions(
     }
     const key = buildMentionClassificationKey(item.commentId, targetUserId);
     const record = classifications.get(key);
-    if (!record) {
+    const manualDecision = resolveManualDecision(record);
+    if (manualDecision.value === false) {
       continue;
     }
-    if (record.promptVersion !== UNANSWERED_MENTION_PROMPT_VERSION) {
-      continue;
-    }
-    if (record.commentBodyHash !== item.commentBodyHash) {
-      continue;
-    }
-    if (!record.requiresResponse) {
-      continue;
+
+    if (useClassifier) {
+      if (!record) {
+        continue;
+      }
+      if (record.promptVersion !== UNANSWERED_MENTION_PROMPT_VERSION) {
+        continue;
+      }
+      if (record.commentBodyHash !== item.commentBodyHash) {
+        continue;
+      }
+      if (!manualDecision.value && !record.requiresResponse) {
+        continue;
+      }
     }
 
     filteredItems.push({
@@ -1724,6 +1786,15 @@ async function fetchUnansweredMentions(
       targetUserId,
       container: item.container,
       commentExcerpt: item.commentExcerpt,
+      classification: record
+        ? {
+            requiresResponse: record.requiresResponse,
+            manualRequiresResponse: manualDecision.value,
+            manualRequiresResponseAt: manualDecision.appliedAt,
+            manualDecisionIsStale: manualDecision.isStale,
+            lastEvaluatedAt: record.lastEvaluatedAt,
+          }
+        : null,
     });
     addUserId(userIds, item.commentAuthorId);
     addUserId(userIds, targetUserId);
@@ -1783,6 +1854,7 @@ function toIssueReference(
 
 export async function getAttentionInsights(options?: {
   userId?: string | null;
+  useMentionClassifier?: boolean;
 }): Promise<AttentionInsights> {
   await ensureSchema();
 
@@ -1849,6 +1921,9 @@ export async function getAttentionInsights(options?: {
         now,
         organizationHolidayCodes,
         organizationHolidaySet,
+        {
+          useClassifier: options?.useMentionClassifier ?? true,
+        },
       ),
     ]);
 
@@ -1973,6 +2048,18 @@ export async function getAttentionInsights(options?: {
         ),
       },
       commentExcerpt: item.commentExcerpt,
+      classification: item.classification
+        ? {
+            requiresResponse: item.classification.requiresResponse,
+            manualRequiresResponse:
+              item.classification.manualRequiresResponse ?? null,
+            manualRequiresResponseAt:
+              item.classification.manualRequiresResponseAt ?? null,
+            manualDecisionIsStale:
+              item.classification.manualDecisionIsStale ?? false,
+            lastEvaluatedAt: item.classification.lastEvaluatedAt ?? null,
+          }
+        : null,
     }),
   );
 

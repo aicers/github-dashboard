@@ -50,6 +50,7 @@ export default async function ActivityPage({
       filterOptions={filterOptions}
       initialParams={params}
       currentUserId={session?.userId ?? null}
+      currentUserIsAdmin={session?.isAdmin ?? false}
     />
   );
 }

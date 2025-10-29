@@ -6,7 +6,24 @@ type RouteParams = {
   params: Promise<{ id: string }>;
 };
 
-export async function GET(_: Request, context: RouteParams) {
+function parseMentionAi(value: string | null | undefined): boolean | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (!normalized.length) {
+    return undefined;
+  }
+  if (["0", "false", "off", "no"].includes(normalized)) {
+    return false;
+  }
+  if (["1", "true", "on", "yes"].includes(normalized)) {
+    return true;
+  }
+  return undefined;
+}
+
+export async function GET(request: Request, context: RouteParams) {
   const resolvedParams = await context.params;
   const rawId = resolvedParams?.id ?? "";
   const id = decodeURIComponent(rawId.trim());
@@ -18,7 +35,16 @@ export async function GET(_: Request, context: RouteParams) {
   }
 
   try {
-    const detail = await getActivityItemDetail(id);
+    const url = new URL(request.url);
+    const mentionParam =
+      parseMentionAi(url.searchParams.get("mentionAi")) ??
+      parseMentionAi(url.searchParams.get("useMentionAi"));
+    const detail = await getActivityItemDetail(
+      id,
+      mentionParam === undefined
+        ? undefined
+        : { useMentionClassifier: mentionParam },
+    );
     if (!detail) {
       return NextResponse.json(
         { error: "Activity item not found." },

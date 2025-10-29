@@ -82,6 +82,7 @@ export type ActivityFilters = {
   search?: string | null;
   jumpToDate?: string | null;
   thresholds?: ActivityThresholds;
+  useMentionAi?: boolean;
 };
 
 export type ActivityPagination = {
@@ -183,8 +184,14 @@ export type ActivityReviewRequestWait = {
 export type ActivityMentionWait = {
   id: string;
   user: ActivityUser | null;
+  userId: string | null;
   mentionedAt: string | null;
   businessDaysWaiting: number | null;
+  requiresResponse: boolean | null;
+  manualRequiresResponse: boolean | null;
+  manualRequiresResponseAt: string | null;
+  manualDecisionIsStale: boolean;
+  classifierEvaluatedAt: string | null;
 };
 
 export type ActivityItem = {

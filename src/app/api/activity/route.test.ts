@@ -160,7 +160,7 @@ describe("GET /api/activity/[id]", () => {
     expect(await response.json()).toEqual({
       error: "Activity item not found.",
     });
-    expect(getActivityItemDetail).toHaveBeenCalledWith("missing");
+    expect(getActivityItemDetail).toHaveBeenCalledWith("missing", undefined);
   });
 
   it("returns activity detail when available", async () => {
@@ -243,7 +243,7 @@ describe("GET /api/activity/[id]", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(detail);
-    expect(getActivityItemDetail).toHaveBeenCalledWith("activity-1");
+    expect(getActivityItemDetail).toHaveBeenCalledWith("activity-1", undefined);
   });
 
   it("returns 500 when detail retrieval fails", async () => {
