@@ -33,6 +33,9 @@ jobs:
       - name: Run Biome
         run: biome ci --error-on-warnings .
 
+      - name: Run Tailwind lint
+        run: npm run lint:tailwind
+
       - name: Type check
         run: npm run typecheck
 
