@@ -104,7 +104,7 @@ const ATTENTION_TOOLTIPS: Partial<Record<ActivityAttentionFilter, string>> = {
   pr_open_too_long:
     "구성원 선택 시, 구성원이 PR의 작성자, 담당자, 리뷰어, 또는 저장소 책임자인 항목만 표시합니다.",
   pr_inactive:
-    "구성원 선택 시, 구성원이 PR의 작성자, 담당자, 리뷰어, 또는 저장소 책임자인 항목만 표시합니다.",
+    "구성원 선택 시, 구성원이 PR의 작성자, 담당자, 리뷰어, 또는 저장소 책임자인 항목만 표시합니다. octoaide가 남긴 활동은 업데이트로 간주하지 않습니다.",
   review_requests_pending:
     "구성원 선택 시, 구성원이 리뷰 요청을 받은 항목만 표시합니다.",
   unanswered_mentions:
@@ -899,9 +899,6 @@ function buildAttentionBadges(
   }
   if (item.attention.reviewRequestPending) {
     push("review-request", "응답 없는 리뷰 요청");
-  }
-  if (item.attention.staleOpenPr) {
-    push("stale-pr", "오래된 PR");
   }
   if (item.attention.idlePr) {
     push("idle-pr", "업데이트 없는 PR");
@@ -4738,150 +4735,148 @@ export function ActivityView({
                   );
                 })}
               </div>
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <div className="flex flex-col gap-4 md:flex-row md:flex-nowrap md:gap-6 md:overflow-x-auto">
                 <div
                   className={cn(
-                    "space-y-2",
+                    "flex-1 min-w-[200px] space-y-2",
                     issueFiltersDisabled && "opacity-60",
                   )}
                 >
                   <Label className="text-xs font-semibold text-foreground">
-                    이슈 임계값 (영업일): Backlog 정체, In Progress 정체
+                    정체 Backlog 이슈 기준일
                   </Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input
-                      type="number"
-                      min={1}
-                      value={draft.thresholds.backlogIssueDays}
-                      disabled={issueFiltersDisabled}
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          thresholds: {
-                            ...current.thresholds,
-                            backlogIssueDays: toPositiveInt(
-                              event.target.value,
-                              DEFAULT_THRESHOLD_VALUES.backlogIssueDays,
-                            ),
-                          },
-                        }))
-                      }
-                      placeholder="Backlog 정체"
-                    />
-                    <Input
-                      type="number"
-                      min={1}
-                      value={draft.thresholds.stalledIssueDays}
-                      disabled={issueFiltersDisabled}
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          thresholds: {
-                            ...current.thresholds,
-                            stalledIssueDays: toPositiveInt(
-                              event.target.value,
-                              DEFAULT_THRESHOLD_VALUES.stalledIssueDays,
-                            ),
-                          },
-                        }))
-                      }
-                      placeholder="In Progress 정체"
-                    />
-                  </div>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={draft.thresholds.backlogIssueDays}
+                    disabled={issueFiltersDisabled}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        thresholds: {
+                          ...current.thresholds,
+                          backlogIssueDays: toPositiveInt(
+                            event.target.value,
+                            DEFAULT_THRESHOLD_VALUES.backlogIssueDays,
+                          ),
+                        },
+                      }))
+                    }
+                    placeholder="Backlog 정체"
+                  />
                 </div>
                 <div
-                  className={cn("space-y-2", prFiltersDisabled && "opacity-60")}
+                  className={cn(
+                    "flex-1 min-w-[200px] space-y-2",
+                    issueFiltersDisabled && "opacity-60",
+                  )}
                 >
                   <Label className="text-xs font-semibold text-foreground">
-                    PR 임계값 (영업일): PR 생성, PR 정체
+                    정체 In Progress 이슈 기준일
                   </Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input
-                      type="number"
-                      min={1}
-                      value={draft.thresholds.stalePrDays}
-                      disabled={prFiltersDisabled}
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          thresholds: {
-                            ...current.thresholds,
-                            stalePrDays: toPositiveInt(
-                              event.target.value,
-                              DEFAULT_THRESHOLD_VALUES.stalePrDays,
-                            ),
-                          },
-                        }))
-                      }
-                      placeholder="PR 생성"
-                    />
-                    <Input
-                      type="number"
-                      min={1}
-                      value={draft.thresholds.idlePrDays}
-                      disabled={prFiltersDisabled}
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          thresholds: {
-                            ...current.thresholds,
-                            idlePrDays: toPositiveInt(
-                              event.target.value,
-                              DEFAULT_THRESHOLD_VALUES.idlePrDays,
-                            ),
-                          },
-                        }))
-                      }
-                      placeholder="PR 정체"
-                    />
-                  </div>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={draft.thresholds.stalledIssueDays}
+                    disabled={issueFiltersDisabled}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        thresholds: {
+                          ...current.thresholds,
+                          stalledIssueDays: toPositiveInt(
+                            event.target.value,
+                            DEFAULT_THRESHOLD_VALUES.stalledIssueDays,
+                          ),
+                        },
+                      }))
+                    }
+                    placeholder="In Progress 정체"
+                  />
                 </div>
-                <div className="space-y-2">
+                <div
+                  className={cn(
+                    "flex-1 min-w-[200px] space-y-2",
+                    prFiltersDisabled && "opacity-60",
+                  )}
+                >
                   <Label className="text-xs font-semibold text-foreground">
-                    리뷰/멘션 임계값 (영업일): 리뷰 무응답, 멘션 무응답
+                    업데이트 없는 PR 기준일
                   </Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input
-                      type="number"
-                      min={1}
-                      value={draft.thresholds.reviewRequestDays}
-                      disabled={prFiltersDisabled}
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          thresholds: {
-                            ...current.thresholds,
-                            reviewRequestDays: toPositiveInt(
+                  <Input
+                    type="number"
+                    min={1}
+                    value={draft.thresholds.idlePrDays}
+                    disabled={prFiltersDisabled}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        thresholds: {
+                          ...current.thresholds,
+                          idlePrDays: toPositiveInt(
+                            event.target.value,
+                            DEFAULT_THRESHOLD_VALUES.idlePrDays,
+                          ),
+                        },
+                      }))
+                    }
+                    placeholder="PR 정체"
+                  />
+                </div>
+                <div
+                  className={cn(
+                    "flex-1 min-w-[200px] space-y-2",
+                    prFiltersDisabled && "opacity-60",
+                  )}
+                >
+                  <Label className="text-xs font-semibold text-foreground">
+                    응답 없는 리뷰 기준일
+                  </Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={draft.thresholds.reviewRequestDays}
+                    disabled={prFiltersDisabled}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        thresholds: {
+                          ...current.thresholds,
+                          reviewRequestDays: toPositiveInt(
+                            event.target.value,
+                            DEFAULT_THRESHOLD_VALUES.reviewRequestDays,
+                          ),
+                        },
+                      }))
+                    }
+                    placeholder="리뷰 무응답"
+                  />
+                </div>
+                <div className="flex-1 min-w-[200px] space-y-2">
+                  <Label className="text-xs font-semibold text-foreground">
+                    응답 없는 멘션 기준일
+                  </Label>
+                  <Input
+                    type="number"
+                    min={5}
+                    value={draft.thresholds.unansweredMentionDays}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        thresholds: {
+                          ...current.thresholds,
+                          unansweredMentionDays: Math.max(
+                            5,
+                            toPositiveInt(
                               event.target.value,
-                              DEFAULT_THRESHOLD_VALUES.reviewRequestDays,
+                              DEFAULT_THRESHOLD_VALUES.unansweredMentionDays,
                             ),
-                          },
-                        }))
-                      }
-                      placeholder="리뷰 무응답"
-                    />
-                    <Input
-                      type="number"
-                      min={5}
-                      value={draft.thresholds.unansweredMentionDays}
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          thresholds: {
-                            ...current.thresholds,
-                            unansweredMentionDays: Math.max(
-                              5,
-                              toPositiveInt(
-                                event.target.value,
-                                DEFAULT_THRESHOLD_VALUES.unansweredMentionDays,
-                              ),
-                            ),
-                          },
-                        }))
-                      }
-                      placeholder="멘션 무응답"
-                    />
-                  </div>
+                          ),
+                        },
+                      }))
+                    }
+                    placeholder="멘션 무응답"
+                  />
                 </div>
               </div>
             </div>

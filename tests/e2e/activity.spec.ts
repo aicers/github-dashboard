@@ -353,17 +353,6 @@ const ATTENTION_SCENARIOS: Array<{
     expected: { assigneeId: ["user-alice"] },
   },
   {
-    name: "pr_open_too_long",
-    attentionLabels: ["오래된 PR"],
-    attentionValues: ["pr_open_too_long"],
-    expected: {
-      authorId: ["user-alice"],
-      assigneeId: ["user-alice"],
-      reviewerId: ["user-alice"],
-      maintainerId: ["user-alice"],
-    },
-  },
-  {
     name: "pr_inactive",
     attentionLabels: ["업데이트 없는 PR"],
     attentionValues: ["pr_inactive"],
