@@ -106,6 +106,7 @@ export function DashboardHeader({
     params.append("attention", "unanswered_mentions");
     params.append("reviewerId", userId);
     params.append("mentionedUserId", userId);
+    params.append("peopleSelection", userId);
 
     return `/dashboard/activity?${params.toString()}`;
   }, [userId]);

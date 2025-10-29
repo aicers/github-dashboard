@@ -153,6 +153,7 @@ export function parseActivityListParams(
     commenterIds: parseStringList(searchParams, "commenterId"),
     reactorIds: parseStringList(searchParams, "reactorId"),
     maintainerIds: parseStringList(searchParams, "maintainerId"),
+    peopleSelection: parseStringList(searchParams, "peopleSelection"),
     statuses: parseEnumValues<ActivityStatusFilter>(searchParams, "status", [
       "open",
       "closed",

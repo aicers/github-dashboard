@@ -284,6 +284,7 @@ export function normalizeSearchParams(
   appendAll("commenterId", filters.commenterIds);
   appendAll("reactorId", filters.reactorIds);
   appendAll("maintainerId", filters.maintainerIds);
+  appendAll("peopleSelection", filters.peopleSelection);
   appendAll(
     "status",
     filters.statuses.map((value) => value),
