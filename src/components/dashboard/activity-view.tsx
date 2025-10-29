@@ -1365,7 +1365,7 @@ function AiFilterControl({
         </span>
         <span
           className={cn(
-            "pointer-events-none absolute -inset-1 z-0 rounded-full blur-md transition duration-[900ms]",
+            "pointer-events-none absolute -inset-1 z-0 rounded-full blur-md transition duration-900",
             staticGlowClass,
           )}
           aria-hidden="true"

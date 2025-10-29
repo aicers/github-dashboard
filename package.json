@@ -9,6 +9,7 @@
     "lint": "biome lint --error-on-warnings .",
     "format:check": "biome check --formatter-enabled true --linter-enabled false",
     "lint:md": "markdownlint \"**/*.md\"",
+    "lint:tailwind": "npx @tailwindcss/cli --lint --content \"./src/**/*.{js,ts,jsx,tsx}\" --output /dev/null",
     "test": "vitest run",
     "test:db": "vitest run --config vitest.db.config.ts",
     "test:watch": "vitest",
@@ -38,6 +39,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.56.1",
+    "@tailwindcss/cli": "^4.1.16",
     "@tailwindcss/postcss": "^4.1.15",
     "@testcontainers/postgresql": "^11.7.1",
     "@testing-library/jest-dom": "^6.8.0",

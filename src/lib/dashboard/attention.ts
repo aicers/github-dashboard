@@ -1627,17 +1627,18 @@ export async function fetchUnansweredMentionCandidates(
        )
        AND NOT EXISTS (
          SELECT 1
-         FROM reactions reac
-         WHERE reac.subject_id = mc.comment_id
-           AND LOWER(reac.subject_type) IN (
-             'issuecomment',
-             'pullrequestreviewcomment',
-             'commitcomment',
-             'discussioncomment',
-             'teamdiscussioncomment'
-           )
-           AND reac.user_id = mc.mentioned_user_id
-           AND COALESCE(reac.github_created_at, NOW()) >= mc.mentioned_at
+       FROM reactions reac
+        WHERE reac.subject_id = mc.comment_id
+          AND LOWER(reac.subject_type) IN (
+            'issuecomment',
+            'pullrequestreviewcomment',
+            'commitcomment',
+            'discussioncomment',
+            'teamdiscussioncomment',
+            'comment'
+          )
+          AND reac.user_id = mc.mentioned_user_id
+          AND COALESCE(reac.github_created_at, NOW()) >= mc.mentioned_at
        )
      ORDER BY mc.comment_id, mc.mentioned_user_id, mc.mentioned_at`,
     [excludedRepositoryIds, excludedUserIds],

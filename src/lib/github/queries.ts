@@ -656,6 +656,7 @@ export const pullRequestReviewsQuery = gql`
             endCursor
           }
           nodes {
+            __typename
             id
             author {
               __typename
@@ -702,6 +703,7 @@ export const issueCommentsQuery = gql`
             endCursor
           }
           nodes {
+            __typename
             id
             author {
               __typename
@@ -763,6 +765,7 @@ export const pullRequestCommentsQuery = gql`
             endCursor
           }
           nodes {
+            __typename
             id
             author {
               __typename
@@ -824,6 +827,7 @@ export const discussionCommentsQuery = gql`
             endCursor
           }
           nodes {
+            __typename
             id
             author {
               __typename
@@ -860,6 +864,7 @@ export const discussionCommentsQuery = gql`
             }
             reactions(first: 25, orderBy: { field: CREATED_AT, direction: ASC }) {
               nodes {
+                __typename
                 id
                 content
                 createdAt
@@ -891,6 +896,7 @@ export const pullRequestReviewCommentsQuery = gql`
             id
             comments(first: 50) {
               nodes {
+                __typename
                 id
                 author {
                   __typename

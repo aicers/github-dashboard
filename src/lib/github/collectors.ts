@@ -184,9 +184,15 @@ type ReviewNode = {
 
 type CommentNode = {
   id: string;
+  __typename?: string | null;
   author?: GithubActor | null;
   createdAt: string;
   updatedAt?: string | null;
+  url?: string | null;
+  body?: string | null;
+  bodyText?: string | null;
+  bodyHTML?: string | null;
+  replyTo?: { id?: string | null } | null;
   pullRequestReview?: { id: string } | null;
   reactions?: {
     nodes: ReactionNode[] | null;
@@ -835,12 +841,45 @@ async function processActor(actor: Maybe<GithubActor>) {
   return normalized.id;
 }
 
+function normalizeReactionSubjectType(
+  subjectType: string | null | undefined,
+): string {
+  if (typeof subjectType !== "string") {
+    return "unknown";
+  }
+
+  const trimmed = subjectType.trim();
+  return trimmed.length ? trimmed : "unknown";
+}
+
+function resolveCommentReactionSubjectType(
+  target: CommentTarget,
+  comment: CommentNode,
+): string {
+  const typename =
+    typeof comment.__typename === "string" ? comment.__typename.trim() : "";
+  if (typename.length && typename.toLowerCase() !== "comment") {
+    return typename;
+  }
+
+  if (comment.pullRequestReview?.id) {
+    return "PullRequestReviewComment";
+  }
+
+  if (target === "discussion") {
+    return "DiscussionComment";
+  }
+
+  return "IssueComment";
+}
+
 async function processReactions(
   reactions: Maybe<{ nodes: ReactionNode[] | null }>,
   subjectType: string,
   subjectId: string,
 ) {
   const reactionNodes = reactions?.nodes ?? [];
+  const normalizedSubjectType = normalizeReactionSubjectType(subjectType);
   for (const reaction of reactionNodes) {
     if (!reaction?.id) {
       continue;
@@ -849,7 +888,7 @@ async function processReactions(
     const userId = await processActor(reaction.user);
     await upsertReaction({
       id: reaction.id,
-      subjectType,
+      subjectType: normalizedSubjectType,
       subjectId,
       userId: userId ?? null,
       content: reaction.content ?? null,
@@ -1342,7 +1381,15 @@ async function collectIssueComments(
         raw: comment,
       });
 
-      await processReactions(comment.reactions, "comment", comment.id);
+      const reactionSubjectType = resolveCommentReactionSubjectType(
+        target,
+        comment,
+      );
+      await processReactions(
+        comment.reactions,
+        reactionSubjectType,
+        comment.id,
+      );
 
       latest = maxTimestamp(latest, timestamp);
       count += 1;
@@ -1558,7 +1605,15 @@ async function collectReviewComments(
           raw: comment,
         });
 
-        await processReactions(comment.reactions, "comment", comment.id);
+        const reactionSubjectType = resolveCommentReactionSubjectType(
+          "pull_request",
+          comment,
+        );
+        await processReactions(
+          comment.reactions,
+          reactionSubjectType,
+          comment.id,
+        );
 
         latest = maxTimestamp(latest, timestamp);
         count += 1;
