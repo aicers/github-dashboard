@@ -459,7 +459,6 @@ export function FollowUpDetailContent({
   onUpdateProjectField,
   canManageMentions = false,
   pendingMentionOverrideKey = null,
-  mentionSyncCompletedAt = null,
   onUpdateMentionOverride,
 }: {
   item: ActivityItem;
@@ -482,9 +481,7 @@ export function FollowUpDetailContent({
     commentId: string;
     mentionedUserId: string;
     state: "suppress" | "force" | "clear";
-    syncCompletedAt?: string | null;
   }) => void;
-  mentionSyncCompletedAt?: string | null;
 }) {
   if (isLoading) {
     return (
@@ -601,7 +598,6 @@ export function FollowUpDetailContent({
           canManageMentions,
           pendingOverrideKey: pendingMentionOverrideKey,
           onUpdateMentionOverride,
-          mentionSyncCompletedAt,
           detailItemId: detailItem.id,
         }
       : undefined;
@@ -726,7 +722,7 @@ export function FollowUpDetailContent({
             );
           }
           return (
-            <div className="space-y-4 leading-relaxed [&_a]:text-primary [&_a]:underline-offset-2 [&_a:hover]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_.user-mention]:font-semibold">
+            <div className="space-y-4 leading-relaxed [&_a]:text-slate-700 [&_a]:underline-offset-2 [&_a:hover]:text-foreground [&_a:hover]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_.user-mention]:font-semibold [&_.user-mention]:text-sky-700">
               {renderedContent}
             </div>
           );
@@ -808,7 +804,6 @@ export function FollowUpDetailContent({
                             commentId: wait.id,
                             mentionedUserId: mentionUserId,
                             state: next,
-                            syncCompletedAt: mentionSyncCompletedAt,
                           });
                         }}
                       />
@@ -2516,7 +2511,6 @@ function MentionList({
   isAdmin,
   pendingOverrideKey,
   setPendingOverrideKey,
-  latestSyncCompletedAt,
   onOverrideSuccess,
 }: {
   items: MentionAttentionItem[];
@@ -2527,7 +2521,6 @@ function MentionList({
   isAdmin: boolean;
   pendingOverrideKey: string | null;
   setPendingOverrideKey: (key: string | null) => void;
-  latestSyncCompletedAt: string | null;
   onOverrideSuccess: (params: {
     commentId: string;
     mentionedUserId: string;
@@ -2803,7 +2796,6 @@ function MentionList({
                   commentId: primaryMention.id,
                   mentionedUserId: userId,
                   state: nextState,
-                  syncCompletedAt: latestSyncCompletedAt ?? undefined,
                 }),
               },
             );
@@ -2972,7 +2964,6 @@ function MentionList({
                       }
                       void handleMentionToggle(next.state);
                     }}
-                    mentionSyncCompletedAt={latestSyncCompletedAt}
                   />
                 </ActivityDetailOverlay>
               ) : null}
@@ -3261,7 +3252,6 @@ export function AttentionView({
           isAdmin={isAdmin}
           pendingOverrideKey={pendingMentionOverrideKey}
           setPendingOverrideKey={setPendingMentionOverrideKey}
-          latestSyncCompletedAt={latestSyncRef.current}
           onOverrideSuccess={handleMentionOverrideSuccess}
         />
       ),

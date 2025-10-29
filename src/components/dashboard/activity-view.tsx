@@ -2726,7 +2726,6 @@ export function ActivityView({
               commentId,
               mentionedUserId,
               state,
-              syncCompletedAt: listData.lastSyncCompletedAt ?? undefined,
             }),
           },
         );
@@ -2861,7 +2860,7 @@ export function ActivityView({
         setPendingMentionOverrideKey(null);
       }
     },
-    [applied, fetchActivity, listData.lastSyncCompletedAt, showNotification],
+    [applied, fetchActivity, showNotification],
   );
 
   const handleApplyQuickFilter = useCallback(
@@ -5065,6 +5064,45 @@ export function ActivityView({
                   );
                   const metrics = buildActivityMetricEntries(item);
                   const overlayItem = detail?.item ?? item;
+                  const detailComments = detail?.comments ?? [];
+                  const commentIdSet = new Set(
+                    detailComments
+                      .map((comment) => comment.id?.trim())
+                      .filter((value): value is string => Boolean(value)),
+                  );
+                  const mentionWaits = overlayItem.mentionWaits ?? [];
+                  const mentionWaitsByCommentId = new Map<
+                    string,
+                    ActivityMentionWait[]
+                  >();
+                  const orphanMentionWaits: ActivityMentionWait[] = [];
+
+                  mentionWaits.forEach((wait) => {
+                    const commentKey = wait.id?.trim();
+                    if (commentKey && commentIdSet.has(commentKey)) {
+                      const existing = mentionWaitsByCommentId.get(commentKey);
+                      if (existing) {
+                        existing.push(wait);
+                      } else {
+                        mentionWaitsByCommentId.set(commentKey, [wait]);
+                      }
+                      return;
+                    }
+                    orphanMentionWaits.push(wait);
+                  });
+
+                  const mentionControlsProps =
+                    mentionWaits.length > 0
+                      ? {
+                          byCommentId: Object.fromEntries(
+                            mentionWaitsByCommentId.entries(),
+                          ) as Record<string, ActivityMentionWait[]>,
+                          canManageMentions: currentUserIsAdmin,
+                          pendingOverrideKey: pendingMentionOverrideKey,
+                          onUpdateMentionOverride: handleMentionOverride,
+                          detailItemId: overlayItem.id,
+                        }
+                      : undefined;
                   const badgeExtras = null;
                   const linkedPullRequestsInline =
                     item.linkedPullRequests.length > 0
@@ -5419,7 +5457,7 @@ export function ActivityView({
                                     );
                                   }
                                   return (
-                                    <div className="space-y-4 leading-relaxed [&_a]:text-primary [&_a]:underline-offset-2 [&_a:hover]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_.user-mention]:font-semibold">
+                                    <div className="space-y-4 leading-relaxed [&_a]:text-slate-700 [&_a]:underline-offset-2 [&_a:hover]:text-foreground [&_a:hover]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_.user-mention]:font-semibold [&_.user-mention]:text-sky-700">
                                       {content}
                                     </div>
                                   );
@@ -5429,127 +5467,126 @@ export function ActivityView({
                                   className="mt-3"
                                 />
                               </div>
-                              {overlayItem.mentionWaits?.length ? (
+                              {orphanMentionWaits.length > 0 ? (
                                 <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-xs">
                                   <h4 className="text-sm font-semibold text-foreground">
                                     응답 없는 멘션
                                   </h4>
+                                  <p className="mt-1 text-muted-foreground/70">
+                                    댓글 목록에서 확인할 수 없는 멘션이에요.
+                                  </p>
                                   <div className="mt-2 space-y-3">
-                                    {overlayItem.mentionWaits.map(
-                                      (wait, index) => {
-                                        const mentionUserId =
-                                          wait.user?.id ?? wait.userId ?? "";
-                                        const mentionHandle =
-                                          wait.user?.name ??
-                                          (wait.user?.login
-                                            ? `@${wait.user.login}`
-                                            : mentionUserId);
-                                        const aiStatus =
-                                          wait.requiresResponse === false
-                                            ? "AI 판단: 응답 요구 아님"
-                                            : wait.requiresResponse === true
-                                              ? "AI 판단: 응답 필요"
-                                              : "AI 판단: 정보 없음";
-                                        const aiStatusClass =
-                                          wait.requiresResponse === false
-                                            ? "text-amber-600"
-                                            : "text-muted-foreground/70";
-                                        const manualState =
-                                          wait.manualRequiresResponse === false
-                                            ? "suppress"
-                                            : wait.manualRequiresResponse ===
-                                                true
-                                              ? "force"
-                                              : null;
-                                        const manualTimestamp =
-                                          wait.manualRequiresResponseAt
-                                            ? formatDateTimeWithSettings(
-                                                wait.manualRequiresResponseAt,
-                                              )
+                                    {orphanMentionWaits.map((wait, index) => {
+                                      const mentionUserId =
+                                        wait.user?.id ?? wait.userId ?? "";
+                                      const mentionHandle =
+                                        wait.user?.name ??
+                                        (wait.user?.login
+                                          ? `@${wait.user.login}`
+                                          : mentionUserId);
+                                      const aiStatus =
+                                        wait.requiresResponse === false
+                                          ? "AI 판단: 응답 요구 아님"
+                                          : wait.requiresResponse === true
+                                            ? "AI 판단: 응답 필요"
+                                            : "AI 판단: 정보 없음";
+                                      const aiStatusClass =
+                                        wait.requiresResponse === false
+                                          ? "text-amber-600"
+                                          : "text-muted-foreground/70";
+                                      const manualState =
+                                        wait.manualRequiresResponse === false
+                                          ? "suppress"
+                                          : wait.manualRequiresResponse === true
+                                            ? "force"
                                             : null;
-                                        const mentionKey = `${wait.id}::${mentionUserId}`;
+                                      const manualTimestamp =
+                                        wait.manualRequiresResponseAt
+                                          ? formatDateTimeWithSettings(
+                                              wait.manualRequiresResponseAt,
+                                            )
+                                          : null;
+                                      const mentionKey = `${wait.id}::${mentionUserId}`;
 
-                                        return (
-                                          <div
-                                            key={`${wait.id}-${mentionUserId || index}`}
-                                            className="rounded-md border border-border/60 bg-background px-3 py-2"
-                                          >
-                                            <div className="flex flex-wrap items-center justify-between gap-3 text-foreground">
-                                              <div className="flex flex-col gap-1">
-                                                <span className="font-semibold">
-                                                  대상:{" "}
-                                                  {mentionHandle ||
-                                                    "알 수 없음"}
-                                                </span>
-                                                <span className="text-muted-foreground/70">
-                                                  언급일:{" "}
-                                                  {wait.mentionedAt
-                                                    ? (formatDateTimeWithSettings(
-                                                        wait.mentionedAt,
-                                                      ) ?? "-")
-                                                    : "-"}
-                                                </span>
-                                              </div>
-                                              <span
-                                                className={cn(
-                                                  "text-xs font-medium",
-                                                  aiStatusClass,
-                                                )}
-                                              >
-                                                {aiStatus}
+                                      return (
+                                        <div
+                                          key={`${wait.id}-${mentionUserId || index}`}
+                                          className="rounded-md border border-border/60 bg-background px-3 py-2"
+                                        >
+                                          <div className="flex flex-wrap items-center justify-between gap-3 text-foreground">
+                                            <div className="flex flex-col gap-1">
+                                              <span className="font-semibold">
+                                                대상:{" "}
+                                                {mentionHandle || "알 수 없음"}
+                                              </span>
+                                              <span className="text-muted-foreground/70">
+                                                언급일:{" "}
+                                                {wait.mentionedAt
+                                                  ? (formatDateTimeWithSettings(
+                                                      wait.mentionedAt,
+                                                    ) ?? "-")
+                                                  : "-"}
                                               </span>
                                             </div>
-                                            {wait.manualDecisionIsStale && (
-                                              <p className="mt-1 text-[11px] text-amber-600">
-                                                최근 분류 이후 관리자 설정이
-                                                다시 필요합니다.
-                                              </p>
-                                            )}
-                                            {manualTimestamp &&
-                                              !wait.manualDecisionIsStale && (
-                                                <p className="mt-1 text-[11px] text-muted-foreground/70">
-                                                  관리자 설정: {manualTimestamp}
-                                                </p>
+                                            <span
+                                              className={cn(
+                                                "text-xs font-medium",
+                                                aiStatusClass,
                                               )}
-                                            {currentUserIsAdmin &&
-                                            mentionUserId ? (
-                                              <div className="mt-2">
-                                                <MentionOverrideControls
-                                                  value={manualState}
-                                                  pending={
-                                                    pendingMentionOverrideKey ===
-                                                    mentionKey
-                                                  }
-                                                  onChange={(next) => {
-                                                    void handleMentionOverride({
-                                                      itemId: item.id,
-                                                      commentId: wait.id,
-                                                      mentionedUserId:
-                                                        mentionUserId,
-                                                      state: next,
-                                                    });
-                                                  }}
-                                                />
-                                              </div>
-                                            ) : null}
-                                            {!mentionUserId && (
-                                              <p className="mt-2 text-[11px] text-muted-foreground">
-                                                멘션된 사용자를 확인할 수 없어
-                                                관리자 설정을 적용할 수
-                                                없습니다.
+                                            >
+                                              {aiStatus}
+                                            </span>
+                                          </div>
+                                          {wait.manualDecisionIsStale && (
+                                            <p className="mt-1 text-[11px] text-amber-600">
+                                              최근 분류 이후 관리자 설정이 다시
+                                              필요합니다.
+                                            </p>
+                                          )}
+                                          {manualTimestamp &&
+                                            !wait.manualDecisionIsStale && (
+                                              <p className="mt-1 text-[11px] text-muted-foreground/70">
+                                                관리자 설정: {manualTimestamp}
                                               </p>
                                             )}
-                                          </div>
-                                        );
-                                      },
-                                    )}
+                                          {currentUserIsAdmin &&
+                                          mentionUserId ? (
+                                            <div className="mt-2">
+                                              <MentionOverrideControls
+                                                value={manualState}
+                                                pending={
+                                                  pendingMentionOverrideKey ===
+                                                  mentionKey
+                                                }
+                                                onChange={(next) => {
+                                                  void handleMentionOverride({
+                                                    itemId: item.id,
+                                                    commentId: wait.id,
+                                                    mentionedUserId:
+                                                      mentionUserId,
+                                                    state: next,
+                                                  });
+                                                }}
+                                              />
+                                            </div>
+                                          ) : null}
+                                          {!mentionUserId && (
+                                            <p className="mt-2 text-[11px] text-muted-foreground">
+                                              멘션된 사용자를 확인할 수 없어
+                                              관리자 설정을 적용할 수 없습니다.
+                                            </p>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
                                   </div>
                                 </div>
                               ) : null}
                               <ActivityCommentSection
-                                comments={detail.comments}
+                                comments={detailComments}
                                 timezone={activeTimezone}
                                 dateTimeFormat={activeDateTimeFormat}
+                                mentionControls={mentionControlsProps}
                               />
                               {item.type === "issue" &&
                               item.linkedPullRequests.length > 0 ? (
