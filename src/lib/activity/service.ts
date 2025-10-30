@@ -1348,7 +1348,11 @@ function buildQueryFilters(
       const peopleClauses = populatedPeopleFilters.map((entry) =>
         entry.buildClause(parameterIndex),
       );
-      clauses.push(`(${peopleClauses.join(" OR ")})`);
+      const hasActiveAttention =
+        params.attention?.some((value) => value !== "no_attention") ?? false;
+      if (!hasActiveAttention) {
+        clauses.push(`(${peopleClauses.join(" OR ")})`);
+      }
       peopleFiltersHandled = true;
       peopleSelectionParamIndex = parameterIndex;
     }
