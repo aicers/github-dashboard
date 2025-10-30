@@ -312,13 +312,9 @@ describe("ActivityView", () => {
         "issue_backlog",
         "unanswered_mentions",
       ]);
-      expect(url.searchParams.has("maintainerId")).toBe(false);
-      expect(url.searchParams.has("assigneeId")).toBe(false);
-      expect(url.searchParams.has("authorId")).toBe(false);
-      expect(url.searchParams.has("reviewerId")).toBe(false);
-      expect(url.searchParams.has("mentionedUserId")).toBe(false);
-      expect(url.searchParams.has("commenterId")).toBe(false);
-      expect(url.searchParams.has("reactorId")).toBe(false);
+      expect(url.searchParams.getAll("peopleSelection")).toEqual([
+        "user-alice",
+      ]);
     });
   });
 

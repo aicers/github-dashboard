@@ -345,12 +345,14 @@ const ATTENTION_SCENARIOS: Array<{
   attentionLabels: string[];
   attentionValues: string[];
   expected: Partial<Record<PersonParamKey, string[]>>;
+  expectedPeopleSelection?: string[];
 }> = [
   {
     name: "issue_stalled",
     attentionLabels: ["정체된 In Progress 이슈"],
     attentionValues: ["issue_stalled"],
     expected: { assigneeId: ["user-alice"] },
+    expectedPeopleSelection: ["user-alice"],
   },
   {
     name: "pr_inactive",
@@ -362,6 +364,7 @@ const ATTENTION_SCENARIOS: Array<{
       reviewerId: ["user-alice"],
       maintainerId: ["user-alice"],
     },
+    expectedPeopleSelection: ["user-alice"],
   },
   {
     name: "review_requests_pending",
@@ -370,6 +373,7 @@ const ATTENTION_SCENARIOS: Array<{
     expected: {
       reviewerId: ["user-alice"],
     },
+    expectedPeopleSelection: ["user-alice"],
   },
   {
     name: "unanswered_mentions",
@@ -378,6 +382,14 @@ const ATTENTION_SCENARIOS: Array<{
     expected: {
       mentionedUserId: ["user-alice"],
     },
+    expectedPeopleSelection: ["user-alice"],
+  },
+  {
+    name: "backlog_and_unanswered_mentions",
+    attentionLabels: ["정체된 Backlog 이슈", "응답 없는 멘션"],
+    attentionValues: ["issue_backlog", "unanswered_mentions"],
+    expected: {},
+    expectedPeopleSelection: ["user-alice"],
   },
 ];
 
@@ -434,6 +446,14 @@ test.describe("ActivityView attention + people query mapping", () => {
       expect(url.searchParams.getAll("attention")).toEqual(
         scenario.attentionValues,
       );
+
+      if (scenario.expectedPeopleSelection) {
+        expect(url.searchParams.getAll("peopleSelection")).toEqual(
+          scenario.expectedPeopleSelection,
+        );
+      } else {
+        expect(url.searchParams.has("peopleSelection")).toBe(false);
+      }
 
       for (const [key, expectedValues] of Object.entries(scenario.expected)) {
         expect(url.searchParams.getAll(key)).toEqual(expectedValues);
