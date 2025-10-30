@@ -11,12 +11,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ActivityView } from "@/components/dashboard/activity-view";
 import {
   buildActivityFilterOptionsFixture,
+  buildActivityItemDetailFixture,
   buildActivityItemFixture,
   buildActivityListResultFixture,
 } from "@/components/test-harness/activity-fixtures";
+import { fetchActivityDetail } from "@/lib/activity/client";
 import type {
   ActivityFilterOptions,
   ActivityListParams,
+  ActivityMentionWait,
 } from "@/lib/activity/types";
 
 import { buildActivityListParams } from "../../../tests/helpers/activity-filters";
@@ -25,6 +28,7 @@ import {
   resetActivityHelperCounters,
 } from "../../../tests/helpers/activity-items";
 import {
+  createJsonResponse,
   fetchMock,
   mockFetchJsonOnce,
   resetMockFetch,
@@ -46,6 +50,12 @@ vi.mock("next/navigation", () => ({
   useRouter: () => mockRouter,
   useSearchParams: () => mockSearchParams,
 }));
+
+vi.mock("@/lib/activity/client", () => ({
+  fetchActivityDetail: vi.fn(),
+}));
+
+const fetchActivityDetailMock = vi.mocked(fetchActivityDetail);
 
 function getLastActivityCall() {
   const calls = fetchMock.mock.calls;
@@ -93,6 +103,8 @@ describe("ActivityView", () => {
     resetMockFetch();
     setDefaultFetchHandler({ json: {} });
     mockRouter.replace.mockReset();
+    fetchActivityDetailMock.mockReset();
+    fetchActivityDetailMock.mockResolvedValue(buildActivityItemDetailFixture());
   });
 
   it("renders initial items and pagination info", () => {
@@ -756,5 +768,245 @@ describe("ActivityView", () => {
       name: "user-missing",
     });
     expect(userChip).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("applies manual mention override and updates overlay state", async () => {
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+
+    const mentionWait: ActivityMentionWait = {
+      id: "comment-1",
+      user: {
+        id: "user-target",
+        login: "target",
+        name: "Target User",
+        avatarUrl: null,
+      },
+      userId: "user-target",
+      mentionedAt: "2024-04-01T09:00:00.000Z",
+      businessDaysWaiting: 4,
+      requiresResponse: true,
+      manualRequiresResponse: null,
+      manualRequiresResponseAt: null,
+      manualDecisionIsStale: false,
+      classifierEvaluatedAt: "2024-04-01T09:30:00.000Z",
+    };
+
+    const listItem = buildActivityItemFixture({
+      id: "activity-mention",
+      title: "Manual attention needed",
+      mentionWaits: [mentionWait],
+      attention: {
+        unansweredMention: true,
+        reviewRequestPending: false,
+        staleOpenPr: false,
+        idlePr: false,
+        backlogIssue: false,
+        stalledIssue: false,
+      },
+    });
+
+    const initialData = buildActivityListResult({
+      items: [listItem],
+    });
+
+    fetchActivityDetailMock.mockResolvedValueOnce(
+      buildActivityItemDetailFixture({
+        item: {
+          ...listItem,
+          mentionWaits: [mentionWait],
+        },
+      }),
+    );
+
+    let latestListResult = buildActivityListResultFixture({
+      items: [listItem],
+    });
+
+    setDefaultFetchHandler((request) => {
+      if (request.url.includes("/api/activity?")) {
+        return createJsonResponse(latestListResult);
+      }
+      return createJsonResponse({});
+    });
+
+    const props = createDefaultProps({
+      initialData,
+      currentUserIsAdmin: true,
+    });
+
+    render(<ActivityView {...props} />);
+
+    const trigger = screen.getByRole("button", {
+      name: /Manual attention needed/,
+    });
+    fireEvent.click(trigger);
+
+    await waitFor(() => {
+      expect(fetchActivityDetailMock).toHaveBeenCalledWith(
+        "activity-mention",
+        expect.any(Object),
+      );
+    });
+
+    const suppressToggle = await screen.findByLabelText("응답 요구가 아님");
+
+    latestListResult = buildActivityListResultFixture({
+      items: [
+        {
+          ...listItem,
+          attention: {
+            ...listItem.attention,
+            unansweredMention: false,
+          },
+          mentionWaits: [
+            {
+              ...mentionWait,
+              manualRequiresResponse: false,
+              manualRequiresResponseAt: "2024-04-02T08:00:00.000Z",
+              manualDecisionIsStale: false,
+              requiresResponse: false,
+            },
+          ],
+        },
+      ],
+    });
+
+    mockFetchJsonOnce({
+      success: true,
+      result: {
+        manualRequiresResponse: false,
+        manualRequiresResponseAt: "2024-04-02T08:00:00.000Z",
+        manualDecisionIsStale: false,
+        requiresResponse: false,
+        lastEvaluatedAt: "2024-04-02T08:30:00.000Z",
+      },
+    });
+
+    fireEvent.click(suppressToggle);
+
+    await waitFor(() => {
+      expect(screen.getByText(/관리자 설정:/)).toBeInTheDocument();
+    });
+
+    expect(screen.getByLabelText("응답 요구가 아님")).toBeChecked();
+  });
+
+  it("shows stale manual decision messaging when override response is stale", async () => {
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+
+    const mentionWait: ActivityMentionWait = {
+      id: "comment-2",
+      user: {
+        id: "user-other",
+        login: "other",
+        name: "Other Reviewer",
+        avatarUrl: null,
+      },
+      userId: "user-other",
+      mentionedAt: "2024-04-05T09:00:00.000Z",
+      businessDaysWaiting: 2,
+      requiresResponse: true,
+      manualRequiresResponse: null,
+      manualRequiresResponseAt: null,
+      manualDecisionIsStale: false,
+      classifierEvaluatedAt: "2024-04-05T09:30:00.000Z",
+    };
+
+    const listItem = buildActivityItemFixture({
+      id: "activity-stale",
+      title: "Stale manual decision",
+      mentionWaits: [mentionWait],
+      attention: {
+        unansweredMention: true,
+        reviewRequestPending: false,
+        staleOpenPr: false,
+        idlePr: false,
+        backlogIssue: false,
+        stalledIssue: false,
+      },
+    });
+
+    const initialData = buildActivityListResult({
+      items: [listItem],
+    });
+
+    fetchActivityDetailMock.mockResolvedValueOnce(
+      buildActivityItemDetailFixture({
+        item: {
+          ...listItem,
+          mentionWaits: [mentionWait],
+        },
+      }),
+    );
+
+    let latestListResult = buildActivityListResultFixture({
+      items: [listItem],
+    });
+
+    setDefaultFetchHandler((request) => {
+      if (request.url.includes("/api/activity?")) {
+        return createJsonResponse(latestListResult);
+      }
+      return createJsonResponse({});
+    });
+
+    const props = createDefaultProps({
+      initialData,
+      currentUserIsAdmin: true,
+    });
+
+    render(<ActivityView {...props} />);
+
+    const trigger = screen.getByRole("button", {
+      name: /Stale manual decision/,
+    });
+    fireEvent.click(trigger);
+
+    await waitFor(() => {
+      expect(fetchActivityDetailMock).toHaveBeenCalledWith(
+        "activity-stale",
+        expect.any(Object),
+      );
+    });
+
+    const forceToggle = await screen.findByLabelText("응답 요구가 맞음");
+
+    latestListResult = buildActivityListResultFixture({
+      items: [
+        {
+          ...listItem,
+          mentionWaits: [
+            {
+              ...mentionWait,
+              manualRequiresResponse: null,
+              manualRequiresResponseAt: "2024-04-06T08:00:00.000Z",
+              manualDecisionIsStale: true,
+              requiresResponse: true,
+            },
+          ],
+        },
+      ],
+    });
+
+    mockFetchJsonOnce({
+      success: true,
+      result: {
+        manualRequiresResponse: true,
+        manualRequiresResponseAt: "2024-04-06T08:00:00.000Z",
+        manualDecisionIsStale: true,
+        requiresResponse: true,
+        lastEvaluatedAt: "2024-04-06T08:20:00.000Z",
+      },
+    });
+
+    fireEvent.click(forceToggle);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/최근 분류 이후 관리자 설정이 다시 필요합니다/),
+      ).toBeInTheDocument();
+    });
+
+    expect(screen.getByLabelText("응답 요구가 맞음")).not.toBeChecked();
   });
 });
