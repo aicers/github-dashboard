@@ -315,6 +315,7 @@ describe("ActivityView", () => {
       expect(url.searchParams.getAll("peopleSelection")).toEqual([
         "user-alice",
       ]);
+      expect(url.searchParams.has("category")).toBe(false);
     });
   });
 
