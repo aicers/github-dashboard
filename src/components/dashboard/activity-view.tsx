@@ -536,21 +536,32 @@ function sortCategoriesForDisplay(
 
 function collectRequiredCategoriesFromAttention(
   attention: ActivityAttentionFilter[],
-): ActivityItemCategory[] {
+): ActivityItemCategory[] | null {
   const required = new Set<ActivityItemCategory>();
+  let hasWildcard = false;
   attention.forEach((value) => {
     const mapped = ATTENTION_CATEGORY_MAP[value] ?? [];
+    if (mapped.length === 0) {
+      hasWildcard = true;
+      return;
+    }
     for (const category of mapped) {
       required.add(category);
     }
   });
+  if (hasWildcard) {
+    return null;
+  }
   return sortCategoriesForDisplay(required);
 }
 
 function mergeCategoriesWithRequirements(
   currentCategories: ActivityItemCategory[],
-  requiredCategories: ActivityItemCategory[],
+  requiredCategories: ActivityItemCategory[] | null,
 ): ActivityItemCategory[] {
+  if (requiredCategories === null) {
+    return [];
+  }
   if (!requiredCategories.length) {
     return currentCategories;
   }

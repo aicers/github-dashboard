@@ -346,6 +346,7 @@ const ATTENTION_SCENARIOS: Array<{
   attentionValues: string[];
   expected: Partial<Record<PersonParamKey, string[]>>;
   expectedPeopleSelection?: string[];
+  expectedCategories?: string[] | null;
 }> = [
   {
     name: "issue_stalled",
@@ -390,6 +391,15 @@ const ATTENTION_SCENARIOS: Array<{
     attentionValues: ["issue_backlog", "unanswered_mentions"],
     expected: {},
     expectedPeopleSelection: ["user-alice"],
+    expectedCategories: null,
+  },
+  {
+    name: "unanswered_mentions_pr_inactive",
+    attentionLabels: ["응답 없는 멘션", "업데이트 없는 PR"],
+    attentionValues: ["unanswered_mentions", "pr_inactive"],
+    expected: {},
+    expectedPeopleSelection: ["user-alice"],
+    expectedCategories: null,
   },
 ];
 
@@ -453,6 +463,16 @@ test.describe("ActivityView attention + people query mapping", () => {
         );
       } else {
         expect(url.searchParams.has("peopleSelection")).toBe(false);
+      }
+
+      if (scenario.expectedCategories !== undefined) {
+        if (scenario.expectedCategories === null) {
+          expect(url.searchParams.has("category")).toBe(false);
+        } else {
+          expect(url.searchParams.getAll("category")).toEqual(
+            scenario.expectedCategories,
+          );
+        }
       }
 
       for (const [key, expectedValues] of Object.entries(scenario.expected)) {
