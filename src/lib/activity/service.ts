@@ -1354,6 +1354,15 @@ function buildQueryFilters(
     }
   }
 
+  if (peopleSelectionParamIndex === null && params.peopleSelection?.length) {
+    const uniqueSelection = mergedStringSet(params.peopleSelection);
+    if (uniqueSelection.length > 0) {
+      peopleSelection = uniqueSelection;
+      values.push(uniqueSelection);
+      peopleSelectionParamIndex = values.length;
+    }
+  }
+
   const applyAttentionFilters = () => {
     if (!params.attention?.length) {
       return;
