@@ -6,7 +6,6 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-import { ATTENTION_REQUIRED_VALUES } from "@/lib/activity/attention-options";
 import { buildUserInitials } from "@/lib/user/initials";
 import { cn } from "@/lib/utils";
 
@@ -17,13 +16,15 @@ type DashboardHeaderProps = {
   userAvatarUrl?: string | null;
 };
 
-const PEOPLE_QUERY_KEYS = [
-  "authorId",
-  "assigneeId",
+const NOTIFICATION_ATTENTION_VALUES = [
+  "review_requests_pending",
+  "unanswered_mentions",
+] as const;
+
+const NOTIFICATION_PEOPLE_KEYS = [
   "reviewerId",
   "mentionedUserId",
-  "commenterId",
-  "reactorId",
+  "peopleSelection",
 ] as const;
 
 export function DashboardHeader({
@@ -54,10 +55,10 @@ export function DashboardHeader({
         const params = new URLSearchParams();
         params.set("page", "1");
         params.set("perPage", "1");
-        ATTENTION_REQUIRED_VALUES.forEach((value) => {
+        NOTIFICATION_ATTENTION_VALUES.forEach((value) => {
           params.append("attention", value);
         });
-        PEOPLE_QUERY_KEYS.forEach((key) => {
+        NOTIFICATION_PEOPLE_KEYS.forEach((key) => {
           params.append(key, userId);
         });
 
@@ -102,11 +103,12 @@ export function DashboardHeader({
     }
 
     const params = new URLSearchParams();
-    params.append("attention", "review_requests_pending");
-    params.append("attention", "unanswered_mentions");
-    params.append("reviewerId", userId);
-    params.append("mentionedUserId", userId);
-    params.append("peopleSelection", userId);
+    NOTIFICATION_ATTENTION_VALUES.forEach((value) => {
+      params.append("attention", value);
+    });
+    NOTIFICATION_PEOPLE_KEYS.forEach((key) => {
+      params.append(key, userId);
+    });
 
     return `/dashboard/activity?${params.toString()}`;
   }, [userId]);
