@@ -1,3 +1,4 @@
+import { waitForPendingActivityCacheRefresh } from "@/lib/activity/cache";
 import { query } from "@/lib/db/client";
 import {
   type DbActor,
@@ -66,6 +67,7 @@ export function buildPeriodRanges(startIso: string, endIso: string): PeriodMap {
 }
 
 export async function resetDashboardTables() {
+  await waitForPendingActivityCacheRefresh();
   await query(
     "TRUNCATE TABLE issues, pull_requests, reviews, comments, reactions, review_requests, repositories, users, unanswered_mention_classifications RESTART IDENTITY CASCADE",
   );

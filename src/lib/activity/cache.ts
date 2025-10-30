@@ -156,6 +156,17 @@ export async function refreshActivityCaches(params?: {
   });
 }
 
+export async function waitForPendingActivityCacheRefresh() {
+  if (!pendingCacheRefresh) {
+    return;
+  }
+  try {
+    await pendingCacheRefresh;
+  } catch {
+    // Swallow errors since callers only need the refresh cycle to resolve.
+  }
+}
+
 export async function getActivityCacheSummary(): Promise<ActivityCacheRefreshResult | null> {
   const states = (await Promise.all([
     getCacheState(FILTER_CACHE_KEY),
