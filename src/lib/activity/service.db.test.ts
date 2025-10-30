@@ -14,6 +14,7 @@ import { refreshActivityItemsSnapshot } from "@/lib/activity/snapshot";
 import type {
   AttentionInsights,
   IssueAttentionItem,
+  MentionAttentionItem,
   PullRequestAttentionItem,
 } from "@/lib/dashboard/attention";
 import { query } from "@/lib/db/client";
@@ -759,6 +760,99 @@ describe("activity service integration", () => {
 
     expect(result.items).toHaveLength(0);
     expect(result.pageInfo.totalCount).toBe(0);
+  });
+
+  it("filters combined attention results by selected people", async () => {
+    const { repoAlpha, userAlice, userBob, issueAlpha } =
+      await seedBasicActivityData();
+
+    await query(
+      `INSERT INTO repository_maintainers (repository_id, user_id)
+       VALUES ($1, $2)`,
+      [repoAlpha.id, userAlice.id],
+    );
+
+    await refreshActivityItemsSnapshot();
+
+    const backlogAttention: IssueAttentionItem = {
+      id: issueAlpha.id,
+      number: issueAlpha.number,
+      title: issueAlpha.title ?? null,
+      url: `https://example.com/${repoAlpha.nameWithOwner}/issues/${issueAlpha.number}`,
+      repository: {
+        id: repoAlpha.id,
+        name: repoAlpha.name,
+        nameWithOwner: repoAlpha.nameWithOwner,
+      },
+      author: {
+        id: userAlice.id,
+        login: userAlice.login ?? null,
+        name: userAlice.name ?? null,
+      },
+      assignees: [],
+      linkedPullRequests: [],
+      createdAt: issueAlpha.createdAt,
+      updatedAt: issueAlpha.updatedAt,
+      ageDays: 60,
+    };
+
+    const mentionAttention: MentionAttentionItem = {
+      commentId: "comment-alpha",
+      url: `https://example.com/${repoAlpha.nameWithOwner}/issues/${issueAlpha.number}#comment-alpha`,
+      mentionedAt: "2024-02-01T00:00:00.000Z",
+      waitingDays: 7,
+      author: {
+        id: userBob.id,
+        login: userBob.login ?? null,
+        name: userBob.name ?? null,
+      },
+      target: {
+        id: userAlice.id,
+        login: userAlice.login ?? null,
+        name: userAlice.name ?? null,
+      },
+      container: {
+        type: "issue",
+        id: issueAlpha.id,
+        number: issueAlpha.number,
+        title: issueAlpha.title ?? null,
+        url: `https://example.com/${repoAlpha.nameWithOwner}/issues/${issueAlpha.number}`,
+        repository: {
+          id: repoAlpha.id,
+          name: repoAlpha.name,
+          nameWithOwner: repoAlpha.nameWithOwner,
+        },
+      },
+      commentExcerpt: "ping @alice",
+      classification: {
+        requiresResponse: true,
+        manualRequiresResponse: null,
+        manualRequiresResponseAt: null,
+        manualDecisionIsStale: false,
+        lastEvaluatedAt: null,
+      },
+    };
+
+    mockedAttentionInsights.mockResolvedValue({
+      ...emptyInsights(),
+      backlogIssues: [backlogAttention],
+      unansweredMentions: [mentionAttention],
+    });
+
+    const activeAttentions = ["issue_backlog", "unanswered_mentions"] as const;
+
+    const withAlice = await getActivityItems({
+      attention: [...activeAttentions],
+      peopleSelection: [userAlice.id],
+    });
+
+    const withBob = await getActivityItems({
+      attention: [...activeAttentions],
+      peopleSelection: [userBob.id],
+    });
+
+    expect(withAlice.items.map((item) => item.id)).toEqual([issueAlpha.id]);
+    expect(withBob.items.map((item) => item.id)).toEqual([]);
   });
 
   it("populates linked pull requests and issues for activity items", async () => {
