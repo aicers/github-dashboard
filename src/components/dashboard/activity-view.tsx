@@ -384,6 +384,22 @@ function clearPeopleRoleValues(state: FilterState, role: PeopleRoleKey) {
   return setOptionalPersonValues(state, role, []);
 }
 
+function removeMentionRole(state: FilterState): FilterState {
+  let nextState = setPeopleRoleValues(state, "mentionedUserIds", []);
+  nextState = setOptionalPersonValues(nextState, "mentionedUserIds", []);
+  if (
+    nextState.optionalPersonIds &&
+    "mentionedUserIds" in nextState.optionalPersonIds
+  ) {
+    const { mentionedUserIds: _omit, ...rest } = nextState.optionalPersonIds;
+    nextState = {
+      ...nextState,
+      optionalPersonIds: rest,
+    };
+  }
+  return nextState;
+}
+
 function syncPeopleFiltersWithAttention(state: FilterState): FilterState {
   const selection = Array.from(new Set(state.peopleSelection ?? []));
   if (selection.length === 0) {
@@ -1872,8 +1888,21 @@ export function ActivityView({
   );
 
   const normalizeFilterState = useCallback(
-    (raw: FilterState): FilterState =>
-      syncPeopleFiltersWithAttention(convertFilterLabelKeysToNames(raw)),
+    (raw: FilterState): FilterState => {
+      const converted = convertFilterLabelKeysToNames(raw);
+      const synced = syncPeopleFiltersWithAttention(converted);
+      const rawMentioned = raw.mentionedUserIds ?? [];
+      if (
+        rawMentioned.length === 0 &&
+        arraysShallowEqual(
+          synced.mentionedUserIds ?? [],
+          synced.peopleSelection ?? [],
+        )
+      ) {
+        return removeMentionRole(synced);
+      }
+      return synced;
+    },
     [convertFilterLabelKeysToNames],
   );
 
@@ -2307,7 +2336,9 @@ export function ActivityView({
 
     if (currentUserId && allowedUserIds.has(currentUserId)) {
       const buildSelfState = (perPage: number) =>
-        applyPeopleSelection(buildFilterState({}, perPage), [currentUserId]);
+        removeMentionRole(
+          applyPeopleSelection(buildFilterState({}, perPage), [currentUserId]),
+        );
 
       definitions.push(
         {
@@ -2402,6 +2433,26 @@ export function ActivityView({
     normalizeFilterState,
     quickFilterDefinitions,
   ]);
+
+  const ensureNoMentionRole = useCallback((state: FilterState): FilterState => {
+    const hasMentionValues =
+      (state.mentionedUserIds?.length ?? 0) > 0 ||
+      Boolean(state.optionalPersonIds?.mentionedUserIds);
+    if (!hasMentionValues) {
+      return state;
+    }
+    return removeMentionRole(state);
+  }, []);
+
+  useEffect(() => {
+    if (
+      activeQuickFilterId === "my_updates" ||
+      activeQuickFilterId === "my_attention"
+    ) {
+      setDraft((current) => ensureNoMentionRole(current));
+      setApplied((current) => ensureNoMentionRole(current));
+    }
+  }, [activeQuickFilterId, ensureNoMentionRole]);
 
   useEffect(() => {
     const matched = savedFilterCanonicalEntries.find(
@@ -2884,10 +2935,13 @@ export function ActivityView({
 
   const handleApplyQuickFilter = useCallback(
     (definition: QuickFilterDefinition) => {
-      const nextState = normalizeFilterState({
+      let nextState = normalizeFilterState({
         ...definition.buildState(draft.perPage),
         page: 1,
       });
+      if (definition.id === "my_updates" || definition.id === "my_attention") {
+        nextState = removeMentionRole(nextState);
+      }
       const nextKey = canonicalizeActivityParams(
         buildSavedFilterPayload(nextState),
       );
@@ -2897,6 +2951,11 @@ export function ActivityView({
 
       setDraft(nextState);
       setApplied(nextState);
+      setTimeout(() => {
+        const normalized = normalizeFilterState(nextState);
+        setDraft(normalized);
+        setApplied(normalized);
+      }, 0);
       setSelectedSavedFilterId("");
       setSaveFilterError(null);
       setJumpDate("");

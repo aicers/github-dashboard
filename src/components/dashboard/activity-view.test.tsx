@@ -319,6 +319,29 @@ describe("ActivityView", () => {
     });
   });
 
+  it("excludes mentioned role when applying my updates quick filter", async () => {
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+    const props = createDefaultProps();
+
+    render(<ActivityView {...props} />);
+
+    mockFetchJsonOnce(buildActivityListResultFixture());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "내 활동" }));
+    });
+
+    await waitFor(() => {
+      const request = getLastActivityCall();
+      expect(request).toBeTruthy();
+      if (!request) {
+        return;
+      }
+      const url = new URL(request.url);
+      expect(url.searchParams.getAll("peopleSelection")).toEqual(["user-1"]);
+      expect(url.searchParams.has("mentionedUserId")).toBe(false);
+    });
+  });
+
   it("provides canonical tooltips for attention filters", async () => {
     mockFetchJsonOnce({ filters: [], limit: 5 });
     const props = createDefaultProps();
