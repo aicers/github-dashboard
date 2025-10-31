@@ -43,6 +43,30 @@ describe("POST /api/sync/backfill", () => {
     expect(body).toEqual({ success: true, result: report });
     expect(runBackfill).toHaveBeenCalledWith(
       "2024-04-01",
+      null,
+      expect.any(Function),
+    );
+  });
+
+  it("passes the end date to the backfill runner when provided", async () => {
+    const report = { startDate: "2024-04-01", chunkCount: 1 };
+    vi.mocked(runBackfill).mockResolvedValueOnce(report as never);
+
+    const response = await POST(
+      new Request("http://localhost/api/sync/backfill", {
+        method: "POST",
+        body: JSON.stringify({
+          startDate: "2024-04-01",
+          endDate: "2024-04-10",
+        }),
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runBackfill).toHaveBeenCalledWith(
+      "2024-04-01",
+      "2024-04-10",
       expect.any(Function),
     );
   });

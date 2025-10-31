@@ -376,7 +376,9 @@ describe("ActivityView", () => {
       }
       const url = new URL(request.url);
       expect(url.searchParams.getAll("assigneeId")).toEqual(["user-alice"]);
-      expect(url.searchParams.getAll("peopleSelection")).toEqual(["user-alice"]);
+      expect(url.searchParams.getAll("peopleSelection")).toEqual([
+        "user-alice",
+      ]);
     });
 
     await waitFor(() => {

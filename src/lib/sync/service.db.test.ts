@@ -484,6 +484,48 @@ describe("sync service database integration", () => {
       );
       expect(latestConfig?.last_sync_completed_at).not.toBeNull();
     });
+
+    it("restricts backfill to the provided end date when specified", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2024-04-10T00:00:00.000Z"));
+
+      const runCollectionSpy = vi.spyOn(collectors, "runCollection");
+      runCollectionSpy.mockResolvedValue({
+        repositoriesProcessed: 1,
+        counts: {
+          issues: 1,
+          discussions: 0,
+          pullRequests: 1,
+          reviews: 0,
+          comments: 0,
+        },
+        timestamps: {
+          repositories: null,
+          issues: null,
+          discussions: null,
+          pullRequests: null,
+          reviews: null,
+          comments: null,
+        },
+      });
+
+      const result = await runBackfill("2024-04-01", "2024-04-03");
+
+      expect(runCollectionSpy).toHaveBeenCalledTimes(3);
+      expect(runCollectionSpy.mock.calls[0]?.[0]).toMatchObject({
+        since: "2024-04-01T00:00:00.000Z",
+        until: "2024-04-02T00:00:00.000Z",
+      });
+      expect(runCollectionSpy.mock.calls[1]?.[0]).toMatchObject({
+        since: "2024-04-02T00:00:00.000Z",
+        until: "2024-04-03T00:00:00.000Z",
+      });
+      expect(runCollectionSpy.mock.calls[2]?.[0]).toMatchObject({
+        since: "2024-04-03T00:00:00.000Z",
+        until: "2024-04-04T00:00:00.000Z",
+      });
+      expect(result.endDate).toBe("2024-04-04T00:00:00.000Z");
+    });
   });
 
   describe("resetData", () => {

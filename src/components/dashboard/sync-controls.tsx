@@ -390,12 +390,17 @@ export function SyncControls({
     [config?.date_time_format, userDateTimeFormat],
   );
   const backfillInputId = useId();
+  const backfillEndInputId = useId();
   const [autoEnabled, setAutoEnabled] = useState(
     config?.auto_sync_enabled ?? false,
   );
   const [backfillDate, setBackfillDate] = useState(() => {
     const now = new Date();
     now.setMonth(now.getMonth() - 1);
+    return now.toISOString().slice(0, 10);
+  });
+  const [backfillEndDate, setBackfillEndDate] = useState(() => {
+    const now = new Date();
     return now.toISOString().slice(0, 10);
   });
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -746,6 +751,32 @@ export function SyncControls({
       return;
     }
 
+    if (!backfillEndDate) {
+      setFeedback("백필 종료 날짜를 선택하세요.");
+      return;
+    }
+
+    const startValue = backfillDate.trim();
+    const endValue = backfillEndDate.trim();
+    const startLabel = startValue;
+    const endLabel = endValue;
+
+    if (startValue.length !== 10 || endValue.length !== 10) {
+      setFeedback("유효한 날짜 형식을 입력하세요.");
+      return;
+    }
+
+    if (endValue < startValue) {
+      setFeedback("백필 종료 날짜는 시작 날짜 이후여야 합니다.");
+      return;
+    }
+
+    const todayLabel = new Date().toISOString().slice(0, 10);
+    if (endValue > todayLabel) {
+      setFeedback("백필 종료 날짜는 오늘 이후일 수 없습니다.");
+      return;
+    }
+
     setIsRunningBackfill(true);
     try {
       setBackfillHistory((previous) => previous);
@@ -754,7 +785,10 @@ export function SyncControls({
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ startDate: backfillDate }),
+        body: JSON.stringify({
+          startDate: startLabel,
+          endDate: endLabel,
+        }),
       });
       const data = await parseApiResponse<BackfillResult>(response);
 
@@ -1213,7 +1247,7 @@ export function SyncControls({
             <CardHeader>
               <CardTitle>수동 데이터 백필</CardTitle>
               <CardDescription>
-                선택한 날짜부터 최신 데이터까지 즉시 수집합니다.
+                선택한 기간 동안의 데이터를 즉시 수집합니다.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
@@ -1226,6 +1260,18 @@ export function SyncControls({
                   id={backfillInputId}
                   value={backfillDate}
                   onChange={(event) => setBackfillDate(event.target.value)}
+                  type="date"
+                />
+              </label>
+              <label
+                className="flex flex-col gap-2 text-sm"
+                htmlFor={backfillEndInputId}
+              >
+                <span className="text-muted-foreground">종료 날짜</span>
+                <Input
+                  id={backfillEndInputId}
+                  value={backfillEndDate}
+                  onChange={(event) => setBackfillEndDate(event.target.value)}
                   type="date"
                 />
               </label>

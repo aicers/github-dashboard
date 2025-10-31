@@ -6,6 +6,7 @@ import { runBackfill } from "@/lib/sync/service";
 
 const requestSchema = z.object({
   startDate: z.string(),
+  endDate: z.string().optional().nullable(),
 });
 
 function buildLogger(prefix: string) {
@@ -36,8 +37,12 @@ export async function POST(request: Request) {
     }
 
     const payload = await request.json();
-    const { startDate } = requestSchema.parse(payload);
-    const result = await runBackfill(startDate, buildLogger("manual-backfill"));
+    const { startDate, endDate } = requestSchema.parse(payload);
+    const result = await runBackfill(
+      startDate,
+      endDate ?? null,
+      buildLogger("manual-backfill"),
+    );
 
     return NextResponse.json({
       success: true,
