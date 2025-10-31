@@ -74,6 +74,8 @@ const envSchema = z.object({
     ),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_API_BASE_URL: z.string().url().optional(),
+  OPENAI_UNANSWERED_MODEL: z.string().optional(),
+  OPENAI_UNANSWERED_PROMPT: z.string().optional(),
 });
 
 const parsed = envSchema.parse({
@@ -93,6 +95,8 @@ const parsed = envSchema.parse({
   DB_BACKUP_RETENTION: process.env.DB_BACKUP_RETENTION,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   OPENAI_API_BASE_URL: process.env.OPENAI_API_BASE_URL,
+  OPENAI_UNANSWERED_MODEL: process.env.OPENAI_UNANSWERED_MODEL,
+  OPENAI_UNANSWERED_PROMPT: process.env.OPENAI_UNANSWERED_PROMPT,
 });
 
 const defaultBackupDirectory = path.resolve(process.cwd(), "backups");
@@ -115,6 +119,10 @@ export const env = {
   DB_BACKUP_RETENTION: parsed.DB_BACKUP_RETENTION ?? 3,
   OPENAI_API_KEY: coerceOptionalString(parsed.OPENAI_API_KEY),
   OPENAI_API_BASE_URL: coerceOptionalString(parsed.OPENAI_API_BASE_URL),
+  OPENAI_UNANSWERED_MODEL: coerceOptionalString(parsed.OPENAI_UNANSWERED_MODEL),
+  OPENAI_UNANSWERED_PROMPT: coerceOptionalString(
+    parsed.OPENAI_UNANSWERED_PROMPT,
+  ),
   GITHUB_ALLOWED_BOT_LOGINS: parsed.GITHUB_ALLOWED_BOT_LOGINS
     ? parsed.GITHUB_ALLOWED_BOT_LOGINS.split(",")
         .map((value) => value.trim().toLowerCase())

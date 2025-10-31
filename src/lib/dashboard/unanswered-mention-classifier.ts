@@ -56,8 +56,9 @@ type BatchCandidate = {
   mentionedLogin: string | null;
 };
 
-const DEFAULT_MODEL = "gpt-4o-mini";
+const DEFAULT_MODEL = env.OPENAI_UNANSWERED_MODEL ?? "gpt-4";
 const SYSTEM_PROMPT =
+  env.OPENAI_UNANSWERED_PROMPT ??
   'You are a GitHub assistant. For each comment, determine whether a user mention is asking for a response or is simply a reference or courtesy. The comment may be written in English or Korean. Respond with only "Yes" or "No".';
 const MAX_BATCH_SIZE = 10;
 const MAX_COMMENT_CHARS = 1500;
