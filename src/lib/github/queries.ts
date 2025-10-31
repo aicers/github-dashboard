@@ -144,6 +144,24 @@ export const repositoryIssuesQuery = gql`
           comments(first: 0) {
             totalCount
           }
+          assignees(first: 25) {
+            nodes {
+              __typename
+              ... on User {
+                id
+                login
+                name
+                avatarUrl(size: 200)
+                createdAt
+                updatedAt
+              }
+              ... on Mannequin {
+                id
+                login
+                avatarUrl(size: 200)
+              }
+            }
+          }
           trackedIssues(first: 10) {
             totalCount
             nodes {
@@ -474,6 +492,24 @@ export const repositoryPullRequestsQuery = gql`
           }
           comments(first: 0) {
             totalCount
+          }
+          assignees(first: 25) {
+            nodes {
+              __typename
+              ... on User {
+                id
+                login
+                name
+                avatarUrl(size: 200)
+                createdAt
+                updatedAt
+              }
+              ... on Mannequin {
+                id
+                login
+                avatarUrl(size: 200)
+              }
+            }
           }
           reviews(first: 0) {
             totalCount

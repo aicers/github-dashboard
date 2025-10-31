@@ -292,6 +292,98 @@ describe("ActivityView", () => {
     expect(screen.getByPlaceholderText("@reactor")).not.toBeDisabled();
   });
 
+  it("syncs 구성원 chips with manual role selections when attention is inactive", async () => {
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+    const props = createDefaultProps();
+
+    render(<ActivityView {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
+
+    const authorInput = screen.getByPlaceholderText("@user");
+    fireEvent.change(authorInput, { target: { value: "alice" } });
+    fireEvent.keyDown(authorInput, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remove alice")).toBeVisible();
+    });
+
+    const assigneeInput = screen.getByPlaceholderText("@assignee");
+    fireEvent.change(assigneeInput, { target: { value: "bob" } });
+    fireEvent.keyDown(assigneeInput, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remove bob")).toBeVisible();
+    });
+
+    const aliceToggle = screen.getByRole("button", { name: "alice" });
+    const bobToggle = screen.getByRole("button", { name: "bob" });
+
+    expect(aliceToggle).toHaveAttribute("aria-pressed", "true");
+    expect(bobToggle).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByLabelText("Remove bob"));
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Remove bob")).toBeNull();
+      expect(bobToggle).toHaveAttribute("aria-pressed", "false");
+      expect(aliceToggle).toHaveAttribute("aria-pressed", "true");
+    });
+
+    fireEvent.click(screen.getByLabelText("Remove alice"));
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Remove alice")).toBeNull();
+      expect(aliceToggle).toHaveAttribute("aria-pressed", "false");
+    });
+  });
+
+  it("applies assignee-only filtering without attention", async () => {
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+    const props = createDefaultProps();
+
+    render(<ActivityView {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
+
+    const assigneeInput = screen.getByPlaceholderText("@assignee");
+    fireEvent.change(assigneeInput, { target: { value: "alice" } });
+    fireEvent.keyDown(assigneeInput, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remove alice")).toBeVisible();
+    });
+
+    const nextResults = buildActivityListResultFixture({
+      items: [
+        buildActivityItemFixture({
+          id: "assignee-filtered",
+          title: "담당자 필터 테스트",
+        }),
+      ],
+    });
+    mockFetchJsonOnce(nextResults);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "필터 적용" }));
+    });
+
+    await waitFor(() => {
+      const request = getLastActivityCall();
+      expect(request).toBeTruthy();
+      if (!request) {
+        return;
+      }
+      const url = new URL(request.url);
+      expect(url.searchParams.getAll("assigneeId")).toEqual(["user-alice"]);
+      expect(url.searchParams.getAll("peopleSelection")).toEqual(["user-alice"]);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("담당자 필터 테스트")).toBeVisible();
+    });
+  });
+
   it("demotes conflicting roles to optional chips when attentions disagree", async () => {
     mockFetchJsonOnce({ filters: [], limit: 5 });
     const props = createDefaultProps();
