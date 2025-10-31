@@ -384,6 +384,24 @@ function clearPeopleRoleValues(state: FilterState, role: PeopleRoleKey) {
   return setOptionalPersonValues(state, role, []);
 }
 
+function updatePeopleRoleValues(
+  state: FilterState,
+  role: PeopleRoleKey,
+  values: string[],
+): FilterState {
+  const nextState = setPeopleRoleValues(state, role, values);
+  return syncPeopleFilters(nextState);
+}
+
+function updateOptionalPersonValues(
+  state: FilterState,
+  role: PeopleRoleKey,
+  values: string[],
+): FilterState {
+  const nextState = setOptionalPersonValues(state, role, values);
+  return syncPeopleFilters(nextState);
+}
+
 function removeMentionRole(state: FilterState): FilterState {
   let nextState = setPeopleRoleValues(state, "mentionedUserIds", []);
   nextState = setOptionalPersonValues(nextState, "mentionedUserIds", []);
@@ -397,11 +415,57 @@ function removeMentionRole(state: FilterState): FilterState {
       optionalPersonIds: rest,
     };
   }
+  return syncPeopleFilters(nextState);
+}
+
+function hasActiveAttentionFilters(state: FilterState): boolean {
+  return state.attention.some((value) => value !== "no_attention");
+}
+
+function collectPeopleSelectionFromRoles(state: FilterState): string[] {
+  const seen = new Set<string>();
+  const collected: string[] = [];
+  PEOPLE_ROLE_KEYS.forEach((role) => {
+    const values = getPeopleRoleValues(state, role);
+    values.forEach((value) => {
+      if (!seen.has(value)) {
+        seen.add(value);
+        collected.push(value);
+      }
+    });
+  });
+  return collected;
+}
+
+function syncPeopleSelectionFromRoles(state: FilterState): FilterState {
+  const union = collectPeopleSelectionFromRoles(state);
+  const selectionMatches = arraysShallowEqual(state.peopleSelection, union);
+  const shouldClearOptional = !isOptionalPeopleEmpty(state);
+
+  if (selectionMatches && !shouldClearOptional) {
+    return state;
+  }
+
+  let nextState: FilterState = state;
+  if (!selectionMatches) {
+    nextState = {
+      ...nextState,
+      peopleSelection: union,
+    };
+  }
+  if (shouldClearOptional) {
+    nextState = { ...nextState, optionalPersonIds: {} };
+  }
   return nextState;
 }
 
 function syncPeopleFiltersWithAttention(state: FilterState): FilterState {
+  if (!hasActiveAttentionFilters(state)) {
+    return state;
+  }
+
   const selection = Array.from(new Set(state.peopleSelection ?? []));
+
   if (selection.length === 0) {
     let nextState = state;
     PEOPLE_ROLE_KEYS.forEach((role) => {
@@ -468,15 +532,15 @@ function syncPeopleFiltersWithAttention(state: FilterState): FilterState {
     const finalOptional = new Set<PeopleRoleKey>();
 
     PEOPLE_ROLE_KEYS.forEach((role) => {
-      const state = roleStates.get(role) ?? {
+      const roleState = roleStates.get(role) ?? {
         applied: false,
         optional: false,
         cleared: false,
       };
 
-      const hasApplied = state.applied;
-      const hasOptional = state.optional;
-      const hasCleared = state.cleared || !roleStates.has(role);
+      const hasApplied = roleState.applied;
+      const hasOptional = roleState.optional;
+      const hasCleared = roleState.cleared || !roleStates.has(role);
 
       if (hasApplied && (hasOptional || hasCleared)) {
         finalOptional.add(role);
@@ -523,6 +587,21 @@ function syncPeopleFiltersWithAttention(state: FilterState): FilterState {
   });
 
   return nextState;
+}
+
+function syncPeopleFilters(state: FilterState): FilterState {
+  const attentionSynced = syncPeopleFiltersWithAttention(state);
+  if (hasActiveAttentionFilters(attentionSynced)) {
+    return attentionSynced;
+  }
+  return syncPeopleSelectionFromRoles(attentionSynced);
+}
+
+function isOptionalPeopleEmpty(state: FilterState): boolean {
+  return !PEOPLE_ROLE_KEYS.some((role) => {
+    const values = state.optionalPersonIds?.[role];
+    return Array.isArray(values) && values.length > 0;
+  });
 }
 
 const ATTENTION_CATEGORY_MAP = {
@@ -752,7 +831,7 @@ function applyPeopleSelection(
     };
   }
 
-  return changed ? syncPeopleFiltersWithAttention(nextState) : state;
+  return changed ? syncPeopleFilters(nextState) : state;
 }
 
 function sanitizePeopleIds(
@@ -813,7 +892,7 @@ function sanitizePeopleIds(
     return applyPeopleSelection(nextState, peopleState.selection);
   }
 
-  return syncPeopleFiltersWithAttention(nextState);
+  return syncPeopleFilters(nextState);
 }
 
 function canonicalizeActivityParams(params: ActivityListParams) {
@@ -4256,7 +4335,7 @@ export function ActivityView({
                     variant={allSelected ? "active" : "inactive"}
                     onClick={() => {
                       setDraft((current) =>
-                        syncPeopleFiltersWithAttention({
+                        syncPeopleFilters({
                           ...current,
                           attention: [],
                         }),
@@ -4333,7 +4412,7 @@ export function ActivityView({
                                   );
                                 }
                               }
-                              return syncPeopleFiltersWithAttention(nextState);
+                              return syncPeopleFilters(nextState);
                             });
                           }}
                         >
@@ -4509,12 +4588,12 @@ export function ActivityView({
                   optionalValues={draft.optionalPersonIds?.authorIds ?? []}
                   onChange={(next) =>
                     setDraft((current) =>
-                      setPeopleRoleValues(current, "authorIds", next),
+                      updatePeopleRoleValues(current, "authorIds", next),
                     )
                   }
                   onOptionalChange={(next) =>
                     setDraft((current) =>
-                      setOptionalPersonValues(current, "authorIds", next),
+                      updateOptionalPersonValues(current, "authorIds", next),
                     )
                   }
                   options={userOptions}
@@ -4528,12 +4607,12 @@ export function ActivityView({
                   optionalValues={draft.optionalPersonIds?.assigneeIds ?? []}
                   onChange={(next) =>
                     setDraft((current) =>
-                      setPeopleRoleValues(current, "assigneeIds", next),
+                      updatePeopleRoleValues(current, "assigneeIds", next),
                     )
                   }
                   onOptionalChange={(next) =>
                     setDraft((current) =>
-                      setOptionalPersonValues(current, "assigneeIds", next),
+                      updateOptionalPersonValues(current, "assigneeIds", next),
                     )
                   }
                   options={userOptions}
@@ -4547,12 +4626,12 @@ export function ActivityView({
                   optionalValues={draft.optionalPersonIds?.reviewerIds ?? []}
                   onChange={(next) =>
                     setDraft((current) =>
-                      setPeopleRoleValues(current, "reviewerIds", next),
+                      updatePeopleRoleValues(current, "reviewerIds", next),
                     )
                   }
                   onOptionalChange={(next) =>
                     setDraft((current) =>
-                      setOptionalPersonValues(current, "reviewerIds", next),
+                      updateOptionalPersonValues(current, "reviewerIds", next),
                     )
                   }
                   options={userOptions}
@@ -4568,12 +4647,12 @@ export function ActivityView({
                   }
                   onChange={(next) =>
                     setDraft((current) =>
-                      setPeopleRoleValues(current, "mentionedUserIds", next),
+                      updatePeopleRoleValues(current, "mentionedUserIds", next),
                     )
                   }
                   onOptionalChange={(next) =>
                     setDraft((current) =>
-                      setOptionalPersonValues(
+                      updateOptionalPersonValues(
                         current,
                         "mentionedUserIds",
                         next,
@@ -4591,12 +4670,12 @@ export function ActivityView({
                   optionalValues={draft.optionalPersonIds?.commenterIds ?? []}
                   onChange={(next) =>
                     setDraft((current) =>
-                      setPeopleRoleValues(current, "commenterIds", next),
+                      updatePeopleRoleValues(current, "commenterIds", next),
                     )
                   }
                   onOptionalChange={(next) =>
                     setDraft((current) =>
-                      setOptionalPersonValues(current, "commenterIds", next),
+                      updateOptionalPersonValues(current, "commenterIds", next),
                     )
                   }
                   options={userOptions}
@@ -4610,12 +4689,12 @@ export function ActivityView({
                   optionalValues={draft.optionalPersonIds?.reactorIds ?? []}
                   onChange={(next) =>
                     setDraft((current) =>
-                      setPeopleRoleValues(current, "reactorIds", next),
+                      updatePeopleRoleValues(current, "reactorIds", next),
                     )
                   }
                   onOptionalChange={(next) =>
                     setDraft((current) =>
-                      setOptionalPersonValues(current, "reactorIds", next),
+                      updateOptionalPersonValues(current, "reactorIds", next),
                     )
                   }
                   options={userOptions}
