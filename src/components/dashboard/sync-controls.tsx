@@ -424,6 +424,9 @@ export function SyncControls({
   const [isRunningStatusAutomation, setIsRunningStatusAutomation] =
     useState(false);
   const [isClassifyingMentions, setIsClassifyingMentions] = useState(false);
+  const [mentionClassificationMode, setMentionClassificationMode] = useState<
+    "standard" | "force"
+  >("standard");
   const activityCacheFilterCounts = activityCacheSummary
     ? parseFilterCounts(activityCacheSummary.filterOptions.metadata)
     : null;
@@ -1049,19 +1052,27 @@ export function SyncControls({
     }
   }
 
-  async function handleMentionClassification() {
+  async function handleMentionClassification(force?: boolean) {
     if (!canManageSync) {
       setFeedback(ADMIN_ONLY_MESSAGE);
       return;
     }
 
+    setMentionClassificationMode(force ? "force" : "standard");
     setIsClassifyingMentions(true);
     try {
+      const requestInit: RequestInit = force
+        ? {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ force: true }),
+          }
+        : { method: "POST" };
       const response = await fetch(
         "/api/attention/unanswered-mentions/classify",
-        {
-          method: "POST",
-        },
+        requestInit,
       );
       const data =
         await parseApiResponse<MentionClassificationSummary>(response);
@@ -1098,6 +1109,7 @@ export function SyncControls({
       );
     } finally {
       setIsClassifyingMentions(false);
+      setMentionClassificationMode("standard");
     }
   }
 
@@ -1420,13 +1432,26 @@ export function SyncControls({
                 </p>
               ) : null}
             </CardContent>
-            <CardFooter>
+            <CardFooter className="flex flex-col gap-2 sm:flex-row">
               <Button
-                onClick={handleMentionClassification}
+                onClick={() => handleMentionClassification(false)}
                 disabled={isClassifyingMentions || !canManageSync}
                 title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
               >
-                {isClassifyingMentions ? "분류 실행 중..." : "분류 실행"}
+                {isClassifyingMentions &&
+                mentionClassificationMode === "standard"
+                  ? "분류 실행 중..."
+                  : "분류 실행"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => handleMentionClassification(true)}
+                disabled={isClassifyingMentions || !canManageSync}
+                title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+              >
+                {isClassifyingMentions && mentionClassificationMode === "force"
+                  ? "전체 재분류 실행 중..."
+                  : "전체 재분류"}
               </Button>
             </CardFooter>
           </Card>

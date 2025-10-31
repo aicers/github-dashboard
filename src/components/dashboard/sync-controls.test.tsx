@@ -7,6 +7,7 @@ import {
   SyncControls,
 } from "@/components/dashboard/sync-controls";
 import type { ActivityCacheRefreshResult } from "@/lib/activity/cache";
+import type { MentionClassificationSummary } from "@/lib/dashboard/unanswered-mention-classifier";
 import type { BackfillChunkSuccess, SyncStatus } from "@/lib/sync/service";
 import {
   createJsonResponse,
@@ -318,6 +319,124 @@ describe("SyncControls", () => {
     );
     expect(screen.queryByText("DB 백업 일정")).not.toBeInTheDocument();
     expect(screen.queryByText("최근 동기화 로그")).not.toBeInTheDocument();
+  });
+
+  it("runs unanswered mention classification incrementally", async () => {
+    const status = buildStatus();
+    const summary: MentionClassificationSummary = {
+      status: "completed",
+      totalCandidates: 1,
+      attempted: 1,
+      updated: 1,
+      unchanged: 0,
+      skipped: 0,
+      requiresResponseCount: 1,
+      notRequiringResponseCount: 0,
+      errors: 0,
+    };
+
+    mockFetchJsonOnce({ success: true, result: summary });
+
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+        view="overview"
+        currentPathname="/dashboard/sync"
+      />,
+    );
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "분류 실행" }));
+
+    await waitFor(() => {
+      expect(
+        hasRequest("/api/attention/unanswered-mentions/classify", "POST"),
+      ).toBe(true);
+    });
+
+    const request = findRequest(
+      "/api/attention/unanswered-mentions/classify",
+      "POST",
+    );
+    expect(request).not.toBeNull();
+    if (!request) {
+      throw new Error("Expected unanswered mention classification request");
+    }
+    expect(request.headers.get("Content-Type")).toBeNull();
+    const bodyText = await request.clone().text();
+    expect(bodyText).toBe("");
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          /응답 없는 멘션 분류를 완료했습니다\.\s*\(후보 1건, 새 평가 1건, 유지 0건\)/,
+        ),
+      ).toBeInTheDocument();
+    });
+    expect(routerRefreshMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows forcing unanswered mention classification for all mentions", async () => {
+    const status = buildStatus();
+    const summary: MentionClassificationSummary = {
+      status: "completed",
+      totalCandidates: 2,
+      attempted: 2,
+      updated: 2,
+      unchanged: 0,
+      skipped: 0,
+      requiresResponseCount: 1,
+      notRequiringResponseCount: 1,
+      errors: 0,
+    };
+
+    mockFetchJsonOnce({ success: true, result: summary });
+
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+        view="overview"
+        currentPathname="/dashboard/sync"
+      />,
+    );
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "전체 재분류" }));
+
+    await waitFor(() => {
+      expect(
+        hasRequest("/api/attention/unanswered-mentions/classify", "POST"),
+      ).toBe(true);
+    });
+
+    const request = findRequest(
+      "/api/attention/unanswered-mentions/classify",
+      "POST",
+    );
+    expect(request).not.toBeNull();
+    if (!request) {
+      throw new Error(
+        "Expected forced unanswered mention classification request",
+      );
+    }
+    expect(request.headers.get("Content-Type")).toBe("application/json");
+    const payload = await request.clone().json();
+    expect(payload).toEqual({ force: true });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          /응답 없는 멘션 분류를 완료했습니다\.\s*\(후보 2건, 새 평가 2건, 유지 0건\)/,
+        ),
+      ).toBeInTheDocument();
+    });
+    expect(routerRefreshMock).toHaveBeenCalledTimes(1);
   });
 
   it("renders the logs view with recent run entries", () => {

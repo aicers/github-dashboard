@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { readActiveSession } from "@/lib/auth/session";
 import { runUnansweredMentionClassification } from "@/lib/dashboard/unanswered-mention-classifier";
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
     const session = await readActiveSession();
     if (!session) {
@@ -27,7 +27,19 @@ export async function POST() {
       );
     }
 
-    const summary = await runUnansweredMentionClassification();
+    let force = false;
+    try {
+      const payload = await request.json();
+      if (payload && typeof payload === "object" && "force" in payload) {
+        force = Boolean((payload as { force?: unknown }).force);
+      }
+    } catch {
+      force = false;
+    }
+
+    const summary = await runUnansweredMentionClassification(
+      force ? { force: true } : undefined,
+    );
     return NextResponse.json({
       success: true,
       result: summary,
