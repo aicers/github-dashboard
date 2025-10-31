@@ -566,7 +566,20 @@ export async function initializeScheduler() {
   }
 }
 
-export async function runBackfill(startDate: string, logger?: SyncLogger) {
+export async function runBackfill(
+  startDate: string,
+  endDateOrLogger?: string | null | SyncLogger,
+  loggerMaybe?: SyncLogger,
+) {
+  let endDate: string | null = null;
+  let logger: SyncLogger | undefined = loggerMaybe;
+
+  if (typeof endDateOrLogger === "function") {
+    logger = endDateOrLogger;
+  } else if (endDateOrLogger !== undefined && endDateOrLogger !== null) {
+    endDate = endDateOrLogger;
+  }
+
   const parsedDate = dateSchema.parse(startDate);
   const start = new Date(parsedDate);
   const startUtc = new Date(
@@ -577,6 +590,33 @@ export async function runBackfill(startDate: string, logger?: SyncLogger) {
 
   if (startUtc.getTime() > nowUtc.getTime()) {
     throw new Error("Backfill start date must be in the past.");
+  }
+
+  let targetExclusiveUtc = new Date(nowUtc.toISOString());
+  if (endDate) {
+    const parsedEndDate = dateSchema.parse(endDate);
+    const end = new Date(parsedEndDate);
+    const endUtc = new Date(
+      Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()),
+    );
+
+    if (endUtc.getTime() < startUtc.getTime()) {
+      throw new Error("Backfill end date must be on or after the start date.");
+    }
+
+    if (endUtc.getTime() > nowUtc.getTime()) {
+      throw new Error("Backfill end date must be in the past.");
+    }
+
+    const exclusiveEndCandidate = new Date(endUtc.getTime() + MS_PER_DAY);
+    targetExclusiveUtc =
+      exclusiveEndCandidate.getTime() > nowUtc.getTime()
+        ? new Date(nowUtc.toISOString())
+        : exclusiveEndCandidate;
+  }
+
+  if (startUtc.getTime() >= targetExclusiveUtc.getTime()) {
+    throw new Error("Backfill range must include at least one day.");
   }
 
   const totals: SyncCounts = {
@@ -590,10 +630,13 @@ export async function runBackfill(startDate: string, logger?: SyncLogger) {
 
   let cursor = startUtc;
 
-  while (cursor.getTime() <= nowUtc.getTime()) {
+  while (cursor.getTime() < targetExclusiveUtc.getTime()) {
     const next = new Date(cursor.toISOString());
     next.setUTCDate(next.getUTCDate() + 1);
-    const chunkEnd = next.getTime() <= nowUtc.getTime() ? next : nowUtc;
+    const chunkEnd =
+      next.getTime() <= targetExclusiveUtc.getTime()
+        ? next
+        : targetExclusiveUtc;
 
     if (cursor.getTime() >= chunkEnd.getTime()) {
       break;
@@ -635,16 +678,21 @@ export async function runBackfill(startDate: string, logger?: SyncLogger) {
       break;
     }
 
-    if (chunkEnd.getTime() >= nowUtc.getTime()) {
+    if (chunkEnd.getTime() >= targetExclusiveUtc.getTime()) {
       break;
     }
 
     cursor = chunkEnd;
   }
 
+  const finalChunkUntil =
+    chunks.length > 0
+      ? chunks[chunks.length - 1]?.until
+      : startUtc.toISOString();
+
   return {
     startDate: startUtc.toISOString(),
-    endDate: nowUtc.toISOString(),
+    endDate: finalChunkUntil ?? startUtc.toISOString(),
     chunkCount: chunks.length,
     totals,
     chunks,

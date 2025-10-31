@@ -1,4 +1,10 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -72,6 +78,13 @@ function findRequest(substring: string, method?: string): Request | null {
 
 function hasRequest(substring: string, method?: string): boolean {
   return findRequest(substring, method) !== null;
+}
+
+function setBackfillRange(start: string, end: string) {
+  const startInput = screen.getByLabelText("시작 날짜");
+  const endInput = screen.getByLabelText("종료 날짜");
+  fireEvent.change(startInput, { target: { value: start } });
+  fireEvent.change(endInput, { target: { value: end } });
 }
 
 vi.mock("next/navigation", () => ({
@@ -614,6 +627,16 @@ describe("SyncControls", () => {
     );
     const user = userEvent.setup();
 
+    setBackfillRange("2024-04-01", "2024-04-03");
+    expect((screen.getByLabelText("시작 날짜") as HTMLInputElement).value).toBe(
+      "2024-04-01",
+    );
+    expect((screen.getByLabelText("종료 날짜") as HTMLInputElement).value).toBe(
+      "2024-04-03",
+    );
+    setBackfillRange("2024-04-01", "2024-04-03");
+    setBackfillRange("2024-04-01", "2024-04-02");
+    setBackfillRange("2024-04-01", "2024-04-03");
     await user.click(screen.getByRole("button", { name: "백필 실행" }));
 
     await waitFor(() => {
@@ -626,6 +649,11 @@ describe("SyncControls", () => {
     }
     expect(request.url).toContain("/api/sync/backfill");
     expect(request.method).toBe("POST");
+    const body = await request.clone().json();
+    expect(body).toEqual({
+      startDate: "2024-04-01",
+      endDate: "2024-04-03",
+    });
 
     await waitFor(() => {
       expect(
@@ -686,6 +714,7 @@ describe("SyncControls", () => {
     );
     const user = userEvent.setup();
 
+    setBackfillRange("2024-04-01", "2024-04-02");
     await user.click(screen.getByRole("button", { name: "백필 실행" }));
 
     await waitFor(() => {
@@ -718,6 +747,7 @@ describe("SyncControls", () => {
     );
     const user = userEvent.setup();
 
+    setBackfillRange("2024-04-01", "2024-04-02");
     await user.click(screen.getByRole("button", { name: "백필 실행" }));
 
     await waitFor(() => {
@@ -725,6 +755,32 @@ describe("SyncControls", () => {
     });
     expect(screen.queryByText("백필 결과 히스토리")).not.toBeInTheDocument();
     expect(routerRefreshMock).not.toHaveBeenCalled();
+  });
+
+  it("validates the backfill range when the end date precedes the start date", async () => {
+    const status = buildStatus();
+
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+        view="overview"
+        currentPathname="/dashboard/sync"
+      />,
+    );
+    const user = userEvent.setup();
+
+    setBackfillRange("2024-04-05", "2024-04-02");
+    await user.click(screen.getByRole("button", { name: "백필 실행" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("백필 종료 날짜는 시작 날짜 이후여야 합니다."),
+      ).toBeInTheDocument();
+    });
+    expect(hasRequest("/api/sync/backfill", "POST")).toBe(false);
   });
 
   it("preserves existing history when a subsequent backfill request fails", async () => {
@@ -757,6 +813,7 @@ describe("SyncControls", () => {
     );
     const user = userEvent.setup();
 
+    setBackfillRange("2024-04-02", "2024-04-03");
     await user.click(screen.getByRole("button", { name: "백필 실행" }));
 
     const historyHeading = await screen.findByText("백필 결과 히스토리");
