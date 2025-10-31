@@ -21,7 +21,7 @@ function createPool() {
 
   const config: PoolConfig = {
     connectionString: env.DATABASE_URL,
-    max: 20,
+    max: 50,
     idleTimeoutMillis: 30_000,
   };
 
