@@ -855,6 +855,155 @@ describe("activity service integration", () => {
     expect(withBob.items.map((item) => item.id)).toEqual([]);
   });
 
+  it("limits unanswered mention attention results to unresolved targets", async () => {
+    const mentionAuthor: DbActor = {
+      id: "user-mention-author",
+      login: "henry0715-dev",
+      name: "Henry",
+      createdAt: BASE_TIME,
+      updatedAt: BASE_TIME,
+    };
+    const unresolvedTarget: DbActor = {
+      id: "user-unresolved",
+      login: "sehkone",
+      name: "Sehkone Kim",
+      createdAt: BASE_TIME,
+      updatedAt: BASE_TIME,
+    };
+    const respondedTarget: DbActor = {
+      id: "user-responded",
+      login: "msk",
+      name: "Min S. Kim",
+      createdAt: BASE_TIME,
+      updatedAt: BASE_TIME,
+    };
+
+    await seedActivityUsers([mentionAuthor, unresolvedTarget, respondedTarget]);
+
+    const repository: DbRepository = {
+      id: "repo-mentions",
+      name: "review-web",
+      nameWithOwner: "aicers/review-web",
+      ownerId: mentionAuthor.id,
+      raw: { id: "repo-mentions" },
+    };
+
+    await seedActivityRepositories([repository]);
+
+    const issue: DbIssue = {
+      id: "issue-unanswered-mentions",
+      number: 33,
+      repositoryId: repository.id,
+      authorId: mentionAuthor.id,
+      title: "Add backupList API",
+      state: "OPEN",
+      createdAt: BASE_TIME,
+      updatedAt: "2024-02-01T00:00:00.000Z",
+      closedAt: null,
+      raw: {
+        id: "issue-unanswered-mentions",
+        number: 33,
+        title: "Add backupList API",
+        url: `https://example.com/${repository.nameWithOwner}/issues/33`,
+        repository: {
+          id: repository.id,
+          nameWithOwner: repository.nameWithOwner,
+        },
+      },
+    };
+
+    await seedActivityIssues([issue]);
+
+    const comment: DbComment = {
+      id: "comment-unanswered-mentions",
+      issueId: issue.id,
+      pullRequestId: null,
+      reviewId: null,
+      authorId: mentionAuthor.id,
+      createdAt: "2024-01-15T09:00:00.000Z",
+      updatedAt: "2024-01-15T09:00:00.000Z",
+      raw: {
+        id: "comment-unanswered-mentions",
+        body: "@sehkone, @msk Could we close this issue?",
+        url: `https://example.com/${repository.nameWithOwner}/issues/33#comment-1`,
+      },
+    };
+
+    await seedActivityComments([comment]);
+    await refreshActivityItemsSnapshot();
+
+    const unansweredMention: MentionAttentionItem = {
+      commentId: comment.id,
+      url: (comment.raw as { url?: string | null })?.url ?? null,
+      mentionedAt: "2024-01-15T09:00:00.000Z",
+      waitingDays: 7,
+      author: {
+        id: mentionAuthor.id,
+        login: mentionAuthor.login ?? null,
+        name: mentionAuthor.name ?? null,
+      },
+      target: {
+        id: unresolvedTarget.id,
+        login: unresolvedTarget.login ?? null,
+        name: unresolvedTarget.name ?? null,
+      },
+      container: {
+        type: "issue",
+        id: issue.id,
+        number: issue.number,
+        title: issue.title ?? null,
+        url: (issue.raw as { url?: string | null })?.url ?? null,
+        repository: {
+          id: repository.id,
+          name: repository.name,
+          nameWithOwner: repository.nameWithOwner,
+        },
+      },
+      commentExcerpt: "@sehkone, @msk Could we close this issue?",
+      classification: {
+        requiresResponse: true,
+        manualRequiresResponse: null,
+        manualRequiresResponseAt: null,
+        manualDecisionIsStale: false,
+        lastEvaluatedAt: null,
+      },
+    };
+
+    const attention: AttentionInsights = {
+      ...emptyInsights(),
+      unansweredMentions: [unansweredMention],
+    };
+
+    mockedAttentionInsights.mockResolvedValueOnce(attention);
+
+    const withUnresolvedTarget = await getActivityItems({
+      attention: ["unanswered_mentions"],
+      peopleSelection: [unresolvedTarget.id],
+    });
+
+    expect(withUnresolvedTarget.items.map((item) => item.id)).toEqual([
+      issue.id,
+    ]);
+
+    mockedAttentionInsights.mockResolvedValueOnce(attention);
+
+    const withRespondedTarget = await getActivityItems({
+      attention: ["unanswered_mentions"],
+      peopleSelection: [respondedTarget.id],
+    });
+
+    expect(withRespondedTarget.items).toHaveLength(0);
+
+    mockedAttentionInsights.mockResolvedValueOnce(attention);
+
+    const withMentionAuthor = await getActivityItems({
+      attention: ["unanswered_mentions"],
+      peopleSelection: [mentionAuthor.id],
+    });
+
+    expect(withMentionAuthor.items).toHaveLength(0);
+  });
+
   it("populates linked pull requests and issues for activity items", async () => {
     const { repoAlpha, issueAlpha, pullRequestBeta } =
       await seedBasicActivityData();
