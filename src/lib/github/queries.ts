@@ -121,6 +121,11 @@ export const repositoryIssuesQuery = gql`
               login
               avatarUrl(size: 200)
             }
+            ... on Mannequin {
+              id
+              login
+              avatarUrl(size: 200)
+            }
           }
           participants(first: 10) {
             nodes {
@@ -154,11 +159,6 @@ export const repositoryIssuesQuery = gql`
                 avatarUrl(size: 200)
                 createdAt
                 updatedAt
-              }
-              ... on Mannequin {
-                id
-                login
-                avatarUrl(size: 200)
               }
             }
           }
@@ -362,6 +362,11 @@ export const repositoryDiscussionsQuery = gql`
               login
               avatarUrl(size: 200)
             }
+            ... on Mannequin {
+              id
+              login
+              avatarUrl(size: 200)
+            }
           }
           category {
             id
@@ -388,6 +393,11 @@ export const repositoryDiscussionsQuery = gql`
               updatedAt
             }
             ... on Bot {
+              id
+              login
+              avatarUrl(size: 200)
+            }
+            ... on Mannequin {
               id
               login
               avatarUrl(size: 200)
@@ -465,6 +475,11 @@ export const repositoryPullRequestsQuery = gql`
               login
               avatarUrl(size: 200)
             }
+            ... on Mannequin {
+              id
+              login
+              avatarUrl(size: 200)
+            }
           }
           mergedBy {
             __typename
@@ -489,6 +504,11 @@ export const repositoryPullRequestsQuery = gql`
               login
               avatarUrl(size: 200)
             }
+            ... on Mannequin {
+              id
+              login
+              avatarUrl(size: 200)
+            }
           }
           comments(first: 0) {
             totalCount
@@ -503,11 +523,6 @@ export const repositoryPullRequestsQuery = gql`
                 avatarUrl(size: 200)
                 createdAt
                 updatedAt
-              }
-              ... on Mannequin {
-                id
-                login
-                avatarUrl(size: 200)
               }
             }
           }
@@ -639,6 +654,11 @@ export const repositoryPullRequestLinksQuery = gql`
               login
               avatarUrl(size: 200)
             }
+            ... on Mannequin {
+              id
+              login
+              avatarUrl(size: 200)
+            }
           }
           mergedBy {
             __typename
@@ -659,6 +679,11 @@ export const repositoryPullRequestLinksQuery = gql`
               updatedAt
             }
             ... on Bot {
+              id
+              login
+              avatarUrl(size: 200)
+            }
+            ... on Mannequin {
               id
               login
               avatarUrl(size: 200)
@@ -717,6 +742,11 @@ export const pullRequestReviewsQuery = gql`
                 login
                 avatarUrl(size: 200)
               }
+              ... on Mannequin {
+                id
+                login
+                avatarUrl(size: 200)
+              }
             }
             submittedAt
             state
@@ -760,6 +790,11 @@ export const issueCommentsQuery = gql`
                 updatedAt
               }
               ... on Bot {
+                id
+                login
+                avatarUrl(size: 200)
+              }
+              ... on Mannequin {
                 id
                 login
                 avatarUrl(size: 200)
@@ -826,6 +861,11 @@ export const pullRequestCommentsQuery = gql`
                 login
                 avatarUrl(size: 200)
               }
+              ... on Mannequin {
+                id
+                login
+                avatarUrl(size: 200)
+              }
             }
             createdAt
             updatedAt
@@ -884,6 +924,11 @@ export const discussionCommentsQuery = gql`
                 updatedAt
               }
               ... on Bot {
+                id
+                login
+                avatarUrl(size: 200)
+              }
+              ... on Mannequin {
                 id
                 login
                 avatarUrl(size: 200)
@@ -953,6 +998,11 @@ export const pullRequestReviewCommentsQuery = gql`
                     updatedAt
                   }
                   ... on Bot {
+                    id
+                    login
+                    avatarUrl(size: 200)
+                  }
+                  ... on Mannequin {
                     id
                     login
                     avatarUrl(size: 200)
