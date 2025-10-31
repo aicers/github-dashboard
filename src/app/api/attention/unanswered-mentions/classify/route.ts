@@ -37,9 +37,48 @@ export async function POST(request: Request) {
       force = false;
     }
 
-    const summary = await runUnansweredMentionClassification(
-      force ? { force: true } : undefined,
-    );
+    const logger = ({
+      level,
+      message,
+      meta,
+    }: {
+      level: "info" | "warn" | "error";
+      message: string;
+      meta?: Record<string, unknown>;
+    }) => {
+      const details = meta
+        ? { ...meta, trigger: "manual" }
+        : { trigger: "manual" };
+      if (level === "error") {
+        console.error(
+          "[unanswered-mentions/manual] Classification error",
+          message,
+          details,
+        );
+      } else if (level === "warn") {
+        console.warn(
+          "[unanswered-mentions/manual] Classification warning",
+          message,
+          details,
+        );
+      } else {
+        console.info(
+          "[unanswered-mentions/manual] Classification info",
+          message,
+          details,
+        );
+      }
+    };
+
+    const summary = await runUnansweredMentionClassification({
+      ...(force ? { force: true } : {}),
+      logger,
+    });
+
+    console.info("[unanswered-mentions/manual] Classification summary", {
+      trigger: "manual",
+      ...summary,
+    });
     return NextResponse.json({
       success: true,
       result: summary,
