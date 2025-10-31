@@ -40,6 +40,7 @@ export function buildActivityListParams(
     linkedIssueStates: [],
     search: "",
     thresholds: {},
+    taskMode: undefined,
     useMentionAi: true,
     ...overrides,
   };
@@ -85,6 +86,7 @@ export function buildActivityFilterState(
     linkedIssueStates: [],
     useMentionAi: useMentionAi ?? true,
     search: "",
+    taskMode: null,
     optionalPersonIds: {},
     ...restOverrides,
     thresholds: {

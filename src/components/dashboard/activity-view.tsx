@@ -6,6 +6,7 @@ import {
   Bot,
   ChevronDown,
   Info,
+  ListTodo,
   type LucideIcon,
   User,
   UserCheck,
@@ -54,6 +55,7 @@ import type {
   ActivityMentionWait,
   ActivityPullRequestStatusFilter,
   ActivitySavedFilter,
+  ActivityStatusFilter,
   IssueProjectStatus,
 } from "@/lib/activity/types";
 import type { DateTimeDisplayFormat } from "@/lib/date-time-format";
@@ -341,6 +343,14 @@ function setPeopleRoleValues(
     return setOptionalPersonValues(state, role, []);
   }
 
+  const shouldClearTaskMode =
+    state.taskMode === "my_todo" &&
+    (role === "authorIds" ||
+      role === "assigneeIds" ||
+      role === "reviewerIds" ||
+      role === "mentionedUserIds" ||
+      role === "maintainerIds");
+
   const clonedValues = [...normalized];
   const next: FilterState = {
     ...state,
@@ -374,7 +384,11 @@ function setPeopleRoleValues(
       break;
   }
 
-  return setOptionalPersonValues(next, role, []);
+  const withOptionalCleared = setOptionalPersonValues(next, role, []);
+  if (shouldClearTaskMode && withOptionalCleared.taskMode === "my_todo") {
+    return { ...withOptionalCleared, taskMode: null };
+  }
+  return withOptionalCleared;
 }
 
 function clearPeopleRoleValues(state: FilterState, role: PeopleRoleKey) {
@@ -739,6 +753,42 @@ function normalizePeopleIds(values: string[]): string[] {
   return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
 }
 
+function ensureValidTaskMode(
+  state: FilterState,
+  currentUserId: string | null,
+  allowedUserIds: ReadonlySet<string>,
+): FilterState {
+  if (state.taskMode !== "my_todo") {
+    return state;
+  }
+  if (!currentUserId || !allowedUserIds.has(currentUserId)) {
+    if (state.taskMode === null) {
+      return state;
+    }
+    return { ...state, taskMode: null };
+  }
+  const target = normalizePeopleIds([currentUserId]);
+  const roles: PeopleRoleKey[] = [
+    "authorIds",
+    "assigneeIds",
+    "reviewerIds",
+    "mentionedUserIds",
+    "maintainerIds",
+  ];
+  const allRolesMatch = roles.every((role) => {
+    const values = getPeopleRoleValues(state, role);
+    return arraysShallowEqual(normalizePeopleIds(values), target);
+  });
+  const normalizedSelection = normalizePeopleIds(state.peopleSelection ?? []);
+  const selectionMatches =
+    normalizedSelection.length === 0 ||
+    arraysShallowEqual(normalizedSelection, target);
+  if (allRolesMatch && selectionMatches) {
+    return state;
+  }
+  return { ...state, taskMode: null };
+}
+
 function resolvePeopleCategories(categories: ActivityItemCategory[]) {
   return categories.length ? categories : ALL_ACTIVITY_CATEGORIES;
 }
@@ -760,8 +810,13 @@ function derivePeopleState(
   categoriesOverride?: ActivityItemCategory[],
 ) {
   const resolvedCategories = categoriesOverride ?? state.categories;
-  const allTargets = getPeopleRoleTargets(resolvedCategories);
-  const targets = allTargets.filter((role) => {
+  const targetSet = new Set(getPeopleRoleTargets(resolvedCategories));
+  if (state.taskMode === "my_todo") {
+    targetSet.add("maintainerIds");
+    targetSet.delete("commenterIds");
+    targetSet.delete("reactorIds");
+  }
+  const targets = Array.from(targetSet).filter((role) => {
     if (role !== "mentionedUserIds") {
       return true;
     }
@@ -2058,11 +2113,51 @@ export function ActivityView({
     [labelMetadata],
   );
 
+  const augmentedUsers = useMemo(() => {
+    if (!currentUserId) {
+      return filterOptions.users;
+    }
+    const hasCurrentUser = filterOptions.users.some(
+      (user) => user.id === currentUserId,
+    );
+    if (hasCurrentUser) {
+      return filterOptions.users;
+    }
+    return [
+      ...filterOptions.users,
+      {
+        id: currentUserId,
+        login: null,
+        name: null,
+        avatarUrl: null,
+      },
+    ];
+  }, [currentUserId, filterOptions.users]);
+
+  const userOptions = useMemo<MultiSelectOption[]>(
+    () =>
+      augmentedUsers.map((user) => ({
+        value: user.id,
+        label: user.login?.length ? user.login : (user.name ?? user.id),
+        description:
+          user.name && user.login && user.name !== user.login
+            ? user.name
+            : null,
+      })),
+    [augmentedUsers],
+  );
+
+  const allowedUserIds = useMemo(
+    () => new Set(augmentedUsers.map((user) => user.id)),
+    [augmentedUsers],
+  );
+
   const normalizeFilterState = useCallback(
     (raw: FilterState): FilterState => {
       const converted = convertFilterLabelKeysToNames(raw);
       const synced = syncPeopleFiltersWithAttention(converted);
       const rawMentioned = raw.mentionedUserIds ?? [];
+      let nextState = synced;
       if (
         rawMentioned.length === 0 &&
         arraysShallowEqual(
@@ -2070,11 +2165,11 @@ export function ActivityView({
           synced.peopleSelection ?? [],
         )
       ) {
-        return removeMentionRole(synced);
+        nextState = removeMentionRole(synced);
       }
-      return synced;
+      return ensureValidTaskMode(nextState, currentUserId, allowedUserIds);
     },
-    [convertFilterLabelKeysToNames],
+    [allowedUserIds, convertFilterLabelKeysToNames, currentUserId],
   );
 
   const initialState = useMemo(
@@ -2440,45 +2535,6 @@ export function ActivityView({
     });
   }, [allowedIssueWeights]);
 
-  const augmentedUsers = useMemo(() => {
-    if (!currentUserId) {
-      return filterOptions.users;
-    }
-    const hasCurrentUser = filterOptions.users.some(
-      (user) => user.id === currentUserId,
-    );
-    if (hasCurrentUser) {
-      return filterOptions.users;
-    }
-    return [
-      ...filterOptions.users,
-      {
-        id: currentUserId,
-        login: null,
-        name: null,
-        avatarUrl: null,
-      },
-    ];
-  }, [currentUserId, filterOptions.users]);
-
-  const userOptions = useMemo<MultiSelectOption[]>(
-    () =>
-      augmentedUsers.map((user) => ({
-        value: user.id,
-        label: user.login?.length ? user.login : (user.name ?? user.id),
-        description:
-          user.name && user.login && user.name !== user.login
-            ? user.name
-            : null,
-      })),
-    [augmentedUsers],
-  );
-
-  const allowedUserIds = useMemo(
-    () => new Set(augmentedUsers.map((user) => user.id)),
-    [augmentedUsers],
-  );
-
   useEffect(() => {
     setDraft((current) => sanitizePeopleIds(current, allowedUserIds));
     setApplied((current) => sanitizePeopleIds(current, allowedUserIds));
@@ -2510,6 +2566,42 @@ export function ActivityView({
         removeMentionRole(
           applyPeopleSelection(buildFilterState({}, perPage), [currentUserId]),
         );
+      const buildMyTodoState = (perPage: number) => {
+        const selection = [currentUserId];
+        const roles: PeopleRoleKey[] = [
+          "authorIds",
+          "assigneeIds",
+          "reviewerIds",
+          "mentionedUserIds",
+          "maintainerIds",
+        ];
+        const defaultPrStatuses: ActivityPullRequestStatusFilter[] = [
+          "pr_open",
+        ];
+        const defaultIssueBaseStatuses: ActivityIssueBaseStatusFilter[] = [
+          "issue_open",
+        ];
+        const defaultProjectStatuses: ActivityStatusFilter[] = [
+          "no_status",
+          "todo",
+          "in_progress",
+          "pending",
+        ];
+        let next = buildFilterState({}, perPage);
+        roles.forEach((role) => {
+          next = setPeopleRoleValues(next, role, selection);
+        });
+        next = syncPeopleFilters(next);
+        const baseState = {
+          ...next,
+          taskMode: "my_todo" as const,
+          peopleSelection: selection,
+          prStatuses: [...defaultPrStatuses],
+          issueBaseStatuses: [...defaultIssueBaseStatuses],
+          statuses: [...defaultProjectStatuses],
+        };
+        return syncPeopleSelectionFromRoles(baseState);
+      };
 
       definitions.push(
         {
@@ -2518,6 +2610,13 @@ export function ActivityView({
           description: "나와 관련된 최신 활동을 확인합니다.",
           buildState: (perPage: number) => buildSelfState(perPage),
           icon: User,
+        },
+        {
+          id: "my_todo",
+          label: "내 할 일",
+          description: "내가 처리해야 할 이슈, PR, 멘션을 모아봅니다.",
+          buildState: (perPage: number) => buildMyTodoState(perPage),
+          icon: ListTodo,
         },
         {
           id: "my_attention",
@@ -2804,7 +2903,8 @@ export function ActivityView({
     const roles = new Set<PeopleRoleKey>();
     const shouldHighlightQuickFilter =
       activeQuickFilterId === "my_updates" ||
-      activeQuickFilterId === "my_attention";
+      activeQuickFilterId === "my_attention" ||
+      activeQuickFilterId === "my_todo";
     const highlightOrMode =
       Boolean(peopleOrModeRoles) &&
       (shouldHighlightQuickFilter ||

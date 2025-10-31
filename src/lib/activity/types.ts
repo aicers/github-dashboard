@@ -57,6 +57,8 @@ export type PeopleRoleKey =
 export type OptionalPeopleMap = Partial<Record<PeopleRoleKey, string[]>>;
 export type PeopleFilterMap = Record<PeopleRoleKey, string[]>;
 
+export type ActivityTaskMode = "my_todo";
+
 export type ActivityFilters = {
   types?: ActivityItemType[];
   repositoryIds?: string[];
@@ -82,6 +84,7 @@ export type ActivityFilters = {
   search?: string | null;
   jumpToDate?: string | null;
   thresholds?: ActivityThresholds;
+  taskMode?: ActivityTaskMode;
   useMentionAi?: boolean;
 };
 

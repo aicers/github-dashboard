@@ -99,6 +99,44 @@ const optionalStringField = z
     return trimmed.length ? trimmed : undefined;
   });
 
+const optionalPeopleField = z
+  .record(z.string(), z.array(z.string().trim()))
+  .optional()
+  .transform((value) => {
+    if (!value) {
+      return undefined;
+    }
+    const entries = Object.entries(value)
+      .map(([key, list]) => {
+        const normalized = normalizeStringArray(list);
+        if (!normalized) {
+          return null;
+        }
+        return [key, normalized] as const;
+      })
+      .filter(
+        (entry): entry is [string, string[]] =>
+          entry !== null && entry[1].length > 0,
+      );
+    if (!entries.length) {
+      return undefined;
+    }
+    return Object.fromEntries(entries);
+  });
+
+const taskModeField = z
+  .union([z.literal("my_todo"), z.undefined(), z.null()])
+  .transform((value) => (value === "my_todo" ? "my_todo" : undefined));
+
+const optionalBooleanField = z
+  .union([z.boolean(), z.undefined(), z.null()])
+  .transform((value) => {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+    return value;
+  });
+
 export type ActivityFilterPayload = ActivityListParams;
 
 export const activityFilterPayloadSchema: z.ZodType<ActivityFilterPayload> = z
@@ -124,12 +162,17 @@ export const activityFilterPayloadSchema: z.ZodType<ActivityFilterPayload> = z
     mentionedUserIds: stringArrayField,
     commenterIds: stringArrayField,
     reactorIds: stringArrayField,
+    maintainerIds: stringArrayField,
+    peopleSelection: stringArrayField,
+    optionalPersonIds: optionalPeopleField,
     statuses: stringArrayField,
     attention: stringArrayField,
     linkedIssueStates: stringArrayField,
     search: optionalStringField,
     jumpToDate: optionalStringField,
     thresholds: thresholdsSchema,
+    taskMode: taskModeField,
+    useMentionAi: optionalBooleanField,
   })
   .strict()
   .transform((value) => value as ActivityListParams);
