@@ -1332,6 +1332,32 @@ function buildQueryFilters(
   );
 
   let peopleFiltersHandled = false;
+  let peopleSelectionValues: string[] | null = null;
+
+  const ensurePeopleSelectionParam = () => {
+    if (!peopleSelectionValues || peopleSelectionValues.length === 0) {
+      return null;
+    }
+    if (peopleSelectionParamIndex === null) {
+      values.push(peopleSelectionValues);
+      peopleSelectionParamIndex = values.length;
+    }
+    return peopleSelectionParamIndex;
+  };
+
+  const unansweredMentionTargets = new Map<string, Set<string>>();
+  attentionSets.mentionDetails.forEach((details, itemId) => {
+    const targets = new Set<string>();
+    details.forEach((detail) => {
+      const targetId = detail.target?.id?.trim();
+      if (targetId) {
+        targets.add(targetId);
+      }
+    });
+    if (targets.size > 0) {
+      unansweredMentionTargets.set(itemId, targets);
+    }
+  });
 
   if (populatedPeopleFilters.length > 0) {
     const baselineValues = mergedStringSet(
@@ -1343,27 +1369,27 @@ function buildQueryFilters(
 
     if (isSyncedSelection) {
       peopleSelection = baselineValues;
-      values.push(baselineValues);
-      const parameterIndex = values.length;
-      const peopleClauses = populatedPeopleFilters.map((entry) =>
-        entry.buildClause(parameterIndex),
-      );
-      const hasActiveAttention =
-        params.attention?.some((value) => value !== "no_attention") ?? false;
-      if (!hasActiveAttention) {
-        clauses.push(`(${peopleClauses.join(" OR ")})`);
+      peopleSelectionValues = baselineValues;
+      const parameterIndex = ensurePeopleSelectionParam();
+      if (parameterIndex !== null) {
+        const peopleClauses = populatedPeopleFilters.map((entry) =>
+          entry.buildClause(parameterIndex),
+        );
+        const hasActiveAttention =
+          params.attention?.some((value) => value !== "no_attention") ?? false;
+        if (!hasActiveAttention) {
+          clauses.push(`(${peopleClauses.join(" OR ")})`);
+        }
+        peopleFiltersHandled = true;
       }
-      peopleFiltersHandled = true;
-      peopleSelectionParamIndex = parameterIndex;
     }
   }
 
-  if (peopleSelectionParamIndex === null && params.peopleSelection?.length) {
+  if (!peopleSelectionValues && params.peopleSelection?.length) {
     const uniqueSelection = mergedStringSet(params.peopleSelection);
     if (uniqueSelection.length > 0) {
       peopleSelection = uniqueSelection;
-      values.push(uniqueSelection);
-      peopleSelectionParamIndex = values.length;
+      peopleSelectionValues = uniqueSelection;
     }
   }
 
@@ -1387,78 +1413,156 @@ function buildQueryFilters(
     ): string | null => {
       let ids: string[] = [];
       const constraints: string[] = [];
-      const hasSynchronizedPeopleSelection =
-        peopleSelectionParamIndex !== null && peopleSelection.length > 0;
-      const peopleParamIndex = peopleSelectionParamIndex ?? 0;
+      const selectionSet =
+        peopleSelection.length > 0
+          ? new Set(
+              peopleSelection
+                .map((value) => value?.trim())
+                .filter((value): value is string => Boolean(value)),
+            )
+          : null;
 
       const assigneeCardinalityExpr =
         "COALESCE(array_length(items.assignee_ids, 1), 0)";
       const hasAssigneeExpr = `${assigneeCardinalityExpr} > 0`;
       const noAssigneeExpr = `${assigneeCardinalityExpr} = 0`;
-      const personIsAssigneeExpr = `COALESCE(items.assignee_ids && $${peopleParamIndex}::text[], FALSE)`;
-      const personIsReviewerExpr = `COALESCE(items.reviewer_ids && $${peopleParamIndex}::text[], FALSE)`;
-      const personIsMentionedExpr = `COALESCE(items.mentioned_ids && $${peopleParamIndex}::text[], FALSE)`;
-      const personIsAuthorExpr = `items.author_id = ANY($${peopleParamIndex}::text[])`;
-      const personIsMaintainerExpr = `EXISTS (
-         SELECT 1
-         FROM repository_maintainers rm
-         WHERE rm.repository_id = items.repository_id
-           AND rm.user_id = ANY($${peopleParamIndex}::text[])
-       )`;
       const maintainerExistsExpr = `EXISTS (
          SELECT 1
          FROM repository_maintainers rm
          WHERE rm.repository_id = items.repository_id
        )`;
 
+      const buildAssigneeExpr = (index: number) =>
+        `COALESCE(items.assignee_ids && $${index}::text[], FALSE)`;
+      const buildReviewerExpr = (index: number) =>
+        `COALESCE(items.reviewer_ids && $${index}::text[], FALSE)`;
+      const buildMentionedExpr = (index: number) =>
+        `COALESCE(items.mentioned_ids && $${index}::text[], FALSE)`;
+      const buildAuthorExpr = (index: number) =>
+        `items.author_id = ANY($${index}::text[])`;
+      const buildMaintainerExpr = (index: number) =>
+        `EXISTS (
+         SELECT 1
+         FROM repository_maintainers rm
+         WHERE rm.repository_id = items.repository_id
+           AND rm.user_id = ANY($${index}::text[])
+       )`;
+
+      const withPeopleConstraint = (
+        builder: (index: number) => string,
+        options?: { required?: boolean },
+      ) => {
+        const paramIndex = ensurePeopleSelectionParam();
+        if (paramIndex === null) {
+          return options?.required ? null : undefined;
+        }
+        return builder(paramIndex);
+      };
+
       switch (filter) {
-        case "unanswered_mentions":
+        case "unanswered_mentions": {
           ids = Array.from(attentionSets.unansweredMentions);
-          if (hasSynchronizedPeopleSelection) {
-            constraints.push(personIsMentionedExpr);
+          if (selectionSet && selectionSet.size > 0) {
+            ids = ids.filter((itemId) => {
+              const targets = unansweredMentionTargets.get(itemId);
+              if (!targets || targets.size === 0) {
+                return false;
+              }
+              for (const candidate of selectionSet) {
+                if (targets.has(candidate)) {
+                  return true;
+                }
+              }
+              return false;
+            });
+            if (ids.length === 0) {
+              return null;
+            }
+            const mentionExpr = withPeopleConstraint(buildMentionedExpr, {
+              required: true,
+            });
+            if (!mentionExpr) {
+              return null;
+            }
+            constraints.push(mentionExpr);
           }
           break;
+        }
         case "review_requests_pending":
           ids = Array.from(attentionSets.reviewRequests);
           constraints.push(`items.item_type = 'pull_request'`);
-          if (hasSynchronizedPeopleSelection) {
-            constraints.push(personIsReviewerExpr);
+          if (selectionSet && selectionSet.size > 0) {
+            const reviewerExpr = withPeopleConstraint(buildReviewerExpr);
+            if (reviewerExpr) {
+              constraints.push(reviewerExpr);
+            }
           }
           break;
-        case "pr_open_too_long":
+        case "pr_open_too_long": {
           ids = Array.from(attentionSets.stalePullRequests);
           constraints.push(`items.item_type = 'pull_request'`);
           constraints.push(`items.status = 'open'`);
-          if (hasSynchronizedPeopleSelection) {
-            constraints.push(
-              `(${personIsAssigneeExpr} OR ${personIsAuthorExpr} OR ${personIsReviewerExpr} OR ${personIsMaintainerExpr})`,
-            );
+          if (selectionSet && selectionSet.size > 0) {
+            const assigneeExpr = withPeopleConstraint(buildAssigneeExpr);
+            const authorExpr = withPeopleConstraint(buildAuthorExpr);
+            const reviewerExpr = withPeopleConstraint(buildReviewerExpr);
+            const maintainerExpr = withPeopleConstraint(buildMaintainerExpr);
+            const parts = [
+              assigneeExpr,
+              authorExpr,
+              reviewerExpr,
+              maintainerExpr,
+            ].filter((expr): expr is string => Boolean(expr));
+            if (parts.length) {
+              constraints.push(`(${parts.join(" OR ")})`);
+            }
           }
           break;
-        case "pr_inactive":
+        }
+        case "pr_inactive": {
           ids = Array.from(attentionSets.idlePullRequests);
           constraints.push(`items.item_type = 'pull_request'`);
           constraints.push(`items.status = 'open'`);
-          if (hasSynchronizedPeopleSelection) {
-            constraints.push(
-              `(${personIsAssigneeExpr} OR ${personIsAuthorExpr} OR ${personIsReviewerExpr} OR ${personIsMaintainerExpr})`,
-            );
+          if (selectionSet && selectionSet.size > 0) {
+            const assigneeExpr = withPeopleConstraint(buildAssigneeExpr);
+            const authorExpr = withPeopleConstraint(buildAuthorExpr);
+            const reviewerExpr = withPeopleConstraint(buildReviewerExpr);
+            const maintainerExpr = withPeopleConstraint(buildMaintainerExpr);
+            const parts = [
+              assigneeExpr,
+              authorExpr,
+              reviewerExpr,
+              maintainerExpr,
+            ].filter((expr): expr is string => Boolean(expr));
+            if (parts.length) {
+              constraints.push(`(${parts.join(" OR ")})`);
+            }
           }
           break;
+        }
         case "issue_backlog":
           ids = Array.from(attentionSets.backlogIssues);
           constraints.push(`items.item_type = 'issue'`);
-          if (hasSynchronizedPeopleSelection) {
-            constraints.push(personIsMaintainerExpr);
+          if (selectionSet && selectionSet.size > 0) {
+            const maintainerExpr = withPeopleConstraint(buildMaintainerExpr);
+            if (maintainerExpr) {
+              constraints.push(maintainerExpr);
+            }
           }
           break;
         case "issue_stalled":
           ids = Array.from(attentionSets.stalledIssues);
           constraints.push(`items.item_type = 'issue'`);
-          if (hasSynchronizedPeopleSelection) {
-            constraints.push(
-              `((${hasAssigneeExpr} AND ${personIsAssigneeExpr}) OR (${noAssigneeExpr} AND ${maintainerExistsExpr} AND ${personIsMaintainerExpr}) OR (${noAssigneeExpr} AND NOT ${maintainerExistsExpr} AND ${personIsAuthorExpr}))`,
-            );
+          if (selectionSet && selectionSet.size > 0) {
+            const paramIndex = ensurePeopleSelectionParam();
+            if (paramIndex !== null) {
+              const personIsAssigneeExpr = buildAssigneeExpr(paramIndex);
+              const personIsMaintainerExpr = buildMaintainerExpr(paramIndex);
+              const personIsAuthorExpr = buildAuthorExpr(paramIndex);
+              constraints.push(
+                `((${hasAssigneeExpr} AND ${personIsAssigneeExpr}) OR (${noAssigneeExpr} AND ${maintainerExistsExpr} AND ${personIsMaintainerExpr}) OR (${noAssigneeExpr} AND NOT ${maintainerExistsExpr} AND ${personIsAuthorExpr}))`,
+              );
+            }
           }
           break;
         default:
