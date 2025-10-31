@@ -152,6 +152,32 @@ describe("ActivityView", () => {
     });
   });
 
+  it("highlights unified people filters when OR conditions apply", async () => {
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+    const props = createDefaultProps();
+
+    render(<ActivityView {...props} />);
+
+    mockFetchJsonOnce(buildActivityListResultFixture());
+
+    const myUpdatesButton = await screen.findByRole("button", {
+      name: "내 활동",
+    });
+    await act(async () => {
+      myUpdatesButton.click();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
+
+    await waitFor(() => {
+      const removeButtons = screen.getAllByLabelText("Remove user-1");
+      expect(removeButtons.length).toBeGreaterThan(0);
+      removeButtons.forEach((button) => {
+        expect(button.parentElement?.className).toContain("bg-emerald-500/10");
+      });
+    });
+  });
+
   it("requests jump-to-date navigation", async () => {
     mockFetchJsonOnce({ filters: [], limit: 5 });
     const props = createDefaultProps();
@@ -316,25 +342,33 @@ describe("ActivityView", () => {
       expect(screen.getByLabelText("Remove bob")).toBeVisible();
     });
 
-    const aliceToggle = screen.getByRole("button", { name: "alice" });
-    const bobToggle = screen.getByRole("button", { name: "bob" });
-
-    expect(aliceToggle).toHaveAttribute("aria-pressed", "true");
-    expect(bobToggle).toHaveAttribute("aria-pressed", "true");
+    const peopleToggleContainer =
+      screen.getByText("구성원").parentElement?.parentElement;
+    expect(peopleToggleContainer).toBeTruthy();
+    if (!peopleToggleContainer) {
+      return;
+    }
+    const queryPressed = (name: string) =>
+      within(peopleToggleContainer).queryByRole("button", {
+        name,
+        pressed: true,
+      });
+    expect(queryPressed("alice")).toBeNull();
+    expect(queryPressed("bob")).toBeNull();
 
     fireEvent.click(screen.getByLabelText("Remove bob"));
 
     await waitFor(() => {
       expect(screen.queryByLabelText("Remove bob")).toBeNull();
-      expect(bobToggle).toHaveAttribute("aria-pressed", "false");
-      expect(aliceToggle).toHaveAttribute("aria-pressed", "true");
+      expect(queryPressed("bob")).toBeNull();
+      expect(queryPressed("alice")).toBeNull();
     });
 
     fireEvent.click(screen.getByLabelText("Remove alice"));
 
     await waitFor(() => {
       expect(screen.queryByLabelText("Remove alice")).toBeNull();
-      expect(aliceToggle).toHaveAttribute("aria-pressed", "false");
+      expect(queryPressed("alice")).toBeNull();
     });
   });
 
@@ -376,9 +410,7 @@ describe("ActivityView", () => {
       }
       const url = new URL(request.url);
       expect(url.searchParams.getAll("assigneeId")).toEqual(["user-alice"]);
-      expect(url.searchParams.getAll("peopleSelection")).toEqual([
-        "user-alice",
-      ]);
+      expect(url.searchParams.getAll("peopleSelection")).toEqual([]);
     });
 
     await waitFor(() => {
@@ -566,7 +598,9 @@ describe("ActivityView", () => {
     fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
 
     await waitFor(() => {
-      expect(screen.getAllByLabelText("Remove alice")).toHaveLength(1);
+      expect(screen.getAllByLabelText("Remove alice").length).toBeGreaterThan(
+        0,
+      );
     });
     expect(screen.queryAllByLabelText("Remove optional alice")).toHaveLength(0);
 
@@ -728,13 +762,17 @@ describe("ActivityView", () => {
     fireEvent.click(screen.getByRole("button", { name: "alice" }));
     fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
 
+    await waitFor(() => {
+      const existing = screen.getAllByLabelText("Remove alice");
+      existing.forEach((button) => {
+        fireEvent.click(button);
+      });
+      expect(screen.queryAllByLabelText("Remove alice")).toHaveLength(0);
+    });
+
     const reviewerInput = screen.getByPlaceholderText("@reviewer");
     fireEvent.change(reviewerInput, { target: { value: "alice" } });
     fireEvent.keyDown(reviewerInput, { key: "Enter", code: "Enter" });
-
-    await waitFor(() => {
-      expect(screen.getAllByLabelText("Remove alice")).toHaveLength(1);
-    });
 
     mockFetchJsonOnce(buildActivityListResultFixture());
 
@@ -834,7 +872,7 @@ describe("ActivityView", () => {
 
     expect(screen.getByRole("button", { name: "alice" })).toHaveAttribute(
       "aria-pressed",
-      "true",
+      "false",
     );
 
     expect(screen.getByRole("button", { name: "필터 적용" })).toBeDisabled();

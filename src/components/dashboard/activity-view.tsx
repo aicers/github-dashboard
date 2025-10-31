@@ -438,9 +438,28 @@ function collectPeopleSelectionFromRoles(state: FilterState): string[] {
 }
 
 function syncPeopleSelectionFromRoles(state: FilterState): FilterState {
+  const peopleState = derivePeopleState(state);
+  const shouldClearOptional = !isOptionalPeopleEmpty(state);
+
+  if (!peopleState.isSynced) {
+    let nextState: FilterState = state;
+    let changed = false;
+    if (nextState.peopleSelection.length > 0) {
+      nextState = {
+        ...nextState,
+        peopleSelection: [],
+      };
+      changed = true;
+    }
+    if (shouldClearOptional) {
+      nextState = { ...nextState, optionalPersonIds: {} };
+      changed = true;
+    }
+    return changed ? nextState : state;
+  }
+
   const union = collectPeopleSelectionFromRoles(state);
   const selectionMatches = arraysShallowEqual(state.peopleSelection, union);
-  const shouldClearOptional = !isOptionalPeopleEmpty(state);
 
   if (selectionMatches && !shouldClearOptional) {
     return state;
@@ -716,6 +735,10 @@ function arraysShallowEqual(first: string[], second: string[]) {
   return first.every((value, index) => value === second[index]);
 }
 
+function normalizePeopleIds(values: string[]): string[] {
+  return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
+}
+
 function resolvePeopleCategories(categories: ActivityItemCategory[]) {
   return categories.length ? categories : ALL_ACTIVITY_CATEGORIES;
 }
@@ -737,7 +760,15 @@ function derivePeopleState(
   categoriesOverride?: ActivityItemCategory[],
 ) {
   const resolvedCategories = categoriesOverride ?? state.categories;
-  const targets = getPeopleRoleTargets(resolvedCategories);
+  const allTargets = getPeopleRoleTargets(resolvedCategories);
+  const targets = allTargets.filter((role) => {
+    if (role !== "mentionedUserIds") {
+      return true;
+    }
+    const values = getPeopleRoleValues(state, role);
+    const optional = state.optionalPersonIds?.mentionedUserIds ?? [];
+    return values.length > 0 || optional.length > 0;
+  });
   if (!targets.length) {
     return { selection: [], isSynced: true, targets };
   }
@@ -770,13 +801,22 @@ function derivePeopleState(
   }
 
   const baselineValues = baseline ? [...baseline] : [];
-  const selectionValues =
-    state.peopleSelection.length > 0
-      ? Array.from(new Set(state.peopleSelection))
-      : baselineValues;
-
-  if (inSync && !arraysShallowEqual(selectionValues, baselineValues)) {
-    inSync = false;
+  let selectionValues: string[] = [];
+  if (state.peopleSelection.length > 0) {
+    selectionValues = Array.from(new Set(state.peopleSelection));
+    if (inSync) {
+      if (
+        baselineValues.length > 0 &&
+        !arraysShallowEqual(selectionValues, baselineValues)
+      ) {
+        inSync = false;
+        selectionValues = [];
+      }
+    } else {
+      selectionValues = [];
+    }
+  } else if (inSync) {
+    selectionValues = baselineValues;
   }
 
   return {
@@ -784,6 +824,44 @@ function derivePeopleState(
     isSynced: inSync,
     targets,
   };
+}
+
+function derivePeopleOrModeRoles(state: FilterState): {
+  isOrMode: boolean;
+  roles: Set<PeopleRoleKey>;
+} {
+  if (hasActiveAttentionFilters(state)) {
+    return { isOrMode: false, roles: new Set() };
+  }
+
+  const populatedRoles: PeopleRoleKey[] = [];
+  const normalizedValues = new Map<PeopleRoleKey, string[]>();
+
+  PEOPLE_ROLE_KEYS.forEach((role) => {
+    const values = getPeopleRoleValues(state, role);
+    if (values.length === 0) {
+      return;
+    }
+    const normalized = normalizePeopleIds(values);
+    populatedRoles.push(role);
+    normalizedValues.set(role, normalized);
+  });
+
+  if (populatedRoles.length === 0) {
+    return { isOrMode: false, roles: new Set() };
+  }
+
+  const baseline = normalizedValues.get(populatedRoles[0]) ?? [];
+  const allMatch = populatedRoles.every((role) => {
+    const candidate = normalizedValues.get(role) ?? [];
+    return arraysShallowEqual(baseline, candidate);
+  });
+
+  if (!allMatch || baseline.length === 0) {
+    return { isOrMode: false, roles: new Set() };
+  }
+
+  return { isOrMode: true, roles: new Set(populatedRoles) };
 }
 
 function applyPeopleSelection(
@@ -1040,6 +1118,7 @@ function MultiSelectInput({
   options,
   emptyLabel,
   disabled = false,
+  tone = "default",
 }: {
   label: ReactNode;
   placeholder?: string;
@@ -1050,6 +1129,7 @@ function MultiSelectInput({
   options: MultiSelectOption[];
   emptyLabel?: string;
   disabled?: boolean;
+  tone?: "default" | "or";
 }) {
   const [query, setQuery] = useState("");
   const [isFocused, setIsFocused] = useState(false);
@@ -1170,6 +1250,8 @@ function MultiSelectInput({
     ],
   );
 
+  const isOrTone = tone === "or";
+
   return (
     <div
       ref={containerRef}
@@ -1222,12 +1304,22 @@ function MultiSelectInput({
             return (
               <span
                 key={`applied-${entry}`}
-                className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-1 text-xs text-primary"
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs",
+                  isOrTone
+                    ? "bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-300"
+                    : "bg-primary/10 text-primary",
+                )}
               >
                 {option?.label ?? entry}
                 <button
                   type="button"
-                  className="rounded-full p-0.5 hover:bg-primary/20"
+                  className={cn(
+                    "rounded-full p-0.5",
+                    isOrTone
+                      ? "hover:bg-emerald-500/20 dark:hover:bg-emerald-500/30"
+                      : "hover:bg-primary/20",
+                  )}
                   onClick={() => removeValue(entry)}
                   aria-label={`Remove ${option?.label ?? entry}`}
                   disabled={disabled}
@@ -2698,10 +2790,55 @@ export function ActivityView({
   const peopleState = useMemo(() => derivePeopleState(draft), [draft]);
   const peopleSelection = peopleState.selection;
   const peopleSynced = peopleState.isSynced;
+  const peopleOrModeResult = useMemo(
+    () => derivePeopleOrModeRoles(draft),
+    [draft],
+  );
+  const peopleOrModeRoles = peopleOrModeResult.isOrMode
+    ? peopleOrModeResult.roles
+    : null;
   const hasActiveAttention = draft.attention.some(
     (value) => value !== "no_attention",
   );
-  const peopleFiltersLocked = peopleSelection.length > 0 && hasActiveAttention;
+  const highlightedPeopleRoles = useMemo(() => {
+    const roles = new Set<PeopleRoleKey>();
+    const shouldHighlightQuickFilter =
+      activeQuickFilterId === "my_updates" ||
+      activeQuickFilterId === "my_attention";
+    const highlightOrMode =
+      Boolean(peopleOrModeRoles) &&
+      (shouldHighlightQuickFilter ||
+        hasActiveAttention ||
+        peopleSelection.length > 0);
+    if (highlightOrMode && peopleOrModeRoles) {
+      for (const role of peopleOrModeRoles) {
+        roles.add(role);
+      }
+    } else if (shouldHighlightQuickFilter || hasActiveAttention) {
+      for (const role of PEOPLE_ROLE_KEYS) {
+        if (getPeopleRoleValues(draft, role).length > 0) {
+          roles.add(role);
+        }
+      }
+    }
+    return roles;
+  }, [
+    activeQuickFilterId,
+    draft,
+    hasActiveAttention,
+    peopleOrModeRoles,
+    peopleSelection.length,
+  ]);
+  const hasAppliedPeopleFilters = useMemo(
+    () =>
+      PEOPLE_ROLE_KEYS.some(
+        (role) => getPeopleRoleValues(draft, role).length > 0,
+      ),
+    [draft],
+  );
+  const peopleFiltersLocked =
+    hasActiveAttention &&
+    (peopleSelection.length > 0 || hasAppliedPeopleFilters);
   const handlePeopleChange = useCallback(
     (next: string[]) => {
       const filtered = next.filter((id) => allowedUserIds.has(id));
@@ -4599,6 +4736,9 @@ export function ActivityView({
                   options={userOptions}
                   emptyLabel="미적용"
                   disabled={peopleFiltersLocked}
+                  tone={
+                    highlightedPeopleRoles.has("authorIds") ? "or" : undefined
+                  }
                 />
                 <MultiSelectInput
                   label="담당자"
@@ -4618,6 +4758,9 @@ export function ActivityView({
                   options={userOptions}
                   emptyLabel="미적용"
                   disabled={peopleFiltersLocked}
+                  tone={
+                    highlightedPeopleRoles.has("assigneeIds") ? "or" : undefined
+                  }
                 />
                 <MultiSelectInput
                   label="리뷰어"
@@ -4637,6 +4780,9 @@ export function ActivityView({
                   options={userOptions}
                   emptyLabel="미적용"
                   disabled={prFiltersDisabled || peopleFiltersLocked}
+                  tone={
+                    highlightedPeopleRoles.has("reviewerIds") ? "or" : undefined
+                  }
                 />
                 <MultiSelectInput
                   label="멘션된 구성원"
@@ -4662,6 +4808,11 @@ export function ActivityView({
                   options={userOptions}
                   emptyLabel="미적용"
                   disabled={peopleFiltersLocked}
+                  tone={
+                    highlightedPeopleRoles.has("mentionedUserIds")
+                      ? "or"
+                      : undefined
+                  }
                 />
                 <MultiSelectInput
                   label="코멘터"
@@ -4681,6 +4832,11 @@ export function ActivityView({
                   options={userOptions}
                   emptyLabel="미적용"
                   disabled={peopleFiltersLocked}
+                  tone={
+                    highlightedPeopleRoles.has("commenterIds")
+                      ? "or"
+                      : undefined
+                  }
                 />
                 <MultiSelectInput
                   label="리액션 남긴 구성원"
@@ -4700,6 +4856,9 @@ export function ActivityView({
                   options={userOptions}
                   emptyLabel="미적용"
                   disabled={peopleFiltersLocked}
+                  tone={
+                    highlightedPeopleRoles.has("reactorIds") ? "or" : undefined
+                  }
                 />
                 <div className="space-y-2 md:col-span-2 lg:col-span-2">
                   <Label className="text-xs font-semibold uppercase text-foreground">
