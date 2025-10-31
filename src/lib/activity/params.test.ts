@@ -113,6 +113,16 @@ describe("parseActivityListParams", () => {
     expect(result.pullRequestStatuses).toEqual(["pr_open", "pr_merged"]);
     expect(result.issueBaseStatuses).toEqual(["issue_closed"]);
   });
+
+  it("parses task mode values", () => {
+    const valid = new URLSearchParams();
+    valid.set("taskMode", "my_todo");
+    expect(parseActivityListParams(valid).taskMode).toBe("my_todo");
+
+    const invalid = new URLSearchParams();
+    invalid.set("taskMode", "invalid");
+    expect(parseActivityListParams(invalid).taskMode).toBeUndefined();
+  });
 });
 
 describe("createSearchParamsFromRecord", () => {

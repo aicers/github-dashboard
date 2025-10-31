@@ -8,6 +8,7 @@ import type {
   ActivityListParams,
   ActivityPullRequestStatusFilter,
   ActivityStatusFilter,
+  ActivityTaskMode,
   ActivityThresholds,
   OptionalPeopleMap,
   PeopleFilterMap,
@@ -41,6 +42,7 @@ export type ActivityFilterState = {
   search: string;
   thresholds: Required<ActivityThresholds>;
   optionalPersonIds: OptionalPeopleMap;
+  taskMode: ActivityTaskMode | null;
   useMentionAi: boolean;
 };
 
@@ -115,6 +117,7 @@ export function buildFilterState(
       ...DEFAULT_THRESHOLD_VALUES,
       ...(params.thresholds ?? {}),
     },
+    taskMode: params.taskMode ?? null,
     useMentionAi: params.useMentionAi ?? true,
     optionalPersonIds,
   };
@@ -229,6 +232,10 @@ export function buildSavedFilterPayload(
     payload.useMentionAi = false;
   }
 
+  if (filters.taskMode) {
+    payload.taskMode = filters.taskMode;
+  }
+
   return payload;
 }
 
@@ -312,6 +319,10 @@ export function normalizeSearchParams(
       params.set(key, value.toString());
     }
   });
+
+  if (filters.taskMode) {
+    params.set("taskMode", filters.taskMode);
+  }
 
   if (filters.useMentionAi === false) {
     params.set("mentionAi", "0");

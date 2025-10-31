@@ -8,6 +8,7 @@ import type {
   ActivityListParams,
   ActivityPullRequestStatusFilter,
   ActivityStatusFilter,
+  ActivityTaskMode,
   ActivityThresholds,
 } from "@/lib/activity/types";
 
@@ -114,6 +115,9 @@ export function parseActivityListParams(
     ["0", "false", "off", "no"].includes(mentionAiNormalized)
       ? false
       : undefined;
+  const taskModeRaw = searchParams.get("taskMode");
+  const taskMode: ActivityTaskMode | undefined =
+    taskModeRaw === "my_todo" ? "my_todo" : undefined;
 
   return {
     page: parsePositiveInteger(searchParams, "page", { min: 1 }),
@@ -195,6 +199,7 @@ export function parseActivityListParams(
     search: searchParams.get("search"),
     jumpToDate: searchParams.get("jumpTo"),
     thresholds: parseThresholds(searchParams),
+    taskMode,
     useMentionAi,
   };
 }

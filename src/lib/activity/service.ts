@@ -1393,6 +1393,76 @@ function buildQueryFilters(
     }
   }
 
+  if (params.taskMode === "my_todo") {
+    const selectionSet =
+      peopleSelection.length > 0
+        ? new Set(
+            peopleSelection
+              .map((value) => value?.trim())
+              .filter((value): value is string => Boolean(value)),
+          )
+        : null;
+    const selectionParamIndex = ensurePeopleSelectionParam();
+    if (
+      !selectionSet ||
+      selectionSet.size === 0 ||
+      selectionParamIndex === null
+    ) {
+      clauses.push("FALSE");
+    } else {
+      const assigneeCardinalityExpr =
+        "COALESCE(array_length(items.assignee_ids, 1), 0)";
+      const hasAssigneeExpr = `${assigneeCardinalityExpr} > 0`;
+      const noAssigneeExpr = `${assigneeCardinalityExpr} = 0`;
+      const buildAssigneeExpr = (index: number) =>
+        `COALESCE(items.assignee_ids && $${index}::text[], FALSE)`;
+      const buildMaintainerExpr = (index: number) =>
+        `EXISTS (
+           SELECT 1
+           FROM repository_maintainers rm
+           WHERE rm.repository_id = items.repository_id
+             AND rm.user_id = ANY($${index}::text[])
+         )`;
+      const buildAuthorExpr = (index: number) =>
+        `items.author_id = ANY($${index}::text[])`;
+      const buildReviewerExpr = (index: number) =>
+        `COALESCE(items.reviewer_ids && $${index}::text[], FALSE)`;
+
+      const issueClause = `(items.item_type = 'issue' AND items.status = 'open' AND ((${hasAssigneeExpr} AND ${buildAssigneeExpr(
+        selectionParamIndex,
+      )}) OR (${noAssigneeExpr} AND ${buildMaintainerExpr(
+        selectionParamIndex,
+      )})))`;
+      const pullRequestClause = `(items.item_type = 'pull_request' AND items.status = 'open' AND (${buildAuthorExpr(
+        selectionParamIndex,
+      )} OR ${buildReviewerExpr(selectionParamIndex)}))`;
+
+      const mentionIds = Array.from(attentionSets.unansweredMentions).filter(
+        (itemId) => {
+          const targets = unansweredMentionTargets.get(itemId);
+          if (!targets || targets.size === 0) {
+            return false;
+          }
+          for (const candidate of selectionSet) {
+            if (targets.has(candidate)) {
+              return true;
+            }
+          }
+          return false;
+        },
+      );
+
+      const todoClauses = [issueClause, pullRequestClause];
+      if (mentionIds.length > 0) {
+        values.push(mentionIds);
+        const mentionParameterIndex = values.length;
+        todoClauses.push(`items.id = ANY($${mentionParameterIndex}::text[])`);
+      }
+
+      clauses.push(`(${todoClauses.join(" OR ")})`);
+    }
+  }
+
   const applyAttentionFilters = () => {
     if (!params.attention?.length) {
       return;

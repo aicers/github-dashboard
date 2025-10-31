@@ -480,6 +480,91 @@ describe("ActivityView", () => {
     });
   });
 
+  it("applies my todo quick filter with task mode constraints", async () => {
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+    const props = createDefaultProps();
+
+    render(<ActivityView {...props} />);
+
+    mockFetchJsonOnce(buildActivityListResultFixture());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "내 할 일" }));
+    });
+
+    await waitFor(() => {
+      expect(getLastActivityCall()).toBeTruthy();
+    });
+
+    const request = getLastActivityCall();
+    expect(request).not.toBeNull();
+    if (!request) {
+      return;
+    }
+
+    const url = new URL(request.url);
+    expect(url.searchParams.get("taskMode")).toBe("my_todo");
+    const assertSingle = (key: string) => {
+      expect(url.searchParams.getAll(key)).toEqual(["user-1"]);
+    };
+    assertSingle("authorId");
+    assertSingle("assigneeId");
+    assertSingle("reviewerId");
+    assertSingle("mentionedUserId");
+    assertSingle("maintainerId");
+    assertSingle("peopleSelection");
+    expect(url.searchParams.getAll("prStatus")).toEqual(["pr_open"]);
+    expect(url.searchParams.getAll("issueBaseStatus")).toEqual(["issue_open"]);
+    expect(url.searchParams.getAll("status")).toEqual([
+      "no_status",
+      "todo",
+      "in_progress",
+      "pending",
+    ]);
+    expect(url.searchParams.has("attention")).toBe(false);
+  });
+
+  it("clears my todo task mode when people chips are edited", async () => {
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+    const props = createDefaultProps();
+
+    render(<ActivityView {...props} />);
+
+    mockFetchJsonOnce(buildActivityListResultFixture());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "내 할 일" }));
+    });
+
+    await waitFor(() => {
+      expect(getLastActivityCall()).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
+    const removeButtons = await screen.findAllByLabelText("Remove user-1");
+    fireEvent.click(removeButtons[0]);
+
+    mockFetchJsonOnce(buildActivityListResultFixture());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "필터 적용" }));
+    });
+
+    await waitFor(() => {
+      expect(getLastActivityCall()).toBeTruthy();
+    });
+
+    const request = getLastActivityCall();
+    expect(request).not.toBeNull();
+    if (!request) {
+      return;
+    }
+
+    const url = new URL(request.url);
+    expect(url.searchParams.has("taskMode")).toBe(false);
+    expect(screen.getByRole("button", { name: "내 할 일" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
   it("provides canonical tooltips for attention filters", async () => {
     mockFetchJsonOnce({ filters: [], limit: 5 });
     const props = createDefaultProps();
