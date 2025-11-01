@@ -14,6 +14,7 @@ import {
   resolveWorkTimestamps,
 } from "@/lib/activity/status-utils";
 import type {
+  ActivityLabel,
   ActivityLinkedIssue,
   ActivityLinkedPullRequest,
   IssueProjectStatus,
@@ -98,12 +99,14 @@ export type IssueReference = {
   author: UserReference | null;
   assignees: UserReference[];
   linkedPullRequests: ActivityLinkedPullRequest[];
+  labels: ActivityLabel[];
 };
 
 export type IssueAttentionItem = IssueReference & {
   createdAt: string;
   updatedAt: string | null;
   ageDays: number;
+  inactivityDays?: number | null;
   startedAt?: string | null;
   inProgressAgeDays?: number;
   issueProjectStatus?: IssueProjectStatus | null;
@@ -162,6 +165,14 @@ export type MentionAttentionItem = {
   };
   commentExcerpt: string | null;
   classification: MentionClassificationView | null;
+  issueProjectStatus?: IssueProjectStatus | null;
+  issueProjectStatusSource?: "todo_project" | "activity" | "none";
+  issueProjectStatusLocked?: boolean;
+  issueTodoProjectStatus?: IssueProjectStatus | null;
+  issueTodoProjectPriority?: string | null;
+  issueTodoProjectWeight?: string | null;
+  issueTodoProjectInitiationOptions?: string | null;
+  issueTodoProjectStartDate?: string | null;
 };
 
 export type AttentionInsights = {
@@ -279,12 +290,14 @@ type IssueReferenceRaw = {
   authorId: string | null;
   assigneeIds: string[];
   linkedPullRequests: ActivityLinkedPullRequest[];
+  labels: ActivityLabel[];
 };
 
 type IssueRawItem = IssueReferenceRaw & {
   createdAt: string;
   updatedAt: string | null;
   ageDays: number;
+  inactivityDays: number | null;
   startedAt: string | null;
   inProgressAgeDays: number | null;
   issueProjectStatus: IssueProjectStatus | null;
@@ -316,12 +329,28 @@ type MentionRawItem = {
   };
   commentExcerpt: string | null;
   classification?: MentionClassificationView | null;
+  issueProjectStatus?: IssueProjectStatus | null;
+  issueProjectStatusSource?: "todo_project" | "activity" | "none";
+  issueProjectStatusLocked?: boolean;
+  issueTodoProjectStatus?: IssueProjectStatus | null;
+  issueTodoProjectPriority?: string | null;
+  issueTodoProjectWeight?: string | null;
+  issueTodoProjectInitiationOptions?: string | null;
+  issueTodoProjectStartDate?: string | null;
 };
 
 export type MentionDatasetItem = MentionRawItem & {
   commentBody: string | null;
   commentBodyHash: string;
   mentionedLogin: string | null;
+  issueProjectStatus: IssueProjectStatus | null;
+  issueProjectStatusSource: "todo_project" | "activity" | "none";
+  issueProjectStatusLocked: boolean;
+  issueTodoProjectStatus: IssueProjectStatus | null;
+  issueTodoProjectPriority: string | null;
+  issueTodoProjectWeight: string | null;
+  issueTodoProjectInitiationOptions: string | null;
+  issueTodoProjectStartDate: string | null;
 };
 
 type PullRequestRow = {
@@ -379,6 +408,8 @@ type IssueRow = {
   raw_data: unknown;
   repository_name: string | null;
   repository_name_with_owner: string | null;
+  label_keys: string[] | null;
+  label_names: string[] | null;
 };
 
 async function fetchLinkedPullRequestsForIssues(
@@ -418,6 +449,7 @@ type MentionRow = {
   repository_id: string | null;
   repository_name: string | null;
   repository_name_with_owner: string | null;
+  issue_data: unknown;
 };
 
 type IssueRaw = {
@@ -562,6 +594,35 @@ function addUserId(target: Set<string>, id: Maybe<string>) {
   if (id) {
     target.add(id);
   }
+}
+
+function coerceStringArray(value: string[] | null | undefined): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((entry): entry is string => typeof entry === "string");
+}
+
+function buildIssueLabels({
+  labelKeys,
+  labelNames,
+  repositoryId,
+  repositoryNameWithOwner,
+}: {
+  labelKeys: string[] | null;
+  labelNames: string[] | null;
+  repositoryId: string | null;
+  repositoryNameWithOwner: string | null;
+}): ActivityLabel[] {
+  const keys = coerceStringArray(labelKeys);
+  const names = coerceStringArray(labelNames);
+  const repoId = repositoryId ?? "";
+  return keys.map((key, index) => ({
+    key,
+    name: names[index] ?? key.split(":").pop() ?? key,
+    repositoryId: repoId,
+    repositoryNameWithOwner: repositoryNameWithOwner ?? null,
+  }));
 }
 
 function parseIssueRaw(data: unknown): IssueRaw | null {
@@ -1402,7 +1463,9 @@ async function fetchIssueInsights(
        items.url,
        items.raw_data,
        items.repository_name,
-       items.repository_name_with_owner
+       items.repository_name_with_owner,
+       items.label_keys,
+       items.label_names
      FROM activity_items AS items
      WHERE items.item_type = 'issue'
        AND items.status = 'open'
@@ -1445,6 +1508,17 @@ async function fetchIssueInsights(
     const inProgressAgeDays =
       typeof inProgressAgeRaw === "number" ? inProgressAgeRaw : null;
     const ageDays = differenceInDays(row.created_at, now, holidays);
+    const inactivityDays = differenceInDaysOrNull(
+      row.updated_at ?? row.created_at,
+      now,
+      holidays,
+    );
+    const labels = buildIssueLabels({
+      labelKeys: row.label_keys,
+      labelNames: row.label_names,
+      repositoryId: row.repository_id,
+      repositoryNameWithOwner: row.repository_name_with_owner,
+    });
     const baseItem: IssueRawItem = {
       id: row.id,
       number: row.number,
@@ -1456,9 +1530,11 @@ async function fetchIssueInsights(
       authorId: row.author_id,
       assigneeIds,
       linkedPullRequests: [],
+      labels,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       ageDays,
+      inactivityDays,
       startedAt,
       inProgressAgeDays,
       issueProjectStatus: statusInfo.displayStatus,
@@ -1535,6 +1611,7 @@ export async function fetchUnansweredMentionCandidates(
   now: Date,
   organizationHolidayCodes: HolidayCalendarCode[],
   organizationHolidaySet: ReadonlySet<string>,
+  targetProject: string | null,
 ): Promise<MentionDatasetItem[]> {
   const result = await query<MentionRow>(
     `WITH mention_candidates AS (
@@ -1580,10 +1657,11 @@ export async function fetchUnansweredMentionCandidates(
             OR POSITION('/discussions/' IN COALESCE(iss.data->>'url', '')) > 0
             THEN 'discussion'
           ELSE 'issue'
-        END AS issue_type,
+       END AS issue_type,
        COALESCE(pr.repository_id, iss.repository_id) AS repository_id,
        repo.name AS repository_name,
-       repo.name_with_owner AS repository_name_with_owner
+       repo.name_with_owner AS repository_name_with_owner,
+       iss.data AS issue_data
      FROM mention_candidates mc
      LEFT JOIN pull_requests pr ON pr.id = mc.pr_id
      LEFT JOIN issues iss ON iss.id = mc.issue_id
@@ -1628,6 +1706,55 @@ export async function fetchUnansweredMentionCandidates(
      ORDER BY mc.comment_id, mc.mentioned_user_id, mc.mentioned_at`,
     [excludedRepositoryIds, excludedUserIds],
   );
+
+  const mentionIssueIds = Array.from(
+    new Set(
+      result.rows
+        .map((row) => row.issue_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+
+  type MentionIssueSnapshotRow = {
+    id: string;
+    issue_project_status: string | null;
+    issue_project_status_source: string | null;
+    issue_project_status_locked: boolean | null;
+    issue_todo_project_status: string | null;
+    issue_todo_project_priority: string | null;
+    issue_todo_project_weight: string | null;
+    issue_todo_project_initiation_options: string | null;
+    issue_todo_project_start_date: string | null;
+  };
+
+  const snapshotResult = mentionIssueIds.length
+    ? await query<MentionIssueSnapshotRow>(
+        `SELECT
+           id,
+           issue_project_status,
+           issue_project_status_source,
+           issue_project_status_locked,
+           issue_todo_project_status,
+           issue_todo_project_priority,
+           issue_todo_project_weight,
+           issue_todo_project_initiation_options,
+           issue_todo_project_start_date
+         FROM activity_items
+         WHERE id = ANY($1::text[])`,
+        [mentionIssueIds],
+      )
+    : { rows: [] as MentionIssueSnapshotRow[] };
+
+  const mentionIssueSnapshotMap = new Map<string, MentionIssueSnapshotRow>();
+  snapshotResult.rows.forEach((row) => {
+    mentionIssueSnapshotMap.set(row.id, row);
+  });
+
+  const mentionActivityHistory: Awaited<
+    ReturnType<typeof getActivityStatusHistory>
+  > = mentionIssueIds.length
+    ? await getActivityStatusHistory(mentionIssueIds)
+    : new Map();
 
   const items: MentionDatasetItem[] = [];
 
@@ -1678,6 +1805,61 @@ export async function fetchUnansweredMentionCandidates(
     const containerUrl =
       containerType === "pull_request" ? row.pr_url : row.issue_url;
     const repositoryId = row.repository_id;
+    let issueProjectStatus: IssueProjectStatus | null = null;
+    let issueProjectStatusSource: "todo_project" | "activity" | "none" = "none";
+    let issueProjectStatusLocked = false;
+    let issueTodoProjectStatus: IssueProjectStatus | null = null;
+    let issueTodoProjectPriority: string | null = null;
+    let issueTodoProjectWeight: string | null = null;
+    let issueTodoProjectInitiationOptions: string | null = null;
+    let issueTodoProjectStartDate: string | null = null;
+
+    if (containerType === "issue" && row.issue_id) {
+      const snapshot = mentionIssueSnapshotMap.get(row.issue_id);
+      if (snapshot) {
+        const source = snapshot.issue_project_status_source;
+        issueProjectStatus =
+          snapshot.issue_project_status === null
+            ? null
+            : (snapshot.issue_project_status as IssueProjectStatus);
+        issueProjectStatusSource =
+          source === "todo_project" || source === "activity" ? source : "none";
+        issueProjectStatusLocked =
+          snapshot.issue_project_status_locked ?? false;
+        issueTodoProjectStatus =
+          snapshot.issue_todo_project_status === null
+            ? null
+            : (snapshot.issue_todo_project_status as IssueProjectStatus);
+        issueTodoProjectPriority = snapshot.issue_todo_project_priority ?? null;
+        issueTodoProjectWeight = snapshot.issue_todo_project_weight ?? null;
+        issueTodoProjectInitiationOptions =
+          snapshot.issue_todo_project_initiation_options ?? null;
+        issueTodoProjectStartDate =
+          snapshot.issue_todo_project_start_date ?? null;
+      }
+
+      if (issueProjectStatus === null && issueTodoProjectStatus === null) {
+        const issueRaw = parseIssueRaw(row.issue_data);
+        const activityEvents = mentionActivityHistory.get(row.issue_id) ?? [];
+        const statusInfo = resolveIssueStatusInfo(
+          issueRaw,
+          targetProject,
+          activityEvents,
+        );
+        const projectSnapshot = resolveIssueProjectSnapshot(
+          issueRaw,
+          targetProject,
+        );
+        issueProjectStatus = statusInfo.displayStatus;
+        issueProjectStatusSource = statusInfo.source;
+        issueProjectStatusLocked = statusInfo.locked;
+        issueTodoProjectStatus = statusInfo.todoStatus;
+        issueTodoProjectPriority = projectSnapshot.priority;
+        issueTodoProjectWeight = projectSnapshot.weight;
+        issueTodoProjectInitiationOptions = projectSnapshot.initiationOptions;
+        issueTodoProjectStartDate = projectSnapshot.startDate;
+      }
+    }
 
     items.push({
       commentId: row.comment_id,
@@ -1700,6 +1882,14 @@ export async function fetchUnansweredMentionCandidates(
       commentBody: row.comment_body ?? null,
       commentBodyHash: computeCommentBodyHash(row.comment_body),
       mentionedLogin: row.mentioned_login ?? null,
+      issueProjectStatus,
+      issueProjectStatusSource,
+      issueProjectStatusLocked,
+      issueTodoProjectStatus,
+      issueTodoProjectPriority,
+      issueTodoProjectWeight,
+      issueTodoProjectInitiationOptions,
+      issueTodoProjectStartDate,
     });
   }
 
@@ -1712,6 +1902,7 @@ async function fetchUnansweredMentions(
   now: Date,
   organizationHolidayCodes: HolidayCalendarCode[],
   organizationHolidaySet: ReadonlySet<string>,
+  targetProject: string | null,
   options?: { useClassifier?: boolean },
 ): Promise<Dataset<MentionRawItem>> {
   const candidates = await fetchUnansweredMentionCandidates(
@@ -1720,6 +1911,7 @@ async function fetchUnansweredMentions(
     now,
     organizationHolidayCodes,
     organizationHolidaySet,
+    targetProject,
   );
 
   const classificationInputs = candidates
@@ -1835,6 +2027,7 @@ function toIssueReference(
     author: raw.authorId ? (users.get(raw.authorId) ?? null) : null,
     assignees,
     linkedPullRequests: raw.linkedPullRequests ?? [],
+    labels: raw.labels ?? [],
   } satisfies IssueReference;
 }
 
@@ -1907,6 +2100,7 @@ export async function getAttentionInsights(options?: {
         now,
         organizationHolidayCodes,
         organizationHolidaySet,
+        targetProject,
         {
           useClassifier: options?.useMentionClassifier ?? true,
         },
@@ -1978,6 +2172,7 @@ export async function getAttentionInsights(options?: {
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
       ageDays: item.ageDays,
+      inactivityDays: item.inactivityDays ?? undefined,
       startedAt: item.startedAt,
       inProgressAgeDays: item.inProgressAgeDays ?? undefined,
       issueProjectStatus: item.issueProjectStatus,
@@ -1997,6 +2192,7 @@ export async function getAttentionInsights(options?: {
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
       ageDays: item.ageDays,
+      inactivityDays: item.inactivityDays ?? undefined,
       startedAt: item.startedAt,
       inProgressAgeDays: item.inProgressAgeDays ?? undefined,
       issueProjectStatus: item.issueProjectStatus,
@@ -2046,6 +2242,14 @@ export async function getAttentionInsights(options?: {
             lastEvaluatedAt: item.classification.lastEvaluatedAt ?? null,
           }
         : null,
+      issueProjectStatus: item.issueProjectStatus,
+      issueProjectStatusSource: item.issueProjectStatusSource,
+      issueProjectStatusLocked: item.issueProjectStatusLocked,
+      issueTodoProjectStatus: item.issueTodoProjectStatus,
+      issueTodoProjectPriority: item.issueTodoProjectPriority,
+      issueTodoProjectWeight: item.issueTodoProjectWeight,
+      issueTodoProjectInitiationOptions: item.issueTodoProjectInitiationOptions,
+      issueTodoProjectStartDate: item.issueTodoProjectStartDate,
     }),
   );
 

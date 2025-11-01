@@ -270,7 +270,7 @@ export function buildFollowUpSummaries(
       count: stalePrs.length,
       totalMetric: sumMetric(stalePrs, staleMetric),
       highlights: [
-        highlightLine("최다 생성자", findTopByTotal(staleAuthors, 3)),
+        highlightLine("최다 작성자", findTopByTotal(staleAuthors, 3)),
         highlightLine("최다 리뷰어", findTopByTotal(staleReviewers, 3)),
       ].filter((line): line is string => Boolean(line)),
     },
@@ -281,7 +281,7 @@ export function buildFollowUpSummaries(
       count: idlePrs.length,
       totalMetric: sumMetric(idlePrs, idleMetric),
       highlights: [
-        highlightLine("최다 생성자", findTopByTotal(idleAuthors, 3)),
+        highlightLine("최다 작성자", findTopByTotal(idleAuthors, 3)),
         highlightLine("최다 리뷰어", findTopByTotal(idleReviewers, 3)),
       ].filter((line): line is string => Boolean(line)),
     },
@@ -292,7 +292,7 @@ export function buildFollowUpSummaries(
       count: dedupedReviewRequests.length,
       totalMetric: sumMetric(dedupedReviewRequests, reviewMetric),
       highlights: [
-        highlightLine("최다 생성자", findTopByTotal(reviewAuthors, 3)),
+        highlightLine("최다 작성자", findTopByTotal(reviewAuthors, 3)),
         highlightLine("최다 대기 리뷰어", findTopByTotal(reviewReviewers, 3)),
       ].filter((line): line is string => Boolean(line)),
     },
@@ -303,7 +303,7 @@ export function buildFollowUpSummaries(
       count: backlogIssues.length,
       totalMetric: sumMetric(backlogIssues, backlogMetric),
       highlights: [
-        highlightLine("최다 생성자", findTopByTotal(backlogAuthors, 3)),
+        highlightLine("최다 작성자", findTopByTotal(backlogAuthors, 3)),
         highlightLine("최다 담당자", findTopByTotal(backlogAssignees, 3)),
       ].filter((line): line is string => Boolean(line)),
     },
@@ -314,7 +314,7 @@ export function buildFollowUpSummaries(
       count: stalledIssues.length,
       totalMetric: sumMetric(stalledIssues, stalledMetric),
       highlights: [
-        highlightLine("최다 생성자", findTopByTotal(stalledAuthors, 3)),
+        highlightLine("최다 작성자", findTopByTotal(stalledAuthors, 3)),
         highlightLine("최다 담당자", findTopByTotal(stalledAssignees, 3)),
       ].filter((line): line is string => Boolean(line)),
     },

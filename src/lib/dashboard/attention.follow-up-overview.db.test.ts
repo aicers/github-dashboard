@@ -482,7 +482,7 @@ describe("follow-up overview summaries (db)", () => {
       insights.staleOpenPrs.reduce((total, pr) => total + (pr.ageDays ?? 0), 0),
     );
     expect(staleSummary.highlights).toContain(
-      "최다 생성자: 1위 Alice, 2위 Bob",
+      "최다 작성자: 1위 Alice, 2위 Bob",
     );
     expect(staleSummary.highlights).toContain(
       "최다 리뷰어: 1위 Bob, 2위 Carol",
@@ -496,7 +496,7 @@ describe("follow-up overview summaries (db)", () => {
       ),
     );
     expect(idleSummary.highlights).toContain(
-      "최다 생성자: 1위 Carol, 2위 Dave",
+      "최다 작성자: 1위 Carol, 2위 Dave",
     );
     expect(idleSummary.highlights).toContain(
       "최다 리뷰어: 1위 Erin, 2위 Frank",
@@ -526,7 +526,7 @@ describe("follow-up overview summaries (db)", () => {
         0,
       ),
     );
-    expect(stuckSummary.highlights).toContain("최다 생성자: 1위 Alice");
+    expect(stuckSummary.highlights).toContain("최다 작성자: 1위 Alice");
     const reviewerHighlight = stuckSummary.highlights.find((line) =>
       line.startsWith("최다 대기 리뷰어"),
     );
@@ -541,7 +541,7 @@ describe("follow-up overview summaries (db)", () => {
       ),
     );
     expect(backlogSummary.highlights).toContain(
-      "최다 생성자: 1위 Alice, 2위 Carol",
+      "최다 작성자: 1위 Alice, 2위 Carol",
     );
     expect(backlogSummary.highlights).toContain(
       "최다 담당자: 1위 Bob, 2위 Dave",
@@ -556,7 +556,7 @@ describe("follow-up overview summaries (db)", () => {
       ),
     );
     expect(stalledSummary.highlights).toContain(
-      "최다 생성자: 1위 Erin, 2위 Grace",
+      "최다 작성자: 1위 Erin, 2위 Grace",
     );
     expect(stalledSummary.highlights).toContain(
       "최다 담당자: 1위 Frank, 2위 Hank",

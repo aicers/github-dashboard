@@ -1,3 +1,4 @@
+import { normalizeProjectTarget } from "@/lib/activity/base-query";
 import {
   fetchUnansweredMentionCandidates,
   type MentionDatasetItem,
@@ -360,6 +361,7 @@ export async function runUnansweredMentionClassification(
     const organizationHolidaySet = await loadCombinedHolidaySet(
       organizationHolidayCodes,
     );
+    const targetProject = normalizeProjectTarget(env.TODO_PROJECT_NAME);
 
     const candidates = await fetchUnansweredMentionCandidates(
       Array.from(excludedRepositoryIds),
@@ -367,6 +369,7 @@ export async function runUnansweredMentionClassification(
       now,
       organizationHolidayCodes,
       organizationHolidaySet,
+      targetProject,
     );
 
     summary.totalCandidates = candidates.length;
