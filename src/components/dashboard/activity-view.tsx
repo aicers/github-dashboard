@@ -824,6 +824,31 @@ function derivePeopleState(
     const optional = state.optionalPersonIds?.mentionedUserIds ?? [];
     return values.length > 0 || optional.length > 0;
   });
+  const hasAttention = hasActiveAttentionFilters(state);
+  if (hasAttention) {
+    const selectionValues =
+      state.peopleSelection.length > 0
+        ? Array.from(new Set(state.peopleSelection))
+        : collectPeopleSelectionFromRoles(state);
+    const normalizedSelection = normalizePeopleIds(selectionValues);
+    const matchesSelection =
+      normalizedSelection.length === 0 ||
+      PEOPLE_ROLE_KEYS.every((role) => {
+        const values = getPeopleRoleValues(state, role);
+        if (values.length === 0) {
+          return true;
+        }
+        return arraysShallowEqual(
+          normalizePeopleIds(values),
+          normalizedSelection,
+        );
+      });
+    return {
+      selection: matchesSelection ? selectionValues : [],
+      isSynced: matchesSelection,
+      targets,
+    };
+  }
   if (!targets.length) {
     return { selection: [], isSynced: true, targets };
   }

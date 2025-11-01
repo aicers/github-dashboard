@@ -318,6 +318,22 @@ describe("ActivityView", () => {
     expect(screen.getByPlaceholderText("@reactor")).not.toBeDisabled();
   });
 
+  it("keeps people selection highlighted with unanswered mentions attention", async () => {
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+    const props = createDefaultProps({
+      initialParams: buildActivityListParams({
+        attention: ["unanswered_mentions"],
+        mentionedUserIds: ["user-alice"],
+        peopleSelection: ["user-alice"],
+      }),
+    });
+
+    render(<ActivityView {...props} />);
+
+    const toggle = await screen.findByRole("button", { name: "alice" });
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+  });
+
   it("syncs 구성원 chips with manual role selections when attention is inactive", async () => {
     mockFetchJsonOnce({ filters: [], limit: 5 });
     const props = createDefaultProps();
@@ -957,7 +973,7 @@ describe("ActivityView", () => {
 
     expect(screen.getByRole("button", { name: "alice" })).toHaveAttribute(
       "aria-pressed",
-      "false",
+      "true",
     );
 
     expect(screen.getByRole("button", { name: "필터 적용" })).toBeDisabled();
