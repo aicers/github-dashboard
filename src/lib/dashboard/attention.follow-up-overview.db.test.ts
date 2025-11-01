@@ -392,6 +392,11 @@ describe("follow-up overview summaries (db)", () => {
           status: "In Progress",
           occurredAt: "2024-01-15T00:00:00.000Z",
         },
+        {
+          projectTitle: "to-do list",
+          status: "Pending",
+          occurredAt: "2024-01-25T00:00:00.000Z",
+        },
       ],
     });
 

@@ -1,9 +1,18 @@
 import { createHash } from "node:crypto";
-
+import { normalizeProjectTarget } from "@/lib/activity/base-query";
 import {
   getLinkedIssuesMap,
   getLinkedPullRequestsMap,
 } from "@/lib/activity/cache";
+import { getActivityStatusHistory } from "@/lib/activity/status-store";
+import {
+  extractProjectStatusEntries,
+  ISSUE_PROJECT_STATUS_LOCKED,
+  mapIssueProjectStatus,
+  matchProject,
+  resolveIssueStatusInfo,
+  resolveWorkTimestamps,
+} from "@/lib/activity/status-utils";
 import type {
   ActivityLinkedIssue,
   ActivityLinkedPullRequest,
@@ -451,11 +460,6 @@ type IssueProjectSnapshot = {
   startDate: string | null;
 };
 
-type ProjectStatusEntry = {
-  status: string;
-  occurredAt: string;
-};
-
 const STALE_PR_BUSINESS_DAYS = 20;
 const IDLE_PR_BUSINESS_DAYS = 10;
 const STUCK_REVIEW_BUSINESS_DAYS = 5;
@@ -463,15 +467,6 @@ const BACKLOG_ISSUE_BUSINESS_DAYS = 40;
 const STALLED_IN_PROGRESS_BUSINESS_DAYS = 20;
 const UNANSWERED_MENTION_BUSINESS_DAYS = 5;
 const OCTOAIDE_LOGINS = ["octoaide"];
-
-function parseDate(value: Maybe<string>) {
-  if (!value) {
-    return null;
-  }
-
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
-}
 
 function differenceInDays(
   value: Maybe<string>,
@@ -569,108 +564,6 @@ function addUserId(target: Set<string>, id: Maybe<string>) {
   }
 }
 
-function normalizeText(value: unknown): string | null {
-  if (typeof value !== "string") {
-    return null;
-  }
-
-  const trimmed = value.trim().toLowerCase();
-  return trimmed.length ? trimmed : null;
-}
-
-function matchProject(projectName: unknown, target: string | null) {
-  if (!target) {
-    return false;
-  }
-
-  return normalizeText(projectName) === target;
-}
-
-function normalizeStatus(value: string | null): string | null {
-  if (!value) {
-    return null;
-  }
-
-  return value.trim().toLowerCase();
-}
-
-function isInProgressStatus(status: string) {
-  const normalized = status.toLowerCase();
-  return (
-    normalized.includes("progress") ||
-    normalized === "doing" ||
-    normalized === "in-progress"
-  );
-}
-
-function isDoneStatus(status: string) {
-  const normalized = status.toLowerCase();
-  return (
-    normalized === "done" ||
-    normalized === "completed" ||
-    normalized === "complete" ||
-    normalized === "finished" ||
-    normalized === "closed" ||
-    normalized === "canceled" ||
-    normalized === "cancelled"
-  );
-}
-
-const ISSUE_PROJECT_STATUS_LOCKED = new Set<IssueProjectStatus>([
-  "in_progress",
-  "done",
-  "pending",
-]);
-
-function mapIssueProjectStatus(
-  value: string | null | undefined,
-): IssueProjectStatus {
-  if (!value) {
-    return "no_status";
-  }
-
-  const normalized = value.trim().toLowerCase();
-  if (!normalized || normalized === "no" || normalized === "no_status") {
-    return "no_status";
-  }
-
-  if (
-    normalized === "todo" ||
-    normalized === "to_do" ||
-    normalized === "to do"
-  ) {
-    return "todo";
-  }
-
-  if (
-    normalized.includes("progress") ||
-    normalized === "doing" ||
-    normalized === "in-progress"
-  ) {
-    return "in_progress";
-  }
-
-  if (
-    normalized === "done" ||
-    normalized === "completed" ||
-    normalized === "complete" ||
-    normalized === "finished" ||
-    normalized === "closed"
-  ) {
-    return "done";
-  }
-
-  if (normalized.startsWith("pending") || normalized === "waiting") {
-    return "pending";
-  }
-
-  if (normalized === "canceled" || normalized === "cancelled") {
-    return "canceled";
-  }
-
-  return "no_status";
-}
-
 function parseIssueRaw(data: unknown): IssueRaw | null {
   if (!data) {
     return null;
@@ -692,56 +585,6 @@ function parseIssueRaw(data: unknown): IssueRaw | null {
   }
 
   return null;
-}
-
-function extractProjectStatusEntries(
-  raw: IssueRaw | null,
-  targetProject: string | null,
-): ProjectStatusEntry[] {
-  if (!raw) {
-    return [];
-  }
-
-  const history = Array.isArray(
-    (raw as Record<string, unknown>).projectStatusHistory,
-  )
-    ? ((raw as Record<string, unknown>).projectStatusHistory as unknown[])
-    : [];
-
-  const entries: ProjectStatusEntry[] = [];
-  history.forEach((entry) => {
-    if (!entry || typeof entry !== "object") {
-      return;
-    }
-
-    const record = entry as Record<string, unknown>;
-    const projectTitle = normalizeText(record.projectTitle ?? null);
-    if (!matchProject(projectTitle, targetProject)) {
-      return;
-    }
-
-    const status = normalizeStatus(
-      typeof record.status === "string" ? (record.status as string) : null,
-    );
-    const occurredAt =
-      typeof record.occurredAt === "string"
-        ? (record.occurredAt as string)
-        : null;
-
-    if (!status || !occurredAt || status.startsWith("__")) {
-      return;
-    }
-
-    entries.push({ status, occurredAt });
-  });
-
-  entries.sort((a, b) => {
-    const left = parseDate(a.occurredAt) ?? 0;
-    const right = parseDate(b.occurredAt) ?? 0;
-    return left - right;
-  });
-
-  return entries;
 }
 
 function createProjectFieldAggregate(): ProjectFieldAggregate {
@@ -881,6 +724,7 @@ function extractTodoProjectFieldValues(
     : [];
 
   const priorityAggregate = createProjectFieldAggregate();
+  const weightAggregate = createProjectFieldAggregate();
   const initiationAggregate = createProjectFieldAggregate();
   const startAggregate = createProjectFieldAggregate();
 
@@ -922,6 +766,12 @@ function extractTodoProjectFieldValues(
         fallbackTimestamps,
       );
       applyProjectFieldCandidate(priorityAggregate, info);
+    } else if (fieldRecord?.name === "Weight") {
+      const info = extractProjectFieldValueInfo(
+        valueRecord,
+        fallbackTimestamps,
+      );
+      applyProjectFieldCandidate(weightAggregate, info);
     } else if (fieldRecord?.name === "Initiation") {
       const info = extractProjectFieldValueInfo(
         valueRecord,
@@ -939,6 +789,8 @@ function extractTodoProjectFieldValues(
 
   result.priority = priorityAggregate.value;
   result.priorityUpdatedAt = priorityAggregate.updatedAt;
+  result.weight = weightAggregate.value;
+  result.weightUpdatedAt = weightAggregate.updatedAt;
   result.initiationOptions = initiationAggregate.value;
   result.initiationOptionsUpdatedAt = initiationAggregate.updatedAt;
   result.startDate = startAggregate.dateValue ?? startAggregate.value;
@@ -1009,30 +861,6 @@ function resolveIssueProjectSnapshot(
     initiationOptions: fields.initiationOptions,
     startDate: fields.startDate,
   };
-}
-
-function extractWorkTimestamps(
-  raw: IssueRaw | null,
-  targetProject: string | null,
-): { startedAt: string | null; completedAt: string | null } {
-  const entries = extractProjectStatusEntries(raw, targetProject);
-  let startedAt: string | null = null;
-  let completedAt: string | null = null;
-
-  for (const entry of entries) {
-    if (!startedAt && isInProgressStatus(entry.status)) {
-      startedAt = entry.occurredAt;
-    }
-
-    if (!completedAt && isDoneStatus(entry.status)) {
-      completedAt = entry.occurredAt;
-      if (startedAt) {
-        break;
-      }
-    }
-  }
-
-  return { startedAt, completedAt };
 }
 
 function extractAssigneeIds(raw: IssueRaw | null) {
@@ -1579,24 +1407,41 @@ async function fetchIssueInsights(
      JOIN repositories repo ON repo.id = i.repository_id
      WHERE i.github_closed_at IS NULL
        AND i.github_created_at <= NOW() - INTERVAL '26 days'
+       AND LOWER(COALESCE(i.data->>'__typename', 'issue')) NOT IN ('discussion', 'teamdiscussion')
        AND NOT (i.repository_id = ANY($1::text[]))
        AND (i.author_id IS NULL OR NOT (i.author_id = ANY($2::text[])))
      ORDER BY i.github_created_at ASC`,
     [excludedRepositoryIds, excludedUserIds],
   );
 
+  const issueIds = result.rows.map((row) => row.id);
+  const activityHistory = await getActivityStatusHistory(issueIds);
+
   const backlogItems: IssueRawItem[] = [];
   const backlogUserIds = new Set<string>();
   const stalledItems: IssueRawItem[] = [];
   const stalledUserIds = new Set<string>();
 
-  result.rows.forEach((row) => {
+  for (const row of result.rows) {
     const raw = parseIssueRaw(row.data);
-    const work = extractWorkTimestamps(raw, targetProject);
+    const activityEvents = activityHistory.get(row.id) ?? [];
+    const statusInfo = resolveIssueStatusInfo(
+      raw,
+      targetProject,
+      activityEvents,
+    );
+    const work = resolveWorkTimestamps(statusInfo);
     const assigneeIds = extractAssigneeIds(raw).filter(
       (id) => !excludedUserIds.includes(id),
     );
     const projectSnapshot = resolveIssueProjectSnapshot(raw, targetProject);
+    const startedAt = work.startedAt;
+    const inProgressAgeRaw = startedAt
+      ? differenceInDaysOrNull(startedAt, now, holidays)
+      : null;
+    const inProgressAgeDays =
+      typeof inProgressAgeRaw === "number" ? inProgressAgeRaw : null;
+    const ageDays = differenceInDays(row.github_created_at, now, holidays);
     const baseItem: IssueRawItem = {
       id: row.id,
       number: row.number,
@@ -1610,13 +1455,13 @@ async function fetchIssueInsights(
       linkedPullRequests: [],
       createdAt: row.github_created_at,
       updatedAt: row.github_updated_at,
-      ageDays: differenceInDays(row.github_created_at, now, holidays),
-      startedAt: work.startedAt,
-      inProgressAgeDays: differenceInDaysOrNull(work.startedAt, now, holidays),
-      issueProjectStatus: projectSnapshot.projectStatus,
-      issueProjectStatusSource: projectSnapshot.projectStatusSource,
-      issueProjectStatusLocked: projectSnapshot.projectStatusLocked,
-      issueTodoProjectStatus: projectSnapshot.todoStatus,
+      ageDays,
+      startedAt,
+      inProgressAgeDays,
+      issueProjectStatus: statusInfo.displayStatus,
+      issueProjectStatusSource: statusInfo.source,
+      issueProjectStatusLocked: statusInfo.locked,
+      issueTodoProjectStatus: statusInfo.todoStatus,
       issueTodoProjectPriority: projectSnapshot.priority,
       issueTodoProjectWeight: projectSnapshot.weight,
       issueTodoProjectInitiationOptions: projectSnapshot.initiationOptions,
@@ -1627,17 +1472,32 @@ async function fetchIssueInsights(
       (row.state && row.state.toLowerCase() === "closed") ||
       row.github_closed_at;
 
-    if (!work.startedAt) {
-      if (baseItem.ageDays >= BACKLOG_ISSUE_BUSINESS_DAYS) {
+    const displayStatus = statusInfo.displayStatus;
+    const isBacklogStatus =
+      displayStatus === "no_status" || displayStatus === "todo";
+    if (isBacklogStatus) {
+      if (ageDays >= BACKLOG_ISSUE_BUSINESS_DAYS) {
         backlogItems.push(baseItem);
         addUserId(backlogUserIds, row.author_id);
         assigneeIds.forEach((id) => {
           addUserId(backlogUserIds, id);
         });
       }
-    } else if (!isClosed) {
-      const inProgressDays = baseItem.inProgressAgeDays ?? 0;
-      if (inProgressDays >= STALLED_IN_PROGRESS_BUSINESS_DAYS) {
+      continue;
+    }
+
+    if (!isClosed) {
+      const qualifiesInProgress =
+        displayStatus === "in_progress" &&
+        typeof inProgressAgeDays === "number" &&
+        inProgressAgeDays >= STALLED_IN_PROGRESS_BUSINESS_DAYS;
+      const qualifiesPending =
+        displayStatus === "pending" &&
+        startedAt !== null &&
+        typeof inProgressAgeDays === "number" &&
+        inProgressAgeDays >= STALLED_IN_PROGRESS_BUSINESS_DAYS;
+
+      if (qualifiesInProgress || qualifiesPending) {
         stalledItems.push(baseItem);
         addUserId(stalledUserIds, row.author_id);
         assigneeIds.forEach((id) => {
@@ -1645,7 +1505,7 @@ async function fetchIssueInsights(
         });
       }
     }
-  });
+  }
 
   const issueIdSet = new Set<string>([
     ...backlogItems.map((item) => item.id),
@@ -2009,7 +1869,7 @@ export async function getAttentionInsights(options?: {
   const excludedUsersArray = Array.from(excludedUserIds);
   const excludedReposArray = Array.from(excludedRepositoryIds);
   const now = new Date();
-  const targetProject = normalizeText(env.TODO_PROJECT_NAME);
+  const targetProject = normalizeProjectTarget(env.TODO_PROJECT_NAME);
 
   const [stale, idle, stuckReviews, issueInsights, mentions] =
     await Promise.all([
@@ -2116,8 +1976,8 @@ export async function getAttentionInsights(options?: {
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
       ageDays: item.ageDays,
-      startedAt: null,
-      inProgressAgeDays: undefined,
+      startedAt: item.startedAt,
+      inProgressAgeDays: item.inProgressAgeDays ?? undefined,
       issueProjectStatus: item.issueProjectStatus,
       issueProjectStatusSource: item.issueProjectStatusSource,
       issueProjectStatusLocked: item.issueProjectStatusLocked,
