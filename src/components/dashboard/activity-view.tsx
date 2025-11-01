@@ -83,6 +83,7 @@ import {
 } from "./activity/detail-shared";
 import {
   buildActivityMetricEntries,
+  buildAttentionBadges,
   buildLinkedIssueSummary,
   buildLinkedPullRequestSummary,
   formatRelative,
@@ -1137,70 +1138,6 @@ function toPositiveInt(value: string, fallback: number) {
     return fallback;
   }
   return parsed;
-}
-
-type AttentionBadgeDescriptor = {
-  key: string;
-  label: string;
-  variant: "default" | "manual" | "ai-soft";
-  tooltip?: string;
-};
-
-function buildAttentionBadges(
-  item: ActivityItem,
-  options: { useMentionAi: boolean },
-) {
-  const badges: AttentionBadgeDescriptor[] = [];
-  const push = (
-    key: string,
-    label: string,
-    variant: AttentionBadgeDescriptor["variant"] = "default",
-    tooltip?: string,
-  ) => {
-    badges.push({ key, label, variant, tooltip });
-  };
-
-  const hasManualSuppress = item.mentionWaits?.some(
-    (wait) => wait.manualRequiresResponse === false,
-  );
-  const hasAiSoftBadge =
-    !options.useMentionAi &&
-    item.mentionWaits?.some((wait) => {
-      if (wait.manualRequiresResponse === true) {
-        return false;
-      }
-      return wait.requiresResponse === false;
-    });
-
-  if (item.attention.unansweredMention) {
-    if (hasAiSoftBadge) {
-      push(
-        "unanswered-mention",
-        "응답 없는 멘션",
-        "ai-soft",
-        "AI는 응답을 요구하지 않은 멘션으로 생각합니다.",
-      );
-    } else {
-      push("unanswered-mention", "응답 없는 멘션");
-    }
-  }
-  if (item.attention.reviewRequestPending) {
-    push("review-request", "응답 없는 리뷰 요청");
-  }
-  if (item.attention.idlePr) {
-    push("idle-pr", "업데이트 없는 PR");
-  }
-  if (item.attention.backlogIssue) {
-    push("backlog-issue", "정체된 Backlog 이슈");
-  }
-  if (item.attention.stalledIssue) {
-    push("stalled-issue", "정체된 In Progress 이슈");
-  }
-  if (hasManualSuppress) {
-    push("manual-suppress", "응답 요구가 아님", "manual");
-  }
-
-  return badges;
 }
 
 function avatarFallback(user: ActivityItem["author"]) {

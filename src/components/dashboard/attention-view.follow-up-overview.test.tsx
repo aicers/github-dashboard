@@ -21,11 +21,19 @@ import {
 } from "../../../tests/helpers/activity-items";
 
 const refreshMock = vi.fn();
+const mockFetchActivityDetail =
+  vi.fn<
+    (...args: unknown[]) => Promise<ReturnType<typeof buildActivityItemDetail>>
+  >();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
     refresh: refreshMock,
   }),
+}));
+
+vi.mock("@/lib/activity/client", () => ({
+  fetchActivityDetail: (...args: unknown[]) => mockFetchActivityDetail(...args),
 }));
 
 function buildUser(id: string, name: string, login: string): UserReference {
@@ -150,6 +158,7 @@ function buildIssueItem(params: {
     author,
     assignees,
     linkedPullRequests,
+    labels: [],
     createdAt,
     updatedAt,
     ageDays,
@@ -195,6 +204,101 @@ function buildMentionItem(params: {
       lastEvaluatedAt: null,
     },
   } satisfies MentionAttentionItem;
+}
+
+const toActivityUserOverride = (user: UserReference | null) =>
+  user
+    ? {
+        id: user.id,
+        login: user.login ?? user.id,
+        name: user.name ?? user.login ?? user.id,
+        avatarUrl: null,
+      }
+    : null;
+
+const toRepositoryOverride = (repo: RepositoryReference | null) =>
+  repo
+    ? {
+        id: repo.id,
+        name: repo.name ?? repo.nameWithOwner ?? repo.id,
+        nameWithOwner: repo.nameWithOwner ?? repo.name ?? repo.id,
+      }
+    : undefined;
+
+const BASE_ATTENTION_FLAGS = { ...buildActivityItem().attention };
+
+function buildIssueDetailFromAttention(
+  issue: IssueAttentionItem,
+  attention: "backlog" | "stalled",
+) {
+  const assigneeUsers = issue.assignees
+    .map((assignee) => toActivityUserOverride(assignee))
+    .filter(
+      (user): user is NonNullable<ReturnType<typeof toActivityUserOverride>> =>
+        Boolean(user),
+    );
+  return buildActivityItemDetail({
+    item: buildActivityItem({
+      id: issue.id,
+      type: "issue",
+      number: issue.number,
+      title: issue.title,
+      url: issue.url ?? undefined,
+      repository: toRepositoryOverride(issue.repository),
+      author: toActivityUserOverride(issue.author),
+      assignees: assigneeUsers,
+      linkedPullRequests: issue.linkedPullRequests ?? [],
+      issueProjectStatus: issue.issueProjectStatus ?? "no_status",
+      issueProjectStatusSource: issue.issueProjectStatusSource ?? "none",
+      issueProjectStatusLocked: issue.issueProjectStatusLocked ?? false,
+      issueTodoProjectStatus: issue.issueTodoProjectStatus ?? null,
+      issueTodoProjectPriority: issue.issueTodoProjectPriority ?? null,
+      issueTodoProjectWeight: issue.issueTodoProjectWeight ?? null,
+      issueTodoProjectInitiationOptions:
+        issue.issueTodoProjectInitiationOptions ?? null,
+      issueTodoProjectStartDate: issue.issueTodoProjectStartDate ?? null,
+      businessDaysOpen: issue.ageDays ?? null,
+      businessDaysSinceInProgress: issue.inProgressAgeDays ?? null,
+      businessDaysInProgressOpen: issue.inProgressAgeDays ?? null,
+      attention:
+        attention === "stalled"
+          ? { ...BASE_ATTENTION_FLAGS, stalledIssue: true }
+          : { ...BASE_ATTENTION_FLAGS, backlogIssue: true },
+    }),
+  });
+}
+
+function buildPullRequestDetailFromAttention(
+  pr: PullRequestAttentionItem,
+  attention: "stale" | "idle" | "review",
+) {
+  const reviewerUsers = pr.reviewers
+    .map((reviewer) => toActivityUserOverride(reviewer))
+    .filter(
+      (user): user is NonNullable<ReturnType<typeof toActivityUserOverride>> =>
+        Boolean(user),
+    );
+  return buildActivityItemDetail({
+    item: buildActivityItem({
+      id: pr.id,
+      type: "pull_request",
+      number: pr.number,
+      title: pr.title,
+      url: pr.url ?? undefined,
+      repository: toRepositoryOverride(pr.repository),
+      author: toActivityUserOverride(pr.author),
+      reviewers: reviewerUsers,
+      linkedIssues: pr.linkedIssues ?? [],
+      businessDaysOpen: pr.ageDays ?? null,
+      businessDaysIdle: pr.inactivityDays ?? null,
+      attention:
+        attention === "stale"
+          ? { ...BASE_ATTENTION_FLAGS, staleOpenPr: true }
+          : attention === "idle"
+            ? { ...BASE_ATTENTION_FLAGS, idlePr: true }
+            : { ...BASE_ATTENTION_FLAGS, reviewRequestPending: true },
+    }),
+  });
 }
 
 describe("Follow-up overview", () => {
@@ -423,6 +527,72 @@ describe("Follow-up overview", () => {
       commentExcerpt: "@hank need an update",
     });
 
+    const detailMap = new Map<
+      string,
+      ReturnType<typeof buildActivityItemDetail>
+    >();
+
+    const registerIssueDetail = (
+      issue: IssueAttentionItem,
+      attention: "backlog" | "stalled",
+    ) => {
+      detailMap.set(issue.id, buildIssueDetailFromAttention(issue, attention));
+    };
+
+    const registerPullRequestDetail = (
+      pr: PullRequestAttentionItem,
+      attention: "stale" | "idle" | "review",
+    ) => {
+      detailMap.set(pr.id, buildPullRequestDetailFromAttention(pr, attention));
+    };
+
+    registerPullRequestDetail(staleOne, "stale");
+    registerPullRequestDetail(staleTwo, "stale");
+    registerPullRequestDetail(idleOne, "idle");
+    registerPullRequestDetail(idleTwo, "idle");
+    registerPullRequestDetail(staleOne, "review");
+    registerPullRequestDetail(idleTwo, "review");
+
+    registerIssueDetail(backlogOne, "backlog");
+    registerIssueDetail(backlogTwo, "backlog");
+    registerIssueDetail(stalledOne, "stalled");
+    registerIssueDetail(stalledTwo, "stalled");
+
+    const mentionContainerIds = new Set<string>([
+      mentionOne.container.id ?? "",
+      mentionTwo.container.id ?? "",
+    ]);
+    mentionContainerIds.forEach((containerId) => {
+      if (!containerId) {
+        return;
+      }
+      if (detailMap.has(containerId)) {
+        return;
+      }
+      const issueMatch = [backlogOne, backlogTwo, stalledOne, stalledTwo].find(
+        (issue) => issue.id === containerId,
+      );
+      if (issueMatch) {
+        registerIssueDetail(issueMatch, "backlog");
+        return;
+      }
+      const prMatch = [staleOne, staleTwo, idleOne, idleTwo].find(
+        (pr) => pr.id === containerId,
+      );
+      if (prMatch) {
+        registerPullRequestDetail(prMatch, "stale");
+      }
+    });
+
+    mockFetchActivityDetail.mockImplementation((id: unknown) => {
+      const key = String(id);
+      const detail = detailMap.get(key);
+      if (!detail) {
+        return Promise.reject(new Error(`Unexpected fetch id ${key}`));
+      }
+      return Promise.resolve(detail);
+    });
+
     const insights: AttentionInsights = {
       generatedAt: "2024-02-20T00:00:00.000Z",
       timezone: "Asia/Seoul",
@@ -446,7 +616,7 @@ describe("Follow-up overview", () => {
     expect(within(staleCard).getByText("2건")).toBeInTheDocument();
     expect(within(staleCard).getByText("60일")).toBeInTheDocument();
     expect(
-      within(staleCard).getByText("최다 생성자: 1위 Alice, 2위 Bob"),
+      within(staleCard).getByText("최다 작성자: 1위 Alice, 2위 Bob"),
     ).toBeInTheDocument();
     expect(
       within(staleCard).getByText("최다 리뷰어: 1위 Bob, 2위 Carol"),
@@ -456,7 +626,7 @@ describe("Follow-up overview", () => {
     expect(within(idleCard).getByText("2건")).toBeInTheDocument();
     expect(within(idleCard).getByText("21일")).toBeInTheDocument();
     expect(
-      within(idleCard).getByText("최다 생성자: 1위 Carol, 2위 Dave"),
+      within(idleCard).getByText("최다 작성자: 1위 Carol, 2위 Dave"),
     ).toBeInTheDocument();
     expect(
       within(idleCard).getByText("최다 리뷰어: 1위 Erin, 2위 Frank"),
@@ -466,7 +636,7 @@ describe("Follow-up overview", () => {
     expect(within(backlogCard).getByText("2건")).toBeInTheDocument();
     expect(within(backlogCard).getByText("105일")).toBeInTheDocument();
     expect(
-      within(backlogCard).getByText("최다 생성자: 1위 Alice, 2위 Carol"),
+      within(backlogCard).getByText("최다 작성자: 1위 Alice, 2위 Carol"),
     ).toBeInTheDocument();
     expect(
       within(backlogCard).getByText("최다 담당자: 1위 Bob, 2위 Dave"),
@@ -495,9 +665,9 @@ describe("Follow-up overview", () => {
       ),
     ).toBeInTheDocument();
 
-    const stuckNavButton = screen.getByRole("button", {
+    const stuckNavButton = screen.getAllByRole("button", {
       name: /응답 없는 리뷰 요청/,
-    });
+    })[0];
     expect(stuckNavButton).toHaveAttribute("aria-current", "true");
     expect(overviewButton).not.toHaveAttribute("aria-current", "true");
 

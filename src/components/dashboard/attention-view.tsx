@@ -79,7 +79,9 @@ import {
   SOURCE_STATUS_KEYS,
 } from "./activity/detail-shared";
 import {
+  type AttentionBadgeDescriptor,
   buildActivityMetricEntries,
+  buildAttentionBadges,
   buildLinkedIssueSummary,
   buildLinkedPullRequestSummary,
   formatRelative,
@@ -101,6 +103,65 @@ function formatRepository(repository: RepositoryReference | null) {
   }
 
   return repository.nameWithOwner ?? repository.name ?? repository.id;
+}
+
+function renderAttentionBadgeElements(
+  badges: AttentionBadgeDescriptor[],
+  itemId: string,
+) {
+  return badges.map((badge) => {
+    const variantClass =
+      badge.variant === "manual"
+        ? "border border-slate-300 bg-slate-100 text-slate-700"
+        : badge.variant === "ai-soft"
+          ? "border border-sky-300 bg-sky-50 text-sky-700 shadow-[0_0_0.65rem_rgba(56,189,248,0.25)]"
+          : "bg-amber-100 text-amber-700";
+    const tooltipId = badge.tooltip
+      ? `${itemId}-${badge.key}-tooltip`
+      : undefined;
+    return (
+      <span
+        key={`${itemId}-badge-${badge.key}`}
+        className={cn(
+          "relative inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
+          variantClass,
+          badge.tooltip
+            ? "group cursor-help focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            : "",
+        )}
+        tabIndex={badge.tooltip ? 0 : undefined}
+        aria-describedby={tooltipId}
+      >
+        {badge.label}
+        {badge.tooltip ? (
+          <span
+            id={tooltipId}
+            role="tooltip"
+            className="pointer-events-none absolute left-1/2 top-full z-20 w-60 -translate-x-1/2 translate-y-2 rounded-md border border-border/60 bg-background px-2 py-1 text-[11px] text-muted-foreground opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+          >
+            {badge.tooltip}
+          </span>
+        ) : null}
+      </span>
+    );
+  });
+}
+
+function applyAttentionFlagsFromMap(
+  map: Map<string, Partial<ActivityItem["attention"]>>,
+  activityItem: ActivityItem,
+  ...ids: Array<string | null | undefined>
+) {
+  ids.forEach((id) => {
+    if (!id) {
+      return;
+    }
+    const patch = map.get(id);
+    if (!patch) {
+      return;
+    }
+    activityItem.attention = { ...activityItem.attention, ...patch };
+  });
 }
 
 function formatDays(value: number | null | undefined) {
@@ -444,6 +505,7 @@ function useActivityDetailState() {
     selectItem,
     closeItem,
     updateDetailItem,
+    loadDetail,
   };
 }
 
@@ -1114,6 +1176,7 @@ function PullRequestList({
   metricLabel = "경과일수",
   reviewWaitMap,
   mentionWaitMap,
+  attentionFlagMap,
   timezone,
   dateTimeFormat,
   segmented = false,
@@ -1125,12 +1188,14 @@ function PullRequestList({
   metricLabel?: string;
   reviewWaitMap: Map<string, ReviewRequestAttentionItem[]>;
   mentionWaitMap: Map<string, MentionAttentionItem[]>;
+  attentionFlagMap: Map<string, Partial<ActivityItem["attention"]>>;
   timezone: string;
   dateTimeFormat: DateTimeDisplayFormat;
   segmented?: boolean;
 }) {
   const [authorFilter, setAuthorFilter] = useState("all");
   const [reviewerFilter, setReviewerFilter] = useState("all");
+  const prefetchedIdsRef = useRef<Set<string>>(new Set());
   const trimmedTimezone = timezone.trim();
   const timezoneTitle = trimmedTimezone.length ? trimmedTimezone : undefined;
 
@@ -1236,8 +1301,25 @@ function PullRequestList({
 
   const hasReviewerFilter = reviewerOptions.length > 0;
 
-  const { openItemId, detailMap, loadingDetailIds, selectItem, closeItem } =
-    useActivityDetailState();
+  const {
+    openItemId,
+    detailMap,
+    loadingDetailIds,
+    selectItem,
+    closeItem,
+    loadDetail,
+  } = useActivityDetailState();
+
+  useEffect(() => {
+    sortedItems.forEach((item) => {
+      const id = item.id;
+      if (!id || prefetchedIdsRef.current.has(id)) {
+        return;
+      }
+      prefetchedIdsRef.current.add(id);
+      void loadDetail(id);
+    });
+  }, [sortedItems, loadDetail]);
 
   if (!items.length && !segmented) {
     return <p className="text-sm text-muted-foreground">{emptyText}</p>;
@@ -1246,16 +1328,16 @@ function PullRequestList({
   const rankingGrid = (
     <div className="grid gap-4 md:grid-cols-2">
       <RankingCard
-        title={`생성자 ${metricLabel} 합계 순위`}
+        title={`작성자 ${metricLabel} 합계 순위`}
         entries={authorRankingByTotal}
         valueFormatter={(entry) => formatDays(entry.total)}
-        emptyText="생성자 데이터가 없습니다."
+        emptyText="작성자 데이터가 없습니다."
       />
       <RankingCard
-        title="생성자 건수 순위"
+        title="작성자 건수 순위"
         entries={authorRankingByCount}
         valueFormatter={(entry) => formatCount(entry.count)}
-        emptyText="생성자 데이터가 없습니다."
+        emptyText="작성자 데이터가 없습니다."
       />
       <RankingCard
         title={`리뷰어 ${metricLabel} 합계 순위`}
@@ -1275,7 +1357,7 @@ function PullRequestList({
   const filterControls = (
     <div className="flex flex-wrap gap-4">
       <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-        생성자 필터
+        작성자 필터
         <select
           className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           value={authorFilter}
@@ -1333,6 +1415,7 @@ function PullRequestList({
           activityItem.businessDaysIdle = item.inactivityDays ?? null;
         }
         activityItem.linkedIssues = item.linkedIssues ?? [];
+        applyAttentionFlagsFromMap(attentionFlagMap, activityItem, item.id);
         const reviewWaitDetails = reviewWaitMap.get(item.id) ?? [];
         if (reviewWaitDetails.length) {
           activityItem.reviewRequestWaits =
@@ -1356,6 +1439,7 @@ function PullRequestList({
 
         const detail = detailMap[item.id] ?? undefined;
         const overlayItem = detail?.item ?? activityItem;
+        const displayItem = overlayItem;
         const iconInfo = resolveActivityIcon(overlayItem);
         const referenceLabel = buildReferenceLabel(
           item.repository,
@@ -1363,7 +1447,9 @@ function PullRequestList({
         );
         const isSelected = openItemId === item.id;
         const isDetailLoading = loadingDetailIds.has(item.id);
-        const badges = [showUpdated ? "업데이트 없는 PR" : "오래된 PR"];
+        const badges = buildAttentionBadges(displayItem, {
+          useMentionAi: true,
+        });
         const metrics = buildActivityMetricEntries(activityItem);
         const updatedRelativeLabel = item.updatedAt
           ? formatRelative(item.updatedAt)
@@ -1399,6 +1485,15 @@ function PullRequestList({
               {item.reviewers.length > 0 && (
                 <span>리뷰어 {formatUserList(item.reviewers)}</span>
               )}
+              {renderAttentionBadgeElements(badges, item.id)}
+              {(displayItem.labels ?? []).slice(0, 2).map((label) => (
+                <span
+                  key={label.key}
+                  className="rounded-md bg-muted px-2 py-0.5"
+                >
+                  {label.name ?? label.key}
+                </span>
+              ))}
             </div>
             {referenceLine}
           </div>
@@ -1506,6 +1601,7 @@ function ReviewRequestList({
   emptyText,
   reviewWaitMap,
   mentionWaitMap,
+  attentionFlagMap,
   timezone,
   dateTimeFormat,
   segmented = false,
@@ -1514,12 +1610,14 @@ function ReviewRequestList({
   emptyText: string;
   reviewWaitMap: Map<string, ReviewRequestAttentionItem[]>;
   mentionWaitMap: Map<string, MentionAttentionItem[]>;
+  attentionFlagMap: Map<string, Partial<ActivityItem["attention"]>>;
   timezone: string;
   dateTimeFormat: DateTimeDisplayFormat;
   segmented?: boolean;
 }) {
   const [authorFilter, setAuthorFilter] = useState("all");
   const [reviewerFilter, setReviewerFilter] = useState("all");
+  const prefetchedIdsRef = useRef<Set<string>>(new Set());
   const trimmedTimezone = timezone.trim();
   const timezoneTitle = trimmedTimezone.length ? trimmedTimezone : undefined;
 
@@ -1660,8 +1758,26 @@ function ReviewRequestList({
   const hasReviewerFilter = reviewerOptions.length > 0;
   const metricLabel = "대기일수";
 
-  const { openItemId, detailMap, loadingDetailIds, selectItem, closeItem } =
-    useActivityDetailState();
+  const {
+    openItemId,
+    detailMap,
+    loadingDetailIds,
+    selectItem,
+    closeItem,
+    loadDetail,
+  } = useActivityDetailState();
+
+  useEffect(() => {
+    sortedItems.forEach(({ selectionId, representative }) => {
+      const pullRequestId = (representative.pullRequest.id ?? "").trim();
+      const resolvedId = pullRequestId.length ? pullRequestId : selectionId;
+      if (!resolvedId || prefetchedIdsRef.current.has(resolvedId)) {
+        return;
+      }
+      prefetchedIdsRef.current.add(resolvedId);
+      void loadDetail(resolvedId);
+    });
+  }, [sortedItems, loadDetail]);
 
   if (!items.length && !segmented) {
     return <p className="text-sm text-muted-foreground">{emptyText}</p>;
@@ -1670,16 +1786,16 @@ function ReviewRequestList({
   const rankingGrid = (
     <div className="grid gap-4 md:grid-cols-2">
       <RankingCard
-        title={`생성자 ${metricLabel} 합계 순위`}
+        title={`작성자 ${metricLabel} 합계 순위`}
         entries={authorRankingByTotal}
         valueFormatter={(entry) => formatDays(entry.total)}
-        emptyText="생성자 데이터가 없습니다."
+        emptyText="작성자 데이터가 없습니다."
       />
       <RankingCard
-        title="생성자 건수 순위"
+        title="작성자 건수 순위"
         entries={authorRankingByCount}
         valueFormatter={(entry) => formatCount(entry.count)}
-        emptyText="생성자 데이터가 없습니다."
+        emptyText="작성자 데이터가 없습니다."
       />
       <RankingCard
         title={`리뷰어 ${metricLabel} 합계 순위`}
@@ -1699,7 +1815,7 @@ function ReviewRequestList({
   const filterControls = (
     <div className="flex flex-wrap gap-4">
       <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-        생성자 필터
+        작성자 필터
         <select
           className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           value={authorFilter}
@@ -1757,6 +1873,12 @@ function ReviewRequestList({
           activityItem.businessDaysIdle =
             item.pullRequestInactivityDays ?? item.waitingDays ?? null;
           activityItem.linkedIssues = pullRequest.linkedIssues ?? [];
+          applyAttentionFlagsFromMap(
+            attentionFlagMap,
+            activityItem,
+            pullRequestId || resolvedSelectionId,
+            item.id,
+          );
           const reviewWaitDetails =
             (pullRequestId.length
               ? reviewWaitMap.get(pullRequestId)
@@ -1775,6 +1897,7 @@ function ReviewRequestList({
 
           const detail = detailMap[resolvedSelectionId] ?? undefined;
           const overlayItem = detail?.item ?? activityItem;
+          const displayItem = overlayItem;
           const iconInfo = resolveActivityIcon(overlayItem);
           const referenceLabel = buildReferenceLabel(
             pullRequest.repository,
@@ -1782,7 +1905,9 @@ function ReviewRequestList({
           );
           const isSelected = openItemId === resolvedSelectionId;
           const isDetailLoading = loadingDetailIds.has(resolvedSelectionId);
-          const badges = ["응답 없는 리뷰 요청"];
+          const badges = buildAttentionBadges(displayItem, {
+            useMentionAi: true,
+          });
           const metrics = buildActivityMetricEntries(activityItem);
           const linkedIssuesInline =
             activityItem.linkedIssues.length > 0
@@ -1817,8 +1942,17 @@ function ReviewRequestList({
                   <span key={metric.key}>{metric.content}</span>
                 ))}
                 {pullRequest.author && (
-                  <span>생성자 {formatUser(pullRequest.author)}</span>
+                  <span>작성자 {formatUser(pullRequest.author)}</span>
                 )}
+                {renderAttentionBadgeElements(badges, resolvedSelectionId)}
+                {(displayItem.labels ?? []).slice(0, 2).map((label) => (
+                  <span
+                    key={label.key}
+                    className="rounded-md bg-muted px-2 py-0.5"
+                  >
+                    {label.name ?? label.key}
+                  </span>
+                ))}
               </div>
               {referenceLine}
             </div>
@@ -1931,6 +2065,7 @@ function IssueList({
   metricKey = "ageDays",
   metricLabel = "경과일수",
   mentionWaitMap,
+  attentionFlagMap,
   timezone,
   dateTimeFormat,
   segmented = false,
@@ -1941,6 +2076,7 @@ function IssueList({
   metricKey?: "ageDays" | "inProgressAgeDays";
   metricLabel?: string;
   mentionWaitMap: Map<string, MentionAttentionItem[]>;
+  attentionFlagMap: Map<string, Partial<ActivityItem["attention"]>>;
   timezone: string;
   dateTimeFormat: DateTimeDisplayFormat;
   segmented?: boolean;
@@ -1955,6 +2091,7 @@ function IssueList({
   >(() => new Set<string>());
   const trimmedTimezone = timezone.trim();
   const timezoneTitle = trimmedTimezone.length ? trimmedTimezone : undefined;
+  const prefetchedIdsRef = useRef<Set<string>>(new Set());
 
   const aggregation = useMemo(() => {
     const authorMap = new Map<string, RankingEntry>();
@@ -2058,7 +2195,19 @@ function IssueList({
     selectItem,
     closeItem,
     updateDetailItem,
+    loadDetail,
   } = useActivityDetailState();
+
+  useEffect(() => {
+    sortedItems.forEach((item) => {
+      const id = item.id;
+      if (!id || prefetchedIdsRef.current.has(id)) {
+        return;
+      }
+      prefetchedIdsRef.current.add(id);
+      void loadDetail(id);
+    });
+  }, [sortedItems, loadDetail]);
 
   const handleUpdateIssueStatus = useCallback(
     async (activityItem: ActivityItem, nextStatus: IssueProjectStatus) => {
@@ -2277,16 +2426,16 @@ function IssueList({
   const rankingGrid = (
     <div className="grid gap-4 md:grid-cols-2">
       <RankingCard
-        title={`생성자 ${metricLabel} 합계 순위`}
+        title={`작성자 ${metricLabel} 합계 순위`}
         entries={authorRankingByTotal}
         valueFormatter={(entry) => formatDays(entry.total)}
-        emptyText="생성자 데이터가 없습니다."
+        emptyText="작성자 데이터가 없습니다."
       />
       <RankingCard
-        title="생성자 건수 순위"
+        title="작성자 건수 순위"
         entries={authorRankingByCount}
         valueFormatter={(entry) => formatCount(entry.count)}
-        emptyText="생성자 데이터가 없습니다."
+        emptyText="작성자 데이터가 없습니다."
       />
       <RankingCard
         title={`담당자 ${metricLabel} 합계 순위`}
@@ -2306,7 +2455,7 @@ function IssueList({
   const filterControls = (
     <div className="flex flex-wrap gap-4">
       <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-        생성자 필터
+        작성자 필터
         <select
           className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           value={authorFilter}
@@ -2358,7 +2507,9 @@ function IssueList({
         });
         activityItem.assignees = toActivityUsers(item.assignees);
         activityItem.linkedPullRequests = item.linkedPullRequests ?? [];
+        activityItem.labels = item.labels ?? [];
         activityItem.businessDaysOpen = item.ageDays ?? null;
+        activityItem.businessDaysIdle = item.inactivityDays ?? null;
         if (item.inProgressAgeDays !== undefined) {
           activityItem.businessDaysSinceInProgress =
             item.inProgressAgeDays ?? null;
@@ -2395,9 +2546,11 @@ function IssueList({
         if (mentionDetails.length) {
           activityItem.mentionWaits = toActivityMentionWaits(mentionDetails);
         }
+        applyAttentionFlagsFromMap(attentionFlagMap, activityItem, item.id);
 
         const detail = detailMap[item.id] ?? undefined;
         const overlayItem = detail?.item ?? activityItem;
+        const displayItem = overlayItem;
         const iconInfo = resolveActivityIcon(overlayItem);
         const referenceLabel = buildReferenceLabel(
           item.repository,
@@ -2405,11 +2558,9 @@ function IssueList({
         );
         const isSelected = openItemId === item.id;
         const isDetailLoading = loadingDetailIds.has(item.id);
-        const badges = [
-          highlightInProgress
-            ? "정체된 In Progress 이슈"
-            : "정체된 Backlog 이슈",
-        ];
+        const badges = buildAttentionBadges(displayItem, {
+          useMentionAi: true,
+        });
         const metrics = buildActivityMetricEntries(activityItem);
         const updatedRelativeLabel = item.updatedAt
           ? formatRelative(item.updatedAt)
@@ -2417,7 +2568,6 @@ function IssueList({
         const updatedAbsoluteLabel = item.updatedAt
           ? formatTimestamp(item.updatedAt, timezone, dateTimeFormat)
           : "-";
-        const displayItem = overlayItem;
         const linkedPullRequestsInline =
           displayItem.linkedPullRequests.length > 0
             ? renderLinkedReferenceInline({
@@ -2450,7 +2600,7 @@ function IssueList({
               {metrics.map((metric) => (
                 <span key={metric.key}>{metric.content}</span>
               ))}
-              {item.author && <span>생성자 {formatUser(item.author)}</span>}
+              {item.author && <span>작성자 {formatUser(item.author)}</span>}
               {item.assignees.length > 0 && (
                 <span>담당자 {formatUserList(item.assignees)}</span>
               )}
@@ -2464,6 +2614,15 @@ function IssueList({
                   {todoPriorityLabel}
                 </span>
               ) : null}
+              {renderAttentionBadgeElements(badges, item.id)}
+              {(displayItem.labels ?? []).slice(0, 2).map((label) => (
+                <span
+                  key={label.key}
+                  className="rounded-md bg-muted px-2 py-0.5"
+                >
+                  {label.name ?? label.key}
+                </span>
+              ))}
             </div>
             {referenceLine}
           </div>
@@ -2577,6 +2736,8 @@ function MentionList({
   setPendingOverrideKey,
   onOverrideSuccess,
   mentionWaitMap,
+  attentionFlagMap,
+  issueProjectInfoMap,
 }: {
   items: MentionAttentionItem[];
   emptyText: string;
@@ -2599,9 +2760,24 @@ function MentionList({
     };
   }) => void;
   mentionWaitMap: Map<string, MentionAttentionItem[]>;
+  attentionFlagMap: Map<string, Partial<ActivityItem["attention"]>>;
+  issueProjectInfoMap: Map<
+    string,
+    {
+      issueProjectStatus: IssueProjectStatus | null;
+      issueProjectStatusSource: ActivityItem["issueProjectStatusSource"];
+      issueProjectStatusLocked: boolean;
+      issueTodoProjectStatus: IssueProjectStatus | null;
+      issueTodoProjectPriority: string | null;
+      issueTodoProjectWeight: string | null;
+      issueTodoProjectInitiationOptions: string | null;
+      issueTodoProjectStartDate: string | null;
+    }
+  >;
 }) {
   const [targetFilter, setTargetFilter] = useState("all");
   const [authorFilter, setAuthorFilter] = useState("all");
+  const prefetchedIdsRef = useRef<Set<string>>(new Set());
   const trimmedTimezone = timezone.trim();
   const timezoneTitle = trimmedTimezone.length ? trimmedTimezone : undefined;
 
@@ -2738,7 +2914,18 @@ function MentionList({
     selectItem,
     closeItem,
     updateDetailItem,
+    loadDetail,
   } = useActivityDetailState();
+
+  useEffect(() => {
+    aggregatedItems.forEach(({ selectionId }) => {
+      if (!selectionId || prefetchedIdsRef.current.has(selectionId)) {
+        return;
+      }
+      prefetchedIdsRef.current.add(selectionId);
+      void loadDetail(selectionId);
+    });
+  }, [aggregatedItems, loadDetail]);
 
   if (!aggregatedItems.length && !segmented) {
     return <p className="text-sm text-muted-foreground">{emptyText}</p>;
@@ -2828,6 +3015,54 @@ function MentionList({
           author: item.author,
           attention: { unansweredMention: true },
         });
+        if (activityType === "issue") {
+          const projectKey =
+            containerId && containerId.length > 0 ? containerId : selectionId;
+          const fallbackProjectInfo =
+            item.issueProjectStatus !== undefined ||
+            item.issueProjectStatusSource !== undefined ||
+            item.issueProjectStatusLocked !== undefined ||
+            item.issueTodoProjectStatus !== undefined ||
+            item.issueTodoProjectPriority !== undefined ||
+            item.issueTodoProjectWeight !== undefined ||
+            item.issueTodoProjectInitiationOptions !== undefined ||
+            item.issueTodoProjectStartDate !== undefined
+              ? {
+                  issueProjectStatus: item.issueProjectStatus ?? null,
+                  issueProjectStatusSource:
+                    item.issueProjectStatusSource ?? "none",
+                  issueProjectStatusLocked:
+                    item.issueProjectStatusLocked ?? false,
+                  issueTodoProjectStatus: item.issueTodoProjectStatus ?? null,
+                  issueTodoProjectPriority:
+                    item.issueTodoProjectPriority ?? null,
+                  issueTodoProjectWeight: item.issueTodoProjectWeight ?? null,
+                  issueTodoProjectInitiationOptions:
+                    item.issueTodoProjectInitiationOptions ?? null,
+                  issueTodoProjectStartDate:
+                    item.issueTodoProjectStartDate ?? null,
+                }
+              : null;
+          const projectInfo =
+            issueProjectInfoMap.get(projectKey) ?? fallbackProjectInfo;
+          if (projectInfo) {
+            activityItem.issueProjectStatus = projectInfo.issueProjectStatus;
+            activityItem.issueProjectStatusSource =
+              projectInfo.issueProjectStatusSource ?? "none";
+            activityItem.issueProjectStatusLocked =
+              projectInfo.issueProjectStatusLocked;
+            activityItem.issueTodoProjectStatus =
+              projectInfo.issueTodoProjectStatus;
+            activityItem.issueTodoProjectPriority =
+              projectInfo.issueTodoProjectPriority;
+            activityItem.issueTodoProjectWeight =
+              projectInfo.issueTodoProjectWeight;
+            activityItem.issueTodoProjectInitiationOptions =
+              projectInfo.issueTodoProjectInitiationOptions;
+            activityItem.issueTodoProjectStartDate =
+              projectInfo.issueTodoProjectStartDate;
+          }
+        }
         activityItem.businessDaysOpen = item.waitingDays ?? null;
         activityItem.businessDaysIdle = item.waitingDays ?? null;
         const mentionDetails =
@@ -2835,9 +3070,16 @@ function MentionList({
             ? mentionWaitMap.get(containerId)
             : undefined) ?? mentions;
         activityItem.mentionWaits = toActivityMentionWaits(mentionDetails);
+        applyAttentionFlagsFromMap(
+          attentionFlagMap,
+          activityItem,
+          containerId ?? null,
+          selectionId,
+        );
 
         const detail = detailMap[selectionId] ?? undefined;
         const overlayItem = detail?.item ?? activityItem;
+        const displayItem = overlayItem;
         const iconInfo = resolveActivityIcon(overlayItem);
         const referenceLabel = `${buildReferenceLabel(
           item.container.repository,
@@ -2845,6 +3087,9 @@ function MentionList({
         )} 코멘트`;
         const isSelected = openItemId === selectionId;
         const isDetailLoading = loadingDetailIds.has(selectionId);
+        const badges = buildAttentionBadges(displayItem, {
+          useMentionAi: true,
+        });
         const metrics = buildActivityMetricEntries(activityItem);
         const updatedRelativeLabel = item.mentionedAt
           ? formatRelative(item.mentionedAt)
@@ -2852,6 +3097,16 @@ function MentionList({
         const updatedAbsoluteLabel = item.mentionedAt
           ? formatTimestamp(item.mentionedAt, timezone, dateTimeFormat)
           : "-";
+        const displayStatusValue =
+          displayItem.issueProjectStatus ?? "no_status";
+        const displayStatusLabel =
+          displayStatusValue !== "no_status"
+            ? (ISSUE_STATUS_LABEL_MAP.get(displayStatusValue) ??
+              displayStatusValue)
+            : null;
+        const todoPriorityLabel = formatProjectField(
+          displayItem.issueTodoProjectPriority,
+        );
         const metadata = (
           <div className="flex flex-col gap-2 text-xs text-foreground/90">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -2860,6 +3115,25 @@ function MentionList({
               ))}
               {item.target && <span>멘션 대상 {formatUser(item.target)}</span>}
               {item.author && <span>요청자 {formatUser(item.author)}</span>}
+              {displayItem.type === "issue" && displayStatusLabel ? (
+                <span className={PROJECT_FIELD_BADGE_CLASS}>
+                  {displayStatusLabel}
+                </span>
+              ) : null}
+              {displayItem.type === "issue" && todoPriorityLabel !== "-" ? (
+                <span className={PROJECT_FIELD_BADGE_CLASS}>
+                  {todoPriorityLabel}
+                </span>
+              ) : null}
+              {renderAttentionBadgeElements(badges, selectionId)}
+              {(displayItem.labels ?? []).slice(0, 2).map((label) => (
+                <span
+                  key={label.key}
+                  className="rounded-md bg-muted px-2 py-0.5"
+                >
+                  {label.name ?? label.key}
+                </span>
+              ))}
             </div>
             {item.commentExcerpt ? (
               <div className="text-muted-foreground/70">
@@ -2875,11 +3149,6 @@ function MentionList({
           primaryMention?.user?.id ?? primaryMention?.userId ?? null;
         const mentionSuppressed =
           primaryMention?.manualRequiresResponse === false;
-
-        const badges = ["응답 없는 멘션"];
-        if (mentionSuppressed) {
-          badges.push("응답 요구가 아님");
-        }
 
         const handleMentionToggle = async (
           nextState: "suppress" | "force" | "clear",
@@ -3234,6 +3503,117 @@ export function AttentionView({
     return map;
   }, [insights.unansweredMentions]);
 
+  const attentionFlagMap = useMemo(() => {
+    const map = new Map<string, Partial<ActivityItem["attention"]>>();
+    const merge = (
+      id: string | null | undefined,
+      patch: Partial<ActivityItem["attention"]>,
+    ) => {
+      if (!id) {
+        return;
+      }
+      const existing = map.get(id);
+      map.set(id, existing ? { ...existing, ...patch } : { ...patch });
+    };
+
+    insights.staleOpenPrs.forEach((item) => {
+      merge(item.id, { staleOpenPr: true });
+    });
+    insights.idleOpenPrs.forEach((item) => {
+      merge(item.id, { idlePr: true });
+    });
+    insights.stuckReviewRequests.forEach((item) => {
+      const prId = item.pullRequest.id;
+      merge(prId ?? item.id, { reviewRequestPending: true });
+    });
+    insights.backlogIssues.forEach((item) => {
+      merge(item.id, { backlogIssue: true });
+    });
+    insights.stalledInProgressIssues.forEach((item) => {
+      merge(item.id, { stalledIssue: true });
+    });
+    insights.unansweredMentions.forEach((item) => {
+      merge(item.container.id, { unansweredMention: true });
+    });
+
+    return map;
+  }, [
+    insights.backlogIssues,
+    insights.idleOpenPrs,
+    insights.staleOpenPrs,
+    insights.stalledInProgressIssues,
+    insights.stuckReviewRequests,
+    insights.unansweredMentions,
+  ]);
+
+  const issueProjectInfoMap = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        issueProjectStatus: IssueProjectStatus | null;
+        issueProjectStatusSource: ActivityItem["issueProjectStatusSource"];
+        issueProjectStatusLocked: boolean;
+        issueTodoProjectStatus: IssueProjectStatus | null;
+        issueTodoProjectPriority: string | null;
+        issueTodoProjectWeight: string | null;
+        issueTodoProjectInitiationOptions: string | null;
+        issueTodoProjectStartDate: string | null;
+      }
+    >();
+    const store = (item: IssueAttentionItem) => {
+      map.set(item.id, {
+        issueProjectStatus: item.issueProjectStatus ?? null,
+        issueProjectStatusSource: item.issueProjectStatusSource ?? "none",
+        issueProjectStatusLocked: item.issueProjectStatusLocked ?? false,
+        issueTodoProjectStatus: item.issueTodoProjectStatus ?? null,
+        issueTodoProjectPriority: item.issueTodoProjectPriority ?? null,
+        issueTodoProjectWeight: item.issueTodoProjectWeight ?? null,
+        issueTodoProjectInitiationOptions:
+          item.issueTodoProjectInitiationOptions ?? null,
+        issueTodoProjectStartDate: item.issueTodoProjectStartDate ?? null,
+      });
+    };
+    insights.backlogIssues.forEach(store);
+    insights.stalledInProgressIssues.forEach(store);
+    insights.unansweredMentions.forEach((mention) => {
+      if (mention.container.type !== "issue") {
+        return;
+      }
+      const id = mention.container.id;
+      if (!id || map.has(id)) {
+        return;
+      }
+      const hasProjectInfo =
+        mention.issueProjectStatus !== undefined ||
+        mention.issueProjectStatusSource !== undefined ||
+        mention.issueProjectStatusLocked !== undefined ||
+        mention.issueTodoProjectStatus !== undefined ||
+        mention.issueTodoProjectPriority !== undefined ||
+        mention.issueTodoProjectWeight !== undefined ||
+        mention.issueTodoProjectInitiationOptions !== undefined ||
+        mention.issueTodoProjectStartDate !== undefined;
+      if (!hasProjectInfo) {
+        return;
+      }
+      map.set(id, {
+        issueProjectStatus: mention.issueProjectStatus ?? null,
+        issueProjectStatusSource: mention.issueProjectStatusSource ?? "none",
+        issueProjectStatusLocked: mention.issueProjectStatusLocked ?? false,
+        issueTodoProjectStatus: mention.issueTodoProjectStatus ?? null,
+        issueTodoProjectPriority: mention.issueTodoProjectPriority ?? null,
+        issueTodoProjectWeight: mention.issueTodoProjectWeight ?? null,
+        issueTodoProjectInitiationOptions:
+          mention.issueTodoProjectInitiationOptions ?? null,
+        issueTodoProjectStartDate: mention.issueTodoProjectStartDate ?? null,
+      });
+    });
+    return map;
+  }, [
+    insights.backlogIssues,
+    insights.stalledInProgressIssues,
+    insights.unansweredMentions,
+  ]);
+
   const handleRefresh = () => {
     startTransition(() => {
       router.refresh();
@@ -3254,6 +3634,7 @@ export function AttentionView({
           emptyText="현재 조건을 만족하는 이슈가 없습니다."
           metricLabel="경과일수"
           mentionWaitMap={mentionWaitMap}
+          attentionFlagMap={attentionFlagMap}
           timezone={insights.timezone}
           dateTimeFormat={insights.dateTimeFormat}
           segmented
@@ -3275,6 +3656,7 @@ export function AttentionView({
           metricKey="inProgressAgeDays"
           metricLabel="In Progress 경과일수"
           mentionWaitMap={mentionWaitMap}
+          attentionFlagMap={attentionFlagMap}
           timezone={insights.timezone}
           dateTimeFormat={insights.dateTimeFormat}
           segmented
@@ -3294,6 +3676,7 @@ export function AttentionView({
           emptyText="현재 조건을 만족하는 PR이 없습니다."
           reviewWaitMap={reviewWaitMap}
           mentionWaitMap={mentionWaitMap}
+          attentionFlagMap={attentionFlagMap}
           timezone={insights.timezone}
           dateTimeFormat={insights.dateTimeFormat}
           segmented
@@ -3316,6 +3699,7 @@ export function AttentionView({
           metricLabel="미업데이트 경과일수"
           reviewWaitMap={reviewWaitMap}
           mentionWaitMap={mentionWaitMap}
+          attentionFlagMap={attentionFlagMap}
           timezone={insights.timezone}
           dateTimeFormat={insights.dateTimeFormat}
           segmented
@@ -3336,6 +3720,7 @@ export function AttentionView({
           emptyText="현재 조건을 만족하는 리뷰 요청이 없습니다."
           reviewWaitMap={reviewWaitMap}
           mentionWaitMap={mentionWaitMap}
+          attentionFlagMap={attentionFlagMap}
           timezone={insights.timezone}
           dateTimeFormat={insights.dateTimeFormat}
           segmented
@@ -3362,6 +3747,8 @@ export function AttentionView({
           setPendingOverrideKey={setPendingMentionOverrideKey}
           onOverrideSuccess={handleMentionOverrideSuccess}
           mentionWaitMap={mentionWaitMap}
+          issueProjectInfoMap={issueProjectInfoMap}
+          attentionFlagMap={attentionFlagMap}
         />
       ),
     },

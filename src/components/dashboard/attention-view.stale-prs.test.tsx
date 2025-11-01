@@ -135,7 +135,7 @@ describe("AttentionView stale pull requests", () => {
     render(<AttentionView insights={insights} />);
 
     expect(
-      screen.getByText("최다 생성자: 1위 Alice, 2위 Bob"),
+      screen.getByText("최다 작성자: 1위 Alice, 2위 Bob"),
     ).toBeInTheDocument();
     expect(
       screen.getByText("최다 리뷰어: 1위 Bob, 2위 Carol"),
@@ -177,9 +177,9 @@ describe("AttentionView stale pull requests", () => {
       within(secondPrItem).getByText("리뷰어 Carol (@carol)"),
     ).toBeInTheDocument();
 
-    expect(screen.getByText("생성자 경과일수 합계 순위")).toBeInTheDocument();
+    expect(screen.getByText("작성자 경과일수 합계 순위")).toBeInTheDocument();
 
-    const authorFilter = screen.getByLabelText("생성자 필터");
+    const authorFilter = screen.getByLabelText("작성자 필터");
     await user.selectOptions(authorFilter, "user-bob");
 
     expect(screen.getByText("Fix caching logic")).toBeInTheDocument();
@@ -225,7 +225,7 @@ describe("AttentionView stale pull requests", () => {
 
     expect(screen.getAllByText("0건").length).toBeGreaterThan(0);
     expect(screen.getAllByText("0일").length).toBeGreaterThan(0);
-    expect(screen.queryByText(/최다 생성자:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/최다 작성자:/)).not.toBeInTheDocument();
 
     const staleButton = screen.getByRole("button", { name: /오래된 PR/ });
     await user.click(staleButton);
@@ -233,11 +233,11 @@ describe("AttentionView stale pull requests", () => {
     expect(
       screen.getByText("현재 조건을 만족하는 PR이 없습니다."),
     ).toBeInTheDocument();
-    expect(screen.getByText("생성자 경과일수 합계 순위")).toBeInTheDocument();
+    expect(screen.getByText("작성자 경과일수 합계 순위")).toBeInTheDocument();
     expect(
-      screen.getAllByText("생성자 데이터가 없습니다.").length,
+      screen.getAllByText("작성자 데이터가 없습니다.").length,
     ).toBeGreaterThan(0);
-    expect(screen.getByLabelText("생성자 필터")).toBeInTheDocument();
+    expect(screen.getByLabelText("작성자 필터")).toBeInTheDocument();
     expect(screen.queryByLabelText("리뷰어 필터")).not.toBeInTheDocument();
   });
 });
