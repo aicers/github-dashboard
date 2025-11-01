@@ -44,6 +44,7 @@ export type ActivityFilterState = {
   optionalPersonIds: OptionalPeopleMap;
   taskMode: ActivityTaskMode | null;
   useMentionAi: boolean;
+  ignoredSyncRoles: PeopleRoleKey[];
 };
 
 export const DEFAULT_THRESHOLD_VALUES: Required<ActivityThresholds> = {
@@ -120,6 +121,7 @@ export function buildFilterState(
     taskMode: params.taskMode ?? null,
     useMentionAi: params.useMentionAi ?? true,
     optionalPersonIds,
+    ignoredSyncRoles: [],
   };
 }
 
