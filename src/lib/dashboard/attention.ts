@@ -2081,8 +2081,7 @@ async function fetchUnansweredMentions(
       issueTodoProjectStatus: item.issueTodoProjectStatus,
       issueTodoProjectPriority: item.issueTodoProjectPriority,
       issueTodoProjectWeight: item.issueTodoProjectWeight,
-      issueTodoProjectInitiationOptions:
-        item.issueTodoProjectInitiationOptions,
+      issueTodoProjectInitiationOptions: item.issueTodoProjectInitiationOptions,
       issueTodoProjectStartDate: item.issueTodoProjectStartDate,
       classification: record
         ? {

@@ -286,28 +286,25 @@ describe("AttentionView unanswered mentions", () => {
 
     expect(within(primaryItem).getByText("Idle 11일")).toBeInTheDocument();
     expect(
-      within(primaryItem).getByText("멘션 대상 Bob (@bob)"),
-    ).toBeInTheDocument();
-    expect(
       within(primaryItem).getByText("요청자 Alice (@alice)"),
     ).toBeInTheDocument();
     expect(
-      within(primaryItem).getByText("Mention bob 11일, bob 4일"),
+      within(primaryItem).getByText("@bob 11일, @bob 4일"),
     ).toBeInTheDocument();
 
     expect(within(issueItem).getByText("Idle 9일")).toBeInTheDocument();
     expect(
-      within(issueItem).getByText("Mention carol 9일"),
+      within(issueItem).getByText("@carol 9일"),
     ).toBeInTheDocument();
 
     expect(within(discussionItem).getByText("Idle 7일")).toBeInTheDocument();
     expect(
-      within(discussionItem).getByText("Mention bob 7일"),
+      within(discussionItem).getByText("@bob 7일"),
     ).toBeInTheDocument();
 
     expect(within(secondaryItem).getByText("Idle 6일")).toBeInTheDocument();
     expect(
-      within(secondaryItem).getByText("Mention bob 6일"),
+      within(secondaryItem).getByText("@bob 6일"),
     ).toBeInTheDocument();
 
     expect(screen.getAllByText("acme/github-dashboard#58 코멘트").length).toBe(

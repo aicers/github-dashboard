@@ -414,9 +414,8 @@ export function buildActivityMetricEntries(
   if (item.reviewRequestWaits?.length) {
     const reviewWaits = sortByBusinessDays(item.reviewRequestWaits);
     const parts = reviewWaits.map((wait) => {
-      const handle = formatUserHandle(wait.reviewer) ?? "-";
       const waitLabel = differenceLabel(wait.businessDaysWaiting, "일") ?? "-";
-      return `${handle} ${waitLabel}`;
+      return waitLabel;
     });
     metrics.push({
       key: "review",
@@ -427,14 +426,18 @@ export function buildActivityMetricEntries(
   if (item.mentionWaits?.length) {
     const mentionWaits = sortByBusinessDays(item.mentionWaits);
     const parts = mentionWaits.map((wait) => {
-      const handle =
-        formatUserHandle(wait.user) ?? (wait.userId ? `@${wait.userId}` : "-");
+      const normalizedHandle = formatUserHandle(wait.user);
+      const handle = normalizedHandle
+        ? `@${normalizedHandle}`
+        : wait.userId
+          ? `@${wait.userId}`
+          : "-";
       const waitLabel = differenceLabel(wait.businessDaysWaiting, "일") ?? "-";
       return `${handle} ${waitLabel}`;
     });
     metrics.push({
       key: "mention",
-      content: <>Mention {parts.join(", ")}</>,
+      content: <>{parts.join(", ")}</>,
     });
   }
 
