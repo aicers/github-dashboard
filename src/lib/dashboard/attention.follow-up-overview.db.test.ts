@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { refreshActivityItemsSnapshot } from "@/lib/activity/snapshot";
 import {
   getAttentionInsights,
   type ReviewRequestAttentionItem,
@@ -443,6 +444,8 @@ describe("follow-up overview summaries (db)", () => {
         rawResponse: { from: "test" },
       });
     }
+
+    await refreshActivityItemsSnapshot({ truncate: true });
 
     const insights = await getAttentionInsights();
 

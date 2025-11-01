@@ -12,6 +12,7 @@ import {
   vi,
 } from "vitest";
 
+import { refreshActivityItemsSnapshot } from "@/lib/activity/snapshot";
 import { getAttentionInsights } from "@/lib/dashboard/attention";
 import { differenceInBusinessDays } from "@/lib/dashboard/business-days";
 import { ensureSchema } from "@/lib/db";
@@ -165,6 +166,8 @@ describe.sequential("attention insights for idle pull requests", () => {
       await upsertReviewRequest(request);
     }
     await upsertReview(submittedReview);
+
+    await refreshActivityItemsSnapshot({ truncate: true });
 
     const insights = await getAttentionInsights();
     expect(insights.timezone).toBe("Asia/Seoul");
