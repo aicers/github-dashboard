@@ -3113,7 +3113,6 @@ function MentionList({
               {metrics.map((metric) => (
                 <span key={metric.key}>{metric.content}</span>
               ))}
-              {item.target && <span>멘션 대상 {formatUser(item.target)}</span>}
               {item.author && <span>요청자 {formatUser(item.author)}</span>}
               {displayItem.type === "issue" && displayStatusLabel ? (
                 <span className={PROJECT_FIELD_BADGE_CLASS}>
