@@ -4,6 +4,7 @@ import "../../../tests/helpers/postgres-container";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { refreshActivityItemsSnapshot } from "@/lib/activity/snapshot";
 import { getAttentionInsights } from "@/lib/dashboard/attention";
 import {
   differenceInBusinessDays,
@@ -341,6 +342,8 @@ describe("attention insights for stuck review requests", () => {
       },
     } satisfies DbReaction;
     await upsertReaction(responseReaction);
+
+    await refreshActivityItemsSnapshot({ truncate: true });
 
     const insights = await getAttentionInsights();
 

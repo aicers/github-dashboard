@@ -6,6 +6,7 @@ import "../../../tests/helpers/postgres-container";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { refreshActivityItemsSnapshot } from "@/lib/activity/snapshot";
 import { getAttentionInsights } from "@/lib/dashboard/attention";
 import { differenceInBusinessDays } from "@/lib/dashboard/business-days";
 import { upsertMentionClassification } from "@/lib/dashboard/unanswered-mention-classifications";
@@ -529,6 +530,8 @@ describe("attention insights for unanswered mentions", () => {
       model: "test",
       rawResponse: { from: "test" },
     });
+
+    await refreshActivityItemsSnapshot({ truncate: true });
 
     const insights = await getAttentionInsights();
 

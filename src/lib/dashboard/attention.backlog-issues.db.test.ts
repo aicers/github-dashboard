@@ -4,6 +4,7 @@ import "../../../tests/helpers/postgres-container";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { refreshActivityItemsSnapshot } from "@/lib/activity/snapshot";
 import { getAttentionInsights } from "@/lib/dashboard/attention";
 import { ensureSchema } from "@/lib/db";
 import {
@@ -278,6 +279,8 @@ describe("attention insights for backlog issues", () => {
     ]) {
       await upsertIssue(issue);
     }
+
+    await refreshActivityItemsSnapshot({ truncate: true });
 
     const insights = await getAttentionInsights();
 

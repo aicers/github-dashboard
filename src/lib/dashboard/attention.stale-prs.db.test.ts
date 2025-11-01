@@ -4,6 +4,7 @@ import "../../../tests/helpers/postgres-container";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { refreshActivityItemsSnapshot } from "@/lib/activity/snapshot";
 import { getAttentionInsights } from "@/lib/dashboard/attention";
 import { differenceInBusinessDaysOrNull } from "@/lib/dashboard/business-days";
 import { ensureSchema } from "@/lib/db";
@@ -165,6 +166,8 @@ describe("attention insights for stale pull requests", () => {
       await upsertReviewRequest(request);
     }
     await upsertReview(submittedReview);
+
+    await refreshActivityItemsSnapshot({ truncate: true });
 
     const insights = await getAttentionInsights();
 

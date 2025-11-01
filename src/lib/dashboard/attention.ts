@@ -369,14 +369,14 @@ type IssueRow = {
   id: string;
   number: number;
   title: string | null;
-  repository_id: string;
+  repository_id: string | null;
   author_id: string | null;
-  github_created_at: string;
-  github_updated_at: string | null;
-  github_closed_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  closed_at: string | null;
   state: string | null;
   url: string | null;
-  data: unknown;
+  raw_data: unknown;
   repository_name: string | null;
   repository_name_with_owner: string | null;
 };
@@ -1390,27 +1390,27 @@ async function fetchIssueInsights(
 }> {
   const result = await query<IssueRow>(
     `SELECT
-       i.id,
-       i.number,
-       i.title,
-       i.repository_id,
-       i.author_id,
-       i.github_created_at,
-       i.github_updated_at,
-       i.github_closed_at,
-       i.state,
-       i.data,
-       i.data->>'url' AS url,
-       repo.name AS repository_name,
-       repo.name_with_owner AS repository_name_with_owner
-     FROM issues i
-     JOIN repositories repo ON repo.id = i.repository_id
-     WHERE i.github_closed_at IS NULL
-       AND i.github_created_at <= NOW() - INTERVAL '26 days'
-       AND LOWER(COALESCE(i.data->>'__typename', 'issue')) NOT IN ('discussion', 'teamdiscussion')
-       AND NOT (i.repository_id = ANY($1::text[]))
-       AND (i.author_id IS NULL OR NOT (i.author_id = ANY($2::text[])))
-     ORDER BY i.github_created_at ASC`,
+       items.id,
+       items.number,
+       items.title,
+       items.repository_id,
+       items.author_id,
+       items.created_at,
+       items.updated_at,
+       items.closed_at,
+       items.state,
+       items.url,
+       items.raw_data,
+       items.repository_name,
+       items.repository_name_with_owner
+     FROM activity_items AS items
+     WHERE items.item_type = 'issue'
+       AND items.status = 'open'
+       AND items.created_at <= NOW() - INTERVAL '26 days'
+       AND LOWER(COALESCE(items.raw_data->>'__typename', 'issue')) NOT IN ('discussion', 'teamdiscussion')
+       AND (items.repository_id IS NULL OR NOT (items.repository_id = ANY($1::text[])))
+       AND (items.author_id IS NULL OR NOT (items.author_id = ANY($2::text[])))
+     ORDER BY items.created_at ASC`,
     [excludedRepositoryIds, excludedUserIds],
   );
 
@@ -1423,7 +1423,7 @@ async function fetchIssueInsights(
   const stalledUserIds = new Set<string>();
 
   for (const row of result.rows) {
-    const raw = parseIssueRaw(row.data);
+    const raw = parseIssueRaw(row.raw_data);
     const activityEvents = activityHistory.get(row.id) ?? [];
     const statusInfo = resolveIssueStatusInfo(
       raw,
@@ -1431,6 +1431,9 @@ async function fetchIssueInsights(
       activityEvents,
     );
     const work = resolveWorkTimestamps(statusInfo);
+    if (!row.repository_id || !row.created_at) {
+      continue;
+    }
     const assigneeIds = extractAssigneeIds(raw).filter(
       (id) => !excludedUserIds.includes(id),
     );
@@ -1441,7 +1444,7 @@ async function fetchIssueInsights(
       : null;
     const inProgressAgeDays =
       typeof inProgressAgeRaw === "number" ? inProgressAgeRaw : null;
-    const ageDays = differenceInDays(row.github_created_at, now, holidays);
+    const ageDays = differenceInDays(row.created_at, now, holidays);
     const baseItem: IssueRawItem = {
       id: row.id,
       number: row.number,
@@ -1453,8 +1456,8 @@ async function fetchIssueInsights(
       authorId: row.author_id,
       assigneeIds,
       linkedPullRequests: [],
-      createdAt: row.github_created_at,
-      updatedAt: row.github_updated_at,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
       ageDays,
       startedAt,
       inProgressAgeDays,
@@ -1469,8 +1472,7 @@ async function fetchIssueInsights(
     };
 
     const isClosed =
-      (row.state && row.state.toLowerCase() === "closed") ||
-      row.github_closed_at;
+      (row.state && row.state.toLowerCase() === "closed") || row.closed_at;
 
     const displayStatus = statusInfo.displayStatus;
     const isBacklogStatus =
