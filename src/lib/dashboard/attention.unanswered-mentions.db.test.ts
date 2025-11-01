@@ -6,6 +6,7 @@ import "../../../tests/helpers/postgres-container";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { applyProjectFieldOverrides } from "@/lib/activity/project-field-store";
 import { refreshActivityItemsSnapshot } from "@/lib/activity/snapshot";
 import { getAttentionInsights } from "@/lib/dashboard/attention";
 import { differenceInBusinessDays } from "@/lib/dashboard/business-days";
@@ -249,6 +250,7 @@ describe("attention insights for unanswered mentions", () => {
       updatedAt: "2024-02-10T00:00:00.000Z",
     });
     await upsertIssue(mainIssue);
+    await applyProjectFieldOverrides(mainIssue.id, { priority: "p0" });
 
     const mainDiscussion = buildDiscussion({
       id: "discussion-main",
@@ -639,6 +641,7 @@ describe("attention insights for unanswered mentions", () => {
       },
     });
     expect(issueItem.commentExcerpt).toBe(expectedIssueExcerpt);
+    expect(issueItem.issueTodoProjectPriority).toBe("P0");
 
     expect(discussionItem.author).toEqual({
       id: alice.id,

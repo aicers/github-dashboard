@@ -4,6 +4,10 @@ import {
   getLinkedIssuesMap,
   getLinkedPullRequestsMap,
 } from "@/lib/activity/cache";
+import {
+  getProjectFieldOverrides,
+  type ProjectFieldOverrides,
+} from "@/lib/activity/project-field-store";
 import { getActivityStatusHistory } from "@/lib/activity/status-store";
 import {
   extractProjectStatusEntries,
@@ -893,6 +897,82 @@ function extractTodoProjectFieldValues(
   return result;
 }
 
+function normalizePriorityOverride(value: string | null | undefined) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed.length) {
+    return null;
+  }
+  const lowered = trimmed.toLowerCase();
+  if (lowered.startsWith("p0")) {
+    return "P0";
+  }
+  if (lowered.startsWith("p1")) {
+    return "P1";
+  }
+  if (lowered.startsWith("p2")) {
+    return "P2";
+  }
+  return trimmed;
+}
+
+function normalizeWeightOverride(value: string | null | undefined) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed.length) {
+    return null;
+  }
+  const lowered = trimmed.toLowerCase();
+  if (lowered.startsWith("heavy")) {
+    return "Heavy";
+  }
+  if (lowered.startsWith("medium")) {
+    return "Medium";
+  }
+  if (lowered.startsWith("light")) {
+    return "Light";
+  }
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+}
+
+type ProjectFieldOverrideTarget = {
+  issueProjectStatusLocked?: boolean | null;
+  issueTodoProjectPriority?: string | null;
+  issueTodoProjectWeight?: string | null;
+  issueTodoProjectInitiationOptions?: string | null;
+  issueTodoProjectStartDate?: string | null;
+};
+
+function applyProjectFieldOverridesToTarget(
+  target: ProjectFieldOverrideTarget,
+  overrides: ProjectFieldOverrides | undefined,
+) {
+  if (!overrides) {
+    return;
+  }
+  if (target.issueProjectStatusLocked) {
+    return;
+  }
+  const normalizedPriority = normalizePriorityOverride(overrides.priority);
+  if (normalizedPriority) {
+    target.issueTodoProjectPriority = normalizedPriority;
+  }
+  const normalizedWeight = normalizeWeightOverride(overrides.weight);
+  if (normalizedWeight) {
+    target.issueTodoProjectWeight = normalizedWeight;
+  }
+  if (overrides.initiationOptions) {
+    target.issueTodoProjectInitiationOptions = overrides.initiationOptions;
+  }
+  if (overrides.startDate) {
+    target.issueTodoProjectStartDate = overrides.startDate;
+  }
+}
+
 function resolveIssueProjectSnapshot(
   raw: IssueRaw | null,
   targetProject: string | null,
@@ -1478,7 +1558,10 @@ async function fetchIssueInsights(
   );
 
   const issueIds = result.rows.map((row) => row.id);
-  const activityHistory = await getActivityStatusHistory(issueIds);
+  const [activityHistory, projectOverrides] = await Promise.all([
+    getActivityStatusHistory(issueIds),
+    getProjectFieldOverrides(issueIds),
+  ]);
 
   const backlogItems: IssueRawItem[] = [];
   const backlogUserIds = new Set<string>();
@@ -1546,6 +1629,7 @@ async function fetchIssueInsights(
       issueTodoProjectInitiationOptions: projectSnapshot.initiationOptions,
       issueTodoProjectStartDate: projectSnapshot.startDate,
     };
+    applyProjectFieldOverridesToTarget(baseItem, projectOverrides.get(row.id));
 
     const isClosed =
       (row.state && row.state.toLowerCase() === "closed") || row.closed_at;
@@ -1750,11 +1834,19 @@ export async function fetchUnansweredMentionCandidates(
     mentionIssueSnapshotMap.set(row.id, row);
   });
 
-  const mentionActivityHistory: Awaited<
+  let mentionActivityHistory: Awaited<
     ReturnType<typeof getActivityStatusHistory>
-  > = mentionIssueIds.length
-    ? await getActivityStatusHistory(mentionIssueIds)
-    : new Map();
+  >;
+  let mentionProjectOverrides: Map<string, ProjectFieldOverrides>;
+  if (mentionIssueIds.length) {
+    [mentionActivityHistory, mentionProjectOverrides] = await Promise.all([
+      getActivityStatusHistory(mentionIssueIds),
+      getProjectFieldOverrides(mentionIssueIds),
+    ]);
+  } else {
+    mentionActivityHistory = new Map();
+    mentionProjectOverrides = new Map();
+  }
 
   const items: MentionDatasetItem[] = [];
 
@@ -1859,6 +1951,25 @@ export async function fetchUnansweredMentionCandidates(
         issueTodoProjectInitiationOptions = projectSnapshot.initiationOptions;
         issueTodoProjectStartDate = projectSnapshot.startDate;
       }
+
+      const overrideTarget: ProjectFieldOverrideTarget = {
+        issueProjectStatusLocked,
+        issueTodoProjectPriority,
+        issueTodoProjectWeight,
+        issueTodoProjectInitiationOptions,
+        issueTodoProjectStartDate,
+      };
+      applyProjectFieldOverridesToTarget(
+        overrideTarget,
+        mentionProjectOverrides.get(row.issue_id),
+      );
+      issueTodoProjectPriority =
+        overrideTarget.issueTodoProjectPriority ?? null;
+      issueTodoProjectWeight = overrideTarget.issueTodoProjectWeight ?? null;
+      issueTodoProjectInitiationOptions =
+        overrideTarget.issueTodoProjectInitiationOptions ?? null;
+      issueTodoProjectStartDate =
+        overrideTarget.issueTodoProjectStartDate ?? null;
     }
 
     items.push({
@@ -1964,6 +2075,15 @@ async function fetchUnansweredMentions(
       targetUserId,
       container: item.container,
       commentExcerpt: item.commentExcerpt,
+      issueProjectStatus: item.issueProjectStatus,
+      issueProjectStatusSource: item.issueProjectStatusSource,
+      issueProjectStatusLocked: item.issueProjectStatusLocked,
+      issueTodoProjectStatus: item.issueTodoProjectStatus,
+      issueTodoProjectPriority: item.issueTodoProjectPriority,
+      issueTodoProjectWeight: item.issueTodoProjectWeight,
+      issueTodoProjectInitiationOptions:
+        item.issueTodoProjectInitiationOptions,
+      issueTodoProjectStartDate: item.issueTodoProjectStartDate,
       classification: record
         ? {
             requiresResponse: record.requiresResponse,
