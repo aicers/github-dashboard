@@ -280,7 +280,7 @@ export function renderTitleWithInlineCode(title: string | null): ReactNode {
 export type AttentionBadgeDescriptor = {
   key: string;
   label: string;
-  variant: "default" | "manual" | "ai-soft";
+  variant: "default" | "manual" | "ai-soft" | "relation";
   tooltip?: string;
 };
 

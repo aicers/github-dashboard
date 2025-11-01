@@ -47,6 +47,20 @@ export const PROJECT_FIELD_LABELS: Record<ProjectFieldKey, string> = {
 export const PROJECT_FIELD_BADGE_CLASS =
   "inline-flex items-center rounded-md bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-700";
 
+export const ISSUE_PRIORITY_BADGE_CLASS =
+  "inline-flex items-center rounded-md bg-lime-100 px-2 py-0.5 text-xs font-semibold text-lime-800";
+
+export const ISSUE_WEIGHT_BADGE_CLASS =
+  "inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800";
+
+export const ISSUE_TYPE_BADGE_CLASS =
+  "inline-flex items-center rounded-md bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-700";
+
+export const ISSUE_MILESTONE_BADGE_CLASS =
+  "inline-flex items-center rounded-md bg-slate-700 px-2 py-0.5 text-xs font-semibold text-slate-100";
+
+export const ISSUE_RELATION_BADGE_CLASS = "bg-blue-900 text-blue-50";
+
 const PRIORITY_OPTIONS = ["P0", "P1", "P2"] as const;
 const WEIGHT_OPTIONS = ["Heavy", "Medium", "Light"] as const;
 const INITIATION_OPTIONS = ["Open to Start", "Requires Approval"] as const;
@@ -1254,6 +1268,14 @@ export function ProjectFieldEditor({
 
   const showEditButton = !disabled && !isEditing;
   const displayValue = formattedValue.trim().length ? formattedValue : "-";
+  const shouldRenderBadge =
+    displayValue !== "-" && (field === "priority" || field === "weight");
+  const badgeClass =
+    field === "priority"
+      ? ISSUE_PRIORITY_BADGE_CLASS
+      : field === "weight"
+        ? ISSUE_WEIGHT_BADGE_CLASS
+        : undefined;
 
   return (
     <div className="flex items-center gap-2 text-xs text-foreground">
@@ -1310,7 +1332,11 @@ export function ProjectFieldEditor({
         </form>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-medium text-foreground">{displayValue}</span>
+          {shouldRenderBadge && badgeClass ? (
+            <span className={badgeClass}>{displayValue}</span>
+          ) : (
+            <span className="font-medium text-foreground">{displayValue}</span>
+          )}
           {timestamp ? (
             <span className="text-muted-foreground/70">{timestamp}</span>
           ) : null}

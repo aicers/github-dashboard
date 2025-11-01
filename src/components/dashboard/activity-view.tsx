@@ -67,9 +67,13 @@ import {
   formatDateOnly,
   formatDateTime,
   formatProjectField,
+  ISSUE_MILESTONE_BADGE_CLASS,
+  ISSUE_PRIORITY_BADGE_CLASS,
   ISSUE_STATUS_LABEL_MAP,
   ISSUE_STATUS_OPTIONS,
   ISSUE_STATUS_VALUE_SET,
+  ISSUE_TYPE_BADGE_CLASS,
+  ISSUE_WEIGHT_BADGE_CLASS,
   MentionOverrideControls,
   normalizeProjectFieldForComparison,
   PROJECT_FIELD_BADGE_CLASS,
@@ -5380,14 +5384,14 @@ export function ActivityView({
                     badges.push({
                       key: "child-issue",
                       label: "Child 이슈",
-                      variant: "default",
+                      variant: "relation",
                     });
                   }
                   if (item.hasSubIssues) {
                     badges.push({
                       key: "parent-issue",
                       label: "Parent 이슈",
-                      variant: "default",
+                      variant: "relation",
                     });
                   }
                   const repositoryLabel =
@@ -5443,6 +5447,32 @@ export function ActivityView({
                   const todoStartDateTimestamp = formatDateTimeWithSettings(
                     item.issueTodoProjectStartDateUpdatedAt,
                   );
+                  const badgeExtras =
+                    item.type === "issue" ? (
+                      <>
+                        {item.issueType ? (
+                          <span className={ISSUE_TYPE_BADGE_CLASS}>
+                            {item.issueType.name ?? item.issueType.id}
+                          </span>
+                        ) : null}
+                        {item.milestone ? (
+                          <span className={ISSUE_MILESTONE_BADGE_CLASS}>
+                            Milestone{" "}
+                            {item.milestone.title ?? item.milestone.id}
+                          </span>
+                        ) : null}
+                        {todoPriorityLabel !== "-" ? (
+                          <span className={ISSUE_PRIORITY_BADGE_CLASS}>
+                            {todoPriorityLabel}
+                          </span>
+                        ) : null}
+                        {todoWeightLabel !== "-" ? (
+                          <span className={ISSUE_WEIGHT_BADGE_CLASS}>
+                            {todoWeightLabel}
+                          </span>
+                        ) : null}
+                      </>
+                    ) : null;
                   const canEditStatus =
                     item.type === "issue" && !item.issueProjectStatusLocked;
                   const sourceStatusTimes =
@@ -5502,7 +5532,6 @@ export function ActivityView({
                           detailItemId: overlayItem.id,
                         }
                       : undefined;
-                  const badgeExtras = null;
                   const linkedPullRequestsInline =
                     item.linkedPullRequests.length > 0
                       ? renderLinkedReferenceInline({
@@ -5588,12 +5617,14 @@ export function ActivityView({
                                     </span>
                                   )}
                                   {item.issueType && (
-                                    <span className="rounded-md bg-sky-100 px-2 py-0.5 text-sky-700">
+                                    <span className={ISSUE_TYPE_BADGE_CLASS}>
                                       {item.issueType.name ?? item.issueType.id}
                                     </span>
                                   )}
                                   {item.milestone && (
-                                    <span>
+                                    <span
+                                      className={ISSUE_MILESTONE_BADGE_CLASS}
+                                    >
                                       Milestone{" "}
                                       {item.milestone.title ??
                                         item.milestone.id}
@@ -5610,9 +5641,17 @@ export function ActivityView({
                                   {item.type === "issue" &&
                                     todoPriorityLabel !== "-" && (
                                       <span
-                                        className={PROJECT_FIELD_BADGE_CLASS}
+                                        className={ISSUE_PRIORITY_BADGE_CLASS}
                                       >
                                         {todoPriorityLabel}
+                                      </span>
+                                    )}
+                                  {item.type === "issue" &&
+                                    todoWeightLabel !== "-" && (
+                                      <span
+                                        className={ISSUE_WEIGHT_BADGE_CLASS}
+                                      >
+                                        {todoWeightLabel}
                                       </span>
                                     )}
                                   {badges.map((badge) => {

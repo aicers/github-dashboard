@@ -11,7 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import type { ActivityItem } from "@/lib/activity/types";
 import { cn } from "@/lib/utils";
-
+import { ISSUE_RELATION_BADGE_CLASS } from "./detail-shared";
 import { type ActivityIconInfo, CATEGORY_LABELS } from "./shared";
 
 export const DETAIL_PANEL_TRANSITION_MS = 300;
@@ -19,7 +19,7 @@ export const DETAIL_PANEL_TRANSITION_MS = 300;
 export type OverlayBadgeDescriptor = {
   key?: string;
   label: string;
-  variant?: "default" | "manual" | "ai-soft";
+  variant?: "default" | "manual" | "ai-soft" | "relation";
   tooltip?: string;
 };
 
@@ -115,7 +115,7 @@ export function ActivityDetailOverlay({
   });
 
   return (
-    <div className="fixed inset-0 z-[60] flex justify-end">
+    <div className="fixed inset-0 z-60 flex justify-end">
       <div
         className="absolute inset-0 transition-opacity duration-300"
         style={{
@@ -150,7 +150,7 @@ export function ActivityDetailOverlay({
             </span>
             <div className="space-y-2">
               {referenceLabel ? (
-                <div className="text-xs font-semibold tracking-wide text-[color:var(--activity-reference-link)]">
+                <div className="text-xs font-semibold tracking-wide text-[--activity-reference-link]">
                   {referenceLabel}
                 </div>
               ) : null}
@@ -168,7 +168,9 @@ export function ActivityDetailOverlay({
                       ? "border border-slate-300 bg-slate-100 text-slate-700"
                       : badge.variant === "ai-soft"
                         ? "border border-sky-300 bg-sky-50 text-sky-700 shadow-[0_0_0.65rem_rgba(56,189,248,0.25)]"
-                        : "bg-amber-100 text-amber-700";
+                        : badge.variant === "relation"
+                          ? ISSUE_RELATION_BADGE_CLASS
+                          : "bg-amber-100 text-amber-700";
                   return (
                     <span
                       key={badge.key}
