@@ -903,6 +903,57 @@ describe("ActivityView", () => {
     });
   });
 
+  it("switches to AND mode when mention role is cleared", async () => {
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+    const props = createDefaultProps();
+
+    render(<ActivityView {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "alice" }));
+    fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
+
+    const mentionInput = screen.getByPlaceholderText("@mention");
+    const mentionField = mentionInput.parentElement;
+    expect(mentionField).toBeTruthy();
+    if (!mentionField) {
+      return;
+    }
+
+    const mentionRemove = within(mentionField).getByLabelText("Remove alice");
+    fireEvent.click(mentionRemove);
+
+    expect(screen.getByRole("button", { name: "alice" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+
+    const nextResults = buildActivityListResultFixture({
+      items: [
+        buildActivityItemFixture({
+          id: "mention-removed",
+          title: "멘션 필터 해제",
+        }),
+      ],
+    });
+    mockFetchJsonOnce(nextResults);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "필터 적용" }));
+    });
+
+    await waitFor(() => {
+      const request = getLastActivityCall();
+      expect(request).toBeTruthy();
+      if (!request) {
+        return;
+      }
+      const url = new URL(request.url);
+      expect(url.searchParams.has("peopleSelection")).toBe(false);
+      expect(url.searchParams.has("mentionedUserId")).toBe(false);
+      expect(url.searchParams.getAll("authorId")).toEqual(["user-alice"]);
+    });
+  });
+
   it("prevents removing optional chips while locked and keeps applied roles intact", async () => {
     mockFetchJsonOnce({ filters: [], limit: 5 });
     const props = createDefaultProps();

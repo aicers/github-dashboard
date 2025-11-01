@@ -81,6 +81,7 @@ export function buildActivityFilterState(
     maintainerIds: [],
     peopleSelection: [],
     peopleFilters: basePeopleFilters,
+    ignoredSyncRoles: [],
     statuses: [],
     attention: [],
     linkedIssueStates: [],

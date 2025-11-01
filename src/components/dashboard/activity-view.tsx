@@ -384,7 +384,23 @@ function setPeopleRoleValues(
       break;
   }
 
-  const withOptionalCleared = setOptionalPersonValues(next, role, []);
+  let withOptionalCleared = setOptionalPersonValues(next, role, []);
+
+  if (role === "mentionedUserIds") {
+    const ignored = withOptionalCleared.ignoredSyncRoles ?? [];
+    if (ignored.length > 0) {
+      const filteredIgnored = ignored.filter(
+        (entry) => entry !== "mentionedUserIds",
+      );
+      if (filteredIgnored.length !== ignored.length) {
+        withOptionalCleared = {
+          ...withOptionalCleared,
+          ignoredSyncRoles: filteredIgnored,
+        };
+      }
+    }
+  }
+
   if (shouldClearTaskMode && withOptionalCleared.taskMode === "my_todo") {
     return { ...withOptionalCleared, taskMode: null };
   }
@@ -427,6 +443,13 @@ function removeMentionRole(state: FilterState): FilterState {
     nextState = {
       ...nextState,
       optionalPersonIds: rest,
+    };
+  }
+  const ignored = nextState.ignoredSyncRoles ?? [];
+  if (!ignored.includes("mentionedUserIds")) {
+    nextState = {
+      ...nextState,
+      ignoredSyncRoles: [...ignored, "mentionedUserIds"],
     };
   }
   return syncPeopleFilters(nextState);
@@ -816,13 +839,12 @@ function derivePeopleState(
     targetSet.delete("commenterIds");
     targetSet.delete("reactorIds");
   }
+  const ignoredRoles = new Set(state.ignoredSyncRoles ?? []);
   const targets = Array.from(targetSet).filter((role) => {
-    if (role !== "mentionedUserIds") {
-      return true;
+    if (ignoredRoles.has(role)) {
+      return false;
     }
-    const values = getPeopleRoleValues(state, role);
-    const optional = state.optionalPersonIds?.mentionedUserIds ?? [];
-    return values.length > 0 || optional.length > 0;
+    return true;
   });
   const hasAttention = hasActiveAttentionFilters(state);
   if (hasAttention) {
@@ -986,6 +1008,7 @@ function applyPeopleSelection(
     nextState = {
       ...nextState,
       optionalPersonIds: {},
+      ignoredSyncRoles: [],
     };
   }
 
