@@ -65,8 +65,13 @@ import {
   formatDateOnly,
   formatDateTime,
   formatProjectField,
+  ISSUE_MILESTONE_BADGE_CLASS,
+  ISSUE_PRIORITY_BADGE_CLASS,
+  ISSUE_RELATION_BADGE_CLASS,
   ISSUE_STATUS_LABEL_MAP,
   ISSUE_STATUS_OPTIONS,
+  ISSUE_TYPE_BADGE_CLASS,
+  ISSUE_WEIGHT_BADGE_CLASS,
   MentionOverrideControls,
   normalizeProjectFieldForComparison,
   PROJECT_FIELD_BADGE_CLASS,
@@ -115,7 +120,9 @@ function renderAttentionBadgeElements(
         ? "border border-slate-300 bg-slate-100 text-slate-700"
         : badge.variant === "ai-soft"
           ? "border border-sky-300 bg-sky-50 text-sky-700 shadow-[0_0_0.65rem_rgba(56,189,248,0.25)]"
-          : "bg-amber-100 text-amber-700";
+          : badge.variant === "relation"
+            ? ISSUE_RELATION_BADGE_CLASS
+            : "bg-amber-100 text-amber-700";
     const tooltipId = badge.tooltip
       ? `${itemId}-${badge.key}-tooltip`
       : undefined;
@@ -2589,11 +2596,40 @@ function IssueList({
         const todoPriorityLabel = formatProjectField(
           displayItem.issueTodoProjectPriority,
         );
+        const issueWeightLabel = formatProjectField(
+          displayItem.issueTodoProjectWeight,
+        );
         const referenceLine = linkedPullRequestsInline ? (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {linkedPullRequestsInline}
           </div>
         ) : null;
+        const overlayBadgeExtras =
+          displayItem.type === "issue" ? (
+            <>
+              {displayItem.issueType ? (
+                <span className={ISSUE_TYPE_BADGE_CLASS}>
+                  {displayItem.issueType.name ?? displayItem.issueType.id}
+                </span>
+              ) : null}
+              {displayItem.milestone ? (
+                <span className={ISSUE_MILESTONE_BADGE_CLASS}>
+                  Milestone{" "}
+                  {displayItem.milestone.title ?? displayItem.milestone.id}
+                </span>
+              ) : null}
+              {todoPriorityLabel !== "-" ? (
+                <span className={ISSUE_PRIORITY_BADGE_CLASS}>
+                  {todoPriorityLabel}
+                </span>
+              ) : null}
+              {issueWeightLabel !== "-" ? (
+                <span className={ISSUE_WEIGHT_BADGE_CLASS}>
+                  {issueWeightLabel}
+                </span>
+              ) : null}
+            </>
+          ) : null;
         const metadata = (
           <div className="flex flex-col gap-1 text-xs text-foreground/90">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -2604,14 +2640,30 @@ function IssueList({
               {item.assignees.length > 0 && (
                 <span>담당자 {formatUserList(item.assignees)}</span>
               )}
+              {displayItem.issueType ? (
+                <span className={ISSUE_TYPE_BADGE_CLASS}>
+                  {displayItem.issueType.name ?? displayItem.issueType.id}
+                </span>
+              ) : null}
+              {displayItem.milestone ? (
+                <span className={ISSUE_MILESTONE_BADGE_CLASS}>
+                  Milestone{" "}
+                  {displayItem.milestone.title ?? displayItem.milestone.id}
+                </span>
+              ) : null}
               {displayItem.type === "issue" && displayStatusLabel ? (
                 <span className={PROJECT_FIELD_BADGE_CLASS}>
                   {displayStatusLabel}
                 </span>
               ) : null}
               {displayItem.type === "issue" && todoPriorityLabel !== "-" ? (
-                <span className={PROJECT_FIELD_BADGE_CLASS}>
+                <span className={ISSUE_PRIORITY_BADGE_CLASS}>
                   {todoPriorityLabel}
+                </span>
+              ) : null}
+              {displayItem.type === "issue" && issueWeightLabel !== "-" ? (
+                <span className={ISSUE_WEIGHT_BADGE_CLASS}>
+                  {issueWeightLabel}
                 </span>
               ) : null}
               {renderAttentionBadgeElements(badges, item.id)}
@@ -2674,6 +2726,7 @@ function IssueList({
                   item={overlayItem}
                   iconInfo={iconInfo}
                   badges={badges}
+                  badgeExtras={overlayBadgeExtras}
                   onClose={closeItem}
                 >
                   <FollowUpDetailContent
@@ -3107,6 +3160,9 @@ function MentionList({
         const todoPriorityLabel = formatProjectField(
           displayItem.issueTodoProjectPriority,
         );
+        const mentionWeightLabel = formatProjectField(
+          displayItem.issueTodoProjectWeight,
+        );
         const metadata = (
           <div className="flex flex-col gap-2 text-xs text-foreground/90">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -3114,14 +3170,30 @@ function MentionList({
                 <span key={metric.key}>{metric.content}</span>
               ))}
               {item.author && <span>요청자 {formatUser(item.author)}</span>}
+              {displayItem.issueType ? (
+                <span className={ISSUE_TYPE_BADGE_CLASS}>
+                  {displayItem.issueType.name ?? displayItem.issueType.id}
+                </span>
+              ) : null}
+              {displayItem.milestone ? (
+                <span className={ISSUE_MILESTONE_BADGE_CLASS}>
+                  Milestone{" "}
+                  {displayItem.milestone.title ?? displayItem.milestone.id}
+                </span>
+              ) : null}
               {displayItem.type === "issue" && displayStatusLabel ? (
                 <span className={PROJECT_FIELD_BADGE_CLASS}>
                   {displayStatusLabel}
                 </span>
               ) : null}
               {displayItem.type === "issue" && todoPriorityLabel !== "-" ? (
-                <span className={PROJECT_FIELD_BADGE_CLASS}>
+                <span className={ISSUE_PRIORITY_BADGE_CLASS}>
                   {todoPriorityLabel}
+                </span>
+              ) : null}
+              {displayItem.type === "issue" && mentionWeightLabel !== "-" ? (
+                <span className={ISSUE_WEIGHT_BADGE_CLASS}>
+                  {mentionWeightLabel}
                 </span>
               ) : null}
               {renderAttentionBadgeElements(badges, selectionId)}
@@ -3141,6 +3213,32 @@ function MentionList({
             ) : null}
           </div>
         );
+        const overlayBadgeExtras =
+          displayItem.type === "issue" ? (
+            <>
+              {displayItem.issueType ? (
+                <span className={ISSUE_TYPE_BADGE_CLASS}>
+                  {displayItem.issueType.name ?? displayItem.issueType.id}
+                </span>
+              ) : null}
+              {displayItem.milestone ? (
+                <span className={ISSUE_MILESTONE_BADGE_CLASS}>
+                  Milestone{" "}
+                  {displayItem.milestone.title ?? displayItem.milestone.id}
+                </span>
+              ) : null}
+              {todoPriorityLabel !== "-" ? (
+                <span className={ISSUE_PRIORITY_BADGE_CLASS}>
+                  {todoPriorityLabel}
+                </span>
+              ) : null}
+              {mentionWeightLabel !== "-" ? (
+                <span className={ISSUE_WEIGHT_BADGE_CLASS}>
+                  {mentionWeightLabel}
+                </span>
+              ) : null}
+            </>
+          ) : null;
         const primaryMention = overlayItem.mentionWaits?.find(
           (wait) => wait.id && (wait.user?.id ?? wait.userId),
         );
@@ -3317,7 +3415,7 @@ function MentionList({
                   item={overlayItem}
                   iconInfo={iconInfo}
                   badges={badges}
-                  badgeExtras={null}
+                  badgeExtras={overlayBadgeExtras}
                   onClose={closeItem}
                 >
                   <FollowUpDetailContent
