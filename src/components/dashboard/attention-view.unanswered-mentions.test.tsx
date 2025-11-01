@@ -177,6 +177,24 @@ describe("AttentionView unanswered mentions", () => {
         "Could you add integration tests to cover the metrics export?",
     });
 
+    const duplicateMention = buildMentionItem({
+      commentId: "comment-primary-duplicate",
+      url: "https://github.com/acme/github-dashboard/pull/58#discussion_r2",
+      mentionedAt: "2024-02-03T09:00:00.000Z",
+      waitingDays: 4,
+      author: alice,
+      target: bob,
+      container: {
+        type: "pull_request",
+        id: "pr-58",
+        number: 58,
+        title: "Refine caching behavior",
+        url: "https://github.com/acme/github-dashboard/pull/58",
+        repository: repo,
+      },
+      commentExcerpt: "Friendly reminder on the caching PR.",
+    });
+
     const insights: AttentionInsights = {
       generatedAt: "2024-02-20T00:00:00.000Z",
       timezone: "Asia/Seoul",
@@ -189,6 +207,7 @@ describe("AttentionView unanswered mentions", () => {
       unansweredMentions: [
         primaryMention,
         issueMention,
+        duplicateMention,
         discussionMention,
         secondaryMention,
       ],
@@ -273,7 +292,7 @@ describe("AttentionView unanswered mentions", () => {
       within(primaryItem).getByText("요청자 Alice (@alice)"),
     ).toBeInTheDocument();
     expect(
-      within(primaryItem).getByText("Mention bob 11일"),
+      within(primaryItem).getByText("Mention bob 11일, bob 4일"),
     ).toBeInTheDocument();
 
     expect(within(issueItem).getByText("Idle 9일")).toBeInTheDocument();
@@ -290,6 +309,10 @@ describe("AttentionView unanswered mentions", () => {
     expect(
       within(secondaryItem).getByText("Mention bob 6일"),
     ).toBeInTheDocument();
+
+    expect(screen.getAllByText("acme/github-dashboard#58 코멘트").length).toBe(
+      1,
+    );
 
     await user.selectOptions(targetFilter, "user-carol");
 

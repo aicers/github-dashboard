@@ -125,6 +125,21 @@ describe("AttentionView stuck review requests", () => {
         }),
       }),
       buildReviewRequestItem({
+        id: "rr-optimizations-frank",
+        requestedAt: "2024-02-08T09:00:00.000Z",
+        waitingDays: 5,
+        reviewer: frank,
+        pullRequest: buildPullRequestReference({
+          id: "pr-cache-refresh",
+          number: 320,
+          title: "Stabilize background cache refresh",
+          url: "https://github.com/acme/github-dashboard/pull/320",
+          repository: primaryRepo,
+          author: alice,
+          reviewers: [carol, frank],
+        }),
+      }),
+      buildReviewRequestItem({
         id: "rr-indexing",
         requestedAt: "2024-02-06T09:00:00.000Z",
         waitingDays: 11,
@@ -195,6 +210,10 @@ describe("AttentionView stuck review requests", () => {
       throw new Error("Expected stuck review request items to exist");
     }
 
+    expect(
+      screen.getAllByText("Stabilize background cache refresh").length,
+    ).toBe(1);
+
     expect(within(indexingItem).getByText("Idle 11일")).toBeInTheDocument();
     expect(
       within(indexingItem).getByText("생성자 Bob (@bob)"),
@@ -207,7 +226,8 @@ describe("AttentionView stuck review requests", () => {
     expect(
       within(cacheItem).getByText("생성자 Alice (@alice)"),
     ).toBeInTheDocument();
-    expect(within(cacheItem).getByText("Review carol 7일")).toBeInTheDocument();
+    expect(within(cacheItem).getByText(/Review carol 7일/)).toBeInTheDocument();
+    expect(within(cacheItem).getByText(/frank 5일/)).toBeInTheDocument();
 
     await user.selectOptions(authorFilter, "user-bob");
     expect(

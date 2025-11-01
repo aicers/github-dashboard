@@ -169,15 +169,34 @@ export function buildFollowUpSummaries(
     idleMetric,
   );
 
-  const reviewRequests = insights.stuckReviewRequests;
+  const reviewRequestGroups = new Map<string, ReviewRequestAttentionItem[]>();
+  insights.stuckReviewRequests.forEach((item) => {
+    const pullRequestId = item.pullRequest.id ?? null;
+    const key =
+      pullRequestId && pullRequestId.length > 0 ? pullRequestId : item.id;
+    const existing = reviewRequestGroups.get(key);
+    if (existing) {
+      existing.push(item);
+    } else {
+      reviewRequestGroups.set(key, [item]);
+    }
+  });
+  const dedupedReviewRequests = Array.from(reviewRequestGroups.values()).map(
+    (group) =>
+      group.reduce(
+        (current, entry) =>
+          entry.waitingDays > current.waitingDays ? entry : current,
+        group[0],
+      ),
+  );
   const reviewMetric = (item: ReviewRequestAttentionItem) => item.waitingDays;
   const reviewAuthors = aggregateUsers(
-    reviewRequests,
+    dedupedReviewRequests,
     (item) => (item.pullRequest.author ? [item.pullRequest.author] : []),
     reviewMetric,
   );
   const reviewReviewers = aggregateUsers(
-    reviewRequests,
+    dedupedReviewRequests,
     (item) => (item.reviewer ? [item.reviewer] : []),
     reviewMetric,
   );
@@ -209,15 +228,36 @@ export function buildFollowUpSummaries(
     stalledMetric,
   );
 
-  const mentions = insights.unansweredMentions;
+  const mentionGroups = new Map<string, MentionAttentionItem[]>();
+  insights.unansweredMentions.forEach((item) => {
+    const containerId = item.container.id ?? null;
+    const key =
+      containerId && containerId.length > 0 ? containerId : item.commentId;
+    if (!key) {
+      return;
+    }
+    const existing = mentionGroups.get(key);
+    if (existing) {
+      existing.push(item);
+    } else {
+      mentionGroups.set(key, [item]);
+    }
+  });
+  const dedupedMentions = Array.from(mentionGroups.values()).map((group) =>
+    group.reduce(
+      (current, entry) =>
+        entry.waitingDays > current.waitingDays ? entry : current,
+      group[0],
+    ),
+  );
   const mentionMetric = (item: MentionAttentionItem) => item.waitingDays;
   const mentionTargets = aggregateUsers(
-    mentions,
+    dedupedMentions,
     (item) => (item.target ? [item.target] : []),
     mentionMetric,
   );
   const mentionAuthors = aggregateUsers(
-    mentions,
+    dedupedMentions,
     (item) => (item.author ? [item.author] : []),
     mentionMetric,
   );
@@ -249,8 +289,8 @@ export function buildFollowUpSummaries(
       id: "stuck-review-requests",
       title: "응답 없는 리뷰 요청",
       description: "5일 이상 응답이 없는 리뷰 요청",
-      count: reviewRequests.length,
-      totalMetric: sumMetric(reviewRequests, reviewMetric),
+      count: dedupedReviewRequests.length,
+      totalMetric: sumMetric(dedupedReviewRequests, reviewMetric),
       highlights: [
         highlightLine("최다 생성자", findTopByTotal(reviewAuthors, 3)),
         highlightLine("최다 대기 리뷰어", findTopByTotal(reviewReviewers, 3)),
@@ -282,8 +322,8 @@ export function buildFollowUpSummaries(
       id: "unanswered-mentions",
       title: "응답 없는 멘션",
       description: "5일 이상 응답 없는 멘션",
-      count: mentions.length,
-      totalMetric: sumMetric(mentions, mentionMetric),
+      count: dedupedMentions.length,
+      totalMetric: sumMetric(dedupedMentions, mentionMetric),
       highlights: [
         highlightLine("최다 멘션 대상", findTopByTotal(mentionTargets, 3)),
         highlightLine("최다 요청자", findTopByTotal(mentionAuthors, 3)),

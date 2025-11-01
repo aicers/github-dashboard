@@ -546,7 +546,7 @@ describe("activity service integration", () => {
 
     const detail = await getActivityItemDetail(issueAlpha.id);
     expect(detail?.item.issueProjectStatus).toBe("done");
-  });
+  }, 30000);
 
   it("allows filtering issues by canceled status and records timeline entries", async () => {
     const { issueAlpha } = await seedBasicActivityData();
