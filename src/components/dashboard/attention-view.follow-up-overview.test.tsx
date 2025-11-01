@@ -286,6 +286,13 @@ describe("Follow-up overview", () => {
       reviewer: erin,
       pullRequest: staleOne,
     });
+    const stuckDuplicate = buildReviewRequestItem({
+      id: "rr-erin-extra",
+      requestedAt: "2024-02-07T00:00:00.000Z",
+      waitingDays: 6,
+      reviewer: frank,
+      pullRequest: staleOne,
+    });
     const stuckTwo = buildReviewRequestItem({
       id: "rr-frank",
       requestedAt: "2024-02-07T00:00:00.000Z",
@@ -381,6 +388,23 @@ describe("Follow-up overview", () => {
       },
       commentExcerpt: "@grace please review",
     });
+    const mentionDuplicate = buildMentionItem({
+      commentId: "comment-1b",
+      url: "https://github.com/acme/main/pull/101#comment-1b",
+      mentionedAt: "2024-02-09T00:00:00.000Z",
+      waitingDays: 4,
+      author: alice,
+      target: grace,
+      container: {
+        type: "pull_request",
+        id: staleOne.id,
+        number: staleOne.number,
+        title: staleOne.title,
+        url: staleOne.url,
+        repository: repoMain,
+      },
+      commentExcerpt: "Circling back on the same PR.",
+    });
     const mentionTwo = buildMentionItem({
       commentId: "comment-2",
       url: "https://github.com/acme/main/issues/402#comment-2",
@@ -405,10 +429,10 @@ describe("Follow-up overview", () => {
       dateTimeFormat: "auto",
       staleOpenPrs: [staleOne, staleTwo],
       idleOpenPrs: [idleOne, idleTwo],
-      stuckReviewRequests: [stuckOne, stuckTwo],
+      stuckReviewRequests: [stuckOne, stuckDuplicate, stuckTwo],
       backlogIssues: [backlogOne, backlogTwo],
       stalledInProgressIssues: [stalledOne, stalledTwo],
-      unansweredMentions: [mentionOne, mentionTwo],
+      unansweredMentions: [mentionOne, mentionDuplicate, mentionTwo],
     } satisfies AttentionInsights;
 
     render(<AttentionView insights={insights} />);
@@ -447,6 +471,12 @@ describe("Follow-up overview", () => {
     expect(
       within(backlogCard).getByText("최다 담당자: 1위 Bob, 2위 Dave"),
     ).toBeInTheDocument();
+
+    const mentionCard = screen.getByTestId(
+      "follow-up-summary-unanswered-mentions",
+    );
+    expect(within(mentionCard).getByText("2건")).toBeInTheDocument();
+    expect(within(mentionCard).getByText("11일")).toBeInTheDocument();
 
     const quickButtons = screen.getAllByRole("button", { name: "바로 보기" });
     const stuckCard = screen.getByTestId(

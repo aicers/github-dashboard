@@ -1523,14 +1523,53 @@ function ReviewRequestList({
   const trimmedTimezone = timezone.trim();
   const timezoneTitle = trimmedTimezone.length ? trimmedTimezone : undefined;
 
+  type AggregatedReviewRequest = {
+    selectionId: string;
+    representative: ReviewRequestAttentionItem;
+    reviewRequests: ReviewRequestAttentionItem[];
+  };
+
+  const aggregatedItems = useMemo<AggregatedReviewRequest[]>(() => {
+    const map = new Map<
+      string,
+      {
+        representative: ReviewRequestAttentionItem;
+        reviewRequests: ReviewRequestAttentionItem[];
+      }
+    >();
+
+    items.forEach((item) => {
+      const pullRequestId = (item.pullRequest.id ?? "").trim();
+      const key = pullRequestId.length ? pullRequestId : item.id;
+      const existing = map.get(key);
+      if (existing) {
+        existing.reviewRequests.push(item);
+        if (item.waitingDays > existing.representative.waitingDays) {
+          existing.representative = item;
+        }
+      } else {
+        map.set(key, {
+          representative: item,
+          reviewRequests: [item],
+        });
+      }
+    });
+
+    return Array.from(map.entries()).map(([selectionId, value]) => ({
+      selectionId,
+      representative: value.representative,
+      reviewRequests: value.reviewRequests,
+    }));
+  }, [items]);
+
   const aggregation = useMemo(() => {
     const authorMap = new Map<string, RankingEntry>();
     const reviewerMap = new Map<string, RankingEntry>();
 
-    items.forEach((item) => {
-      const metricValue = item.waitingDays;
+    aggregatedItems.forEach(({ representative, reviewRequests }) => {
+      const metricValue = representative.waitingDays;
 
-      const author = item.pullRequest.author;
+      const author = representative.pullRequest.author;
       if (author) {
         const authorEntry = authorMap.get(author.id) ?? {
           key: author.id,
@@ -1543,25 +1582,28 @@ function ReviewRequestList({
         authorMap.set(author.id, authorEntry);
       }
 
-      const reviewer = item.reviewer;
-      if (reviewer) {
+      reviewRequests.forEach((request) => {
+        const reviewer = request.reviewer;
+        if (!reviewer) {
+          return;
+        }
         const reviewerEntry = reviewerMap.get(reviewer.id) ?? {
           key: reviewer.id,
           user: reviewer,
           total: 0,
           count: 0,
         };
-        reviewerEntry.total += metricValue;
+        reviewerEntry.total += request.waitingDays;
         reviewerEntry.count += 1;
         reviewerMap.set(reviewer.id, reviewerEntry);
-      }
+      });
     });
 
     return {
       authors: Array.from(authorMap.values()),
       reviewers: Array.from(reviewerMap.values()),
     };
-  }, [items]);
+  }, [aggregatedItems]);
 
   const authorOptions = useMemo(() => {
     return aggregation.authors
@@ -1576,19 +1618,27 @@ function ReviewRequestList({
   }, [aggregation.reviewers]);
 
   const filteredItems = useMemo(() => {
-    return items.filter((item) => {
+    return aggregatedItems.filter(({ representative, reviewRequests }) => {
       const authorMatch =
-        authorFilter === "all" || item.pullRequest.author?.id === authorFilter;
+        authorFilter === "all" ||
+        representative.pullRequest.author?.id === authorFilter;
 
       const reviewerMatch =
-        reviewerFilter === "all" || item.reviewer?.id === reviewerFilter;
+        reviewerFilter === "all" ||
+        reviewRequests.some(
+          (request) => request.reviewer?.id === reviewerFilter,
+        );
 
       return authorMatch && reviewerMatch;
     });
-  }, [items, authorFilter, reviewerFilter]);
+  }, [aggregatedItems, authorFilter, reviewerFilter]);
 
   const sortedItems = useMemo(() => {
-    return filteredItems.slice().sort((a, b) => b.waitingDays - a.waitingDays);
+    return filteredItems
+      .slice()
+      .sort(
+        (a, b) => b.representative.waitingDays - a.representative.waitingDays,
+      );
   }, [filteredItems]);
 
   const authorRankingByTotal = useMemo(() => {
@@ -1685,151 +1735,165 @@ function ReviewRequestList({
 
   const listContent = sortedItems.length ? (
     <ul className="space-y-4">
-      {sortedItems.map((item) => {
-        const selectionId = item.pullRequest.id?.trim().length
-          ? item.pullRequest.id
-          : item.id;
-        const activityItem = createBaseActivityItem({
-          id: selectionId,
-          type: "pull_request",
-          number: item.pullRequest.number,
-          title: item.pullRequest.title,
-          url: item.pullRequest.url,
-          repository: item.pullRequest.repository,
-          author: item.pullRequest.author,
-          attention: { reviewRequestPending: true },
-        });
-        activityItem.reviewers = toActivityUsers(item.pullRequest.reviewers);
-        activityItem.businessDaysOpen = item.pullRequestAgeDays ?? null;
-        activityItem.businessDaysIdle =
-          item.pullRequestInactivityDays ?? item.waitingDays ?? null;
-        activityItem.linkedIssues = item.pullRequest.linkedIssues ?? [];
-        const reviewWaitDetails = reviewWaitMap.get(item.pullRequest.id) ?? [];
-        if (reviewWaitDetails.length) {
-          activityItem.reviewRequestWaits =
-            toActivityReviewWaits(reviewWaitDetails);
-        } else {
-          activityItem.reviewRequestWaits = toActivityReviewWaits([item]);
-        }
-        const mentionDetails = mentionWaitMap.get(item.pullRequest.id) ?? [];
-        if (mentionDetails.length) {
-          activityItem.mentionWaits = toActivityMentionWaits(mentionDetails);
-        }
+      {sortedItems.map(
+        ({ selectionId, representative: item, reviewRequests }) => {
+          const pullRequest = item.pullRequest;
+          const pullRequestId = (pullRequest.id ?? "").trim();
+          const resolvedSelectionId = pullRequestId.length
+            ? pullRequestId
+            : selectionId;
+          const activityItem = createBaseActivityItem({
+            id: resolvedSelectionId,
+            type: "pull_request",
+            number: pullRequest.number,
+            title: pullRequest.title,
+            url: pullRequest.url,
+            repository: pullRequest.repository,
+            author: pullRequest.author,
+            attention: { reviewRequestPending: true },
+          });
+          activityItem.reviewers = toActivityUsers(pullRequest.reviewers);
+          activityItem.businessDaysOpen = item.pullRequestAgeDays ?? null;
+          activityItem.businessDaysIdle =
+            item.pullRequestInactivityDays ?? item.waitingDays ?? null;
+          activityItem.linkedIssues = pullRequest.linkedIssues ?? [];
+          const reviewWaitDetails =
+            (pullRequestId.length
+              ? reviewWaitMap.get(pullRequestId)
+              : undefined) ?? reviewRequests;
+          if (reviewWaitDetails.length) {
+            activityItem.reviewRequestWaits =
+              toActivityReviewWaits(reviewWaitDetails);
+          }
+          const mentionDetails =
+            (pullRequestId.length
+              ? mentionWaitMap.get(pullRequestId)
+              : undefined) ?? [];
+          if (mentionDetails.length) {
+            activityItem.mentionWaits = toActivityMentionWaits(mentionDetails);
+          }
 
-        const detail = detailMap[selectionId] ?? undefined;
-        const overlayItem = detail?.item ?? activityItem;
-        const iconInfo = resolveActivityIcon(overlayItem);
-        const referenceLabel = buildReferenceLabel(
-          item.pullRequest.repository,
-          item.pullRequest.number,
-        );
-        const isSelected = openItemId === selectionId;
-        const isDetailLoading = loadingDetailIds.has(selectionId);
-        const badges = ["응답 없는 리뷰 요청"];
-        const metrics = buildActivityMetricEntries(activityItem);
-        const linkedIssuesInline =
-          activityItem.linkedIssues.length > 0
-            ? renderLinkedReferenceInline({
-                label: "연결된 이슈",
-                type: "issue",
-                entries: activityItem.linkedIssues.map((issue) =>
-                  buildLinkedIssueSummary(issue),
-                ),
-                maxItems: 2,
-              })
+          const detail = detailMap[resolvedSelectionId] ?? undefined;
+          const overlayItem = detail?.item ?? activityItem;
+          const iconInfo = resolveActivityIcon(overlayItem);
+          const referenceLabel = buildReferenceLabel(
+            pullRequest.repository,
+            pullRequest.number,
+          );
+          const isSelected = openItemId === resolvedSelectionId;
+          const isDetailLoading = loadingDetailIds.has(resolvedSelectionId);
+          const badges = ["응답 없는 리뷰 요청"];
+          const metrics = buildActivityMetricEntries(activityItem);
+          const linkedIssuesInline =
+            activityItem.linkedIssues.length > 0
+              ? renderLinkedReferenceInline({
+                  label: "연결된 이슈",
+                  type: "issue",
+                  entries: activityItem.linkedIssues.map((issue) =>
+                    buildLinkedIssueSummary(issue),
+                  ),
+                  maxItems: 2,
+                })
+              : null;
+          const updatedRelativeLabel = item.pullRequestUpdatedAt
+            ? formatRelative(item.pullRequestUpdatedAt)
             : null;
-        const updatedRelativeLabel = item.pullRequestUpdatedAt
-          ? formatRelative(item.pullRequestUpdatedAt)
-          : null;
-        const updatedAbsoluteLabel = item.pullRequestUpdatedAt
-          ? formatTimestamp(item.pullRequestUpdatedAt, timezone, dateTimeFormat)
-          : "-";
-        const referenceLine = linkedIssuesInline ? (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            {linkedIssuesInline}
-          </div>
-        ) : null;
-        const metadata = (
-          <div className="flex flex-col gap-1 text-xs text-foreground/90">
+          const updatedAbsoluteLabel = item.pullRequestUpdatedAt
+            ? formatTimestamp(
+                item.pullRequestUpdatedAt,
+                timezone,
+                dateTimeFormat,
+              )
+            : "-";
+          const referenceLine = linkedIssuesInline ? (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              {metrics.map((metric) => (
-                <span key={metric.key}>{metric.content}</span>
-              ))}
-              {item.pullRequest.author && (
-                <span>생성자 {formatUser(item.pullRequest.author)}</span>
-              )}
+              {linkedIssuesInline}
             </div>
-            {referenceLine}
-          </div>
-        );
-
-        return (
-          <li key={item.id}>
-            <div
-              className={cn(
-                "group rounded-md border bg-background p-3 transition focus-within:border-primary/60 focus-within:shadow-md focus-within:shadow-primary/10",
-                isSelected
-                  ? "border-primary/60 shadow-md shadow-primary/10"
-                  : "border-border hover:border-primary/50 hover:bg-muted/20 hover:shadow-md hover:shadow-primary/10",
-              )}
-            >
-              <button
-                type="button"
-                aria-expanded={isSelected}
-                className={cn(
-                  "block w-full cursor-pointer bg-transparent p-0 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                  isSelected
-                    ? "text-primary"
-                    : "text-foreground group-hover:text-primary",
+          ) : null;
+          const metadata = (
+            <div className="flex flex-col gap-1 text-xs text-foreground/90">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                {metrics.map((metric) => (
+                  <span key={metric.key}>{metric.content}</span>
+                ))}
+                {pullRequest.author && (
+                  <span>생성자 {formatUser(pullRequest.author)}</span>
                 )}
-                onClick={() => selectItem(selectionId)}
-              >
-                <div className="sm:flex sm:items-start sm:justify-between sm:gap-4">
-                  <ActivityListItemSummary
-                    iconInfo={iconInfo}
-                    referenceLabel={referenceLabel}
-                    referenceUrl={item.pullRequest.url ?? undefined}
-                    title={item.pullRequest.title}
-                    metadata={metadata}
-                  />
-                  {item.pullRequestUpdatedAt ? (
-                    <div className="mt-2 flex flex-col gap-1 text-xs text-foreground/90 sm:mt-0 sm:w-[180px] sm:shrink-0 sm:text-right">
-                      {updatedRelativeLabel ? (
-                        <span className="font-medium text-foreground">
-                          {updatedRelativeLabel}
-                        </span>
-                      ) : null}
-                      <span title={timezoneTitle}>{updatedAbsoluteLabel}</span>
-                    </div>
-                  ) : null}
-                </div>
-              </button>
-              {isSelected ? (
-                <ActivityDetailOverlay
-                  item={overlayItem}
-                  iconInfo={iconInfo}
-                  badges={badges}
-                  onClose={closeItem}
-                >
-                  <FollowUpDetailContent
-                    item={overlayItem}
-                    detail={detail}
-                    isLoading={isDetailLoading}
-                    timezone={timezone}
-                    dateTimeFormat={dateTimeFormat}
-                    isUpdatingStatus={false}
-                    isUpdatingProjectFields={false}
-                    onUpdateStatus={() => {
-                      /* no-op for review requests */
-                    }}
-                    onUpdateProjectField={async () => false}
-                  />
-                </ActivityDetailOverlay>
-              ) : null}
+              </div>
+              {referenceLine}
             </div>
-          </li>
-        );
-      })}
+          );
+
+          return (
+            <li key={resolvedSelectionId}>
+              <div
+                className={cn(
+                  "group rounded-md border bg-background p-3 transition focus-within:border-primary/60 focus-within:shadow-md focus-within:shadow-primary/10",
+                  isSelected
+                    ? "border-primary/60 shadow-md shadow-primary/10"
+                    : "border-border hover:border-primary/50 hover:bg-muted/20 hover:shadow-md hover:shadow-primary/10",
+                )}
+              >
+                <button
+                  type="button"
+                  aria-expanded={isSelected}
+                  className={cn(
+                    "block w-full cursor-pointer bg-transparent p-0 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                    isSelected
+                      ? "text-primary"
+                      : "text-foreground group-hover:text-primary",
+                  )}
+                  onClick={() => selectItem(resolvedSelectionId)}
+                >
+                  <div className="sm:flex sm:items-start sm:justify-between sm:gap-4">
+                    <ActivityListItemSummary
+                      iconInfo={iconInfo}
+                      referenceLabel={referenceLabel}
+                      referenceUrl={pullRequest.url ?? undefined}
+                      title={pullRequest.title}
+                      metadata={metadata}
+                    />
+                    {item.pullRequestUpdatedAt ? (
+                      <div className="mt-2 flex flex-col gap-1 text-xs text-foreground/90 sm:mt-0 sm:w-[180px] sm:shrink-0 sm:text-right">
+                        {updatedRelativeLabel ? (
+                          <span className="font-medium text-foreground">
+                            {updatedRelativeLabel}
+                          </span>
+                        ) : null}
+                        <span title={timezoneTitle}>
+                          {updatedAbsoluteLabel}
+                        </span>
+                      </div>
+                    ) : null}
+                  </div>
+                </button>
+                {isSelected ? (
+                  <ActivityDetailOverlay
+                    item={overlayItem}
+                    iconInfo={iconInfo}
+                    badges={badges}
+                    onClose={closeItem}
+                  >
+                    <FollowUpDetailContent
+                      item={overlayItem}
+                      detail={detail}
+                      isLoading={isDetailLoading}
+                      timezone={timezone}
+                      dateTimeFormat={dateTimeFormat}
+                      isUpdatingStatus={false}
+                      isUpdatingProjectFields={false}
+                      onUpdateStatus={() => {
+                        /* no-op for review requests */
+                      }}
+                      onUpdateProjectField={async () => false}
+                    />
+                  </ActivityDetailOverlay>
+                ) : null}
+              </div>
+            </li>
+          );
+        },
+      )}
     </ul>
   ) : (
     <p className="text-sm text-muted-foreground">{emptyText}</p>
@@ -2512,6 +2576,7 @@ function MentionList({
   pendingOverrideKey,
   setPendingOverrideKey,
   onOverrideSuccess,
+  mentionWaitMap,
 }: {
   items: MentionAttentionItem[];
   emptyText: string;
@@ -2533,41 +2598,80 @@ function MentionList({
       lastEvaluatedAt: string | null;
     };
   }) => void;
+  mentionWaitMap: Map<string, MentionAttentionItem[]>;
 }) {
   const [targetFilter, setTargetFilter] = useState("all");
   const [authorFilter, setAuthorFilter] = useState("all");
   const trimmedTimezone = timezone.trim();
   const timezoneTitle = trimmedTimezone.length ? trimmedTimezone : undefined;
 
+  type AggregatedMention = {
+    selectionId: string;
+    representative: MentionAttentionItem;
+    mentions: MentionAttentionItem[];
+  };
+
+  const aggregatedItems = useMemo<AggregatedMention[]>(() => {
+    const map = new Map<
+      string,
+      { representative: MentionAttentionItem; mentions: MentionAttentionItem[] }
+    >();
+    items.forEach((mention) => {
+      const containerId = mention.container.id ?? null;
+      const key =
+        containerId && containerId.length > 0 ? containerId : mention.commentId;
+      if (!key) {
+        return;
+      }
+      const entry = map.get(key);
+      if (entry) {
+        entry.mentions.push(mention);
+        if (mention.waitingDays > entry.representative.waitingDays) {
+          entry.representative = mention;
+        }
+      } else {
+        map.set(key, { representative: mention, mentions: [mention] });
+      }
+    });
+
+    return Array.from(map.entries()).map(([selectionId, value]) => ({
+      selectionId,
+      representative: value.representative,
+      mentions: value.mentions,
+    }));
+  }, [items]);
+
   const aggregation = useMemo(() => {
     const targetMap = new Map<string, RankingEntry>();
     const authorMap = new Map<string, RankingEntry>();
 
-    items.forEach((item) => {
-      const metricValue = item.waitingDays;
+    aggregatedItems.forEach(({ representative }) => {
+      const metricValue = representative.waitingDays;
+      const target = representative.target;
+      const author = representative.author;
 
-      if (item.target) {
-        const targetEntry = targetMap.get(item.target.id) ?? {
-          key: item.target.id,
-          user: item.target,
+      if (target) {
+        const targetEntry = targetMap.get(target.id) ?? {
+          key: target.id,
+          user: target,
           total: 0,
           count: 0,
         };
         targetEntry.total += metricValue;
         targetEntry.count += 1;
-        targetMap.set(item.target.id, targetEntry);
+        targetMap.set(target.id, targetEntry);
       }
 
-      if (item.author) {
-        const authorEntry = authorMap.get(item.author.id) ?? {
-          key: item.author.id,
-          user: item.author,
+      if (author) {
+        const authorEntry = authorMap.get(author.id) ?? {
+          key: author.id,
+          user: author,
           total: 0,
           count: 0,
         };
         authorEntry.total += metricValue;
         authorEntry.count += 1;
-        authorMap.set(item.author.id, authorEntry);
+        authorMap.set(author.id, authorEntry);
       }
     });
 
@@ -2575,7 +2679,7 @@ function MentionList({
       targets: Array.from(targetMap.values()),
       authors: Array.from(authorMap.values()),
     };
-  }, [items]);
+  }, [aggregatedItems]);
 
   const targetOptions = useMemo(() => {
     return aggregation.targets
@@ -2590,19 +2694,23 @@ function MentionList({
   }, [aggregation.authors]);
 
   const filteredItems = useMemo(() => {
-    return items.filter((item) => {
+    return aggregatedItems.filter(({ representative }) => {
       const targetMatch =
-        targetFilter === "all" || item.target?.id === targetFilter;
+        targetFilter === "all" || representative.target?.id === targetFilter;
 
       const authorMatch =
-        authorFilter === "all" || item.author?.id === authorFilter;
+        authorFilter === "all" || representative.author?.id === authorFilter;
 
       return targetMatch && authorMatch;
     });
-  }, [items, targetFilter, authorFilter]);
+  }, [aggregatedItems, targetFilter, authorFilter]);
 
   const sortedItems = useMemo(() => {
-    return filteredItems.slice().sort((a, b) => b.waitingDays - a.waitingDays);
+    return filteredItems
+      .slice()
+      .sort(
+        (a, b) => b.representative.waitingDays - a.representative.waitingDays,
+      );
   }, [filteredItems]);
 
   const targetRankingByTotal = useMemo(() => {
@@ -2632,7 +2740,7 @@ function MentionList({
     updateDetailItem,
   } = useActivityDetailState();
 
-  if (!items.length && !segmented) {
+  if (!aggregatedItems.length && !segmented) {
     return <p className="text-sm text-muted-foreground">{emptyText}</p>;
   }
 
@@ -2702,10 +2810,8 @@ function MentionList({
 
   const listContent = sortedItems.length ? (
     <ul className="space-y-4">
-      {sortedItems.map((item, index) => {
-        const containerId = item.container.id?.trim();
-        const selectionId =
-          containerId && containerId.length > 0 ? containerId : item.commentId;
+      {sortedItems.map(({ selectionId, representative: item, mentions }) => {
+        const containerId = item.container.id ?? null;
         const activityType: ActivityItem["type"] =
           item.container.type === "pull_request"
             ? "pull_request"
@@ -2724,7 +2830,11 @@ function MentionList({
         });
         activityItem.businessDaysOpen = item.waitingDays ?? null;
         activityItem.businessDaysIdle = item.waitingDays ?? null;
-        activityItem.mentionWaits = toActivityMentionWaits([item]);
+        const mentionDetails =
+          (containerId && containerId.length > 0
+            ? mentionWaitMap.get(containerId)
+            : undefined) ?? mentions;
+        activityItem.mentionWaits = toActivityMentionWaits(mentionDetails);
 
         const detail = detailMap[selectionId] ?? undefined;
         const overlayItem = detail?.item ?? activityItem;
@@ -2896,9 +3006,7 @@ function MentionList({
         };
 
         return (
-          <li
-            key={`${item.commentId}:${item.target?.id ?? "unknown"}:${index}`}
-          >
+          <li key={selectionId}>
             <div
               className={cn(
                 "group rounded-md border bg-background p-3 transition focus-within:border-primary/60 focus-within:shadow-md focus-within:shadow-primary/10",
@@ -3253,6 +3361,7 @@ export function AttentionView({
           pendingOverrideKey={pendingMentionOverrideKey}
           setPendingOverrideKey={setPendingMentionOverrideKey}
           onOverrideSuccess={handleMentionOverrideSuccess}
+          mentionWaitMap={mentionWaitMap}
         />
       ),
     },

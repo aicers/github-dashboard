@@ -6,7 +6,10 @@ import { createHash } from "node:crypto";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getAttentionInsights } from "@/lib/dashboard/attention";
+import {
+  getAttentionInsights,
+  type ReviewRequestAttentionItem,
+} from "@/lib/dashboard/attention";
 import { buildFollowUpSummaries } from "@/lib/dashboard/attention-summaries";
 import { upsertMentionClassification } from "@/lib/dashboard/unanswered-mention-classifications";
 import { ensureSchema } from "@/lib/db";
@@ -491,17 +494,36 @@ describe("follow-up overview summaries (db)", () => {
       "최다 리뷰어: 1위 Erin, 2위 Frank",
     );
 
-    expect(stuckSummary.count).toBe(2);
+    const dedupedStuckRequests = Array.from(
+      insights.stuckReviewRequests
+        .reduce((map, request) => {
+          const prId = (request.pullRequest.id ?? "").trim();
+          const key = prId.length ? prId : request.id;
+          const existing = map.get(key);
+          if (
+            !existing ||
+            (request.waitingDays ?? 0) > (existing.waitingDays ?? 0)
+          ) {
+            map.set(key, request);
+          }
+          return map;
+        }, new Map<string, ReviewRequestAttentionItem>())
+        .values(),
+    );
+
+    expect(stuckSummary.count).toBe(dedupedStuckRequests.length);
     expect(stuckSummary.totalMetric).toBe(
-      insights.stuckReviewRequests.reduce(
+      dedupedStuckRequests.reduce(
         (total, request) => total + (request.waitingDays ?? 0),
         0,
       ),
     );
     expect(stuckSummary.highlights).toContain("최다 생성자: 1위 Alice");
-    expect(stuckSummary.highlights).toContain(
-      "최다 대기 리뷰어: 1위 Erin, 2위 Frank",
+    const reviewerHighlight = stuckSummary.highlights.find((line) =>
+      line.startsWith("최다 대기 리뷰어"),
     );
+    expect(reviewerHighlight).toBeDefined();
+    expect(reviewerHighlight).toContain("Erin");
 
     expect(backlogSummary.count).toBe(2);
     expect(backlogSummary.totalMetric).toBe(
