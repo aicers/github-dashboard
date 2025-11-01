@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:22-slim AS base
+FROM node:25-slim AS base
 ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app
 RUN set -eux; \
