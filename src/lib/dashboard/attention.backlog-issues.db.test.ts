@@ -4,6 +4,7 @@ import "../../../tests/helpers/postgres-container";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { applyProjectFieldOverrides } from "@/lib/activity/project-field-store";
 import { refreshActivityItemsSnapshot } from "@/lib/activity/snapshot";
 import { getAttentionInsights } from "@/lib/dashboard/attention";
 import { ensureSchema } from "@/lib/db";
@@ -280,6 +281,8 @@ describe("attention insights for backlog issues", () => {
       await upsertIssue(issue);
     }
 
+    await applyProjectFieldOverrides(backlogPrimary.id, { priority: "p1" });
+
     await refreshActivityItemsSnapshot({ truncate: true });
 
     const insights = await getAttentionInsights();
@@ -318,6 +321,7 @@ describe("attention insights for backlog issues", () => {
         name: bob.name,
       },
     ]);
+    expect(primary.issueTodoProjectPriority).toBe("P1");
     expect(primary.ageDays).toBe(
       businessDaysBetween(backlogCreatedAt, FIXED_NOW),
     );
