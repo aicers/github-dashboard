@@ -814,27 +814,46 @@ function formatBoundsForLog(bounds: TimeBounds) {
   return parts.length ? ` (${parts.join("; ")})` : "";
 }
 
+type TimestampEvaluation = {
+  include: boolean;
+  afterUpperBound: boolean;
+  beforeLowerBound: boolean;
+};
+
 function evaluateTimestamp(
   timestamp: string | null | undefined,
   bounds: TimeBounds,
-): {
-  include: boolean;
-  afterUpperBound: boolean;
-} {
+): TimestampEvaluation {
   const value = toTime(timestamp);
   if (value === null) {
-    return { include: false, afterUpperBound: false };
+    return {
+      include: false,
+      afterUpperBound: false,
+      beforeLowerBound: false,
+    };
   }
 
   if (bounds.since !== null && value < bounds.since) {
-    return { include: false, afterUpperBound: false };
+    return {
+      include: false,
+      afterUpperBound: false,
+      beforeLowerBound: true,
+    };
   }
 
   if (bounds.until !== null && value >= bounds.until) {
-    return { include: false, afterUpperBound: true };
+    return {
+      include: false,
+      afterUpperBound: true,
+      beforeLowerBound: false,
+    };
   }
 
-  return { include: true, afterUpperBound: false };
+  return {
+    include: true,
+    afterUpperBound: false,
+    beforeLowerBound: false,
+  };
 }
 
 async function processActor(actor: Maybe<GithubActor>) {
@@ -1469,13 +1488,16 @@ async function collectDiscussionsForRepository(
     const discussionsConnection = data.repository?.discussions;
     const discussionNodes: DiscussionNode[] =
       discussionsConnection?.nodes ?? [];
-    let reachedUpperBound = false;
+    let reachedLowerBound = false;
 
     for (const discussion of discussionNodes) {
       const decision = evaluateTimestamp(discussion.updatedAt, bounds);
       if (!decision.include) {
         if (decision.afterUpperBound) {
-          reachedUpperBound = true;
+          continue;
+        }
+        if (decision.beforeLowerBound) {
+          reachedLowerBound = true;
           break;
         }
         continue;
@@ -1525,7 +1547,7 @@ async function collectDiscussionsForRepository(
       commentCount += commentsResult.count;
     }
 
-    if (reachedUpperBound) {
+    if (reachedLowerBound) {
       hasNextPage = false;
       cursor = null;
       break;
@@ -1912,13 +1934,16 @@ async function collectPullRequestsForRepository(
     const prNodes: PullRequestNode[] = prsConnection?.nodes ?? [];
     const fetchedPullRequestCount = prNodes.length;
     let upsertedPullRequestCount = 0;
-    let reachedUpperBound = false;
+    let reachedLowerBound = false;
 
     for (const pullRequest of prNodes) {
       const decision = evaluateTimestamp(pullRequest.updatedAt, bounds);
       if (!decision.include) {
         if (decision.afterUpperBound) {
-          reachedUpperBound = true;
+          continue;
+        }
+        if (decision.beforeLowerBound) {
+          reachedLowerBound = true;
           break;
         }
         continue;
@@ -2014,8 +2039,8 @@ async function collectPullRequestsForRepository(
     const cursorLabel = cursor ? ` (cursor ${cursor})` : "";
     const summary = `Processed pull request batch for ${repository.nameWithOwner}${cursorLabel}: fetched ${fetchedPullRequestCount}, upserted ${upsertedPullRequestCount}`;
 
-    if (reachedUpperBound) {
-      logger?.(`${summary} (stopped at upper bound)`);
+    if (reachedLowerBound) {
+      logger?.(`${summary} (stopped at lower bound)`);
       hasNextPage = false;
       cursor = null;
       break;
@@ -2078,13 +2103,16 @@ async function collectPullRequestLinksForRepository(
     const prNodes: PullRequestLinkNode[] = prsConnection?.nodes ?? [];
     const fetchedPullRequestLinkCount = prNodes.length;
     let upsertedPullRequestLinkCount = 0;
-    let reachedUpperBound = false;
+    let reachedLowerBound = false;
 
     for (const pullRequest of prNodes) {
       const decision = evaluateTimestamp(pullRequest.updatedAt, bounds);
       if (!decision.include) {
         if (decision.afterUpperBound) {
-          reachedUpperBound = true;
+          continue;
+        }
+        if (decision.beforeLowerBound) {
+          reachedLowerBound = true;
           break;
         }
         continue;
@@ -2140,8 +2168,8 @@ async function collectPullRequestLinksForRepository(
     const nextCursorLabel = nextCursor ? ` (cursor ${nextCursor})` : "";
     const summary = `Processed pull request link batch for ${repository.nameWithOwner}${nextCursorLabel}: fetched ${fetchedPullRequestLinkCount}, upserted ${upsertedPullRequestLinkCount}`;
 
-    if (reachedUpperBound) {
-      logger?.(`${summary} (stopped at upper bound)`);
+    if (reachedLowerBound) {
+      logger?.(`${summary} (stopped at lower bound)`);
       hasNextPage = false;
       cursor = nextCursor;
       break;

@@ -347,9 +347,16 @@ describe("sync service database integration", () => {
       expect(runCollectionSpy).toHaveBeenCalledTimes(1);
       const callArgs = runCollectionSpy.mock.calls[0]?.[0];
       expect(callArgs?.until).toBeNull();
-      expect(callArgs?.since instanceof Date ? callArgs?.since.toISOString() : callArgs?.since).toBe(
-        "2024-04-01T00:00:00.000Z",
-      );
+      const sinceValue = callArgs?.since;
+      const normalizedSince =
+        typeof sinceValue === "string"
+          ? sinceValue
+          : sinceValue &&
+              typeof sinceValue === "object" &&
+              "toISOString" in sinceValue
+            ? (sinceValue as Date).toISOString()
+            : (sinceValue ?? null);
+      expect(normalizedSince).toBe("2024-04-01T00:00:00.000Z");
       expect(callArgs?.sinceByResource?.issues).toBe(
         "2030-01-01T00:00:00.000Z",
       );
