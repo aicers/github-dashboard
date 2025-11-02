@@ -452,64 +452,41 @@ describe("sync service database integration", () => {
       );
     });
 
-    it("splits the requested range into day chunks, aggregates totals, and updates sync metadata", async () => {
+    it("runs a single backfill pass and updates totals and metadata", async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date("2024-04-05T00:00:00.000Z"));
 
       const runCollectionSpy = vi.spyOn(collectors, "runCollection");
-      runCollectionSpy
-        .mockResolvedValueOnce({
-          repositoriesProcessed: 1,
-          counts: {
-            issues: 5,
-            discussions: 2,
-            pullRequests: 3,
-            reviews: 2,
-            comments: 4,
-          },
-          timestamps: {
-            repositories: null,
-            issues: null,
-            discussions: null,
-            pullRequests: null,
-            reviews: null,
-            comments: null,
-          },
-        })
-        .mockResolvedValueOnce({
-          repositoriesProcessed: 2,
-          counts: {
-            issues: 2,
-            discussions: 1,
-            pullRequests: 4,
-            reviews: 1,
-            comments: 3,
-          },
-          timestamps: {
-            repositories: null,
-            issues: null,
-            discussions: null,
-            pullRequests: null,
-            reviews: null,
-            comments: null,
-          },
-        });
+      runCollectionSpy.mockResolvedValueOnce({
+        repositoriesProcessed: 2,
+        counts: {
+          issues: 7,
+          discussions: 3,
+          pullRequests: 7,
+          reviews: 3,
+          comments: 7,
+        },
+        timestamps: {
+          repositories: "2024-04-03T01:00:00.000Z",
+          issues: "2024-04-04T12:00:00.000Z",
+          discussions: "2024-04-04T11:00:00.000Z",
+          pullRequests: "2024-04-04T10:00:00.000Z",
+          reviews: "2024-04-04T09:00:00.000Z",
+          comments: "2024-04-04T08:00:00.000Z",
+        },
+      } satisfies Awaited<ReturnType<typeof collectors.runCollection>>);
 
       const result = await runBackfill("2024-04-03");
 
-      expect(runCollectionSpy).toHaveBeenCalledTimes(2);
+      expect(runCollectionSpy).toHaveBeenCalledTimes(1);
       expect(runCollectionSpy.mock.calls[0]?.[0]).toMatchObject({
         since: "2024-04-03T00:00:00.000Z",
-        until: "2024-04-04T00:00:00.000Z",
-      });
-      expect(runCollectionSpy.mock.calls[1]?.[0]).toMatchObject({
-        since: "2024-04-04T00:00:00.000Z",
-        until: "2024-04-05T00:00:00.000Z",
+        until: null,
       });
 
-      expect(result.chunkCount).toBe(2);
+      expect(result.chunkCount).toBe(1);
       expect(result.startDate).toBe("2024-04-03T00:00:00.000Z");
-      expect(result.endDate).toBe("2024-04-05T00:00:00.000Z");
+      expect(result.endDate).toBeNull();
       expect(result.totals).toEqual({
         issues: 7,
         discussions: 3,
@@ -517,9 +494,9 @@ describe("sync service database integration", () => {
         reviews: 3,
         comments: 7,
       });
-      expect(result.chunks.every((chunk) => chunk.status === "success")).toBe(
-        true,
-      );
+      expect(result.chunks).toHaveLength(1);
+      const [chunk] = result.chunks;
+      expect(chunk?.status).toBe("success");
 
       const latestConfig = await getSyncConfig();
       expect(latestConfig?.last_sync_started_at).not.toBeNull();
@@ -528,10 +505,17 @@ describe("sync service database integration", () => {
         latestConfig?.last_successful_sync_at instanceof Date
           ? latestConfig.last_successful_sync_at.toISOString()
           : latestConfig?.last_successful_sync_at;
-      const lastChunk = result.chunks.at(-1);
-      const lastCompletedAt =
-        lastChunk?.status === "success" ? lastChunk.completedAt : null;
-      expect(finalSuccessfulIso).toBe(lastCompletedAt);
+      const expectedLatest =
+        chunk?.status === "success"
+          ? chunk.summary.timestamps?.issues ??
+            chunk.summary.timestamps?.pullRequests ??
+            chunk.summary.timestamps?.discussions ??
+            chunk.summary.timestamps?.reviews ??
+            chunk.summary.timestamps?.comments ??
+            chunk.summary.timestamps?.repositories ??
+            null
+          : null;
+      expect(finalSuccessfulIso).toBe(expectedLatest);
     });
 
     it("records the first failure and stops further processing without overriding the last successful timestamp", async () => {
@@ -539,38 +523,18 @@ describe("sync service database integration", () => {
       vi.setSystemTime(new Date("2024-04-05T00:00:00.000Z"));
 
       const runCollectionSpy = vi.spyOn(collectors, "runCollection");
-      runCollectionSpy
-        .mockResolvedValueOnce({
-          repositoriesProcessed: 1,
-          counts: {
-            issues: 3,
-            discussions: 1,
-            pullRequests: 2,
-            reviews: 1,
-            comments: 2,
-          },
-          timestamps: {
-            repositories: null,
-            issues: null,
-            discussions: null,
-            pullRequests: null,
-            reviews: null,
-            comments: null,
-          },
-        })
-        .mockRejectedValueOnce(new Error("network boom"));
+      runCollectionSpy.mockRejectedValueOnce(new Error("network boom"));
 
       const result = await runBackfill("2024-04-03");
 
-      expect(runCollectionSpy).toHaveBeenCalledTimes(2);
-      expect(result.chunkCount).toBe(2);
-      const [firstChunk, secondChunk] = result.chunks;
-      expect(firstChunk.status).toBe("success");
-      expect(secondChunk.status).toBe("failed");
-      if (secondChunk.status === "failed") {
-        expect(secondChunk.error).toContain("network boom");
-        expect(secondChunk.since).toBe("2024-04-04T00:00:00.000Z");
-        expect(secondChunk.until).toBe("2024-04-05T00:00:00.000Z");
+      expect(runCollectionSpy).toHaveBeenCalledTimes(1);
+      expect(result.chunkCount).toBe(1);
+      const [chunk] = result.chunks;
+      expect(chunk?.status).toBe("failed");
+      if (chunk?.status === "failed") {
+        expect(chunk.error).toContain("network boom");
+        expect(chunk.since).toBe("2024-04-03T00:00:00.000Z");
+        expect(chunk.until).toBe("2024-04-03T00:00:00.000Z");
       }
 
       const latestConfig = await getSyncConfig();
@@ -580,7 +544,7 @@ describe("sync service database integration", () => {
           : latestConfig?.last_successful_sync_at;
 
       expect(lastSuccessfulIso).toBe(
-        firstChunk.status === "success" ? firstChunk.completedAt : null,
+        chunk?.status === "success" ? chunk.completedAt : null,
       );
       expect(latestConfig?.last_sync_completed_at).not.toBeNull();
     });
@@ -611,17 +575,9 @@ describe("sync service database integration", () => {
 
       const result = await runBackfill("2024-04-01", "2024-04-03");
 
-      expect(runCollectionSpy).toHaveBeenCalledTimes(3);
+      expect(runCollectionSpy).toHaveBeenCalledTimes(1);
       expect(runCollectionSpy.mock.calls[0]?.[0]).toMatchObject({
         since: "2024-04-01T00:00:00.000Z",
-        until: "2024-04-02T00:00:00.000Z",
-      });
-      expect(runCollectionSpy.mock.calls[1]?.[0]).toMatchObject({
-        since: "2024-04-02T00:00:00.000Z",
-        until: "2024-04-03T00:00:00.000Z",
-      });
-      expect(runCollectionSpy.mock.calls[2]?.[0]).toMatchObject({
-        since: "2024-04-03T00:00:00.000Z",
         until: "2024-04-04T00:00:00.000Z",
       });
       expect(result.endDate).toBe("2024-04-04T00:00:00.000Z");
