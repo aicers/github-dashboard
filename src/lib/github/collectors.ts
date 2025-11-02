@@ -111,6 +111,9 @@ type IssueNode = {
   bodyHTML?: string | null;
   bodyMarkdown?: string | null;
   author?: GithubActor | null;
+  assignees?: {
+    nodes?: Maybe<GithubActor>[] | null;
+  } | null;
   issueType?: IssueTypeNode | null;
   milestone?: MilestoneNode | null;
   trackedIssues?: IssueRelationConnection | null;
@@ -386,6 +389,9 @@ type PullRequestLinkNode = {
   merged?: boolean | null;
   author?: GithubActor | null;
   mergedBy?: GithubActor | null;
+  assignees?: {
+    nodes?: Maybe<GithubActor>[] | null;
+  } | null;
   closingIssuesReferences?: IssueRelationConnection | null;
 };
 
@@ -839,6 +845,18 @@ async function processActor(actor: Maybe<GithubActor>) {
 
   await upsertUser(normalized);
   return normalized.id;
+}
+
+async function processActorNodes(
+  nodes: Maybe<GithubActor>[] | null | undefined,
+) {
+  if (!Array.isArray(nodes)) {
+    return;
+  }
+
+  for (const actor of nodes) {
+    await processActor(actor);
+  }
 }
 
 function normalizeReactionSubjectType(
@@ -1755,6 +1773,8 @@ async function collectIssuesForRepository(
 
     const issuesConnection = data.repository?.issues;
     const issueNodes: IssueNode[] = issuesConnection?.nodes ?? [];
+    const fetchedIssueCount = issueNodes.length;
+    let upsertedIssueCount = 0;
     const existingIssueRaw = issueNodes.length
       ? await fetchIssueRawMap(issueNodes.map((node) => node.id))
       : new Map<string, unknown>();
@@ -1771,6 +1791,7 @@ async function collectIssuesForRepository(
       }
 
       const authorId = await processActor(issue.author);
+      await processActorNodes(issue.assignees?.nodes);
       const previousHistory = extractProjectStatusHistoryFromRaw(
         existingIssueRaw.get(issue.id),
       );
@@ -1808,6 +1829,7 @@ async function collectIssuesForRepository(
         closedAt: issue.closedAt ?? null,
         raw: rawIssue,
       });
+      upsertedIssueCount += 1;
 
       await processReactions(issue.reactions, "issue", issue.id);
 
@@ -1828,11 +1850,17 @@ async function collectIssuesForRepository(
       commentCount += commentsResult.count;
     }
 
+    const cursorLabel = cursor ? ` (cursor ${cursor})` : "";
+    const summary = `Processed issues batch for ${repository.nameWithOwner}${cursorLabel}: fetched ${fetchedIssueCount}, upserted ${upsertedIssueCount}`;
+
     if (reachedUpperBound) {
+      logger?.(`${summary} (stopped at upper bound)`);
       hasNextPage = false;
       cursor = null;
       break;
     }
+
+    logger?.(`${summary}.`);
 
     hasNextPage = issuesConnection?.pageInfo?.hasNextPage ?? false;
     cursor = issuesConnection?.pageInfo?.endCursor ?? null;
@@ -1882,6 +1910,8 @@ async function collectPullRequestsForRepository(
 
     const prsConnection = data.repository?.pullRequests;
     const prNodes: PullRequestNode[] = prsConnection?.nodes ?? [];
+    const fetchedPullRequestCount = prNodes.length;
+    let upsertedPullRequestCount = 0;
     let reachedUpperBound = false;
 
     for (const pullRequest of prNodes) {
@@ -1896,6 +1926,7 @@ async function collectPullRequestsForRepository(
 
       const authorId = await processActor(pullRequest.author);
       await processActor(pullRequest.mergedBy);
+      await processActorNodes(pullRequest.assignees?.nodes);
       await upsertPullRequest({
         id: pullRequest.id,
         number: pullRequest.number,
@@ -1910,6 +1941,7 @@ async function collectPullRequestsForRepository(
         merged: pullRequest.merged ?? null,
         raw: pullRequest,
       });
+      upsertedPullRequestCount += 1;
 
       const closingIssuesNodes = (pullRequest.closingIssuesReferences?.nodes ??
         []) as IssueRelationNode[];
@@ -1979,11 +2011,17 @@ async function collectPullRequestsForRepository(
       commentCount += reviewCommentResult.count;
     }
 
+    const cursorLabel = cursor ? ` (cursor ${cursor})` : "";
+    const summary = `Processed pull request batch for ${repository.nameWithOwner}${cursorLabel}: fetched ${fetchedPullRequestCount}, upserted ${upsertedPullRequestCount}`;
+
     if (reachedUpperBound) {
+      logger?.(`${summary} (stopped at upper bound)`);
       hasNextPage = false;
       cursor = null;
       break;
     }
+
+    logger?.(`${summary}.`);
 
     hasNextPage = prsConnection?.pageInfo?.hasNextPage ?? false;
     cursor = prsConnection?.pageInfo?.endCursor ?? null;
@@ -2038,6 +2076,8 @@ async function collectPullRequestLinksForRepository(
 
     const prsConnection = data.repository?.pullRequests;
     const prNodes: PullRequestLinkNode[] = prsConnection?.nodes ?? [];
+    const fetchedPullRequestLinkCount = prNodes.length;
+    let upsertedPullRequestLinkCount = 0;
     let reachedUpperBound = false;
 
     for (const pullRequest of prNodes) {
@@ -2052,6 +2092,7 @@ async function collectPullRequestLinksForRepository(
 
       const authorId = await processActor(pullRequest.author);
       await processActor(pullRequest.mergedBy);
+      await processActorNodes(pullRequest.assignees?.nodes);
       await upsertPullRequest({
         id: pullRequest.id,
         number: pullRequest.number,
@@ -2066,6 +2107,7 @@ async function collectPullRequestLinksForRepository(
         merged: pullRequest.merged ?? null,
         raw: pullRequest,
       });
+      upsertedPullRequestLinkCount += 1;
 
       const closingIssuesNodes = (pullRequest.closingIssuesReferences?.nodes ??
         []) as IssueRelationNode[];
@@ -2094,14 +2136,21 @@ async function collectPullRequestLinksForRepository(
       pullRequestCount += 1;
     }
 
+    const nextCursor = prsConnection?.pageInfo?.endCursor ?? null;
+    const nextCursorLabel = nextCursor ? ` (cursor ${nextCursor})` : "";
+    const summary = `Processed pull request link batch for ${repository.nameWithOwner}${nextCursorLabel}: fetched ${fetchedPullRequestLinkCount}, upserted ${upsertedPullRequestLinkCount}`;
+
     if (reachedUpperBound) {
+      logger?.(`${summary} (stopped at upper bound)`);
       hasNextPage = false;
-      cursor = null;
+      cursor = nextCursor;
       break;
     }
 
+    logger?.(`${summary}.`);
+
     hasNextPage = prsConnection?.pageInfo?.hasNextPage ?? false;
-    cursor = prsConnection?.pageInfo?.endCursor ?? null;
+    cursor = nextCursor;
   }
 
   return {
