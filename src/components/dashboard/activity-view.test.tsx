@@ -7,7 +7,11 @@ import {
   within,
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
+import {
+  ISSUE_PRIORITY_BADGE_CLASS,
+  ISSUE_WEIGHT_BADGE_CLASS,
+  PROJECT_FIELD_BADGE_CLASS,
+} from "@/components/dashboard/activity/detail-shared";
 import { ActivityView } from "@/components/dashboard/activity-view";
 import {
   buildActivityFilterOptionsFixture,
@@ -952,6 +956,21 @@ describe("ActivityView", () => {
       expect(url.searchParams.has("mentionedUserId")).toBe(false);
       expect(url.searchParams.getAll("authorId")).toEqual(["user-alice"]);
     });
+
+    fireEvent.change(mentionInput, { target: { value: "alice" } });
+    fireEvent.keyDown(mentionInput, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => {
+      const chips = screen.getAllByLabelText("Remove alice");
+      expect(chips.length).toBeGreaterThan(0);
+      chips.forEach((chip) => {
+        expect(chip.parentElement?.className).toContain("bg-emerald-500/10");
+      });
+    });
+    expect(screen.getByRole("button", { name: "alice" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
   it("prevents removing optional chips while locked and keeps applied roles intact", async () => {
@@ -999,6 +1018,124 @@ describe("ActivityView", () => {
         expect(url.searchParams.has(key)).toBe(false);
       });
     });
+  });
+
+  it("renders project field, priority, weight, and attention badges with expected styling", async () => {
+    const manualWait: ActivityMentionWait = {
+      id: "wait-manual",
+      user: {
+        id: "user-target",
+        login: "target",
+        name: "Target",
+        avatarUrl: null,
+      },
+      userId: "user-target",
+      mentionedAt: "2024-04-01T09:00:00.000Z",
+      businessDaysWaiting: 3,
+      requiresResponse: true,
+      manualRequiresResponse: false,
+      manualRequiresResponseAt: "2024-04-02T09:00:00.000Z",
+      manualDecisionIsStale: false,
+      classifierEvaluatedAt: "2024-04-02T10:00:00.000Z",
+    };
+    const aiSoftWait: ActivityMentionWait = {
+      id: "wait-ai-soft",
+      user: {
+        id: "user-ai",
+        login: "ai",
+        name: "AI",
+        avatarUrl: null,
+      },
+      userId: "user-ai",
+      mentionedAt: "2024-04-03T09:00:00.000Z",
+      businessDaysWaiting: 1,
+      requiresResponse: false,
+      manualRequiresResponse: null,
+      manualRequiresResponseAt: null,
+      manualDecisionIsStale: false,
+      classifierEvaluatedAt: "2024-04-03T10:00:00.000Z",
+    };
+
+    const badgeItem = buildActivityItemFixture({
+      id: "issue-badges",
+      title: "배지 확인 이슈",
+      issueProjectStatus: "in_progress",
+      issueProjectStatusSource: "activity",
+      issueTodoProjectStatus: "in_progress",
+      issueTodoProjectPriority: "P0",
+      issueTodoProjectWeight: "Heavy",
+      hasParentIssue: true,
+      hasSubIssues: true,
+      labels: [
+        {
+          key: "team-alpha",
+          name: "Team Alpha",
+          repositoryId: "repo-alpha",
+          repositoryNameWithOwner: "acme/alpha",
+        },
+        {
+          key: "severity-critical",
+          name: "Critical",
+          repositoryId: "repo-alpha",
+          repositoryNameWithOwner: "acme/alpha",
+        },
+      ],
+      issueType: {
+        id: "issue-type-task",
+        name: "Task",
+      },
+      milestone: {
+        id: "milestone-x",
+        title: "Milestone X",
+        state: "OPEN",
+        dueOn: "2024-05-01",
+        url: "https://example.com/milestone",
+      },
+      attention: {
+        unansweredMention: true,
+        reviewRequestPending: false,
+        staleOpenPr: false,
+        idlePr: false,
+        backlogIssue: true,
+        stalledIssue: false,
+      },
+      mentionWaits: [manualWait, aiSoftWait],
+    });
+
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+    const props = createDefaultProps({
+      initialData: buildActivityListResult({
+        items: [badgeItem],
+      }),
+      initialParams: buildActivityListParams({ useMentionAi: false }),
+    });
+
+    render(<ActivityView {...props} />);
+
+    const listItem = screen.getByRole("button", { name: /배지 확인 이슈/ });
+
+    const statusBadge = within(listItem).getByText("In Progress");
+    expect(statusBadge.className).toBe(PROJECT_FIELD_BADGE_CLASS);
+
+    const priorityBadge = within(listItem).getByText("P0");
+    expect(priorityBadge.className).toBe(ISSUE_PRIORITY_BADGE_CLASS);
+
+    const weightBadge = within(listItem).getByText("Heavy");
+    expect(weightBadge.className).toBe(ISSUE_WEIGHT_BADGE_CLASS);
+
+    const backlogBadge = within(listItem).getByText("정체된 Backlog 이슈");
+    expect(backlogBadge.className).toContain("bg-amber-100");
+
+    const manualBadge = within(listItem).getByText("응답 요구가 아님");
+    expect(manualBadge.className).toContain("bg-slate-100");
+
+    const aiBadge = within(listItem).getByText("응답 없는 멘션");
+    expect(aiBadge.className).toContain("bg-sky-50");
+
+    expect(within(listItem).getByText("Child 이슈")).toBeVisible();
+    expect(within(listItem).getByText("Parent 이슈")).toBeVisible();
+    expect(within(listItem).getByText("Team Alpha")).toBeVisible();
+    expect(within(listItem).getByText("Critical")).toBeVisible();
   });
 
   it("restores locked state when loading saved filter payload", async () => {

@@ -1,3 +1,11 @@
+import type { Locator } from "@playwright/test";
+import {
+  ISSUE_MILESTONE_BADGE_CLASS,
+  ISSUE_PRIORITY_BADGE_CLASS,
+  ISSUE_TYPE_BADGE_CLASS,
+  ISSUE_WEIGHT_BADGE_CLASS,
+  PROJECT_FIELD_BADGE_CLASS,
+} from "@/components/dashboard/activity/detail-shared";
 import {
   buildActivityItemDetailFixture,
   buildActivityItemFixture,
@@ -325,6 +333,106 @@ test.describe("ActivityView (Playwright)", () => {
     ).toBeVisible();
     await expect(page.getByText("페이지 2 / 2 (총 2건)")).toBeVisible();
     await expect(page.getByRole("button", { name: "다음" })).toBeDisabled();
+  });
+});
+
+test.describe("ActivityView badges & overlay presentation", () => {
+  test.setTimeout(40000);
+
+  test("renders list badges with correct classes and shows overlay relation styling", async ({
+    page,
+  }) => {
+    await page.goto("/test-harness/auth/session?userId=activity-user");
+
+    await page.route("**/api/activity/filters**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ filters: [], limit: 5 }),
+      });
+    });
+
+    await page.route("**/api/activity/issue-1", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          buildActivityItemDetailFixture({
+            item: buildActivityItemFixture({
+              hasParentIssue: true,
+              hasSubIssues: true,
+            }),
+            body: "Badge detail body.",
+          }),
+        ),
+      });
+    });
+
+    await page.goto(ACTIVITY_PATH);
+    await page.waitForTimeout(200);
+
+    const listItem = page
+      .getByRole("button")
+      .filter({ hasText: "Controller returns incorrect status" })
+      .first();
+    await expect(listItem).toBeVisible();
+
+    const assertClassTokens = async (locator: Locator, classList: string) => {
+      const tokens = classList.trim().split(/\s+/);
+      for (const token of tokens) {
+        await expect(locator).toHaveClass(new RegExp(`\\b${token}\\b`));
+      }
+    };
+
+    const statusBadge = page
+      .locator('span[class*="bg-sky-100"][class*="text-sky-700"]')
+      .filter({ hasText: "Todo" })
+      .first();
+    await expect(statusBadge).toBeVisible();
+    await assertClassTokens(statusBadge, PROJECT_FIELD_BADGE_CLASS);
+
+    const priorityBadge = page
+      .locator('span[class*="bg-lime-100"][class*="text-lime-800"]')
+      .filter({ hasText: "P1" })
+      .first();
+    await expect(priorityBadge).toBeVisible();
+    await assertClassTokens(priorityBadge, ISSUE_PRIORITY_BADGE_CLASS);
+
+    const weightBadge = page
+      .locator('span[class*="bg-amber-100"][class*="text-amber-800"]')
+      .filter({ hasText: "Medium" })
+      .first();
+    await expect(weightBadge).toBeVisible();
+    await assertClassTokens(weightBadge, ISSUE_WEIGHT_BADGE_CLASS);
+
+    const milestoneBadge = page
+      .locator('span[class*="bg-slate-700"][class*="text-slate-100"]')
+      .filter({ hasText: "Milestone" })
+      .first();
+    await expect(milestoneBadge).toBeVisible();
+    await assertClassTokens(milestoneBadge, ISSUE_MILESTONE_BADGE_CLASS);
+
+    const issueTypeBadge = page
+      .locator('span[class*="bg-orange-100"][class*="text-orange-700"]')
+      .filter({ hasText: "Bug" })
+      .first();
+    await expect(issueTypeBadge).toBeVisible();
+    await assertClassTokens(issueTypeBadge, ISSUE_TYPE_BADGE_CLASS);
+
+    await expect(page.getByText("bug").first()).toBeVisible();
+
+    const detailResponse = page.waitForResponse((response) => {
+      return (
+        response.url().includes("/api/activity/issue-1") &&
+        response.request().method() === "GET"
+      );
+    });
+    await listItem.click();
+    await detailResponse;
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText("Badge detail body.")).toBeVisible();
   });
 });
 
