@@ -308,6 +308,53 @@ describe("sync service database integration", () => {
   });
 
   describe("runIncrementalSync", () => {
+    it("uses sync state timestamps when building since map for incremental sync", async () => {
+      vi.useFakeTimers();
+      const completedAt = new Date("2024-05-01T00:00:00.000Z");
+      vi.setSystemTime(completedAt);
+
+      await updateSyncConfig({
+        lastSuccessfulSyncAt: "2024-04-01T00:00:00.000Z",
+      });
+      await query(
+        `INSERT INTO sync_state (resource, last_cursor, last_item_timestamp, updated_at)
+         VALUES ($1, NULL, $2, NOW())`,
+        ["issues", "2030-01-01T00:00:00.000Z"],
+      );
+
+      const runCollectionSpy = vi.spyOn(collectors, "runCollection");
+      runCollectionSpy.mockResolvedValueOnce({
+        repositoriesProcessed: 1,
+        counts: {
+          issues: 1,
+          discussions: 0,
+          pullRequests: 0,
+          reviews: 0,
+          comments: 0,
+        },
+        timestamps: {
+          repositories: null,
+          issues: "2030-01-01T05:00:00.000Z",
+          discussions: null,
+          pullRequests: null,
+          reviews: null,
+          comments: null,
+        },
+      } satisfies Awaited<ReturnType<typeof collectors.runCollection>>);
+
+      await runIncrementalSync();
+
+      expect(runCollectionSpy).toHaveBeenCalledTimes(1);
+      const callArgs = runCollectionSpy.mock.calls[0]?.[0];
+      expect(callArgs?.until).toBeNull();
+      expect(callArgs?.since instanceof Date ? callArgs?.since.toISOString() : callArgs?.since).toBe(
+        "2024-04-01T00:00:00.000Z",
+      );
+      expect(callArgs?.sinceByResource?.issues).toBe(
+        "2030-01-01T00:00:00.000Z",
+      );
+    });
+
     it("records the latest resource timestamp as the last successful sync time", async () => {
       vi.useFakeTimers();
       const completedAt = new Date("2024-04-12T12:00:00.000Z");
@@ -352,6 +399,52 @@ describe("sync service database integration", () => {
   });
 
   describe("runBackfill", () => {
+    it("uses the requested since boundary for backfill even if sync state is ahead", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2024-04-05T00:00:00.000Z"));
+
+      await query(
+        `INSERT INTO sync_state (resource, last_cursor, last_item_timestamp, updated_at)
+         VALUES ($1, NULL, $2, NOW())`,
+        ["issues", "2030-01-01T00:00:00.000Z"],
+      );
+
+      const runCollectionSpy = vi.spyOn(collectors, "runCollection");
+      runCollectionSpy.mockResolvedValueOnce({
+        repositoriesProcessed: 1,
+        counts: {
+          issues: 1,
+          discussions: 0,
+          pullRequests: 0,
+          reviews: 0,
+          comments: 0,
+        },
+        timestamps: {
+          repositories: null,
+          issues: "2024-04-03T08:00:00.000Z",
+          discussions: null,
+          pullRequests: null,
+          reviews: null,
+          comments: null,
+        },
+      } satisfies Awaited<ReturnType<typeof collectors.runCollection>>);
+
+      await runBackfill("2024-04-03", "2024-04-03");
+
+      expect(runCollectionSpy).toHaveBeenCalledTimes(1);
+      const callArgs = runCollectionSpy.mock.calls[0]?.[0];
+      expect(callArgs).toMatchObject({
+        since: "2024-04-03T00:00:00.000Z",
+        until: "2024-04-04T00:00:00.000Z",
+      });
+      expect(callArgs?.sinceByResource?.issues).toBe(
+        "2024-04-03T00:00:00.000Z",
+      );
+      expect(callArgs?.sinceByResource?.pull_requests).toBe(
+        "2024-04-03T00:00:00.000Z",
+      );
+    });
+
     it("splits the requested range into day chunks, aggregates totals, and updates sync metadata", async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date("2024-04-05T00:00:00.000Z"));

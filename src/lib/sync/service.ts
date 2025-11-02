@@ -288,8 +288,18 @@ function toRunSummaryEvent(
   };
 }
 
-async function buildSinceMap(base: string | null, _strategy: SyncStrategy) {
+async function buildSinceMap(base: string | null, strategy: SyncStrategy) {
   const baseIso = coerceIso(base);
+  if (strategy === "backfill") {
+    const map: Partial<Record<ResourceKey, string>> = {};
+    if (baseIso) {
+      RESOURCE_KEYS.forEach((resource) => {
+        map[resource] = baseIso;
+      });
+    }
+    return map;
+  }
+
   const states = await Promise.all(
     RESOURCE_KEYS.map((resource) => getSyncState(resource)),
   );

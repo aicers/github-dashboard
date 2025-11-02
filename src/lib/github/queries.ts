@@ -81,7 +81,7 @@ export const organizationRepositoriesQuery = gql`
 export const repositoryIssuesQuery = gql`
   query RepositoryIssues($owner: String!, $name: String!, $cursor: String, $since: DateTime) {
     repository(owner: $owner, name: $name) {
-      issues(first: 25, after: $cursor, orderBy: { field: UPDATED_AT, direction: ASC }, filterBy: { since: $since }) {
+      issues(first: 25, after: $cursor, orderBy: { field: UPDATED_AT, direction: ASC }, filterBy: { since: $since }, states: [OPEN, CLOSED]) {
         pageInfo {
           hasNextPage
           endCursor
@@ -321,7 +321,7 @@ export const repositoryIssuesQuery = gql`
 export const repositoryDiscussionsQuery = gql`
   query RepositoryDiscussions($owner: String!, $name: String!, $cursor: String) {
     repository(owner: $owner, name: $name) {
-      discussions(first: 25, after: $cursor, orderBy: { field: UPDATED_AT, direction: ASC }) {
+      discussions(first: 25, after: $cursor, orderBy: { field: UPDATED_AT, direction: ASC }, states: [OPEN, CLOSED]) {
         pageInfo {
           hasNextPage
           endCursor
@@ -428,7 +428,7 @@ export const repositoryDiscussionsQuery = gql`
 export const repositoryPullRequestsQuery = gql`
   query RepositoryPullRequests($owner: String!, $name: String!, $cursor: String) {
     repository(owner: $owner, name: $name) {
-      pullRequests(first: 25, after: $cursor, orderBy: { field: UPDATED_AT, direction: ASC }) {
+      pullRequests(first: 25, after: $cursor, orderBy: { field: UPDATED_AT, direction: ASC }, states: [OPEN, CLOSED, MERGED]) {
         pageInfo {
           hasNextPage
           endCursor
@@ -615,7 +615,7 @@ export const repositoryPullRequestsQuery = gql`
 export const repositoryPullRequestLinksQuery = gql`
   query RepositoryPullRequestLinks($owner: String!, $name: String!, $cursor: String) {
     repository(owner: $owner, name: $name) {
-      pullRequests(first: 25, after: $cursor, orderBy: { field: UPDATED_AT, direction: ASC }) {
+      pullRequests(first: 25, after: $cursor, orderBy: { field: UPDATED_AT, direction: ASC }, states: [OPEN, CLOSED, MERGED]) {
         pageInfo {
           hasNextPage
           endCursor
@@ -631,6 +631,19 @@ export const repositoryPullRequestLinksQuery = gql`
           closedAt
           mergedAt
           merged
+          assignees(first: 25) {
+            nodes {
+              __typename
+              ... on User {
+                id
+                login
+                name
+                avatarUrl(size: 200)
+                createdAt
+                updatedAt
+              }
+            }
+          }
           author {
             __typename
             ... on User {
