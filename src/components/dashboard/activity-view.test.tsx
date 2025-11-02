@@ -18,6 +18,7 @@ import {
   buildActivityItemDetailFixture,
   buildActivityItemFixture,
   buildActivityListResultFixture,
+  buildActivitySavedFilterFixture,
 } from "@/components/test-harness/activity-fixtures";
 import { fetchActivityDetail } from "@/lib/activity/client";
 import type {
@@ -583,6 +584,41 @@ describe("ActivityView", () => {
       "aria-pressed",
       "false",
     );
+  });
+
+  it("keeps saved filters manager scrollable when many filters exist", async () => {
+    const filters = Array.from({ length: 12 }, (_, index) =>
+      buildActivitySavedFilterFixture({
+        id: `saved-filter-${index + 1}`,
+        name: `Saved filter ${index + 1}`,
+      }),
+    );
+
+    mockFetchJsonOnce({ filters, limit: 20 });
+    const props = createDefaultProps();
+    render(<ActivityView {...props} />);
+
+    const manageButton = await screen.findByRole("button", {
+      name: "필터 관리",
+    });
+
+    await act(async () => {
+      manageButton.click();
+    });
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.className).toContain("max-h-[calc(100vh-3rem)]");
+    expect(dialog.className).toContain("overflow-hidden");
+
+    const scrollRegion = dialog.querySelector("div.flex-1.overflow-y-auto");
+    expect(scrollRegion).toBeTruthy();
+    expect(scrollRegion?.className).toContain("min-h-0");
+
+    const applyButtons = within(scrollRegion as HTMLElement).getAllByRole(
+      "button",
+      { name: "필터 적용" },
+    );
+    expect(applyButtons.length).toBeGreaterThan(5);
   });
 
   it("provides canonical tooltips for attention filters", async () => {
