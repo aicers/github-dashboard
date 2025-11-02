@@ -783,6 +783,102 @@ describe("SyncControls", () => {
     expect(hasRequest("/api/sync/backfill", "POST")).toBe(false);
   });
 
+  it("allows backfill without a start date to collect full history", async () => {
+    const status = buildStatus();
+
+    mockFetchJsonOnce({
+      success: true,
+      result: {
+        startDate: null,
+        endDate: "2024-04-03T00:00:00.000Z",
+        chunkCount: 1,
+        totals: {
+          issues: 1,
+          discussions: 0,
+          pullRequests: 0,
+          reviews: 0,
+          comments: 0,
+        },
+        chunks: [createChunk()],
+      },
+    });
+
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+        view="overview"
+        currentPathname="/dashboard/sync"
+      />,
+    );
+    const user = userEvent.setup();
+
+    setBackfillRange("", "2024-04-03");
+    await user.click(screen.getByRole("button", { name: "백필 실행" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("백필 결과 히스토리")).toBeInTheDocument();
+    });
+
+    const request = findRequest("/api/sync/backfill", "POST");
+    expect(request).not.toBeNull();
+    const payload = await (request as Request).clone().json();
+    expect(payload).toMatchObject({
+      startDate: null,
+      endDate: "2024-04-03",
+    });
+  });
+
+  it("allows backfill without an end date to fetch the latest data", async () => {
+    const status = buildStatus();
+
+    mockFetchJsonOnce({
+      success: true,
+      result: {
+        startDate: "2024-04-01T00:00:00.000Z",
+        endDate: null,
+        chunkCount: 1,
+        totals: {
+          issues: 1,
+          discussions: 0,
+          pullRequests: 0,
+          reviews: 0,
+          comments: 0,
+        },
+        chunks: [createChunk()],
+      },
+    });
+
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+        view="overview"
+        currentPathname="/dashboard/sync"
+      />,
+    );
+    const user = userEvent.setup();
+
+    setBackfillRange("2024-04-01", "");
+    await user.click(screen.getByRole("button", { name: "백필 실행" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("백필 결과 히스토리")).toBeInTheDocument();
+    });
+
+    const request = findRequest("/api/sync/backfill", "POST");
+    expect(request).not.toBeNull();
+    const payload = await (request as Request).clone().json();
+    expect(payload).toMatchObject({
+      startDate: "2024-04-01",
+      endDate: null,
+    });
+  });
+
   it("preserves existing history when a subsequent backfill request fails", async () => {
     const status = buildStatus();
     const backfillResult = {

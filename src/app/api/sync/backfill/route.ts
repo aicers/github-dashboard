@@ -5,7 +5,7 @@ import { readActiveSession } from "@/lib/auth/session";
 import { runBackfill } from "@/lib/sync/service";
 
 const requestSchema = z.object({
-  startDate: z.string(),
+  startDate: z.string().optional().nullable(),
   endDate: z.string().optional().nullable(),
 });
 
@@ -38,9 +38,17 @@ export async function POST(request: Request) {
 
     const payload = await request.json();
     const { startDate, endDate } = requestSchema.parse(payload);
+    const normalize = (value: string | null | undefined) => {
+      if (typeof value !== "string") {
+        return null;
+      }
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    };
+
     const result = await runBackfill(
-      startDate,
-      endDate ?? null,
+      normalize(startDate),
+      normalize(endDate),
       buildLogger("manual-backfill"),
     );
 

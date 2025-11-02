@@ -71,7 +71,10 @@ describe("POST /api/sync/backfill", () => {
     );
   });
 
-  it("returns validation errors for invalid payload", async () => {
+  it("runs a full-history backfill when no dates are provided", async () => {
+    const report = { startDate: null, chunkCount: 1 };
+    vi.mocked(runBackfill).mockResolvedValueOnce(report as never);
+
     const response = await POST(
       new Request("http://localhost/api/sync/backfill", {
         method: "POST",
@@ -80,10 +83,12 @@ describe("POST /api/sync/backfill", () => {
       }),
     );
 
-    expect(response.status).toBe(400);
-    const body = await response.json();
-    expect(body.success).toBe(false);
-    expect(runBackfill).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      success: true,
+      result: report,
+    });
+    expect(runBackfill).toHaveBeenCalledWith(null, null, expect.any(Function));
   });
 
   it("returns 400 if runBackfill throws a known error", async () => {

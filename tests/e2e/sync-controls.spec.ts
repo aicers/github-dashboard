@@ -50,8 +50,12 @@ test.describe("SyncControls (Playwright)", () => {
 
     await page.route("**/api/sync/backfill", async (route) => {
       expect(route.request().method()).toBe("POST");
-      const payload = route.request().postDataJSON() as { startDate: string };
-      expect(payload.startDate).toMatch(/\d{4}-\d{2}-\d{2}/);
+      const payload = route.request().postDataJSON() as {
+        startDate: string | null;
+        endDate: string | null;
+      };
+      expect(payload.startDate).toBeNull();
+      expect(payload.endDate).toBeNull();
 
       await route.fulfill({
         status: 200,
