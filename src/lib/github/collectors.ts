@@ -1488,6 +1488,8 @@ async function collectDiscussionsForRepository(
     const discussionsConnection = data.repository?.discussions;
     const discussionNodes: DiscussionNode[] =
       discussionsConnection?.nodes ?? [];
+    const fetchedDiscussionCount = discussionNodes.length;
+    let upsertedDiscussionCount = 0;
     let reachedLowerBound = false;
 
     for (const discussion of discussionNodes) {
@@ -1532,6 +1534,7 @@ async function collectDiscussionsForRepository(
         discussion.updatedAt,
       );
       discussionCount += 1;
+      upsertedDiscussionCount += 1;
 
       const commentsResult = await collectIssueComments(
         client,
@@ -1547,11 +1550,17 @@ async function collectDiscussionsForRepository(
       commentCount += commentsResult.count;
     }
 
+    const cursorLabel = cursor ? ` (cursor ${cursor})` : "";
+    const summary = `Processed discussions batch for ${repository.nameWithOwner}${cursorLabel}: fetched ${fetchedDiscussionCount}, upserted ${upsertedDiscussionCount}`;
+
     if (reachedLowerBound) {
+      logger?.(`${summary} (stopped at lower bound)`);
       hasNextPage = false;
       cursor = null;
       break;
     }
+
+    logger?.(`${summary}.`);
 
     hasNextPage = discussionsConnection?.pageInfo?.hasNextPage ?? false;
     cursor = discussionsConnection?.pageInfo?.endCursor ?? null;
