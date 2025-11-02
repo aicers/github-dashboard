@@ -9,7 +9,10 @@ import {
   ActivityDetailOverlay,
   DETAIL_PANEL_TRANSITION_MS,
 } from "./activity-detail-overlay";
-import { MentionOverrideControls } from "./detail-shared";
+import {
+  ISSUE_RELATION_BADGE_CLASS,
+  MentionOverrideControls,
+} from "./detail-shared";
 
 const originalRequestAnimationFrame = window.requestAnimationFrame;
 const originalCancelAnimationFrame = window.cancelAnimationFrame;
@@ -186,6 +189,62 @@ describe("ActivityDetailOverlay", () => {
     expect(
       await screen.findByRole("tooltip", { name: "AI generated" }),
     ).toBeInTheDocument();
+  });
+
+  it("shows reference label, relation badges, extras, and item labels", async () => {
+    render(
+      createOverlay({
+        item: buildActivityItemFixture({
+          repository: {
+            id: "repo-overlay",
+            name: "Repo",
+            nameWithOwner: "Acme/Repo",
+            maintainerIds: [],
+          },
+          number: 42,
+          state: "OPEN",
+          labels: [
+            {
+              key: "type:bug",
+              name: "Bug",
+              repositoryId: "repo-overlay",
+              repositoryNameWithOwner: "Acme/Repo",
+            },
+            {
+              key: "severity:critical",
+              name: "Critical",
+              repositoryId: "repo-overlay",
+              repositoryNameWithOwner: "Acme/Repo",
+            },
+          ],
+        }),
+        badges: [
+          { label: "Parent 이슈", variant: "relation" },
+          { label: "응답 요구가 아님", variant: "manual" },
+          { label: "AI 판단", variant: "ai-soft" },
+        ],
+        badgeExtras: <span data-testid="extra-badge">추가 배지</span>,
+      }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toBeVisible();
+
+    expect(screen.getByText("acme/repo#42")).toBeVisible();
+    expect(screen.getByText("OPEN")).toBeVisible();
+
+    const relationBadge = screen.getByText("Parent 이슈");
+    expect(relationBadge.className).toContain(ISSUE_RELATION_BADGE_CLASS);
+
+    const manualBadge = screen.getByText("응답 요구가 아님");
+    expect(manualBadge.className).toContain("bg-slate-100");
+
+    const aiBadge = screen.getByText("AI 판단");
+    expect(aiBadge.className).toContain("bg-sky-50");
+
+    expect(screen.getByTestId("extra-badge")).toBeVisible();
+    expect(screen.getByText("Bug")).toBeVisible();
+    expect(screen.getByText("Critical")).toBeVisible();
   });
 
   it("handles manual mention override toggles", async () => {
