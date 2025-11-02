@@ -1788,7 +1788,7 @@ const SavedFiltersManager = ({
       <div
         role="dialog"
         aria-modal="true"
-        className="relative flex w-full max-w-3xl flex-col gap-4 rounded-xl border border-border bg-background p-6 shadow-2xl"
+        className="relative flex w-full max-w-3xl flex-col gap-4 rounded-xl border border-border bg-background p-6 shadow-2xl max-h-[calc(100vh-3rem)] overflow-hidden"
       >
         <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="text-lg font-semibold text-foreground">필터 관리</h3>
@@ -1813,7 +1813,7 @@ const SavedFiltersManager = ({
           </p>
         ) : null}
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto min-h-0">
           {mode === "save" ? (
             <section className="mb-6 space-y-3 rounded-lg border border-border/60 bg-muted/10 p-4">
               <div className="flex flex-col gap-1">
