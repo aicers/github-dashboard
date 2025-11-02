@@ -394,15 +394,8 @@ export function SyncControls({
   const [autoEnabled, setAutoEnabled] = useState(
     config?.auto_sync_enabled ?? false,
   );
-  const [backfillDate, setBackfillDate] = useState(() => {
-    const now = new Date();
-    now.setMonth(now.getMonth() - 1);
-    return now.toISOString().slice(0, 10);
-  });
-  const [backfillEndDate, setBackfillEndDate] = useState(() => {
-    const now = new Date();
-    return now.toISOString().slice(0, 10);
-  });
+  const [backfillDate, setBackfillDate] = useState("");
+  const [backfillEndDate, setBackfillEndDate] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [backfillHistory, setBackfillHistory] = useState<BackfillResult[]>([]);
   const [activityCacheSummary, setActivityCacheSummary] =
@@ -746,34 +739,34 @@ export function SyncControls({
       return;
     }
 
-    if (!backfillDate) {
-      setFeedback("백필 시작 날짜를 선택하세요.");
-      return;
-    }
-
-    if (!backfillEndDate) {
-      setFeedback("백필 종료 날짜를 선택하세요.");
-      return;
-    }
-
     const startValue = backfillDate.trim();
     const endValue = backfillEndDate.trim();
-    const startLabel = startValue;
-    const endLabel = endValue;
+    const hasStart = startValue.length > 0;
+    const hasEnd = endValue.length > 0;
 
-    if (startValue.length !== 10 || endValue.length !== 10) {
-      setFeedback("유효한 날짜 형식을 입력하세요.");
+    if (hasStart && startValue.length !== 10) {
+      setFeedback("유효한 시작 날짜 형식을 입력하세요.");
       return;
     }
 
-    if (endValue < startValue) {
-      setFeedback("백필 종료 날짜는 시작 날짜 이후여야 합니다.");
+    if (hasEnd && endValue.length !== 10) {
+      setFeedback("유효한 종료 날짜 형식을 입력하세요.");
       return;
     }
 
     const todayLabel = new Date().toISOString().slice(0, 10);
-    if (endValue > todayLabel) {
+    if (hasStart && startValue > todayLabel) {
+      setFeedback("백필 시작 날짜는 오늘 이후일 수 없습니다.");
+      return;
+    }
+
+    if (hasEnd && endValue > todayLabel) {
       setFeedback("백필 종료 날짜는 오늘 이후일 수 없습니다.");
+      return;
+    }
+
+    if (hasStart && hasEnd && endValue < startValue) {
+      setFeedback("백필 종료 날짜는 시작 날짜 이후여야 합니다.");
       return;
     }
 
@@ -786,8 +779,8 @@ export function SyncControls({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          startDate: startLabel,
-          endDate: endLabel,
+          startDate: hasStart ? startValue : null,
+          endDate: hasEnd ? endValue : null,
         }),
       });
       const data = await parseApiResponse<BackfillResult>(response);

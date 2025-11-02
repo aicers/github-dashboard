@@ -452,6 +452,76 @@ describe("sync service database integration", () => {
       );
     });
 
+    it("fetches full history when the start date is omitted", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2024-04-10T00:00:00.000Z"));
+
+      const runCollectionSpy = vi.spyOn(collectors, "runCollection");
+      runCollectionSpy.mockResolvedValueOnce({
+        repositoriesProcessed: 1,
+        counts: {
+          issues: 2,
+          discussions: 0,
+          pullRequests: 0,
+          reviews: 0,
+          comments: 0,
+        },
+        timestamps: {
+          repositories: null,
+          issues: "2024-04-01T08:00:00.000Z",
+          discussions: null,
+          pullRequests: null,
+          reviews: null,
+          comments: null,
+        },
+      } satisfies Awaited<ReturnType<typeof collectors.runCollection>>);
+
+      const result = await runBackfill(null, "2024-04-03");
+
+      expect(runCollectionSpy).toHaveBeenCalledTimes(1);
+      expect(runCollectionSpy.mock.calls[0]?.[0]).toMatchObject({
+        since: null,
+        until: "2024-04-04T00:00:00.000Z",
+      });
+      expect(result.startDate).toBeNull();
+      expect(result.endDate).toBe("2024-04-04T00:00:00.000Z");
+    });
+
+    it("runs an open-ended backfill when no boundaries are provided", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2024-04-10T00:00:00.000Z"));
+
+      const runCollectionSpy = vi.spyOn(collectors, "runCollection");
+      runCollectionSpy.mockResolvedValueOnce({
+        repositoriesProcessed: 3,
+        counts: {
+          issues: 5,
+          discussions: 1,
+          pullRequests: 2,
+          reviews: 1,
+          comments: 4,
+        },
+        timestamps: {
+          repositories: "2024-04-09T12:00:00.000Z",
+          issues: "2024-04-09T11:00:00.000Z",
+          discussions: null,
+          pullRequests: null,
+          reviews: null,
+          comments: null,
+        },
+      } satisfies Awaited<ReturnType<typeof collectors.runCollection>>);
+
+      const result = await runBackfill();
+
+      expect(runCollectionSpy).toHaveBeenCalledTimes(1);
+      expect(runCollectionSpy.mock.calls[0]?.[0]).toMatchObject({
+        since: null,
+        until: null,
+      });
+      expect(result.startDate).toBeNull();
+      expect(result.endDate).toBeNull();
+    });
+
     it("runs a single backfill pass and updates totals and metadata", async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date("2024-04-05T00:00:00.000Z"));
@@ -507,13 +577,13 @@ describe("sync service database integration", () => {
           : latestConfig?.last_successful_sync_at;
       const expectedLatest =
         chunk?.status === "success"
-          ? chunk.summary.timestamps?.issues ??
+          ? (chunk.summary.timestamps?.issues ??
             chunk.summary.timestamps?.pullRequests ??
             chunk.summary.timestamps?.discussions ??
             chunk.summary.timestamps?.reviews ??
             chunk.summary.timestamps?.comments ??
             chunk.summary.timestamps?.repositories ??
-            null
+            null)
           : null;
       expect(finalSuccessfulIso).toBe(expectedLatest);
     });
@@ -534,7 +604,7 @@ describe("sync service database integration", () => {
       if (chunk?.status === "failed") {
         expect(chunk.error).toContain("network boom");
         expect(chunk.since).toBe("2024-04-03T00:00:00.000Z");
-        expect(chunk.until).toBe("2024-04-03T00:00:00.000Z");
+        expect(chunk.until).toBeNull();
       }
 
       const latestConfig = await getSyncConfig();

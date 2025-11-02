@@ -104,15 +104,15 @@ export type BackfillChunkSuccess = SyncRunResult & {
 
 export type BackfillChunkFailure = {
   status: "failed";
-  since: string;
-  until: string;
+  since: string | null;
+  until: string | null;
   error: string;
 };
 
 export type BackfillChunk = BackfillChunkSuccess | BackfillChunkFailure;
 
 export type BackfillResult = {
-  startDate: string;
+  startDate: string | null;
   endDate: string | null;
   chunkCount: number;
   totals: SyncCounts;
@@ -577,32 +577,50 @@ export async function initializeScheduler() {
 }
 
 export async function runBackfill(
-  startDate: string,
+  startDateOrLogger?: string | null | SyncLogger,
   endDateOrLogger?: string | null | SyncLogger,
   loggerMaybe?: SyncLogger,
 ) {
-  let endDate: string | null = null;
   let logger: SyncLogger | undefined = loggerMaybe;
 
-  if (typeof endDateOrLogger === "function") {
-    logger = endDateOrLogger;
-  } else if (endDateOrLogger !== undefined && endDateOrLogger !== null) {
-    endDate = endDateOrLogger;
+  const resolveDateArg = (
+    value: string | null | SyncLogger | undefined,
+  ): string | null => {
+    if (typeof value === "function") {
+      logger = value;
+      return null;
+    }
+
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+
+    return value ?? null;
+  };
+
+  const startDate = resolveDateArg(startDateOrLogger);
+  const endDate = resolveDateArg(endDateOrLogger);
+
+  if (typeof loggerMaybe === "function") {
+    logger = loggerMaybe;
   }
 
-  const parsedDate = dateSchema.parse(startDate);
-  const start = new Date(parsedDate);
-  const startUtc = new Date(
-    Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()),
-  );
   const now = new Date();
   const nowUtc = new Date(now.toISOString());
 
-  if (startUtc.getTime() > nowUtc.getTime()) {
-    throw new Error("Backfill start date must be in the past.");
+  let sinceIso: string | null = null;
+  if (startDate) {
+    const parsedDate = dateSchema.parse(startDate);
+    const start = new Date(parsedDate);
+    const startUtc = new Date(
+      Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()),
+    );
+    if (startUtc.getTime() > nowUtc.getTime()) {
+      throw new Error("Backfill start date must be in the past.");
+    }
+    sinceIso = startUtc.toISOString();
   }
-
-  const sinceIso = startUtc.toISOString();
 
   let untilIso: string | null = null;
   if (endDate) {
@@ -612,7 +630,7 @@ export async function runBackfill(
       Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()),
     );
 
-    if (endUtc.getTime() < startUtc.getTime()) {
+    if (sinceIso !== null && endUtc.getTime() < Date.parse(sinceIso)) {
       throw new Error("Backfill end date must be on or after the start date.");
     }
 
@@ -625,7 +643,7 @@ export async function runBackfill(
       exclusiveEndCandidate.getTime() > nowUtc.getTime()
         ? new Date(nowUtc.toISOString())
         : exclusiveEndCandidate;
-    if (exclusiveEnd.getTime() <= startUtc.getTime()) {
+    if (sinceIso !== null && exclusiveEnd.getTime() <= Date.parse(sinceIso)) {
       throw new Error("Backfill range must include at least one valid moment.");
     }
     untilIso = exclusiveEnd.toISOString();
@@ -640,10 +658,14 @@ export async function runBackfill(
   };
   const chunks: BackfillChunk[] = [];
 
+  const rangeStartLabel = sinceIso ?? "-∞";
   const rangeLabel =
-    untilIso === null ? `${sinceIso} → ∞` : `${sinceIso} → ${untilIso}`;
-  const scopedLogger = logger
-    ? (message: string) => logger(`[${rangeLabel}) ${message}`)
+    untilIso === null
+      ? `${rangeStartLabel} → ∞`
+      : `${rangeStartLabel} → ${untilIso}`;
+  const activeLogger = logger;
+  const scopedLogger = activeLogger
+    ? (message: string) => activeLogger(`[${rangeLabel}) ${message}`)
     : undefined;
 
   try {
@@ -675,7 +697,7 @@ export async function runBackfill(
     chunks.push({
       status: "failed",
       since: sinceIso,
-      until: untilIso ?? sinceIso,
+      until: untilIso ?? null,
       error: message,
     });
 
