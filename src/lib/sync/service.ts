@@ -113,7 +113,7 @@ export type BackfillChunk = BackfillChunkSuccess | BackfillChunkFailure;
 
 export type BackfillResult = {
   startDate: string;
-  endDate: string;
+  endDate: string | null;
   chunkCount: number;
   totals: SyncCounts;
   chunks: BackfillChunk[];
@@ -602,7 +602,9 @@ export async function runBackfill(
     throw new Error("Backfill start date must be in the past.");
   }
 
-  let targetExclusiveUtc = new Date(nowUtc.toISOString());
+  const sinceIso = startUtc.toISOString();
+
+  let untilIso: string | null = null;
   if (endDate) {
     const parsedEndDate = dateSchema.parse(endDate);
     const end = new Date(parsedEndDate);
@@ -619,14 +621,14 @@ export async function runBackfill(
     }
 
     const exclusiveEndCandidate = new Date(endUtc.getTime() + MS_PER_DAY);
-    targetExclusiveUtc =
+    const exclusiveEnd =
       exclusiveEndCandidate.getTime() > nowUtc.getTime()
         ? new Date(nowUtc.toISOString())
         : exclusiveEndCandidate;
-  }
-
-  if (startUtc.getTime() >= targetExclusiveUtc.getTime()) {
-    throw new Error("Backfill range must include at least one day.");
+    if (exclusiveEnd.getTime() <= startUtc.getTime()) {
+      throw new Error("Backfill range must include at least one valid moment.");
+    }
+    untilIso = exclusiveEnd.toISOString();
   }
 
   const totals: SyncCounts = {
@@ -638,75 +640,53 @@ export async function runBackfill(
   };
   const chunks: BackfillChunk[] = [];
 
-  let cursor = startUtc;
+  const rangeLabel =
+    untilIso === null ? `${sinceIso} → ∞` : `${sinceIso} → ${untilIso}`;
+  const scopedLogger = logger
+    ? (message: string) => logger(`[${rangeLabel}) ${message}`)
+    : undefined;
 
-  while (cursor.getTime() < targetExclusiveUtc.getTime()) {
-    const next = new Date(cursor.toISOString());
-    next.setUTCDate(next.getUTCDate() + 1);
-    const chunkEnd =
-      next.getTime() <= targetExclusiveUtc.getTime()
-        ? next
-        : targetExclusiveUtc;
+  try {
+    const result = await executeSync({
+      since: sinceIso,
+      until: untilIso,
+      logger: scopedLogger,
+      strategy: "backfill",
+    });
 
-    if (cursor.getTime() >= chunkEnd.getTime()) {
-      break;
-    }
+    totals.issues = result.summary.counts.issues;
+    totals.discussions = result.summary.counts.discussions;
+    totals.pullRequests = result.summary.counts.pullRequests;
+    totals.reviews = result.summary.counts.reviews;
+    totals.comments = result.summary.counts.comments;
 
-    const sinceIso = cursor.toISOString();
-    const untilIso = chunkEnd.toISOString();
-    const chunkLogger = logger
-      ? (message: string) => logger(`[${sinceIso} → ${untilIso}) ${message}`)
-      : undefined;
+    chunks.push({ status: "success", ...result });
 
-    try {
-      const result = await executeSync({
-        since: sinceIso,
-        until: untilIso,
-        logger: chunkLogger,
-        strategy: "backfill",
-      });
+    return {
+      startDate: sinceIso,
+      endDate: result.until ?? null,
+      chunkCount: 1,
+      totals,
+      chunks,
+    } satisfies BackfillResult;
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unknown error during backfill.";
+    chunks.push({
+      status: "failed",
+      since: sinceIso,
+      until: untilIso ?? sinceIso,
+      error: message,
+    });
 
-      chunks.push({ status: "success", ...result });
-
-      const counts = result.summary.counts;
-      totals.issues += counts.issues;
-      totals.discussions += counts.discussions;
-      totals.pullRequests += counts.pullRequests;
-      totals.reviews += counts.reviews;
-      totals.comments += counts.comments;
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Unknown error during backfill chunk.";
-      chunks.push({
-        status: "failed",
-        since: sinceIso,
-        until: untilIso,
-        error: message,
-      });
-      break;
-    }
-
-    if (chunkEnd.getTime() >= targetExclusiveUtc.getTime()) {
-      break;
-    }
-
-    cursor = chunkEnd;
+    return {
+      startDate: sinceIso,
+      endDate: untilIso ?? null,
+      chunkCount: 1,
+      totals,
+      chunks,
+    } satisfies BackfillResult;
   }
-
-  const finalChunkUntil =
-    chunks.length > 0
-      ? chunks[chunks.length - 1]?.until
-      : startUtc.toISOString();
-
-  return {
-    startDate: startUtc.toISOString(),
-    endDate: finalChunkUntil ?? startUtc.toISOString(),
-    chunkCount: chunks.length,
-    totals,
-    chunks,
-  } satisfies BackfillResult;
 }
 
 export async function runIncrementalSync(logger?: SyncLogger) {
