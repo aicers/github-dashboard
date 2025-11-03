@@ -65,6 +65,84 @@ const MAX_BATCH_SIZE = 20;
 const MAX_COMMENT_CHARS = 1500;
 const MENTION_CONTEXT_RADIUS = Math.floor(MAX_COMMENT_CHARS / 2);
 const MENTION_PATTERN = /@[A-Za-z0-9_-]+/;
+const MAX_OPENAI_RETRIES = 3;
+const OPENAI_RETRY_BASE_DELAY_MS = 1000;
+const OPENAI_RETRY_MAX_DELAY_MS = 30_000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function clampDelay(delay: number): number {
+  return Math.min(
+    Math.max(delay, OPENAI_RETRY_BASE_DELAY_MS),
+    OPENAI_RETRY_MAX_DELAY_MS,
+  );
+}
+
+function parseRetryAfter(value: string | null): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric >= 0) {
+    return Math.round(numeric * 1000);
+  }
+
+  const parsedDate = Date.parse(value);
+  if (!Number.isNaN(parsedDate)) {
+    const diff = parsedDate - Date.now();
+    return diff > 0 ? diff : null;
+  }
+
+  return null;
+}
+
+function getRateLimitDelayMs(response: Response): number | null {
+  const retryAfterDelay = parseRetryAfter(response.headers.get("retry-after"));
+  if (retryAfterDelay !== null) {
+    return retryAfterDelay;
+  }
+
+  const resetHeader =
+    response.headers.get("x-ratelimit-reset-requests") ??
+    response.headers.get("x-ratelimit-reset-tokens") ??
+    response.headers.get("x-ratelimit-reset");
+
+  if (!resetHeader) {
+    return null;
+  }
+
+  const resetSeconds = Number(resetHeader);
+  if (Number.isFinite(resetSeconds)) {
+    const diffMs = (resetSeconds - Date.now() / 1000) * 1000;
+    return diffMs > 0 ? diffMs : null;
+  }
+
+  const resetDate = Date.parse(resetHeader);
+  if (!Number.isNaN(resetDate)) {
+    const diffMs = resetDate - Date.now();
+    return diffMs > 0 ? diffMs : null;
+  }
+
+  return null;
+}
+
+function calculateRetryDelayMs(attempt: number): number {
+  const delay = OPENAI_RETRY_BASE_DELAY_MS * 2 ** attempt;
+  return clampDelay(delay);
+}
+
+function shouldRetryStatus(status: number): boolean {
+  if (status === 429) {
+    return true;
+  }
+  if (status === 408) {
+    return true;
+  }
+  return status >= 500 && status < 600;
+}
 
 function createSummary(message?: string): MentionClassificationSummary {
   return {
@@ -238,49 +316,119 @@ async function evaluateCandidateBatch(
     ],
   };
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(payload),
-  });
+  let lastError: Error | undefined;
 
-  if (!response.ok) {
-    const text = await response.text();
-    logger?.({
-      level: "error",
-      message: "OpenAI request failed",
-      meta: {
-        status: response.status,
-        statusText: response.statusText,
-        bodyPreview: text.slice(0, 200),
-      },
-    });
-    throw new Error(
-      `OpenAI request failed with status ${response.status} ${response.statusText}`,
-    );
+  for (let attempt = 0; attempt <= MAX_OPENAI_RETRIES; attempt += 1) {
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const status = response.status;
+        const statusText = response.statusText;
+        const isRetryable =
+          shouldRetryStatus(status) && attempt < MAX_OPENAI_RETRIES;
+
+        if (status === 429 && isRetryable) {
+          const waitMs =
+            getRateLimitDelayMs(response) ?? calculateRetryDelayMs(attempt);
+          logger?.({
+            level: "warn",
+            message: "OpenAI rate limit encountered; retrying",
+            meta: {
+              attempt: attempt + 1,
+              delayMs: waitMs,
+            },
+          });
+          await sleep(waitMs);
+          continue;
+        }
+
+        if (isRetryable) {
+          const waitMs = calculateRetryDelayMs(attempt);
+          logger?.({
+            level: "warn",
+            message: "OpenAI request failed; retrying",
+            meta: {
+              attempt: attempt + 1,
+              status,
+              statusText,
+              delayMs: waitMs,
+            },
+          });
+          await sleep(waitMs);
+          continue;
+        }
+
+        const text = await response.text();
+        const message = `OpenAI request failed with status ${status} ${statusText}`;
+        lastError = new Error(message);
+        logger?.({
+          level: "error",
+          message: "OpenAI request failed",
+          meta: {
+            status,
+            statusText,
+            bodyPreview: text.slice(0, 200),
+          },
+        });
+        break;
+      }
+
+      const data = await response.json();
+      const answers = parseBatchResponse(data, candidates.length);
+
+      const results = new Map<string, EvaluationResult>();
+      answers.forEach((answer, index) => {
+        const normalized = answer.trim().toLowerCase();
+        const requiresResponse = normalized.startsWith("y");
+        const key = candidates[index]?.key;
+        if (key) {
+          results.set(key, {
+            requiresResponse,
+            raw: data,
+            model,
+          });
+        }
+      });
+
+      return results;
+    } catch (error) {
+      const isLastAttempt = attempt >= MAX_OPENAI_RETRIES;
+      const delayMs = calculateRetryDelayMs(attempt);
+      const err =
+        error instanceof Error
+          ? error
+          : new Error("Unknown error when calling OpenAI");
+      lastError = err;
+
+      if (isLastAttempt) {
+        break;
+      }
+
+      logger?.({
+        level: "warn",
+        message: "OpenAI request threw an error; retrying",
+        meta: {
+          attempt: attempt + 1,
+          delayMs,
+          error: err.message,
+        },
+      });
+      await sleep(delayMs);
+    }
   }
 
-  const data = await response.json();
-  const answers = parseBatchResponse(data, candidates.length);
-
-  const results = new Map<string, EvaluationResult>();
-  answers.forEach((answer, index) => {
-    const normalized = answer.trim().toLowerCase();
-    const requiresResponse = normalized.startsWith("y");
-    const key = candidates[index]?.key;
-    if (key) {
-      results.set(key, {
-        requiresResponse,
-        raw: data,
-        model,
-      });
-    }
-  });
-
-  return results;
+  throw (
+    lastError ??
+    new Error("OpenAI request failed after retries without a specific error.")
+  );
 }
 
 function shouldSkipEvaluation(
@@ -678,3 +826,9 @@ export async function runUnansweredMentionClassification(
     throw error;
   }
 }
+
+export const __testing = {
+  evaluateCandidateBatch,
+  calculateRetryDelayMs,
+  getRateLimitDelayMs,
+};
