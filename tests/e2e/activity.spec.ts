@@ -406,7 +406,7 @@ test.describe("ActivityView badges & overlay presentation", () => {
     await assertClassTokens(weightBadge, ISSUE_WEIGHT_BADGE_CLASS);
 
     const milestoneBadge = page
-      .locator('span[class*="bg-slate-700"][class*="text-slate-100"]')
+      .locator('span[class*="bg-slate-200"][class*="text-slate-800"]')
       .filter({ hasText: "Milestone" })
       .first();
     await expect(milestoneBadge).toBeVisible();
