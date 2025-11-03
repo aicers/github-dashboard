@@ -1552,6 +1552,8 @@ function PullRequestList({
                   item={overlayItem}
                   iconInfo={iconInfo}
                   badges={badges}
+                  timezone={timezone}
+                  dateTimeFormat={dateTimeFormat}
                   onClose={closeItem}
                 >
                   <FollowUpDetailContent
@@ -2013,6 +2015,8 @@ function ReviewRequestList({
                     item={overlayItem}
                     iconInfo={iconInfo}
                     badges={badges}
+                    timezone={timezone}
+                    dateTimeFormat={dateTimeFormat}
                     onClose={closeItem}
                   >
                     <FollowUpDetailContent
@@ -2727,6 +2731,8 @@ function IssueList({
                   iconInfo={iconInfo}
                   badges={badges}
                   badgeExtras={overlayBadgeExtras}
+                  timezone={timezone}
+                  dateTimeFormat={dateTimeFormat}
                   onClose={closeItem}
                 >
                   <FollowUpDetailContent
@@ -3416,6 +3422,8 @@ function MentionList({
                   iconInfo={iconInfo}
                   badges={badges}
                   badgeExtras={overlayBadgeExtras}
+                  timezone={timezone}
+                  dateTimeFormat={dateTimeFormat}
                   onClose={closeItem}
                 >
                   <FollowUpDetailContent
