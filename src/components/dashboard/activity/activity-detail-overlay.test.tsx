@@ -247,6 +247,40 @@ describe("ActivityDetailOverlay", () => {
     expect(screen.getByText("Critical")).toBeVisible();
   });
 
+  it("shows closed timestamp when item is closed", () => {
+    render(
+      createOverlay({
+        item: buildActivityItemFixture({
+          state: "CLOSED",
+          status: "closed",
+          closedAt: "2024-05-09T12:34:00.000Z",
+        }),
+        timezone: "UTC",
+        dateTimeFormat: "iso-24h",
+      }),
+    );
+
+    expect(screen.getByText("CLOSED")).toBeInTheDocument();
+    expect(screen.getByText("2024-05-09 12:34")).toBeInTheDocument();
+  });
+
+  it("shows merged timestamp when item is merged", () => {
+    render(
+      createOverlay({
+        item: buildActivityItemFixture({
+          state: "MERGED",
+          status: "merged",
+          mergedAt: "2024-05-10T09:45:00.000Z",
+        }),
+        timezone: "UTC",
+        dateTimeFormat: "iso-24h",
+      }),
+    );
+
+    expect(screen.getByText("MERGED")).toBeInTheDocument();
+    expect(screen.getByText("2024-05-10 09:45")).toBeInTheDocument();
+  });
+
   it("handles manual mention override toggles", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();

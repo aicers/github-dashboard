@@ -10,6 +10,8 @@ import {
 
 import { Button } from "@/components/ui/button";
 import type { ActivityItem } from "@/lib/activity/types";
+import type { DateTimeDisplayFormat } from "@/lib/date-time-format";
+import { formatDateTimeDisplay } from "@/lib/date-time-format";
 import { cn } from "@/lib/utils";
 import { ISSUE_RELATION_BADGE_CLASS } from "./detail-shared";
 import { type ActivityIconInfo, CATEGORY_LABELS } from "./shared";
@@ -28,6 +30,8 @@ export type ActivityDetailOverlayProps = {
   iconInfo: ActivityIconInfo;
   badges: Array<string | OverlayBadgeDescriptor>;
   badgeExtras?: ReactNode;
+  timezone?: string | null;
+  dateTimeFormat?: DateTimeDisplayFormat | null;
   onClose: () => void;
   children: ReactNode;
 };
@@ -37,6 +41,8 @@ export function ActivityDetailOverlay({
   iconInfo,
   badges,
   badgeExtras,
+  timezone,
+  dateTimeFormat,
   onClose,
   children,
 }: ActivityDetailOverlayProps) {
@@ -94,6 +100,19 @@ export function ActivityDetailOverlay({
     ? item.title
     : `${CATEGORY_LABELS[item.type]} 상세`;
   const statusLabel = item.state ?? item.status ?? null;
+  const normalizedStatusLabel = statusLabel?.trim().toLowerCase();
+  const statusTimestampSource =
+    normalizedStatusLabel === "closed"
+      ? item.closedAt
+      : normalizedStatusLabel === "merged"
+        ? item.mergedAt
+        : null;
+  const statusTimestamp = statusTimestampSource
+    ? formatDateTimeDisplay(statusTimestampSource, {
+        timeZone: timezone ?? undefined,
+        format: dateTimeFormat ?? undefined,
+      })
+    : null;
   const labelBadges = Array.isArray(item.labels) ? item.labels : [];
   const normalizedBadges = badges.map((badge, index) => {
     if (typeof badge === "string") {
@@ -161,7 +180,19 @@ export function ActivityDetailOverlay({
                 {titleLabel}
               </h3>
               <div className="flex flex-wrap gap-2 text-xs text-muted-foreground/80">
-                {statusLabel ? <span>{statusLabel}</span> : null}
+                {statusLabel ? (
+                  <span className="inline-flex items-center gap-1">
+                    <span>{statusLabel}</span>
+                    {statusTimestamp ? (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span className="text-muted-foreground/70">
+                          {statusTimestamp}
+                        </span>
+                      </>
+                    ) : null}
+                  </span>
+                ) : null}
                 {normalizedBadges.map((badge) => {
                   const variantClass =
                     badge.variant === "manual"

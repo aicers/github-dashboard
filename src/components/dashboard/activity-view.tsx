@@ -5729,6 +5729,8 @@ export function ActivityView({
                           iconInfo={iconInfo}
                           badges={badges}
                           badgeExtras={badgeExtras}
+                          timezone={activeTimezone}
+                          dateTimeFormat={activeDateTimeFormat}
                           onClose={handleCloseItem}
                         >
                           {isDetailLoading ? (
