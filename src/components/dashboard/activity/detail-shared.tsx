@@ -57,7 +57,7 @@ export const ISSUE_TYPE_BADGE_CLASS =
   "inline-flex items-center rounded-md bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-700";
 
 export const ISSUE_MILESTONE_BADGE_CLASS =
-  "inline-flex items-center rounded-md bg-slate-700 px-2 py-0.5 text-xs font-semibold text-slate-100";
+  "inline-flex items-center rounded-md bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-800";
 
 export const ISSUE_RELATION_BADGE_CLASS = "bg-blue-900 text-blue-50";
 
