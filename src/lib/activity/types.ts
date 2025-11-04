@@ -21,6 +21,10 @@ export type ActivityPullRequestStatusFilter =
   | "pr_merged"
   | "pr_closed";
 
+export type ActivityDiscussionStatusFilter =
+  | "discussion_open"
+  | "discussion_closed";
+
 export type ActivityIssueBaseStatusFilter = "issue_open" | "issue_closed";
 
 export type ActivityIssuePriorityFilter = "P0" | "P1" | "P2";
@@ -67,6 +71,7 @@ export type ActivityFilters = {
   issuePriorities?: ActivityIssuePriorityFilter[];
   issueWeights?: ActivityIssueWeightFilter[];
   milestoneIds?: string[];
+  discussionStatuses?: ActivityDiscussionStatusFilter[];
   pullRequestStatuses?: ActivityPullRequestStatusFilter[];
   issueBaseStatuses?: ActivityIssueBaseStatusFilter[];
   authorIds?: string[];

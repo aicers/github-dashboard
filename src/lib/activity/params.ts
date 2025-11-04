@@ -1,5 +1,6 @@
 import type {
   ActivityAttentionFilter,
+  ActivityDiscussionStatusFilter,
   ActivityIssueBaseStatusFilter,
   ActivityIssuePriorityFilter,
   ActivityIssueWeightFilter,
@@ -140,6 +141,11 @@ export function parseActivityListParams(
       ["Heavy", "Medium", "Light"],
     ),
     milestoneIds: parseStringList(searchParams, "milestoneId"),
+    discussionStatuses: parseEnumValues<ActivityDiscussionStatusFilter>(
+      searchParams,
+      "discussionStatus",
+      ["discussion_open", "discussion_closed"],
+    ),
     pullRequestStatuses: parseEnumValues<ActivityPullRequestStatusFilter>(
       searchParams,
       "prStatus",

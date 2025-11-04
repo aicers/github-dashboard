@@ -1,5 +1,6 @@
 import type {
   ActivityAttentionFilter,
+  ActivityDiscussionStatusFilter,
   ActivityIssueBaseStatusFilter,
   ActivityIssuePriorityFilter,
   ActivityIssueWeightFilter,
@@ -25,6 +26,7 @@ export type ActivityFilterState = {
   issuePriorities: ActivityIssuePriorityFilter[];
   issueWeights: ActivityIssueWeightFilter[];
   milestoneIds: string[];
+  discussionStatuses: ActivityDiscussionStatusFilter[];
   prStatuses: ActivityPullRequestStatusFilter[];
   issueBaseStatuses: ActivityIssueBaseStatusFilter[];
   authorIds: string[];
@@ -99,6 +101,7 @@ export function buildFilterState(
     issuePriorities: params.issuePriorities ?? [],
     issueWeights: params.issueWeights ?? [],
     milestoneIds: params.milestoneIds ?? [],
+    discussionStatuses: params.discussionStatuses ?? [],
     prStatuses: params.pullRequestStatuses ?? [],
     issueBaseStatuses: params.issueBaseStatuses ?? [],
     authorIds: [...peopleFilters.authorIds],
@@ -182,6 +185,9 @@ export function buildSavedFilterPayload(
       : undefined,
     milestoneIds: filters.milestoneIds.length
       ? [...filters.milestoneIds]
+      : undefined,
+    discussionStatuses: filters.discussionStatuses.length
+      ? [...filters.discussionStatuses]
       : undefined,
     pullRequestStatuses: filters.prStatuses.length
       ? [...filters.prStatuses]
@@ -278,6 +284,10 @@ export function normalizeSearchParams(
     filters.issueWeights.map((value) => value),
   );
   appendAll("milestoneId", filters.milestoneIds);
+  appendAll(
+    "discussionStatus",
+    filters.discussionStatuses.map((value) => value),
+  );
   appendAll(
     "prStatus",
     filters.prStatuses.map((value) => value),

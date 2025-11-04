@@ -31,6 +31,7 @@ function createPayload(
     labelKeys: undefined,
     issueTypeIds: undefined,
     milestoneIds: undefined,
+    discussionStatuses: undefined,
     pullRequestStatuses: undefined,
     issueBaseStatuses: undefined,
     authorIds: undefined,

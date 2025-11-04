@@ -23,6 +23,7 @@ import {
 import type {
   ActivityAttentionFilter,
   ActivityAttentionFlags,
+  ActivityDiscussionStatusFilter,
   ActivityFilterOptions,
   ActivityIssueBaseStatusFilter,
   ActivityItem,
@@ -222,6 +223,19 @@ const ISSUE_BASE_STATUS_MAP: Record<
 > = {
   issue_open: "open",
   issue_closed: "closed",
+};
+
+const DISCUSSION_STATUS_VALUES: ActivityDiscussionStatusFilter[] = [
+  "discussion_open",
+  "discussion_closed",
+];
+
+const DISCUSSION_STATUS_MAP: Record<
+  ActivityDiscussionStatusFilter,
+  "open" | "closed"
+> = {
+  discussion_open: "open",
+  discussion_closed: "closed",
 };
 
 type ActivityRow = {
@@ -1461,6 +1475,17 @@ function buildQueryFilters(
     clauses.push(
       `(items.item_type <> 'issue' OR items.milestone_id = ANY($${values.length}::text[]))`,
     );
+  }
+
+  if (params.discussionStatuses?.length) {
+    const unique = Array.from(new Set(params.discussionStatuses));
+    if (unique.length > 0 && unique.length < DISCUSSION_STATUS_VALUES.length) {
+      const mapped = unique.map((status) => DISCUSSION_STATUS_MAP[status]);
+      values.push(mapped);
+      clauses.push(
+        `(items.item_type <> 'discussion' OR items.status = ANY($${values.length}::text[]))`,
+      );
+    }
   }
 
   if (params.pullRequestStatuses?.length) {
