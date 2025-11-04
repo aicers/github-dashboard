@@ -5,6 +5,7 @@ import {
   buildActivityListParamsFixture,
   buildActivityListResultFixture,
 } from "@/components/test-harness/activity-fixtures";
+import { SAVED_FILTER_LIMIT } from "@/lib/activity/filter-store";
 
 export default function ActivityHarnessPage() {
   const initialData = buildActivityListResultFixture();
@@ -20,6 +21,7 @@ export default function ActivityHarnessPage() {
           initialParams={initialParams}
           currentUserId="user-self"
           currentUserIsAdmin
+          savedFiltersLimit={SAVED_FILTER_LIMIT}
         />
       </Suspense>
     </main>

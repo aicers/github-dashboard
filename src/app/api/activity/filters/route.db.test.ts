@@ -4,6 +4,7 @@ import "../../../../../tests/helpers/postgres-container";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { SAVED_FILTER_LIMIT } from "@/lib/activity/filter-store";
 import { readActiveSession } from "@/lib/auth/session";
 import { ensureSchema } from "@/lib/db";
 import { query } from "@/lib/db/client";
@@ -77,7 +78,7 @@ describe("activity saved filters routes (collection)", () => {
     };
     expect(body.success).toBe(true);
     expect(body.filters).toEqual([]);
-    expect(body.limit).toBe(30);
+    expect(body.limit).toBe(SAVED_FILTER_LIMIT);
   });
 
   it("creates a new saved filter and returns normalized payload", async () => {
@@ -133,7 +134,7 @@ describe("activity saved filters routes (collection)", () => {
       stalePrDays: 10,
       idlePrDays: 5,
     });
-    expect(createBody.limit).toBe(30);
+    expect(createBody.limit).toBe(SAVED_FILTER_LIMIT);
 
     const listResponse = await handlers.GET();
     const listBody = (await listResponse.json()) as {
@@ -145,7 +146,7 @@ describe("activity saved filters routes (collection)", () => {
   });
 
   it("rejects creation when the saved filter limit is reached", async () => {
-    for (let index = 0; index < 30; index += 1) {
+    for (let index = 0; index < SAVED_FILTER_LIMIT; index += 1) {
       const response = await handlers.POST(
         new Request("http://localhost/api/activity/filters", {
           method: "POST",
@@ -166,7 +167,7 @@ describe("activity saved filters routes (collection)", () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: "Filter 31",
+          name: `Filter ${SAVED_FILTER_LIMIT + 1}`,
           payload: {
             perPage: 25,
           },
@@ -180,7 +181,7 @@ describe("activity saved filters routes (collection)", () => {
       message: string;
     };
     expect(body.success).toBe(false);
-    expect(body.message).toContain("최대 30개");
+    expect(body.message).toContain(`최대 ${SAVED_FILTER_LIMIT}개`);
   });
 
   it("returns 401 when session is missing", async () => {

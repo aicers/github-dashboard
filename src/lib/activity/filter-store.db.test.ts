@@ -11,6 +11,7 @@ import {
   deleteSavedFilter,
   getSavedFilter,
   listSavedFilters,
+  SAVED_FILTER_LIMIT,
   updateSavedFilter,
 } from "@/lib/activity/filter-store";
 import {
@@ -111,7 +112,7 @@ describe("activity filter store", () => {
   });
 
   it("enforces saved filter limit per user", async () => {
-    for (let index = 0; index < 30; index += 1) {
+    for (let index = 0; index < SAVED_FILTER_LIMIT; index += 1) {
       await createSavedFilter(USER_ID, `Filter ${index + 1}`, createPayload());
     }
 

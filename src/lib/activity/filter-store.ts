@@ -8,8 +8,9 @@ import {
 } from "@/lib/activity/filter-schema";
 import type { ActivitySavedFilter } from "@/lib/activity/types";
 import { query, withTransaction } from "@/lib/db/client";
+import { env } from "@/lib/env";
 
-export const SAVED_FILTER_LIMIT = 30;
+export const SAVED_FILTER_LIMIT = env.ACTIVITY_SAVED_FILTER_LIMIT;
 
 type ActivitySavedFilterRow = {
   id: string;

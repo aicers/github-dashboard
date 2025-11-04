@@ -52,4 +52,16 @@ describe("env configuration", () => {
       /DB_BACKUP_RETENTION cannot exceed 10/,
     );
   });
+
+  test("defaults saved filter limit to 30 when unset", async () => {
+    delete process.env.ACTIVITY_SAVED_FILTER_LIMIT;
+    const { env } = await import("./env");
+    expect(env.ACTIVITY_SAVED_FILTER_LIMIT).toBe(30);
+  });
+
+  test("parses saved filter limit from environment", async () => {
+    process.env.ACTIVITY_SAVED_FILTER_LIMIT = "45";
+    const { env } = await import("./env");
+    expect(env.ACTIVITY_SAVED_FILTER_LIMIT).toBe(45);
+  });
 });
