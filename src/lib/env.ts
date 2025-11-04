@@ -76,6 +76,17 @@ const envSchema = z.object({
   OPENAI_API_BASE_URL: z.string().url().optional(),
   OPENAI_UNANSWERED_MODEL: z.string().optional(),
   OPENAI_UNANSWERED_PROMPT: z.string().optional(),
+  ACTIVITY_SAVED_FILTER_LIMIT: z
+    .string()
+    .transform((value) => Number.parseInt(value, 10))
+    .optional()
+    .pipe(
+      z
+        .number()
+        .int({ message: "ACTIVITY_SAVED_FILTER_LIMIT must be an integer." })
+        .min(1, "ACTIVITY_SAVED_FILTER_LIMIT must be at least 1.")
+        .optional(),
+    ),
 });
 
 const parsed = envSchema.parse({
@@ -97,6 +108,7 @@ const parsed = envSchema.parse({
   OPENAI_API_BASE_URL: process.env.OPENAI_API_BASE_URL,
   OPENAI_UNANSWERED_MODEL: process.env.OPENAI_UNANSWERED_MODEL,
   OPENAI_UNANSWERED_PROMPT: process.env.OPENAI_UNANSWERED_PROMPT,
+  ACTIVITY_SAVED_FILTER_LIMIT: process.env.ACTIVITY_SAVED_FILTER_LIMIT,
 });
 
 const defaultBackupDirectory = path.resolve(process.cwd(), "backups");
@@ -128,4 +140,5 @@ export const env = {
         .map((value) => value.trim().toLowerCase())
         .filter((value) => value.length > 0)
     : [],
+  ACTIVITY_SAVED_FILTER_LIMIT: parsed.ACTIVITY_SAVED_FILTER_LIMIT ?? 30,
 };

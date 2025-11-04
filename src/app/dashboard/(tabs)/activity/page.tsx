@@ -3,6 +3,7 @@ import {
   buildActivityFilterOptionsFixture,
   buildActivityListResultFixture,
 } from "@/components/test-harness/activity-fixtures";
+import { SAVED_FILTER_LIMIT } from "@/lib/activity/filter-store";
 import {
   createSearchParamsFromRecord,
   parseActivityListParams,
@@ -51,6 +52,7 @@ export default async function ActivityPage({
       initialParams={params}
       currentUserId={session?.userId ?? null}
       currentUserIsAdmin={session?.isAdmin ?? false}
+      savedFiltersLimit={SAVED_FILTER_LIMIT}
     />
   );
 }

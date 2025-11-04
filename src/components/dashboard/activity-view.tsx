@@ -102,6 +102,7 @@ type ActivityViewProps = {
   initialParams: ActivityListParams;
   currentUserId: string | null;
   currentUserIsAdmin: boolean;
+  savedFiltersLimit?: number;
 };
 
 const ATTENTION_TOOLTIPS: Partial<Record<ActivityAttentionFilter, string>> = {
@@ -1981,6 +1982,7 @@ export function ActivityView({
   initialParams,
   currentUserId,
   currentUserIsAdmin,
+  savedFiltersLimit: initialSavedFiltersLimit = SAVED_FILTER_LIMIT_DEFAULT,
 }: ActivityViewProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -2208,7 +2210,7 @@ export function ActivityView({
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [savedFilters, setSavedFilters] = useState<ActivitySavedFilter[]>([]);
   const [savedFiltersLimit, setSavedFiltersLimit] = useState(
-    SAVED_FILTER_LIMIT_DEFAULT,
+    initialSavedFiltersLimit,
   );
   const [savedFiltersLoading, setSavedFiltersLoading] = useState(false);
   const [savedFiltersError, setSavedFiltersError] = useState<string | null>(
@@ -3014,7 +3016,7 @@ export function ActivityView({
       if (!response.ok) {
         if (response.status === 401) {
           setSavedFilters([]);
-          setSavedFiltersLimit(SAVED_FILTER_LIMIT_DEFAULT);
+          setSavedFiltersLimit(initialSavedFiltersLimit);
           setSelectedSavedFilterId("");
           return;
         }
@@ -3031,7 +3033,7 @@ export function ActivityView({
       const limit =
         typeof payload.limit === "number" && Number.isFinite(payload.limit)
           ? payload.limit
-          : SAVED_FILTER_LIMIT_DEFAULT;
+          : initialSavedFiltersLimit;
 
       setSavedFilters(filters);
       setSavedFiltersLimit(limit);
@@ -3046,7 +3048,7 @@ export function ActivityView({
     } finally {
       setSavedFiltersLoading(false);
     }
-  }, []);
+  }, [initialSavedFiltersLimit]);
 
   useEffect(() => {
     void loadSavedFilters();
