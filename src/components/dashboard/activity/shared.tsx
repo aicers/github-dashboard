@@ -1,5 +1,6 @@
 import {
   CommentDiscussionIcon,
+  DiscussionClosedIcon,
   GitMergeIcon,
   GitPullRequestClosedIcon,
   GitPullRequestIcon,
@@ -242,10 +243,17 @@ export function resolveActivityIcon(
     };
   }
 
+  if (item.status === "closed") {
+    return {
+      Icon: DiscussionClosedIcon,
+      className: "text-[#8250df]",
+      label: `${typeLabel} ${statusLabel}`,
+    };
+  }
+
   return {
     Icon: CommentDiscussionIcon,
-    className:
-      item.status === "closed" ? "text-github-closed" : "text-github-open",
+    className: "text-github-open",
     label: `${typeLabel} ${statusLabel}`,
   };
 }
@@ -280,7 +288,7 @@ export function renderTitleWithInlineCode(title: string | null): ReactNode {
 export type AttentionBadgeDescriptor = {
   key: string;
   label: string;
-  variant: "default" | "manual" | "ai-soft" | "relation";
+  variant: "default" | "manual" | "ai-soft" | "relation" | "answered";
   tooltip?: string;
 };
 
@@ -309,6 +317,14 @@ export function buildAttentionBadges(
       }
       return wait.requiresResponse === false;
     });
+
+  const isDiscussionAnswered =
+    item.type === "discussion" &&
+    typeof item.discussionAnsweredAt === "string" &&
+    item.discussionAnsweredAt.trim().length > 0;
+  if (isDiscussionAnswered) {
+    push("discussion-answered", "Answered", "answered");
+  }
 
   if (item.attention.unansweredMention) {
     if (hasAiSoftBadge) {

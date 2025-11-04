@@ -220,6 +220,7 @@ export type ActivityItem = {
   issueTodoProjectStartDateUpdatedAt: string | null;
   issueActivityStatus: IssueProjectStatus | null;
   issueActivityStatusAt: string | null;
+  discussionAnsweredAt?: string | null;
   repository: ActivityRepository | null;
   author: ActivityUser | null;
   assignees: ActivityUser[];

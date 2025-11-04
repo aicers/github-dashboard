@@ -120,9 +120,11 @@ function renderAttentionBadgeElements(
         ? "border border-slate-300 bg-slate-100 text-slate-700"
         : badge.variant === "ai-soft"
           ? "border border-sky-300 bg-sky-50 text-sky-700 shadow-[0_0_0.65rem_rgba(56,189,248,0.25)]"
-          : badge.variant === "relation"
-            ? ISSUE_RELATION_BADGE_CLASS
-            : "bg-amber-100 text-amber-700";
+          : badge.variant === "answered"
+            ? "border border-pink-200 bg-pink-100 text-pink-700"
+            : badge.variant === "relation"
+              ? ISSUE_RELATION_BADGE_CLASS
+              : "bg-amber-100 text-amber-700";
     const tooltipId = badge.tooltip
       ? `${itemId}-${badge.key}-tooltip`
       : undefined;

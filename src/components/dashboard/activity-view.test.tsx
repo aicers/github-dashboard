@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  formatDateTime,
   ISSUE_PRIORITY_BADGE_CLASS,
   ISSUE_WEIGHT_BADGE_CLASS,
   PROJECT_FIELD_BADGE_CLASS,
@@ -19,6 +20,7 @@ import {
   buildActivityItemFixture,
   buildActivityListResultFixture,
   buildActivitySavedFilterFixture,
+  buildActivityUserFixture,
 } from "@/components/test-harness/activity-fixtures";
 import { fetchActivityDetail } from "@/lib/activity/client";
 import type {
@@ -215,6 +217,91 @@ describe("ActivityView", () => {
       const url = new URL(request.url);
       expect(url.searchParams.get("jumpTo")).toMatch(/^2024-05-01/);
     });
+  });
+
+  it("renders closed discussion badge without a timestamp", () => {
+    const closedAt = "2025-01-05T12:00:00.000Z";
+    const expectedTimestamp = formatDateTime(
+      closedAt,
+      "UTC",
+      "iso-24h",
+    ) as string;
+    const initialData = buildActivityListResultFixture({
+      items: [
+        {
+          id: "discussion-closed",
+          type: "discussion",
+          number: 42,
+          title: "닫힌 토론",
+          status: "closed",
+          state: "CLOSED",
+          closedAt,
+          url: "https://example.com/discussion/42",
+          updatedAt: "2025-01-06T08:00:00.000Z",
+          issueProjectStatus: null,
+          issueProjectStatusSource: "none",
+          issueProjectStatusLocked: false,
+          issueTodoProjectStatus: null,
+          issueTodoProjectStatusAt: null,
+          issueTodoProjectPriority: null,
+          issueTodoProjectPriorityUpdatedAt: null,
+          issueTodoProjectWeight: null,
+          issueTodoProjectWeightUpdatedAt: null,
+          issueTodoProjectInitiationOptions: null,
+          issueTodoProjectInitiationOptionsUpdatedAt: null,
+          issueTodoProjectStartDate: null,
+          issueTodoProjectStartDateUpdatedAt: null,
+          issueActivityStatus: null,
+          issueActivityStatusAt: null,
+          repository: {
+            id: "repo-discussion",
+            name: "discussion",
+            nameWithOwner: "acme/discussion",
+            maintainerIds: [],
+          },
+          author: buildActivityUserFixture({ id: "user-discussant" }),
+          assignees: [],
+          reviewers: [],
+          mentionedUsers: [],
+          commenters: [],
+          reactors: [],
+          labels: [],
+          issueType: null,
+          milestone: null,
+          linkedPullRequests: [],
+          linkedIssues: [],
+          hasParentIssue: false,
+          hasSubIssues: false,
+          createdAt: "2025-01-01T08:00:00.000Z",
+          mergedAt: null,
+          businessDaysOpen: null,
+          businessDaysIdle: null,
+          businessDaysSinceInProgress: null,
+          businessDaysInProgressOpen: null,
+          attention: {
+            unansweredMention: false,
+            reviewRequestPending: false,
+            staleOpenPr: false,
+            idlePr: false,
+            backlogIssue: false,
+            stalledIssue: false,
+          },
+        },
+      ],
+      timezone: "UTC",
+      dateTimeFormat: "iso-24h",
+    });
+
+    mockFetchJsonOnce({ filters: [], limit: 5 });
+    const props = createDefaultProps({ initialData });
+    render(<ActivityView {...props} />);
+
+    expect(screen.getByText("닫힌 토론")).toBeVisible();
+    expect(screen.queryByText("CLOSED")).not.toBeInTheDocument();
+    expect(screen.queryByTitle(expectedTimestamp)).not.toBeInTheDocument();
+
+    const icon = screen.getByTitle("토론 닫힘");
+    expect(icon.className).toContain("text-[#8250df]");
   });
 
   it("changes page and fetches next results", async () => {

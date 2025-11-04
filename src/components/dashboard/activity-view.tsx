@@ -4969,6 +4969,83 @@ export function ActivityView({
                     }}
                   />
                 </div>
+                <div
+                  className={cn(
+                    "space-y-2",
+                    issueFiltersDisabled && "opacity-60",
+                  )}
+                >
+                  <Label
+                    className={cn(
+                      "text-xs font-semibold uppercase text-foreground",
+                      issueFiltersDisabled && "text-muted-foreground/70",
+                    )}
+                  >
+                    이슈 연결
+                  </Label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <TogglePill
+                      active={linkedIssueStatesAllSelected}
+                      variant={
+                        linkedIssueStatesAllSelected ? "active" : "inactive"
+                      }
+                      onClick={() =>
+                        setDraft((current) => ({
+                          ...current,
+                          linkedIssueStates: [],
+                        }))
+                      }
+                      disabled={issueFiltersDisabled}
+                    >
+                      미적용
+                    </TogglePill>
+                    {(
+                      [
+                        {
+                          key: "has_sub" as ActivityLinkedIssueFilter,
+                          label: "Parent 이슈",
+                        },
+                        {
+                          key: "has_parent" as ActivityLinkedIssueFilter,
+                          label: "Child 이슈",
+                        },
+                      ] as const
+                    ).map(({ key, label }) => {
+                      const active = draft.linkedIssueStates.includes(key);
+                      const variant = linkedIssueStatesAllSelected
+                        ? "muted"
+                        : active
+                          ? "active"
+                          : "inactive";
+                      return (
+                        <TogglePill
+                          key={key}
+                          active={active}
+                          variant={variant}
+                          onClick={() => {
+                            setDraft((current) => {
+                              const nextSet = new Set(
+                                current.linkedIssueStates,
+                              );
+                              if (nextSet.has(key)) {
+                                nextSet.delete(key);
+                              } else {
+                                nextSet.add(key);
+                              }
+                              return {
+                                ...current,
+                                linkedIssueStates: Array.from(nextSet),
+                              };
+                            });
+                          }}
+                          disabled={issueFiltersDisabled}
+                        >
+                          {label}
+                        </TogglePill>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Label
@@ -5078,77 +5155,6 @@ export function ActivityView({
                       disabled={issueFiltersDisabled}
                     >
                       {option.label}
-                    </TogglePill>
-                  );
-                })}
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    "mx-2 h-4 border-l border-border/50",
-                    issueFiltersDisabled && "opacity-40",
-                  )}
-                />
-                <Label
-                  className={cn(
-                    "text-xs font-semibold uppercase text-foreground",
-                    issueFiltersDisabled && "text-muted-foreground/70",
-                  )}
-                >
-                  이슈 연결
-                </Label>
-                <TogglePill
-                  active={linkedIssueStatesAllSelected}
-                  variant={linkedIssueStatesAllSelected ? "active" : "inactive"}
-                  onClick={() =>
-                    setDraft((current) => ({
-                      ...current,
-                      linkedIssueStates: [],
-                    }))
-                  }
-                  disabled={issueFiltersDisabled}
-                >
-                  미적용
-                </TogglePill>
-                {(
-                  [
-                    {
-                      key: "has_sub" as ActivityLinkedIssueFilter,
-                      label: "Parent 이슈",
-                    },
-                    {
-                      key: "has_parent" as ActivityLinkedIssueFilter,
-                      label: "Child 이슈",
-                    },
-                  ] as const
-                ).map(({ key, label }) => {
-                  const active = draft.linkedIssueStates.includes(key);
-                  const variant = linkedIssueStatesAllSelected
-                    ? "muted"
-                    : active
-                      ? "active"
-                      : "inactive";
-                  return (
-                    <TogglePill
-                      key={key}
-                      active={active}
-                      variant={variant}
-                      onClick={() => {
-                        setDraft((current) => {
-                          const nextSet = new Set(current.linkedIssueStates);
-                          if (nextSet.has(key)) {
-                            nextSet.delete(key);
-                          } else {
-                            nextSet.add(key);
-                          }
-                          return {
-                            ...current,
-                            linkedIssueStates: Array.from(nextSet),
-                          };
-                        });
-                      }}
-                      disabled={issueFiltersDisabled}
-                    >
-                      {label}
                     </TogglePill>
                   );
                 })}
@@ -5554,6 +5560,15 @@ export function ActivityView({
                           maxItems: 2,
                         })
                       : null;
+                  const statusKey = item.status?.toLowerCase() ?? null;
+                  const statusDisplayLabel =
+                    item.type === "discussion"
+                      ? null
+                      : statusKey === "closed"
+                        ? "CLOSED"
+                        : statusKey === "merged"
+                          ? "MERGED"
+                          : null;
                   const updatedRelativeLabel = item.updatedAt
                     ? formatRelative(item.updatedAt)
                     : null;
@@ -5593,6 +5608,13 @@ export function ActivityView({
                             metadata={
                               <div className="flex flex-col gap-1 text-xs text-foreground/90">
                                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                  {statusDisplayLabel ? (
+                                    <span className="inline-flex items-center gap-2">
+                                      <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide">
+                                        {statusDisplayLabel}
+                                      </span>
+                                    </span>
+                                  ) : null}
                                   {metrics.map((metric) => (
                                     <span key={metric.key}>
                                       {metric.content}
@@ -5660,7 +5682,9 @@ export function ActivityView({
                                         ? "border border-slate-300 bg-slate-100 text-slate-700"
                                         : badge.variant === "ai-soft"
                                           ? "border border-sky-300 bg-sky-50 text-sky-700 shadow-[0_0_0.65rem_rgba(56,189,248,0.25)]"
-                                          : "bg-amber-100 text-amber-700";
+                                          : badge.variant === "answered"
+                                            ? "border border-pink-200 bg-pink-100 text-pink-700"
+                                            : "bg-amber-100 text-amber-700";
                                     const tooltipId = badge.tooltip
                                       ? `${item.id}-${badge.key}-tooltip`
                                       : undefined;

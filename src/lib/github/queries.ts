@@ -337,6 +337,7 @@ export const repositoryDiscussionsQuery = gql`
           bodyHTML
           createdAt
           updatedAt
+          closedAt
           answerChosenAt
           locked
           author {

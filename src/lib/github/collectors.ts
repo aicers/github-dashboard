@@ -152,6 +152,7 @@ type DiscussionNode = {
   bodyHTML?: string | null;
   createdAt: string;
   updatedAt: string;
+  closedAt?: string | null;
   answerChosenAt?: string | null;
   locked?: boolean | null;
   author?: GithubActor | null;
@@ -1514,16 +1515,23 @@ async function collectDiscussionsForRepository(
           ? discussion
           : { ...discussion, __typename: "Discussion" };
 
+      const closedAt =
+        typeof discussion.closedAt === "string" &&
+        discussion.closedAt.trim().length > 0
+          ? discussion.closedAt
+          : null;
+      const normalizedState = closedAt !== null ? "closed" : "open";
+
       await upsertIssue({
         id: discussion.id,
         number: discussion.number,
         repositoryId: repository.id,
         authorId: authorId ?? null,
         title: discussion.title,
-        state: null,
+        state: normalizedState,
         createdAt: discussion.createdAt,
         updatedAt: discussion.updatedAt,
-        closedAt: null,
+        closedAt,
         raw: rawDiscussion,
       });
 
@@ -2473,6 +2481,67 @@ export async function runCollection(options: SyncOptions) {
       reviews: latestReviewSubmitted,
       comments: latestCommentUpdated,
     },
+  };
+}
+
+export async function collectDiscussionsOnly(
+  options: SyncOptions & { repositoryNames?: string[] | null },
+) {
+  if (!options.org) {
+    throw new Error("GitHub organization is not configured.");
+  }
+
+  const client = options.client ?? createGithubClient();
+  const { repositories } = await collectRepositories(client, options);
+
+  let targetRepositories = repositories;
+  if (options.repositoryNames?.length) {
+    const nameSet = new Set(
+      options.repositoryNames.map((value) => value.toLowerCase()),
+    );
+    targetRepositories = repositories.filter((repository) => {
+      const name = repository.name.toLowerCase();
+      const nameWithOwner = repository.nameWithOwner.toLowerCase();
+      return nameSet.has(name) || nameSet.has(nameWithOwner);
+    });
+  }
+
+  let latestDiscussionUpdated: string | null = null;
+  let latestCommentUpdated: string | null = null;
+  let discussionCount = 0;
+  let commentCount = 0;
+
+  for (const repository of targetRepositories) {
+    const result = await collectDiscussionsForRepository(
+      client,
+      repository,
+      options,
+    );
+    latestDiscussionUpdated = maxTimestamp(
+      latestDiscussionUpdated,
+      result.latestDiscussionUpdated,
+    );
+    latestCommentUpdated = maxTimestamp(
+      latestCommentUpdated,
+      result.latestCommentUpdated,
+    );
+    discussionCount += result.discussionCount;
+    commentCount += result.commentCount;
+  }
+
+  if (latestDiscussionUpdated) {
+    await updateSyncState("discussions", null, latestDiscussionUpdated);
+  }
+  if (latestCommentUpdated) {
+    await updateSyncState("comments", null, latestCommentUpdated);
+  }
+
+  return {
+    repositoriesProcessed: targetRepositories.length,
+    discussionCount,
+    commentCount,
+    latestDiscussionUpdated,
+    latestCommentUpdated,
   };
 }
 
