@@ -233,6 +233,7 @@ export function buildActivityListParamsFixture(
     issuePriorities: [],
     issueWeights: [],
     milestoneIds: [],
+    discussionStatuses: [],
     pullRequestStatuses: [],
     issueBaseStatuses: [],
     authorIds: [],

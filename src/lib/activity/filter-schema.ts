@@ -154,6 +154,7 @@ export const activityFilterPayloadSchema: z.ZodType<ActivityFilterPayload> = z
     issuePriorities: stringArrayField,
     issueWeights: stringArrayField,
     milestoneIds: stringArrayField,
+    discussionStatuses: stringArrayField,
     pullRequestStatuses: stringArrayField,
     issueBaseStatuses: stringArrayField,
     authorIds: stringArrayField,

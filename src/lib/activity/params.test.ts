@@ -55,6 +55,7 @@ describe("parseActivityListParams", () => {
     params.append("issueWeight", "Medium");
     params.append("linkedIssue", "has_parent");
     params.append("linkedIssue", "has_sub");
+    params.append("discussionStatus", "discussion_open");
     params.append("prStatus", "pr_open");
     params.append("prStatus", "pr_closed");
     params.append("issueBaseStatus", "issue_open");
@@ -66,6 +67,7 @@ describe("parseActivityListParams", () => {
     expect(result.issuePriorities).toEqual(["P0"]);
     expect(result.issueWeights).toEqual(["Heavy", "Medium"]);
     expect(result.linkedIssueStates).toEqual(["has_parent", "has_sub"]);
+    expect(result.discussionStatuses).toEqual(["discussion_open"]);
     expect(result.pullRequestStatuses).toEqual(["pr_open", "pr_closed"]);
     expect(result.issueBaseStatuses).toEqual(["issue_open"]);
   });
@@ -99,6 +101,7 @@ describe("parseActivityListParams", () => {
       issuePriority: ["P0", "P1"],
       issueWeight: ["Heavy"],
       linkedIssue: ["has_parent"],
+      discussionStatus: ["discussion_closed"],
       prStatus: ["pr_open", "pr_merged"],
       issueBaseStatus: ["issue_closed"],
     });
@@ -110,6 +113,7 @@ describe("parseActivityListParams", () => {
     expect(result.issuePriorities).toEqual(["P0", "P1"]);
     expect(result.issueWeights).toEqual(["Heavy"]);
     expect(result.linkedIssueStates).toEqual(["has_parent"]);
+    expect(result.discussionStatuses).toEqual(["discussion_closed"]);
     expect(result.pullRequestStatuses).toEqual(["pr_open", "pr_merged"]);
     expect(result.issueBaseStatuses).toEqual(["issue_closed"]);
   });

@@ -42,6 +42,7 @@ import {
 } from "@/lib/activity/filter-state";
 import type {
   ActivityAttentionFilter,
+  ActivityDiscussionStatusFilter,
   ActivityFilterOptions,
   ActivityIssueBaseStatusFilter,
   ActivityIssuePriorityFilter,
@@ -147,6 +148,14 @@ const CATEGORY_OPTIONS: Array<{ value: ActivityItemCategory; label: string }> =
     { value: "issue", label: "Issue" },
     { value: "pull_request", label: "Pull Request" },
   ];
+
+const DISCUSSION_STATUS_OPTIONS: Array<{
+  value: ActivityDiscussionStatusFilter;
+  label: string;
+}> = [
+  { value: "discussion_open", label: "Open" },
+  { value: "discussion_closed", label: "Closed" },
+];
 
 const PR_STATUS_OPTIONS: Array<{
   value: ActivityPullRequestStatusFilter;
@@ -768,6 +777,10 @@ function filterAttentionByCategories(
 
 function includesIssueCategory(categories: ActivityItemCategory[]) {
   return categories.length === 0 || categories.includes("issue");
+}
+
+function includesDiscussionCategory(categories: ActivityItemCategory[]) {
+  return categories.length === 0 || categories.includes("discussion");
 }
 
 function arraysShallowEqual(first: string[], second: string[]) {
@@ -2564,6 +2577,9 @@ export function ActivityView({
           "mentionedUserIds",
           "maintainerIds",
         ];
+        const defaultDiscussionStatuses: ActivityDiscussionStatusFilter[] = [
+          "discussion_open",
+        ];
         const defaultPrStatuses: ActivityPullRequestStatusFilter[] = [
           "pr_open",
         ];
@@ -2585,6 +2601,7 @@ export function ActivityView({
           ...next,
           taskMode: "my_todo" as const,
           peopleSelection: selection,
+          discussionStatuses: [...defaultDiscussionStatuses],
           prStatuses: [...defaultPrStatuses],
           issueBaseStatuses: [...defaultIssueBaseStatuses],
           statuses: [...defaultProjectStatuses],
@@ -2723,6 +2740,10 @@ export function ActivityView({
     );
   }, [canonicalDraftKey, savedFilterCanonicalEntries]);
 
+  const allowDiscussionStatuses = useMemo(
+    () => includesDiscussionCategory(draft.categories),
+    [draft.categories],
+  );
   const allowPullRequestStatuses = useMemo(
     () =>
       draft.categories.length === 0 ||
@@ -2735,12 +2756,14 @@ export function ActivityView({
   );
   const issueFiltersDisabled = !allowIssueStatuses;
   const prFiltersDisabled = !allowPullRequestStatuses;
+  const discussionFiltersDisabled = !allowDiscussionStatuses;
 
   const selectedIssueStatuses = useMemo(
     () => draft.statuses.filter((status) => ISSUE_STATUS_VALUE_SET.has(status)),
     [draft.statuses],
   );
   const issueStatusesAllSelected = selectedIssueStatuses.length === 0;
+  const discussionStatusesAllSelected = draft.discussionStatuses.length === 0;
   const prStatusesAllSelected = draft.prStatuses.length === 0;
   const issueBaseStatusesAllSelected = draft.issueBaseStatuses.length === 0;
   const linkedIssueStatesAllSelected = draft.linkedIssueStates.length === 0;
@@ -2846,6 +2869,32 @@ export function ActivityView({
       return next;
     });
   }, [allowIssueStatuses]);
+
+  useEffect(() => {
+    if (allowDiscussionStatuses) {
+      return;
+    }
+
+    setDraft((current) => {
+      if (current.discussionStatuses.length === 0) {
+        return current;
+      }
+      return {
+        ...current,
+        discussionStatuses: [],
+      };
+    });
+
+    setApplied((current) => {
+      if (current.discussionStatuses.length === 0) {
+        return current;
+      }
+      return {
+        ...current,
+        discussionStatuses: [],
+      };
+    });
+  }, [allowDiscussionStatuses]);
 
   useEffect(() => {
     if (allowPullRequestStatuses) {
@@ -5051,36 +5100,43 @@ export function ActivityView({
                 <Label
                   className={cn(
                     "text-xs font-semibold uppercase text-foreground",
-                    prFiltersDisabled && "text-muted-foreground/70",
+                    discussionFiltersDisabled && "text-muted-foreground/70",
                   )}
                 >
-                  PR 상태
+                  <span className="normal-case">Discussion 상태</span>
                 </Label>
                 <TogglePill
-                  active={prStatusesAllSelected}
-                  variant={prStatusesAllSelected ? "active" : "inactive"}
-                  onClick={() =>
-                    setDraft((current) => ({ ...current, prStatuses: [] }))
+                  active={discussionStatusesAllSelected}
+                  variant={
+                    discussionStatusesAllSelected ? "active" : "inactive"
                   }
-                  disabled={prFiltersDisabled}
+                  onClick={() =>
+                    setDraft((current) => ({
+                      ...current,
+                      discussionStatuses: [],
+                    }))
+                  }
+                  disabled={discussionFiltersDisabled}
                 >
                   미적용
                 </TogglePill>
-                {PR_STATUS_OPTIONS.map((option) => {
-                  const active = draft.prStatuses.includes(option.value);
-                  const variant = prStatusesAllSelected
+                {DISCUSSION_STATUS_OPTIONS.map((option) => {
+                  const active = draft.discussionStatuses.includes(
+                    option.value,
+                  );
+                  const variant = discussionStatusesAllSelected
                     ? "muted"
                     : active
                       ? "active"
                       : "inactive";
                   return (
                     <TogglePill
-                      key={`advanced-pr-status-${option.value}`}
+                      key={`advanced-discussion-status-${option.value}`}
                       active={active}
                       variant={variant}
                       onClick={() => {
                         setDraft((current) => {
-                          const nextSet = new Set(current.prStatuses);
+                          const nextSet = new Set(current.discussionStatuses);
                           if (nextSet.has(option.value)) {
                             nextSet.delete(option.value);
                           } else {
@@ -5088,11 +5144,11 @@ export function ActivityView({
                           }
                           return {
                             ...current,
-                            prStatuses: Array.from(nextSet),
+                            discussionStatuses: Array.from(nextSet),
                           };
                         });
                       }}
-                      disabled={prFiltersDisabled}
+                      disabled={discussionFiltersDisabled}
                     >
                       {option.label}
                     </TogglePill>
@@ -5153,6 +5209,63 @@ export function ActivityView({
                         });
                       }}
                       disabled={issueFiltersDisabled}
+                    >
+                      {option.label}
+                    </TogglePill>
+                  );
+                })}
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "mx-2 h-4 border-l border-border/50",
+                    prFiltersDisabled && "opacity-40",
+                  )}
+                />
+                <Label
+                  className={cn(
+                    "text-xs font-semibold uppercase text-foreground",
+                    prFiltersDisabled && "text-muted-foreground/70",
+                  )}
+                >
+                  PR 상태
+                </Label>
+                <TogglePill
+                  active={prStatusesAllSelected}
+                  variant={prStatusesAllSelected ? "active" : "inactive"}
+                  onClick={() =>
+                    setDraft((current) => ({ ...current, prStatuses: [] }))
+                  }
+                  disabled={prFiltersDisabled}
+                >
+                  미적용
+                </TogglePill>
+                {PR_STATUS_OPTIONS.map((option) => {
+                  const active = draft.prStatuses.includes(option.value);
+                  const variant = prStatusesAllSelected
+                    ? "muted"
+                    : active
+                      ? "active"
+                      : "inactive";
+                  return (
+                    <TogglePill
+                      key={`advanced-pr-status-${option.value}`}
+                      active={active}
+                      variant={variant}
+                      onClick={() => {
+                        setDraft((current) => {
+                          const nextSet = new Set(current.prStatuses);
+                          if (nextSet.has(option.value)) {
+                            nextSet.delete(option.value);
+                          } else {
+                            nextSet.add(option.value);
+                          }
+                          return {
+                            ...current,
+                            prStatuses: Array.from(nextSet),
+                          };
+                        });
+                      }}
+                      disabled={prFiltersDisabled}
                     >
                       {option.label}
                     </TogglePill>
@@ -5560,15 +5673,6 @@ export function ActivityView({
                           maxItems: 2,
                         })
                       : null;
-                  const statusKey = item.status?.toLowerCase() ?? null;
-                  const statusDisplayLabel =
-                    item.type === "discussion"
-                      ? null
-                      : statusKey === "closed"
-                        ? "CLOSED"
-                        : statusKey === "merged"
-                          ? "MERGED"
-                          : null;
                   const updatedRelativeLabel = item.updatedAt
                     ? formatRelative(item.updatedAt)
                     : null;
@@ -5608,13 +5712,6 @@ export function ActivityView({
                             metadata={
                               <div className="flex flex-col gap-1 text-xs text-foreground/90">
                                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                                  {statusDisplayLabel ? (
-                                    <span className="inline-flex items-center gap-2">
-                                      <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide">
-                                        {statusDisplayLabel}
-                                      </span>
-                                    </span>
-                                  ) : null}
                                   {metrics.map((metric) => (
                                     <span key={metric.key}>
                                       {metric.content}
