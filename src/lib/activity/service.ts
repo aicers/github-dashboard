@@ -527,7 +527,7 @@ function extractLinkedIssues(connection: unknown): ActivityLinkedIssue[] {
   return result;
 }
 
-function parseIssueRaw(data: unknown): IssueRaw | null {
+function parseRawRecord(data: unknown): Record<string, unknown> | null {
   if (!data) {
     return null;
   }
@@ -536,7 +536,7 @@ function parseIssueRaw(data: unknown): IssueRaw | null {
     try {
       const parsed = JSON.parse(data);
       if (parsed && typeof parsed === "object") {
-        return parsed as IssueRaw;
+        return parsed as Record<string, unknown>;
       }
     } catch {
       return null;
@@ -544,10 +544,23 @@ function parseIssueRaw(data: unknown): IssueRaw | null {
   }
 
   if (typeof data === "object") {
-    return data as IssueRaw;
+    return data as Record<string, unknown>;
   }
 
   return null;
+}
+
+function parseIssueRaw(data: unknown): IssueRaw | null {
+  if (!data) {
+    return null;
+  }
+
+  const record = parseRawRecord(data);
+  if (!record) {
+    return null;
+  }
+
+  return record as IssueRaw;
 }
 
 function createProjectFieldAggregate(): ProjectFieldAggregate {
@@ -1756,6 +1769,18 @@ function buildActivityItem(
 
   let businessDaysSinceInProgress: number | null | undefined = null;
   let businessDaysInProgressOpen: number | null | undefined = null;
+  let discussionAnsweredAt: string | null = null;
+
+  if (row.item_type === "discussion") {
+    const rawDiscussion = parseRawRecord(row.raw_data);
+    const answerChosenAt =
+      rawDiscussion && typeof rawDiscussion.answerChosenAt === "string"
+        ? rawDiscussion.answerChosenAt.trim()
+        : "";
+    if (answerChosenAt.length > 0) {
+      discussionAnsweredAt = answerChosenAt;
+    }
+  }
 
   if (row.item_type === "issue") {
     const raw = parseIssueRaw(row.raw_data);
@@ -1926,6 +1951,7 @@ function buildActivityItem(
     issueActivityStatusAt: issueActivityStatusAt
       ? toIso(issueActivityStatusAt)
       : null,
+    discussionAnsweredAt,
     repository: row.repository_id
       ? {
           id: row.repository_id,

@@ -494,6 +494,7 @@ describe("runCollection", () => {
       bodyHTML: "<p>Let's discuss</p>",
       createdAt: "2024-04-01T12:00:00.000Z",
       updatedAt: "2024-04-02T10:00:00.000Z",
+      closedAt: null,
       answerChosenAt: null,
       locked: false,
       author: {
@@ -642,6 +643,137 @@ describe("runCollection", () => {
       "discussions",
       null,
       "2024-04-02T10:00:00.000Z",
+    );
+  });
+
+  it("stores closed discussions with closed state and timestamp", async () => {
+    const discussionNode = {
+      __typename: "Discussion" as const,
+      id: "discussion-closed",
+      number: 9,
+      title: "Resolved thread",
+      url: "https://github.com/acme/repo/discussions/9",
+      body: "Closed discussion body",
+      bodyText: "Closed discussion body",
+      bodyHTML: "<p>Closed discussion body</p>",
+      createdAt: "2024-04-01T12:00:00.000Z",
+      updatedAt: "2024-04-02T10:00:00.000Z",
+      closedAt: "2024-04-02T09:30:00.000Z",
+      answerChosenAt: "2024-04-02T09:00:00.000Z",
+      locked: true,
+      author: {
+        id: "discussion-author",
+        login: "closer",
+        name: "Closer",
+        avatarUrl: null,
+        createdAt: "2024-01-01T00:00:00.000Z",
+        updatedAt: "2024-01-01T00:00:00.000Z",
+        __typename: "User",
+      },
+      answerChosenBy: null,
+      category: null,
+      comments: { totalCount: 0 },
+      reactions: null,
+    } satisfies Record<string, unknown>;
+
+    const requestMock = vi.fn(async (document: unknown) => {
+      if (document === organizationRepositoriesQuery) {
+        return {
+          organization: {
+            repositories: {
+              nodes: [
+                {
+                  id: "repo-1",
+                  name: "repo",
+                  nameWithOwner: "acme/repo",
+                  url: "https://github.com/acme/repo",
+                  isPrivate: false,
+                  createdAt: "2024-01-01T00:00:00.000Z",
+                  updatedAt: "2024-04-02T12:00:00.000Z",
+                  owner: {
+                    id: "owner-1",
+                    login: "owner",
+                    name: "Owner",
+                    avatarUrl: null,
+                    createdAt: "2024-01-01T00:00:00.000Z",
+                    updatedAt: "2024-01-01T00:00:00.000Z",
+                    __typename: "User",
+                  },
+                },
+              ],
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+        };
+      }
+
+      if (document === repositoryIssuesQuery) {
+        return { repository: { issues: emptyConnection } };
+      }
+
+      if (document === repositoryDiscussionsQuery) {
+        return {
+          repository: {
+            discussions: {
+              nodes: [discussionNode],
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+        };
+      }
+
+      if (document === discussionCommentsQuery) {
+        return {
+          repository: {
+            discussion: {
+              comments: {
+                nodes: [],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            },
+          },
+        };
+      }
+
+      if (document === repositoryPullRequestsQuery) {
+        return { repository: { pullRequests: emptyConnection } };
+      }
+
+      if (document === pullRequestCommentsQuery) {
+        return { repository: { pullRequest: { comments: emptyConnection } } };
+      }
+
+      if (document === pullRequestReviewsQuery) {
+        return { repository: { pullRequest: { reviews: emptyConnection } } };
+      }
+
+      if (document === pullRequestReviewCommentsQuery) {
+        return {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                nodes: [],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            },
+          },
+        };
+      }
+
+      throw new Error("Unexpected query");
+    });
+
+    await runCollection({
+      org: "acme",
+      client: { request: requestMock } as unknown as GraphQLClient,
+    });
+
+    expect(upsertIssueMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "discussion-closed",
+        state: "closed",
+        closedAt: "2024-04-02T09:30:00.000Z",
+      }),
     );
   });
 

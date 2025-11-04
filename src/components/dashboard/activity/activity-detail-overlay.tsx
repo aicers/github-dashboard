@@ -21,7 +21,7 @@ export const DETAIL_PANEL_TRANSITION_MS = 300;
 export type OverlayBadgeDescriptor = {
   key?: string;
   label: string;
-  variant?: "default" | "manual" | "ai-soft" | "relation";
+  variant?: "default" | "manual" | "ai-soft" | "relation" | "answered";
   tooltip?: string;
 };
 
@@ -101,6 +101,10 @@ export function ActivityDetailOverlay({
     : `${CATEGORY_LABELS[item.type]} 상세`;
   const statusLabel = item.state ?? item.status ?? null;
   const normalizedStatusLabel = statusLabel?.trim().toLowerCase();
+  const displayStatusLabel =
+    item.type === "discussion" && statusLabel
+      ? statusLabel.toUpperCase()
+      : statusLabel;
   const statusTimestampSource =
     normalizedStatusLabel === "closed"
       ? item.closedAt
@@ -180,9 +184,9 @@ export function ActivityDetailOverlay({
                 {titleLabel}
               </h3>
               <div className="flex flex-wrap gap-2 text-xs text-muted-foreground/80">
-                {statusLabel ? (
+                {displayStatusLabel ? (
                   <span className="inline-flex items-center gap-1">
-                    <span>{statusLabel}</span>
+                    <span>{displayStatusLabel}</span>
                     {statusTimestamp ? (
                       <>
                         <span aria-hidden="true">·</span>
@@ -199,9 +203,11 @@ export function ActivityDetailOverlay({
                       ? "border border-slate-300 bg-slate-100 text-slate-700"
                       : badge.variant === "ai-soft"
                         ? "border border-sky-300 bg-sky-50 text-sky-700 shadow-[0_0_0.65rem_rgba(56,189,248,0.25)]"
-                        : badge.variant === "relation"
-                          ? ISSUE_RELATION_BADGE_CLASS
-                          : "bg-amber-100 text-amber-700";
+                        : badge.variant === "answered"
+                          ? "border border-pink-200 bg-pink-100 text-pink-700"
+                          : badge.variant === "relation"
+                            ? ISSUE_RELATION_BADGE_CLASS
+                            : "bg-amber-100 text-amber-700";
                   return (
                     <span
                       key={badge.key}
