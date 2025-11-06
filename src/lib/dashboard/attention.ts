@@ -271,7 +271,7 @@ type RawPullRequestItem = PullRequestReferenceRaw & {
   inactivityDays?: number;
 };
 
-type ReviewRequestRawItem = {
+export type ReviewRequestRawItem = {
   id: string;
   requestedAt: string;
   waitingDays: number;
@@ -1329,7 +1329,7 @@ async function fetchIdlePullRequests(
   return { items, userIds };
 }
 
-async function fetchStuckReviewRequests(
+export async function fetchStuckReviewRequests(
   excludedRepositoryIds: readonly string[],
   excludedUserIds: readonly string[],
   now: Date,
