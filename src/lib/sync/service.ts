@@ -44,6 +44,7 @@ import {
 import { withJobLock } from "@/lib/jobs/lock";
 import { emitSyncEvent } from "@/lib/sync/event-bus";
 import type { SyncRunSummaryEvent } from "@/lib/sync/events";
+import { refreshAttentionReactions } from "@/lib/sync/reaction-refresh";
 
 const dateSchema = z.string().transform((value, ctx) => {
   const date = new Date(value);
@@ -410,6 +411,18 @@ async function executeSync(params: {
         status: "success",
         completedAt,
         summary: toRunSummaryEvent(summary),
+      });
+
+      await logSyncStep({
+        runId,
+        resource: "reaction-refresh",
+        message: "Refreshing reactions for unanswered attention items",
+        step: async () => {
+          await refreshAttentionReactions({
+            logger,
+            now: new Date(),
+          });
+        },
       });
 
       await logSyncStep({

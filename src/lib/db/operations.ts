@@ -540,6 +540,74 @@ export async function upsertReaction(reaction: DbReaction) {
   }
 }
 
+export async function listCommentIdsByPullRequestIds(
+  pullRequestIds: readonly string[],
+): Promise<Map<string, string[]>> {
+  if (!pullRequestIds.length) {
+    return new Map();
+  }
+
+  const result = await query<{
+    id: string;
+    pull_request_id: string | null;
+  }>(
+    `SELECT id, pull_request_id
+     FROM comments
+     WHERE pull_request_id = ANY($1::text[])`,
+    [pullRequestIds],
+  );
+
+  const map = new Map<string, string[]>();
+  result.rows.forEach((row) => {
+    const pullRequestId = row.pull_request_id;
+    if (!pullRequestId) {
+      return;
+    }
+    const list = map.get(pullRequestId);
+    if (list) {
+      list.push(row.id);
+    } else {
+      map.set(pullRequestId, [row.id]);
+    }
+  });
+
+  return map;
+}
+
+export async function listReviewIdsByPullRequestIds(
+  pullRequestIds: readonly string[],
+): Promise<Map<string, string[]>> {
+  if (!pullRequestIds.length) {
+    return new Map();
+  }
+
+  const result = await query<{
+    id: string;
+    pull_request_id: string | null;
+  }>(
+    `SELECT id, pull_request_id
+     FROM reviews
+     WHERE pull_request_id = ANY($1::text[])`,
+    [pullRequestIds],
+  );
+
+  const map = new Map<string, string[]>();
+  result.rows.forEach((row) => {
+    const pullRequestId = row.pull_request_id;
+    if (!pullRequestId) {
+      return;
+    }
+    const list = map.get(pullRequestId);
+    if (list) {
+      list.push(row.id);
+    } else {
+      map.set(pullRequestId, [row.id]);
+    }
+  });
+
+  return map;
+}
+
 export async function upsertReviewRequest(request: DbReviewRequest) {
   await query(
     `INSERT INTO review_requests (

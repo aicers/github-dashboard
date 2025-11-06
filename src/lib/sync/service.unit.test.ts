@@ -154,6 +154,7 @@ const refreshActivityCachesMock = vi.fn(
 const ensureActivityCachesMock = vi.fn(async () => null);
 const ensureIssueStatusAutomationMock = vi.fn(async () => {});
 const refreshActivityItemsSnapshotMock = vi.fn(async () => {});
+const refreshAttentionReactionsMock = vi.fn(async () => {});
 
 vi.mock("@/lib/db", () => ({
   ensureSchema: ensureSchemaMock,
@@ -197,6 +198,9 @@ vi.mock("@/lib/activity/status-automation", () => ({
 }));
 vi.mock("@/lib/activity/snapshot", () => ({
   refreshActivityItemsSnapshot: refreshActivityItemsSnapshotMock,
+}));
+vi.mock("@/lib/sync/reaction-refresh", () => ({
+  refreshAttentionReactions: refreshAttentionReactionsMock,
 }));
 vi.mock("@/lib/env", () => ({
   env: {
@@ -247,6 +251,7 @@ describe("sync service (unit)", () => {
     updateSyncLogMock.mockResolvedValue(undefined);
     ensureIssueStatusAutomationMock.mockResolvedValue(undefined);
     refreshActivityItemsSnapshotMock.mockResolvedValue(undefined);
+    refreshAttentionReactionsMock.mockResolvedValue(undefined);
     getSyncConfigMock.mockImplementation(async () => ({
       org_name: "acme",
       auto_sync_enabled: false,
@@ -327,6 +332,7 @@ describe("sync service (unit)", () => {
     expect(
       updateSyncRunStatusMock.mock.calls.every((call) => call[1] === "success"),
     ).toBe(true);
+    expect(refreshAttentionReactionsMock).toHaveBeenCalledTimes(2);
   });
 
   it("builds a since map per resource based on sync state and last successful sync", async () => {
@@ -390,6 +396,7 @@ describe("sync service (unit)", () => {
       reviews: "2024-04-01T00:00:00.000Z",
       comments: "2024-04-10T00:00:00.000Z",
     });
+    expect(refreshAttentionReactionsMock).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the scheduler alive across failures and clears timers on disable", async () => {
@@ -494,6 +501,7 @@ describe("sync service (unit)", () => {
     );
     expect(failedUpdates).toHaveLength(1);
     expect(successfulUpdates).toHaveLength(2);
+    expect(refreshAttentionReactionsMock).toHaveBeenCalledTimes(2);
   });
 
   it("resets the lock after failures so subsequent runs can proceed", async () => {
@@ -529,6 +537,7 @@ describe("sync service (unit)", () => {
       "failed",
       "success",
     ]);
+    expect(refreshAttentionReactionsMock).toHaveBeenCalledTimes(1);
   });
 
   it("updates sync timestamps when runs fail without touching lastSuccessfulSyncAt", async () => {
@@ -562,6 +571,7 @@ describe("sync service (unit)", () => {
       "failed",
       expect.any(String),
     );
+    expect(refreshAttentionReactionsMock).not.toHaveBeenCalled();
   });
 
   it("records the latest resource timestamp as the last successful sync time", async () => {
@@ -615,6 +625,7 @@ describe("sync service (unit)", () => {
     );
 
     vi.useRealTimers();
+    expect(refreshAttentionReactionsMock).toHaveBeenCalledTimes(1);
   });
 
   it("emits failure events when cleanup marks running syncs as failed", async () => {
