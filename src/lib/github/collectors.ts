@@ -32,6 +32,7 @@ import {
   repositoryPullRequestLinksQuery,
   repositoryPullRequestsQuery,
 } from "@/lib/github/queries";
+import { realignRepositoryMismatches } from "@/lib/github/repository-realignment";
 
 export type SyncLogger = (message: string) => void;
 
@@ -286,6 +287,7 @@ type ProjectStatusHistoryEntry = {
 };
 
 const PROJECT_REMOVED_STATUS = "__PROJECT_REMOVED__";
+const REPO_REALIGNMENT_LIMIT = 200;
 
 function normalizeProjectName(value: string | null | undefined): string | null {
   if (!value) {
@@ -2463,6 +2465,30 @@ export async function runCollection(options: SyncOptions) {
     "success",
     `Captured ${totalComments} comments from issues, discussions, pull requests, and reviews.`,
   );
+
+  try {
+    const realignSummary = await realignRepositoryMismatches({
+      client,
+      limit: REPO_REALIGNMENT_LIMIT,
+      chunkSize: 25,
+      dryRun: false,
+      refreshArtifacts: false,
+      logger: options.logger,
+      mode: "automatic",
+      waitForRateLimit: false,
+    });
+    if (realignSummary.updated > 0) {
+      options.logger?.(
+        `[ownership] Realigned ${realignSummary.updated} issues/discussions based on repository/url mismatches.`,
+      );
+    }
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unexpected error while realigning repositories.";
+    options.logger?.(`[ownership] ${message}`);
+  }
 
   return {
     repositoriesProcessed: repositories.length,
