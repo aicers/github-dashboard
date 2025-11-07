@@ -356,6 +356,9 @@ const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS issues_open_created_idx ON issues(github_created_at) WHERE github_closed_at IS NULL`,
   `CREATE INDEX IF NOT EXISTS issues_title_body_trgm_idx ON issues USING gin (title gin_trgm_ops, (data->>'body') gin_trgm_ops)`,
   `CREATE INDEX IF NOT EXISTS issues_data_gin_idx ON issues USING gin (data)`,
+  `ALTER TABLE issues ADD COLUMN IF NOT EXISTS ownership_checked_at TIMESTAMPTZ`,
+  `ALTER TABLE issues ALTER COLUMN ownership_checked_at SET DEFAULT NOW()`,
+  `CREATE INDEX IF NOT EXISTS issues_ownership_checked_idx ON issues(ownership_checked_at)`,
   `CREATE TABLE IF NOT EXISTS pull_requests (
     id TEXT PRIMARY KEY,
     number INTEGER NOT NULL,

@@ -140,7 +140,10 @@ Manual backfill and automatic sync share the same pipeline.
 1. **GitHub data collection**
    `runCollection` fetches repositories, issues, discussions, pull requests,
    reviews, and comments through the GraphQL API and upserts them into
-   PostgreSQL.
+   PostgreSQL. When the collection loop finishes it immediately realigns
+   repository ownership for any issue/discussion whose UI-visible repo slug no
+   longer matches GitHub’s canonical repo (same logic as
+   `npm run backfill:ownership`) before returning the summary.
    - Every resource writes a `running → success/failed` entry to `sync_log`.
    - The latest `updated_at` timestamp is stored in `sync_state` so the next run
      can reuse it as the `since` boundary.
@@ -151,11 +154,13 @@ Manual backfill and automatic sync share the same pipeline.
    Events (`run-started`, `run-completed`, `run-failed`, etc.) to the dashboard.
 
 3. **Post-processing steps**
-   After collection finishes three follow-up tasks run sequentially, each
-   persisting its outcome to `sync_log`.
-   - Apply issue status automation
-   - Refresh the activity snapshot
-   - Refresh activity caches
+   After `runCollection` succeeds the sync service records a series of logged
+   steps (`logSyncStep`) so each operation emits progress/failure events:
+   - Refresh unanswered-attention reaction caches (`refreshAttentionReactions`)
+   - Apply issue status automation (`ensureIssueStatusAutomation`)
+   - Refresh the activity snapshot (`refreshActivityItemsSnapshot`)
+   - Refresh activity caches (`refreshActivityCaches`)
+   - Re-classify unanswered mentions (`runUnansweredMentionClassification`)
 
 Automatic sync additionally schedules the next run, while manual backfill
 repeats the same steps for each day slice in the requested range.
@@ -562,6 +567,13 @@ infra/               → Docker/nginx assets for HTTPS proxying
   snapshot and social-signal caches. Run it when you want a full refresh outside
   the usual sync pipeline; add `--signals-only` to rebuild only the social-signal
   tables.
+- `scripts/backfill-node-ownership.ts` — fixes “card shows repo A but link opens
+  repo B” situations by re-fetching the canonical repository/URL for each
+  affected issue or discussion and upserting it back into PostgreSQL. The
+  default invocation (`npm run backfill:ownership`) processes up to 500
+  candidates per run; prepend `--dry-run` to log what would change without
+  writing, pass `--limit <n>` or `--chunk-size <n>` to tune throughput, and use
+  `--id <nodeID>` (repeatable) to inspect or repair specific GitHub nodes.
 - `scripts/db/backup.mjs` — wraps `pg_dump` so you can produce database backups
   with a single command. Supports `--dir`, `--label`, `--format`, and
   `--pg-dump` flags for customizing the output location and filename.
