@@ -140,10 +140,7 @@ Manual backfill and automatic sync share the same pipeline.
 1. **GitHub data collection**
    `runCollection` fetches repositories, issues, discussions, pull requests,
    reviews, and comments through the GraphQL API and upserts them into
-   PostgreSQL. When the collection loop finishes it immediately realigns
-   repository ownership for any issue/discussion whose UI-visible repo slug no
-   longer matches GitHub’s canonical repo (same logic as
-   `npm run backfill:ownership`) before returning the summary.
+   PostgreSQL.
    - Every resource writes a `running → success/failed` entry to `sync_log`.
    - The latest `updated_at` timestamp is stored in `sync_state` so the next run
      can reuse it as the `since` boundary.
