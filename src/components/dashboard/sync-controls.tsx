@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import type { ActivityCacheRefreshResult } from "@/lib/activity/cache";
+import type { ActivitySnapshotSummary } from "@/lib/activity/snapshot";
 import type {
   IssueStatusAutomationRunResult,
   IssueStatusAutomationSummary,
@@ -400,6 +401,8 @@ export function SyncControls({
   const [backfillHistory, setBackfillHistory] = useState<BackfillResult[]>([]);
   const [activityCacheSummary, setActivityCacheSummary] =
     useState<ActivityCacheRefreshResult | null>(null);
+  const [activitySnapshotSummary, setActivitySnapshotSummary] =
+    useState<ActivitySnapshotSummary | null>(null);
   const [issueStatusAutomationSummary, setIssueStatusAutomationSummary] =
     useState<IssueStatusAutomationSummary | null>(null);
   const [statusAutomationStart, setStatusAutomationStart] = useState("");
@@ -417,6 +420,8 @@ export function SyncControls({
   const [isRunningBackfill, setIsRunningBackfill] = useState(false);
   const [isTogglingAuto, setIsTogglingAuto] = useState(false);
   const [isCleaning, setIsCleaning] = useState(false);
+  const [isRefreshingActivitySnapshot, setIsRefreshingActivitySnapshot] =
+    useState(false);
   const [isRefreshingActivityCache, setIsRefreshingActivityCache] =
     useState(false);
   const [isRunningStatusAutomation, setIsRunningStatusAutomation] =
@@ -448,6 +453,7 @@ export function SyncControls({
   useEffect(() => {
     if (!canManageSync) {
       setActivityCacheSummary(null);
+      setActivitySnapshotSummary(null);
       setIssueStatusAutomationSummary(null);
       return;
     }
@@ -477,6 +483,43 @@ export function SyncControls({
           null;
         if (!cancelled) {
           setActivityCacheSummary(caches);
+        }
+
+        try {
+          const snapshotResponse = await fetch(
+            "/api/activity/snapshot/refresh",
+            {
+              method: "GET",
+              signal: controller.signal,
+            },
+          );
+
+          if (snapshotResponse.ok) {
+            const snapshotData =
+              await parseApiResponse<ActivitySnapshotSummary | null>(
+                snapshotResponse,
+              );
+            if (snapshotData.success) {
+              const snapshotSummary =
+                snapshotData.result ??
+                (
+                  snapshotData as unknown as {
+                    summary?: ActivitySnapshotSummary | null;
+                  }
+                ).summary ??
+                null;
+              if (!cancelled) {
+                setActivitySnapshotSummary(snapshotSummary);
+              }
+            }
+          }
+        } catch (snapshotError) {
+          if (!controller.signal.aborted) {
+            console.warn(
+              "[sync-controls] Failed to load Activity snapshot summary",
+              snapshotError,
+            );
+          }
         }
       } catch (error) {
         if (!controller.signal.aborted) {
@@ -1026,6 +1069,50 @@ export function SyncControls({
     }
   }
 
+  async function handleActivitySnapshotRefresh() {
+    if (!canManageSync) {
+      setFeedback(ADMIN_ONLY_MESSAGE);
+      return;
+    }
+
+    setIsRefreshingActivitySnapshot(true);
+    try {
+      const response = await fetch("/api/activity/snapshot/refresh", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ reason: "sync-controls" }),
+      });
+
+      const data = await parseApiResponse<ActivitySnapshotSummary | null>(
+        response,
+      );
+      if (!data.success) {
+        throw new Error(
+          data.message ?? "Activity 스냅샷 재생성에 실패했습니다.",
+        );
+      }
+
+      const summary =
+        data.result ??
+        (data as unknown as { summary?: ActivitySnapshotSummary | null })
+          .summary ??
+        null;
+
+      setActivitySnapshotSummary(summary);
+      setFeedback("Activity 스냅샷을 재생성했습니다.");
+    } catch (error) {
+      setFeedback(
+        error instanceof Error
+          ? error.message
+          : "Activity 스냅샷 재생성 중 오류가 발생했습니다.",
+      );
+    } finally {
+      setIsRefreshingActivitySnapshot(false);
+    }
+  }
+
   async function handleActivityCacheRefresh() {
     if (!canManageSync) {
       setFeedback(ADMIN_ONLY_MESSAGE);
@@ -1363,6 +1450,52 @@ export function SyncControls({
               </Button>
             </CardFooter>
           </Card>
+
+          <Card className="border-border/70">
+            <CardHeader>
+              <CardTitle>Activity 스냅샷 재생성</CardTitle>
+              <CardDescription>
+                Activity 화면에서 사용하는 스냅샷을 다시 만들어 최신 저장소/링크
+                정보를 즉시 반영합니다.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm text-muted-foreground">
+              <p>
+                최근 생성 시각:{" "}
+                <span>
+                  {activitySnapshotSummary?.lastGeneratedAt
+                    ? formatDateTime(activitySnapshotSummary.lastGeneratedAt)
+                    : "-"}
+                </span>
+              </p>
+              {activitySnapshotSummary ? (
+                <ul className="space-y-1">
+                  <li>
+                    Activity 항목{" "}
+                    {activitySnapshotSummary.itemCount.toLocaleString()}건
+                  </li>
+                  <li>
+                    저장소{" "}
+                    {activitySnapshotSummary.repositoryCount.toLocaleString()}개
+                  </li>
+                </ul>
+              ) : (
+                <p>아직 생성된 Activity 스냅샷 기록이 없습니다.</p>
+              )}
+            </CardContent>
+            <CardFooter>
+              <Button
+                onClick={handleActivitySnapshotRefresh}
+                disabled={isRefreshingActivitySnapshot || !canManageSync}
+                title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+              >
+                {isRefreshingActivitySnapshot
+                  ? "Activity 스냅샷 재생성 중..."
+                  : "Activity 스냅샷 재생성"}
+              </Button>
+            </CardFooter>
+          </Card>
+
           <Card className="border-border/70">
             <CardHeader>
               <CardTitle>Activity 캐시 새로고침</CardTitle>

@@ -7,10 +7,49 @@ import { ensureSchema } from "@/lib/db";
 import { query } from "@/lib/db/client";
 import { env } from "@/lib/env";
 
+export type ActivitySnapshotSummary = {
+  itemCount: number;
+  repositoryCount: number;
+  lastGeneratedAt: string | null;
+};
+
 type SnapshotQuery = {
   text: string;
   params: unknown[];
 };
+
+export async function getActivitySnapshotSummary(): Promise<ActivitySnapshotSummary | null> {
+  await ensureSchema();
+  const result = await query<{
+    item_count: string | null;
+    repository_count: string | null;
+    last_generated_at: string | null;
+  }>(
+    `SELECT
+        COUNT(*)::bigint AS item_count,
+        COUNT(DISTINCT repository_id) AS repository_count,
+        MAX(snapshot_updated_at) AS last_generated_at
+      FROM activity_items`,
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    return null;
+  }
+
+  const itemCount = Number(row.item_count ?? 0);
+  const repositoryCount = Number(row.repository_count ?? 0);
+
+  if (itemCount === 0 && repositoryCount === 0 && !row.last_generated_at) {
+    return null;
+  }
+
+  return {
+    itemCount,
+    repositoryCount,
+    lastGeneratedAt: row.last_generated_at,
+  };
+}
 
 function buildSnapshotUpsertQuery(
   targetProject: string | null,

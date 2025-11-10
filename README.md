@@ -140,10 +140,7 @@ Manual backfill and automatic sync share the same pipeline.
 1. **GitHub data collection**
    `runCollection` fetches repositories, issues, discussions, pull requests,
    reviews, and comments through the GraphQL API and upserts them into
-   PostgreSQL. When the collection loop finishes it immediately realigns
-   repository ownership for any issue/discussion whose UI-visible repo slug no
-   longer matches GitHub’s canonical repo (same logic as
-   `npm run backfill:ownership`) before returning the summary.
+   PostgreSQL.
    - Every resource writes a `running → success/failed` entry to `sync_log`.
    - The latest `updated_at` timestamp is stored in `sync_state` so the next run
      can reuse it as the `since` boundary.
@@ -165,12 +162,11 @@ Manual backfill and automatic sync share the same pipeline.
 Automatic sync additionally schedules the next run, while manual backfill
 repeats the same steps for each day slice in the requested range.
 
-> **Manual controls:** Issue status automation and activity cache refresh run
-> automatically after each sync, and administrators can re-run them from the Sync
-> tab (“진행 상태 설정” and “Activity 캐시 새로고침”) if a previous attempt failed or
-> stale data needs to be refreshed immediately. The activity snapshot refresh is
-> tightly coupled to the sync pipeline (a failure marks the sync as failed), so
-> no separate manual trigger is exposed.
+> **Manual controls:** Issue status automation, the activity snapshot rebuild,
+> and the activity cache refresh all run automatically after each sync, and
+> administrators can re-run them from the Sync tab
+> (“진행 상태 설정”, “Activity 스냅샷 재생성”, “Activity 캐시 새로고침”) if a previous
+> attempt failed or stale data needs to be refreshed immediately.
 
 ### Real-time sync stream
 
