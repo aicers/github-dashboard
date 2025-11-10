@@ -13,6 +13,7 @@ import {
   SyncControls,
 } from "@/components/dashboard/sync-controls";
 import type { ActivityCacheRefreshResult } from "@/lib/activity/cache";
+import type { ActivitySnapshotSummary } from "@/lib/activity/snapshot";
 import type { MentionClassificationSummary } from "@/lib/dashboard/unanswered-mention-classifier";
 import type { BackfillChunkSuccess, SyncStatus } from "@/lib/sync/service";
 import {
@@ -58,6 +59,15 @@ const mockActivityCacheSummary: ActivityCacheRefreshResult = {
 const mockActivityCacheResponse = {
   success: true,
   caches: mockActivityCacheSummary,
+};
+const mockActivitySnapshotSummary: ActivitySnapshotSummary = {
+  itemCount: 42,
+  repositoryCount: 5,
+  lastGeneratedAt: "2024-04-01T00:10:00.000Z",
+};
+const mockActivitySnapshotResponse = {
+  success: true,
+  summary: mockActivitySnapshotSummary,
 };
 
 const mockIssueStatusAutomationResponse = {
@@ -218,6 +228,9 @@ describe("SyncControls", () => {
       if (request.url.includes("/api/activity/cache/refresh")) {
         return createJsonResponse(mockActivityCacheResponse);
       }
+      if (request.url.includes("/api/activity/snapshot/refresh")) {
+        return createJsonResponse(mockActivitySnapshotResponse);
+      }
       if (request.url.includes("/api/activity/status-automation")) {
         return createJsonResponse(mockIssueStatusAutomationResponse);
       }
@@ -226,6 +239,7 @@ describe("SyncControls", () => {
 
     mockFetchJsonOnce(mockActivityCacheResponse);
     mockFetchJsonOnce(mockIssueStatusAutomationResponse);
+    mockFetchJsonOnce(mockActivitySnapshotResponse);
   });
 
   it("renders the overview controls and navigation tabs", () => {
@@ -450,6 +464,45 @@ describe("SyncControls", () => {
       ).toBeInTheDocument();
     });
     expect(routerRefreshMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows rebuilding the Activity snapshot", async () => {
+    const status = buildStatus();
+
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+        view="overview"
+        currentPathname="/dashboard/sync"
+      />,
+    );
+    const user = userEvent.setup();
+
+    await user.click(
+      screen.getByRole("button", { name: "Activity 스냅샷 재생성" }),
+    );
+
+    await waitFor(() => {
+      expect(hasRequest("/api/activity/snapshot/refresh", "POST")).toBe(true);
+    });
+
+    const request = findRequest("/api/activity/snapshot/refresh", "POST");
+    expect(request).not.toBeNull();
+    if (!request) {
+      throw new Error("Expected Activity snapshot refresh request");
+    }
+    expect(request.headers.get("Content-Type")).toBe("application/json");
+    const payload = await request.clone().json();
+    expect(payload).toEqual({ reason: "sync-controls" });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Activity 스냅샷을 재생성했습니다\./),
+      ).toBeInTheDocument();
+    });
   });
 
   it("renders the logs view with recent run entries", () => {
