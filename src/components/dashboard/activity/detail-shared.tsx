@@ -868,12 +868,16 @@ export function ActivityCommentSection({
               comment.author?.id ??
               "알 수 없음";
 
+            const isAnswer = comment.isAnswer === true;
             const badges: string[] = [];
             if (comment.reviewId) {
               badges.push("리뷰 댓글");
             }
             if (comment.replyToId) {
               badges.push("답글");
+            }
+            if (isAnswer) {
+              badges.push("채택된 답변");
             }
 
             const renderedBody = resolveCommentBodyHtml(comment);
@@ -885,9 +889,16 @@ export function ActivityCommentSection({
                 ? (mentionControls.byCommentId[comment.id] ?? [])
                 : [];
 
+            const containerClasses = cn(
+              "rounded-md border px-4 py-3",
+              isAnswer
+                ? "border-pink-200 bg-pink-50/80"
+                : "border-border bg-background",
+            );
+
             return (
               <Fragment key={comment.id ?? `comment-${index}`}>
-                <article className="rounded-md border border-border bg-background px-4 py-3">
+                <article className={containerClasses}>
                   <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground/70">
                     <span className="font-semibold text-foreground">
                       {authorLabel}
@@ -1023,7 +1034,9 @@ export function ActivityCommentSection({
                         const badgeClass =
                           badge === "리뷰 댓글"
                             ? "bg-blue-100 text-blue-700 border border-blue-200"
-                            : "bg-amber-100 text-amber-700";
+                            : badge === "채택된 답변"
+                              ? "bg-pink-100 text-pink-700 border border-pink-200"
+                              : "bg-amber-100 text-amber-700";
                         return (
                           <span
                             key={`${comment.id}-${badge}`}

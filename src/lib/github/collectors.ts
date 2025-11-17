@@ -196,6 +196,7 @@ type CommentNode = {
   bodyText?: string | null;
   bodyHTML?: string | null;
   replyTo?: { id?: string | null } | null;
+  isAnswer?: boolean | null;
   pullRequestReview?: { id: string } | null;
   reactions?: {
     nodes: ReactionNode[] | null;
@@ -440,6 +441,7 @@ type PullRequestCommentsQueryResponse = {
 type DiscussionCommentsQueryResponse = {
   repository: {
     discussion: {
+      answer?: CommentNode | null;
       comments: GraphQLConnection<CommentNode> | null;
     } | null;
   } | null;
@@ -1305,6 +1307,7 @@ async function collectIssueComments(
   let hasNextPage = true;
   let latest: string | null = null;
   let count = 0;
+  const processedCommentIds = new Set<string>();
   const [owner, name] = repository.nameWithOwner.split("/");
 
   while (hasNextPage) {
@@ -1322,6 +1325,7 @@ async function collectIssueComments(
       pageInfo?: PageInfo | null;
       nodes?: CommentNode[] | null;
     } | null = null;
+    let extraDiscussionComments: CommentNode[] = [];
     try {
       if (target === "pull_request") {
         const data: PullRequestCommentsQueryResponse = await requestWithRetry(
@@ -1354,7 +1358,23 @@ async function collectIssueComments(
             context: `${logLabel} comments ${repository.nameWithOwner}#${issue.number}`,
           },
         );
-        connection = data.repository?.discussion?.comments ?? null;
+        const discussionData = data.repository?.discussion ?? null;
+        connection = discussionData?.comments ?? null;
+        const answerComment = discussionData?.answer ?? null;
+        if (answerComment) {
+          extraDiscussionComments = [
+            {
+              ...answerComment,
+              isAnswer:
+                typeof answerComment.isAnswer === "boolean"
+                  ? answerComment.isAnswer
+                  : true,
+            },
+          ];
+          logger?.(
+            `[${logLabel}] Accepted answer comment ${answerComment.id ?? "unknown"} captured for ${repository.nameWithOwner}#${issue.number ?? "unknown"}`,
+          );
+        }
       } else {
         const data: IssueCommentsQueryResponse = await requestWithRetry(
           client,
@@ -1390,10 +1410,19 @@ async function collectIssueComments(
       break;
     }
 
-    const commentNodes: CommentNode[] = connection.nodes ?? [];
+    const baseNodes: CommentNode[] = connection.nodes ?? [];
+    const commentNodes =
+      extraDiscussionComments.length > 0
+        ? [...baseNodes, ...extraDiscussionComments]
+        : baseNodes;
     let reachedUpperBound = false;
 
     for (const comment of commentNodes) {
+      if (!comment?.id || processedCommentIds.has(comment.id)) {
+        continue;
+      }
+
+      processedCommentIds.add(comment.id);
       const timestamp = comment.updatedAt ?? comment.createdAt;
       const decision = evaluateTimestamp(timestamp, bounds);
       if (!decision.include) {
