@@ -2567,6 +2567,11 @@ export async function getActivityItemDetail(
         rawComment && typeof (rawComment as { url?: unknown }).url === "string"
           ? ((rawComment as { url: string }).url ?? null)
           : null;
+      const isAnswer =
+        rawComment &&
+        typeof (rawComment as { isAnswer?: unknown }).isAnswer === "boolean"
+          ? !!(rawComment as { isAnswer?: boolean }).isAnswer
+          : false;
 
       return {
         id: commentRow.id,
@@ -2581,6 +2586,7 @@ export async function getActivityItemDetail(
             ? commentRow.review_id
             : null,
         replyToId,
+        isAnswer,
         reactions: reactionMap.get(commentRow.id) ?? [],
       } satisfies ActivityItemComment;
     },

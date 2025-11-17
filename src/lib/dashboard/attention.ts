@@ -1787,6 +1787,17 @@ export async function fetchUnansweredMentionCandidates(
           AND reac.user_id = mc.mentioned_user_id
           AND COALESCE(reac.github_created_at, NOW()) >= mc.mentioned_at
        )
+       AND NOT (
+         mc.issue_id IS NOT NULL
+         AND (
+           LOWER(COALESCE(iss.data->>'__typename', '')) = 'discussion'
+           OR POSITION('/discussions/' IN COALESCE(iss.data->>'url', '')) > 0
+         )
+         AND iss.data->>'answerChosenAt' IS NOT NULL
+         AND iss.data->'answerChosenBy'->>'id' IS NOT NULL
+         AND iss.data->'answerChosenBy'->>'id' = mc.mentioned_user_id
+         AND NULLIF(iss.data->>'answerChosenAt', '')::timestamptz >= mc.mentioned_at
+       )
      ORDER BY mc.comment_id, mc.mentioned_user_id, mc.mentioned_at`,
     [excludedRepositoryIds, excludedUserIds],
   );

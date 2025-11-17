@@ -911,6 +911,63 @@ export const discussionCommentsQuery = gql`
   query DiscussionComments($owner: String!, $name: String!, $number: Int!, $cursor: String) {
     repository(owner: $owner, name: $name) {
       discussion(number: $number) {
+        answer {
+          __typename
+          id
+          isAnswer
+          author {
+            __typename
+            ... on User {
+              id
+              login
+              name
+              avatarUrl(size: 200)
+              createdAt
+              updatedAt
+            }
+            ... on Organization {
+              id
+              login
+              name
+              avatarUrl(size: 200)
+              createdAt
+              updatedAt
+            }
+            ... on Bot {
+              id
+              login
+              avatarUrl(size: 200)
+            }
+            ... on Mannequin {
+              id
+              login
+              avatarUrl(size: 200)
+            }
+          }
+          createdAt
+          updatedAt
+          url
+          body
+          bodyText
+          bodyHTML
+          replyTo {
+            id
+          }
+          reactions(first: 25, orderBy: { field: CREATED_AT, direction: ASC }) {
+            nodes {
+              __typename
+              id
+              content
+              createdAt
+              user {
+                id
+                login
+                name
+                avatarUrl(size: 200)
+              }
+            }
+          }
+        }
         comments(first: 50, after: $cursor) {
           pageInfo {
             hasNextPage
@@ -919,6 +976,7 @@ export const discussionCommentsQuery = gql`
           nodes {
             __typename
             id
+            isAnswer
             author {
               __typename
               ... on User {

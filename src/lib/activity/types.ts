@@ -177,6 +177,7 @@ export type ActivityItemComment = {
   url: string | null;
   reviewId: string | null;
   replyToId: string | null;
+  isAnswer?: boolean | null;
   reactions: ActivityReactionGroup[];
 };
 

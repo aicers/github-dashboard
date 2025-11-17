@@ -264,6 +264,31 @@ describe("attention insights for unanswered mentions", () => {
     });
     await upsertIssue(mainDiscussion);
 
+    const answeredDiscussionBase = buildDiscussion({
+      id: "discussion-answered",
+      number: 7002,
+      repositoryId: mainRepo.id,
+      repositoryNameWithOwner: mainRepo.nameWithOwner,
+      authorId: alice.id,
+      title: "Answered discussion thread",
+      createdAt: "2024-01-18T00:00:00.000Z",
+      updatedAt: "2024-02-12T12:00:00.000Z",
+    });
+    const answeredDiscussion: DbIssue = {
+      ...answeredDiscussionBase,
+      raw: {
+        ...(answeredDiscussionBase.raw as Record<string, unknown>),
+        answerChosenAt: "2024-02-12T11:00:00.000Z",
+        answerChosenBy: {
+          __typename: "User",
+          id: carol.id,
+          login: carol.login,
+          name: carol.name,
+        },
+      },
+    };
+    await upsertIssue(answeredDiscussion);
+
     const targetReview = buildReview({
       id: "review-response",
       pullRequestId: respondedReviewPr.id,
@@ -316,6 +341,21 @@ describe("attention insights for unanswered mentions", () => {
         id: "comment-discussion-unanswered",
         url: "https://github.com/acme/main/discussions/7001#discussioncomment-1",
         body: "@bob Could you weigh in on the rollout timeline?",
+      },
+    } satisfies DbComment;
+
+    const answeredDiscussionMention: DbComment = {
+      id: "comment-discussion-answered",
+      issueId: answeredDiscussion.id,
+      pullRequestId: null,
+      reviewId: null,
+      authorId: alice.id,
+      createdAt: "2024-02-08T10:00:00.000Z",
+      updatedAt: "2024-02-08T10:00:00.000Z",
+      raw: {
+        id: "comment-discussion-answered",
+        url: "https://github.com/acme/main/discussions/7002#discussioncomment-1",
+        body: "@carol Could you approve the proposed answer?",
       },
     } satisfies DbComment;
 
@@ -490,6 +530,7 @@ describe("attention insights for unanswered mentions", () => {
       unansweredPrComment,
       unansweredIssueComment,
       unansweredDiscussionComment,
+      answeredDiscussionMention,
       courtesyMentionComment,
       unclassifiedMentionComment,
       respondedByCommentMention,
@@ -510,6 +551,7 @@ describe("attention insights for unanswered mentions", () => {
       { comment: unansweredPrComment, mentionedUserId: bob.id },
       { comment: unansweredIssueComment, mentionedUserId: carol.id },
       { comment: unansweredDiscussionComment, mentionedUserId: bob.id },
+      { comment: answeredDiscussionMention, mentionedUserId: carol.id },
     ];
 
     for (const target of classificationTargets) {
@@ -555,6 +597,11 @@ describe("attention insights for unanswered mentions", () => {
     if (!prItem || !issueItem || !discussionItem) {
       throw new Error("Expected unanswered mention items to be present");
     }
+
+    const answeredBySelection = insights.unansweredMentions.find(
+      (item) => item.commentId === answeredDiscussionMention.id,
+    );
+    expect(answeredBySelection).toBeUndefined();
 
     expect(
       insights.unansweredMentions.find(
