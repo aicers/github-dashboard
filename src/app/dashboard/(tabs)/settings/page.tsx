@@ -1,3 +1,4 @@
+import { unstable_noStore as noStore } from "next/cache";
 import { SettingsView } from "@/components/dashboard/settings-view";
 import { readActiveSession } from "@/lib/auth/session";
 import {
@@ -23,6 +24,7 @@ import { readUserTimeSettings } from "@/lib/user/time-settings";
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
+  noStore();
   const session = await readActiveSession();
   const config = await fetchSyncConfig();
   const timeSettings = await readUserTimeSettings(session?.userId ?? null);
