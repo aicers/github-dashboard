@@ -10,7 +10,10 @@ import {
 } from "@/components/dashboard/metric-card.config";
 import { toCardHistory } from "@/components/dashboard/metric-history";
 import { individualMetricTooltips } from "@/components/dashboard/metric-tooltips";
-import { PageGenerationNotice } from "@/components/dashboard/page-generation-notice";
+import {
+  isPageDataStale,
+  PageGenerationNotice,
+} from "@/components/dashboard/page-generation-notice";
 import { RepoActivityTable } from "@/components/dashboard/repo-activity-table";
 import { useDashboardAnalytics } from "@/components/dashboard/use-dashboard-analytics";
 import { Button } from "@/components/ui/button";
@@ -231,6 +234,10 @@ export function PeopleView({
       void applyFilters(nextFilters);
     }
   }, [filters, filters.personId, initialContributorId, applyFilters]);
+  const dataIsStale = useMemo(
+    () => isPageDataStale(analytics.generatedAt, analytics.lastSyncCompletedAt),
+    [analytics.generatedAt, analytics.lastSyncCompletedAt],
+  );
 
   return (
     <section className="flex flex-col gap-8">
@@ -255,6 +262,7 @@ export function PeopleView({
             void applyFilters();
           }}
           hasPendingChanges={hasPendingChanges}
+          allowApplyWithoutChanges={dataIsStale}
           isLoading={isLoading}
           error={error}
           repositories={repositories}
