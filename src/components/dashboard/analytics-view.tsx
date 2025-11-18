@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
-import type { Dispatch, SetStateAction } from "react";
+import { type Dispatch, type SetStateAction, useMemo } from "react";
 import {
   CartesianGrid,
   Legend,
@@ -34,7 +34,10 @@ import {
   individualMetricTooltips,
   organizationMetricTooltips,
 } from "@/components/dashboard/metric-tooltips";
-import { PageGenerationNotice } from "@/components/dashboard/page-generation-notice";
+import {
+  isPageDataStale,
+  PageGenerationNotice,
+} from "@/components/dashboard/page-generation-notice";
 import { RepoDistributionList } from "@/components/dashboard/repo-distribution-list";
 import {
   type FilterState,
@@ -214,6 +217,10 @@ export function AnalyticsView({
     activeMainBranchContributionEntries,
     individual,
   } = useAnalyticsViewModel(analytics);
+  const dataIsStale = useMemo(
+    () => isPageDataStale(analytics.generatedAt, analytics.lastSyncCompletedAt),
+    [analytics.generatedAt, analytics.lastSyncCompletedAt],
+  );
 
   return (
     <section className="flex flex-col gap-8">
@@ -234,6 +241,7 @@ export function AnalyticsView({
         generatedAt={analytics.generatedAt}
         latestSyncCompletedAt={analytics.lastSyncCompletedAt}
         dateTimeFormat={analytics.dateTimeFormat}
+        allowApplyWithoutChanges={dataIsStale}
       />
 
       <OrganizationMetricsSection
@@ -293,6 +301,7 @@ type AnalyticsHeaderSectionProps = {
   generatedAt?: string | null;
   latestSyncCompletedAt?: string | null;
   dateTimeFormat?: DashboardAnalytics["dateTimeFormat"];
+  allowApplyWithoutChanges?: boolean;
 };
 
 function AnalyticsHeaderSection({
@@ -312,6 +321,7 @@ function AnalyticsHeaderSection({
   generatedAt,
   latestSyncCompletedAt,
   dateTimeFormat,
+  allowApplyWithoutChanges = false,
 }: AnalyticsHeaderSectionProps) {
   return (
     <header className="flex flex-col gap-3">
@@ -335,6 +345,7 @@ function AnalyticsHeaderSection({
           void applyFilters();
         }}
         hasPendingChanges={hasPendingChanges}
+        allowApplyWithoutChanges={allowApplyWithoutChanges}
         isLoading={isLoading}
         error={error}
         repositories={repositories}

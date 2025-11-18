@@ -21,6 +21,7 @@ type DashboardFilterPanelProps = {
   setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
   onApply: () => void;
   hasPendingChanges: boolean;
+  allowApplyWithoutChanges?: boolean;
   isLoading: boolean;
   error: string | null;
   repositories: RepositoryProfile[];
@@ -37,6 +38,7 @@ export function DashboardFilterPanel({
   setFilters,
   onApply,
   hasPendingChanges,
+  allowApplyWithoutChanges = false,
   isLoading,
   error,
   repositories,
@@ -399,7 +401,9 @@ export function DashboardFilterPanel({
             <Button
               type="button"
               onClick={onApply}
-              disabled={isLoading || !hasPendingChanges}
+              disabled={
+                isLoading || (!hasPendingChanges && !allowApplyWithoutChanges)
+              }
               className="w-full sm:w-auto"
             >
               {isLoading ? "갱신 중..." : "필터 적용"}

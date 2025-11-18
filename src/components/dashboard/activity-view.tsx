@@ -25,7 +25,10 @@ import {
   useState,
 } from "react";
 
-import { PageGenerationNotice } from "@/components/dashboard/page-generation-notice";
+import {
+  isPageDataStale,
+  PageGenerationNotice,
+} from "@/components/dashboard/page-generation-notice";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -2287,6 +2290,10 @@ export function ActivityView({
   );
   const lastSyncCompletedAt = listData.lastSyncCompletedAt;
   const generatedAt = listData.generatedAt;
+  const dataIsStale = useMemo(
+    () => isPageDataStale(generatedAt, lastSyncCompletedAt),
+    [generatedAt, lastSyncCompletedAt],
+  );
   const currentPage = listData.pageInfo.page;
   const visibleItems = listData.items;
   const totalPages = listData.pageInfo.totalPages;
@@ -3748,12 +3755,12 @@ export function ActivityView({
   }, [normalizeFilterState, perPageDefault]);
 
   const applyDraftFilters = useCallback(() => {
-    if (!hasPendingChanges) {
+    if (!hasPendingChanges && !dataIsStale) {
       return;
     }
     const nextState = { ...draft, page: 1 };
     fetchActivity(nextState);
-  }, [draft, fetchActivity, hasPendingChanges]);
+  }, [dataIsStale, draft, fetchActivity, hasPendingChanges]);
 
   const changePage = useCallback(
     (page: number) => {
@@ -4272,11 +4279,6 @@ export function ActivityView({
             latestSyncCompletedAt={lastSyncCompletedAt}
             timezone={activeTimezone ?? undefined}
             dateTimeFormat={activeDateTimeFormat}
-            staleMessage={({ formattedLatestSync }) =>
-              formattedLatestSync
-                ? `Latest GitHub Sync ${formattedLatestSync} 이후에 새 데이터가 있어요. 필터를 다시 적용해 최신 결과를 확인해 주세요.`
-                : "Latest GitHub Sync 이후에 새 데이터가 있어요. 필터를 다시 적용해 최신 결과를 확인해 주세요."
-            }
           />
           {notification ? (
             <span className="text-xs text-foreground/70">{notification}</span>
@@ -4779,7 +4781,7 @@ export function ActivityView({
             <div className="flex flex-wrap items-center gap-3">
               <Button
                 onClick={applyDraftFilters}
-                disabled={isLoading || !hasPendingChanges}
+                disabled={isLoading || (!hasPendingChanges && !dataIsStale)}
               >
                 필터 적용
               </Button>

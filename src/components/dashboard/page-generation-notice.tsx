@@ -5,6 +5,23 @@ import type { DateTimeDisplayFormat } from "@/lib/date-time-format";
 import { formatDateTimeDisplay } from "@/lib/date-time-format";
 import { cn } from "@/lib/utils";
 
+export function isPageDataStale(
+  generatedAt?: string | null,
+  latestSyncCompletedAt?: string | null,
+) {
+  if (!generatedAt || !latestSyncCompletedAt) {
+    return false;
+  }
+  const generatedMs = Date.parse(generatedAt);
+  const latestMs = Date.parse(latestSyncCompletedAt);
+  if (!Number.isFinite(generatedMs) || !Number.isFinite(latestMs)) {
+    return false;
+  }
+  return generatedMs < latestMs;
+}
+
+const DEFAULT_STALE_MESSAGE = "보이는 결과는 최신 데이터가 아닐 수 있습니다.";
+
 type PageGenerationNoticeProps = {
   generatedAt?: string | null;
   latestSyncCompletedAt?: string | null;
@@ -35,14 +52,7 @@ export function PageGenerationNotice({
         format: dateTimeFormat ?? undefined,
       })
     : null;
-  const generatedMs = generatedAt ? Date.parse(generatedAt) : Number.NaN;
-  const latestSyncMs = latestSyncCompletedAt
-    ? Date.parse(latestSyncCompletedAt)
-    : Number.NaN;
-  const isStale =
-    Number.isFinite(generatedMs) &&
-    Number.isFinite(latestSyncMs) &&
-    generatedMs < latestSyncMs;
+  const isStale = isPageDataStale(generatedAt, latestSyncCompletedAt);
 
   const resolvedMessage = (() => {
     if (!isStale) {
@@ -54,10 +64,7 @@ export function PageGenerationNotice({
     if (typeof staleMessage === "string") {
       return staleMessage;
     }
-    if (formattedLatestSync) {
-      return `Latest GitHub Sync ${formattedLatestSync} 이후에 새 데이터가 있어요. 필터를 적용해 최신 상태를 확인해 주세요.`;
-    }
-    return "Latest GitHub Sync 이후에 새 데이터가 있어요. 필터를 적용해 최신 상태를 확인해 주세요.";
+    return DEFAULT_STALE_MESSAGE;
   })();
 
   return (
