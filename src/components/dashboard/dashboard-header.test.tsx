@@ -1,7 +1,9 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { SyncStreamEvent } from "@/lib/sync/events";
 import { fetchMock, mockFetchJsonOnce } from "../../../tests/setup/mock-fetch";
 import { DashboardHeader } from "./dashboard-header";
 
@@ -22,10 +24,28 @@ vi.mock("next/image", () => ({
   ),
 }));
 
+const syncListeners = new Set<(event: SyncStreamEvent) => void>();
+
+vi.mock("@/lib/sync/client-stream", () => ({
+  subscribeToSyncStream: (listener: (event: SyncStreamEvent) => void) => {
+    syncListeners.add(listener);
+    return () => {
+      syncListeners.delete(listener);
+    };
+  },
+}));
+
+function emitSyncEvent(event: SyncStreamEvent) {
+  syncListeners.forEach((listener) => {
+    listener(event);
+  });
+}
+
 describe("DashboardHeader", () => {
   beforeEach(() => {
     mockRouter.push.mockReset();
     mockRouter.prefetch.mockReset();
+    syncListeners.clear();
   });
 
   it("fetches notification totals using only review and mention filters", async () => {
@@ -113,5 +133,34 @@ describe("DashboardHeader", () => {
     expect(url.searchParams.getAll("reviewerId")).toEqual(["user-77"]);
     expect(url.searchParams.getAll("mentionedUserId")).toEqual(["user-77"]);
     expect(url.searchParams.getAll("peopleSelection")).toEqual(["user-77"]);
+  });
+
+  it("refetches notifications when an attention refresh targets the user", async () => {
+    mockFetchJsonOnce({ pageInfo: { totalCount: 1 } });
+
+    render(
+      <DashboardHeader
+        userId="user-77"
+        userName="테스터"
+        userLogin="tester"
+        userAvatarUrl={null}
+      />,
+    );
+
+    await screen.findByRole("button", { name: "알림 (1건)" });
+
+    mockFetchJsonOnce({ pageInfo: { totalCount: 4 } });
+
+    await act(async () => {
+      emitSyncEvent({
+        type: "attention-refresh",
+        scope: "users",
+        userIds: ["user-77"],
+        trigger: "manual-override",
+        timestamp: new Date().toISOString(),
+      });
+    });
+
+    await screen.findByRole("button", { name: "알림 (4건)" });
   });
 });

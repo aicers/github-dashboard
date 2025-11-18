@@ -413,6 +413,15 @@ async function executeSync(params: {
         summary: toRunSummaryEvent(summary),
       });
 
+      if (actualRunType === "automatic") {
+        emitSyncEvent({
+          type: "attention-refresh",
+          scope: "all",
+          trigger: "automatic-sync",
+          timestamp: completedAt,
+        });
+      }
+
       await logSyncStep({
         runId,
         resource: "reaction-refresh",

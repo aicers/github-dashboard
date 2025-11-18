@@ -4,6 +4,13 @@ import { AlertCircle, CheckCircle2, Loader2, RefreshCcw } from "lucide-react";
 import type { JSX } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import {
+  getCurrentSyncConnectionState,
+  type SyncConnectionState,
+  subscribeToSyncConnectionState,
+  subscribeToSyncHeartbeat,
+  subscribeToSyncStream,
+} from "@/lib/sync/client-stream";
 import type {
   SyncLogStatus,
   SyncRunStatus,
@@ -13,8 +20,6 @@ import type {
   SyncStreamEvent,
 } from "@/lib/sync/events";
 import { cn } from "@/lib/utils";
-
-type ConnectionState = "connecting" | "open" | "retrying";
 
 type ResourceStatus = {
   logId: number;
@@ -270,8 +275,9 @@ function mergeResource(
 }
 
 export function SyncStatusPanel() {
-  const [connectionState, setConnectionState] =
-    useState<ConnectionState>("connecting");
+  const [connectionState, setConnectionState] = useState<SyncConnectionState>(
+    () => getCurrentSyncConnectionState(),
+  );
   const [lastHeartbeat, setLastHeartbeat] = useState<string | null>(null);
   const [runs, setRuns] = useState<Map<number, RunState>>(new Map());
   const [runOrder, setRunOrder] = useState<number[]>([]);
@@ -613,85 +619,31 @@ export function SyncStatusPanel() {
   }, [fetchInitialStatus]);
 
   useEffect(() => {
-    let isActive = true;
-    let source: EventSource | null = null;
+    const unsubscribe = subscribeToSyncStream(handleStreamEvent);
+    return unsubscribe;
+  }, [handleStreamEvent]);
 
-    const connect = () => {
-      if (!isActive) {
-        return;
+  useEffect(() => {
+    const unsubscribe = subscribeToSyncHeartbeat((payload) => {
+      if (payload?.timestamp) {
+        setLastHeartbeat(payload.timestamp);
       }
+    });
+    return unsubscribe;
+  }, []);
 
-      if (source) {
-        source.close();
-      }
-
-      setConnectionState("connecting");
-      source = new EventSource("/api/sync/stream");
-
-      source.onopen = () => {
-        if (!isActive) {
-          return;
-        }
-        setConnectionState("open");
+  useEffect(() => {
+    let previousState = getCurrentSyncConnectionState();
+    setConnectionState(previousState);
+    const unsubscribe = subscribeToSyncConnectionState((state) => {
+      setConnectionState(state);
+      if (state === "open" && previousState !== "open") {
         void fetchInitialStatus();
-      };
-
-      source.onerror = () => {
-        if (!isActive) {
-          return;
-        }
-
-        setConnectionState("retrying");
-        // EventSource will automatically retry; no explicit reconnect needed.
-      };
-
-      const syncListener = (event: MessageEvent<string>) => {
-        if (!isActive) {
-          return;
-        }
-
-        try {
-          const payload = JSON.parse(event.data) as SyncStreamEvent;
-          handleStreamEvent(payload);
-        } catch (cause) {
-          console.error("[sync-status-panel] Failed to parse sync event", {
-            cause,
-            data: event.data,
-          });
-        }
-      };
-
-      const heartbeatListener = (event: MessageEvent<string>) => {
-        if (!isActive) {
-          return;
-        }
-        try {
-          const payload = JSON.parse(event.data) as { timestamp?: string };
-          if (payload?.timestamp) {
-            setLastHeartbeat(payload.timestamp);
-          }
-        } catch (cause) {
-          console.error("[sync-status-panel] Failed to parse heartbeat event", {
-            cause,
-            data: event.data,
-          });
-        }
-      };
-
-      source.addEventListener("sync", syncListener);
-      source.addEventListener("heartbeat", heartbeatListener);
-    };
-
-    connect();
-
-    return () => {
-      isActive = false;
-      if (source) {
-        source.close();
-        source = null;
       }
-    };
-  }, [fetchInitialStatus, handleStreamEvent]);
+      previousState = state;
+    });
+    return unsubscribe;
+  }, [fetchInitialStatus]);
 
   const activeRun = useMemo(() => {
     for (const runId of runOrder) {
