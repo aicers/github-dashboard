@@ -14,6 +14,7 @@ export function DashboardTabsHarness({
   initialPathname = "/dashboard/activity",
 }: DashboardTabsHarnessProps) {
   const [pathname, setPathname] = useState(initialPathname);
+  const initialLastSyncCompletedAt = "2024-01-05T00:00:00.000Z";
 
   const resolveHref = useCallback(
     (href: Parameters<AppRouterInstance["push"]>[0]) => {
@@ -87,7 +88,12 @@ export function DashboardTabsHarness({
             Follow-ups 경로로 설정
           </button>
         </div>
-        <DashboardTabs currentPathname={pathname} />
+        <DashboardTabs
+          currentPathname={pathname}
+          initialLastSyncCompletedAt={initialLastSyncCompletedAt}
+          dateTimeFormat="auto"
+          timeZone="UTC"
+        />
       </div>
     </AppRouterContext.Provider>
   );

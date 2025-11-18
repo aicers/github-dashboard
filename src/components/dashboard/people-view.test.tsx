@@ -301,6 +301,9 @@ function createMockAnalytics(): DashboardAnalytics {
     leaderboard: createLeaderboardSummary(),
     timeZone: "UTC",
     weekStart: "monday",
+    dateTimeFormat: "auto",
+    generatedAt: "2024-01-05T00:00:00.000Z",
+    lastSyncCompletedAt: "2024-01-05T00:00:00.000Z",
   } satisfies DashboardAnalytics;
 }
 

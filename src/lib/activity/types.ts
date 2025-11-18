@@ -265,6 +265,7 @@ export type ActivityListResult = {
   items: ActivityItem[];
   pageInfo: ActivityPageInfo;
   lastSyncCompletedAt: string | null;
+  generatedAt: string;
   timezone: string | null;
   dateTimeFormat: DateTimeDisplayFormat;
 };
