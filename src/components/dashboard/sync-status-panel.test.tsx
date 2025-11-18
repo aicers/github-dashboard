@@ -1,75 +1,52 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { act, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SyncStatusPanel } from "@/components/dashboard/sync-status-panel";
+import type { SyncConnectionState } from "@/lib/sync/client-stream";
+import type { SyncStreamEvent } from "@/lib/sync/events";
 import { setDefaultFetchHandler } from "../../../tests/setup/mock-fetch";
 
-type SyncEventListener = (event: MessageEvent<string>) => void;
+const syncListeners = new Set<(event: SyncStreamEvent) => void>();
+const connectionListeners = new Set<(state: SyncConnectionState) => void>();
+let currentConnectionState: SyncConnectionState = "connecting";
 
-class MockEventSource {
-  static instances: MockEventSource[] = [];
+vi.mock("@/lib/sync/client-stream", () => ({
+  subscribeToSyncStream: (listener: (event: SyncStreamEvent) => void) => {
+    syncListeners.add(listener);
+    return () => {
+      syncListeners.delete(listener);
+    };
+  },
+  subscribeToSyncHeartbeat: () => () => {},
+  subscribeToSyncConnectionState: (
+    listener: (state: SyncConnectionState) => void,
+  ) => {
+    connectionListeners.add(listener);
+    return () => {
+      connectionListeners.delete(listener);
+    };
+  },
+  getCurrentSyncConnectionState: () => currentConnectionState,
+}));
 
-  readonly listeners = new Map<string, Set<SyncEventListener>>();
-
-  onopen: ((this: EventSource, ev: Event) => void) | null = null;
-
-  onerror: ((this: EventSource, ev: Event) => void) | null = null;
-
-  readyState = 0;
-
-  constructor(public readonly url: string) {
-    MockEventSource.instances.push(this);
+function emitSyncEvent(event: SyncStreamEvent) {
+  for (const listener of syncListeners) {
+    listener(event);
   }
+}
 
-  static reset() {
-    MockEventSource.instances = [];
-  }
-
-  addEventListener(type: string, listener: SyncEventListener) {
-    const listeners = this.listeners.get(type) ?? new Set<SyncEventListener>();
-    listeners.add(listener);
-    this.listeners.set(type, listeners);
-  }
-
-  removeEventListener(type: string, listener: SyncEventListener) {
-    const listeners = this.listeners.get(type);
-    if (!listeners) {
-      return;
-    }
-    listeners.delete(listener);
-    if (listeners.size === 0) {
-      this.listeners.delete(type);
-    }
-  }
-
-  close() {
-    this.readyState = 2;
-  }
-
-  triggerOpen() {
-    this.readyState = 1;
-    this.onopen?.call(this as unknown as EventSource, {} as Event);
-  }
-
-  emitSync(payload: unknown) {
-    this.dispatch("sync", JSON.stringify(payload));
-  }
-
-  private dispatch(type: string, data: string) {
-    const listeners = this.listeners.get(type);
-    if (!listeners) {
-      return;
-    }
-    const event = { data } as MessageEvent<string>;
-    listeners.forEach((listener) => {
-      listener(event);
-    });
+function setConnectionState(state: SyncConnectionState) {
+  currentConnectionState = state;
+  for (const listener of connectionListeners) {
+    listener(state);
   }
 }
 
 describe("SyncStatusPanel", () => {
   beforeEach(() => {
-    MockEventSource.reset();
+    syncListeners.clear();
+    connectionListeners.clear();
+    currentConnectionState = "connecting";
     setDefaultFetchHandler({
       json: {
         success: true,
@@ -79,32 +56,19 @@ describe("SyncStatusPanel", () => {
         },
       },
     });
-    (globalThis as unknown as { EventSource: typeof EventSource }).EventSource =
-      MockEventSource as unknown as typeof EventSource;
-  });
-
-  afterEach(() => {
-    delete (globalThis as { EventSource?: typeof EventSource }).EventSource;
-    MockEventSource.reset();
   });
 
   it("does not revive the in-progress banner when logs arrive after completion", async () => {
     render(<SyncStatusPanel />);
 
-    const source = await waitFor(() => {
-      const instance = MockEventSource.instances[0];
-      expect(instance).toBeDefined();
-      return instance;
-    });
-
     await act(async () => {
-      source.triggerOpen();
+      setConnectionState("open");
     });
 
     const runId = 101;
     const startedAt = new Date().toISOString();
     await act(async () => {
-      source.emitSync({
+      emitSyncEvent({
         type: "run-started",
         runId,
         runType: "automatic",
@@ -120,7 +84,7 @@ describe("SyncStatusPanel", () => {
 
     const completedAt = new Date(Date.now() + 1000).toISOString();
     await act(async () => {
-      source.emitSync({
+      emitSyncEvent({
         type: "run-completed",
         runId,
         status: "success",
@@ -138,12 +102,10 @@ describe("SyncStatusPanel", () => {
       });
     });
 
-    await waitFor(() => {
-      expect(screen.queryByText("Sync in progress")).not.toBeInTheDocument();
-    });
+    expect(screen.queryByText("Sync in progress")).not.toBeInTheDocument();
 
     await act(async () => {
-      source.emitSync({
+      emitSyncEvent({
         type: "log-started",
         logId: 1,
         runId,
@@ -154,8 +116,6 @@ describe("SyncStatusPanel", () => {
       });
     });
 
-    await waitFor(() => {
-      expect(screen.queryByText("Sync in progress")).not.toBeInTheDocument();
-    });
+    expect(screen.queryByText("Sync in progress")).not.toBeInTheDocument();
   });
 });

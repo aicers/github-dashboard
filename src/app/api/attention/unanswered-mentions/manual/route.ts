@@ -11,6 +11,7 @@ import {
 } from "@/lib/dashboard/unanswered-mention-classifications";
 import { ensureSchema } from "@/lib/db";
 import { query } from "@/lib/db/client";
+import { emitSyncEvent } from "@/lib/sync/event-bus";
 
 const payloadSchema = z.object({
   commentId: z.string().min(1, "commentId is required."),
@@ -133,6 +134,14 @@ export async function POST(request: Request) {
         manualDecisionIsStale = manualDate.getTime() < evaluatedDate.getTime();
       }
     }
+
+    emitSyncEvent({
+      type: "attention-refresh",
+      scope: "users",
+      userIds: [mentionedUserId],
+      trigger: "manual-override",
+      timestamp: new Date().toISOString(),
+    });
 
     return NextResponse.json({
       success: true,

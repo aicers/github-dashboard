@@ -4,8 +4,9 @@ import { Bell } from "lucide-react";
 import type { Route } from "next";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { subscribeToSyncStream } from "@/lib/sync/client-stream";
 import { buildUserInitials } from "@/lib/user/initials";
 import { cn } from "@/lib/utils";
 
@@ -40,62 +41,90 @@ export function DashboardHeader({
   });
   const router = useRouter();
   const [notificationCount, setNotificationCount] = useState<number>(0);
+  const notificationControllerRef = useRef<AbortController | null>(null);
+  const notificationRequestIdRef = useRef(0);
 
-  useEffect(() => {
+  const fetchNotificationCount = useCallback(async () => {
     if (!userId) {
+      notificationControllerRef.current?.abort();
+      notificationControllerRef.current = null;
       setNotificationCount(0);
       return;
     }
 
+    notificationRequestIdRef.current += 1;
+    const requestId = notificationRequestIdRef.current;
+    notificationControllerRef.current?.abort();
+
     const controller = new AbortController();
-    let isCancelled = false;
+    notificationControllerRef.current = controller;
 
-    const loadNotificationCount = async () => {
-      try {
-        const params = new URLSearchParams();
-        params.set("page", "1");
-        params.set("perPage", "1");
-        NOTIFICATION_ATTENTION_VALUES.forEach((value) => {
-          params.append("attention", value);
-        });
-        NOTIFICATION_PEOPLE_KEYS.forEach((key) => {
-          params.append(key, userId);
-        });
+    try {
+      const params = new URLSearchParams();
+      params.set("page", "1");
+      params.set("perPage", "1");
+      NOTIFICATION_ATTENTION_VALUES.forEach((value) => {
+        params.append("attention", value);
+      });
+      NOTIFICATION_PEOPLE_KEYS.forEach((key) => {
+        params.append(key, userId);
+      });
 
-        const response = await fetch(`/api/activity?${params.toString()}`, {
-          signal: controller.signal,
-        });
+      const response = await fetch(`/api/activity?${params.toString()}`, {
+        signal: controller.signal,
+      });
 
-        if (!response.ok) {
-          throw new Error("Failed to load attention count");
-        }
+      if (!response.ok) {
+        throw new Error("Failed to load attention count");
+      }
 
-        const payload = (await response.json()) as {
-          pageInfo?: { totalCount?: number };
-        };
-        const totalCount =
-          typeof payload?.pageInfo?.totalCount === "number"
-            ? payload.pageInfo.totalCount
-            : 0;
-        if (!isCancelled) {
-          setNotificationCount(totalCount);
-        }
-      } catch (error) {
-        if (isCancelled || (error as Error)?.name === "AbortError") {
-          return;
-        }
-        console.error(error);
+      const payload = (await response.json()) as {
+        pageInfo?: { totalCount?: number };
+      };
+      const totalCount =
+        typeof payload?.pageInfo?.totalCount === "number"
+          ? payload.pageInfo.totalCount
+          : 0;
+
+      if (requestId === notificationRequestIdRef.current) {
+        setNotificationCount(totalCount);
+      }
+    } catch (error) {
+      if ((error as Error)?.name === "AbortError") {
+        return;
+      }
+      console.error(error);
+      if (requestId === notificationRequestIdRef.current) {
         setNotificationCount(0);
       }
-    };
-
-    void loadNotificationCount();
-
-    return () => {
-      isCancelled = true;
-      controller.abort();
-    };
+    }
   }, [userId]);
+
+  useEffect(() => {
+    void fetchNotificationCount();
+    return () => {
+      notificationControllerRef.current?.abort();
+      notificationControllerRef.current = null;
+    };
+  }, [fetchNotificationCount]);
+
+  useEffect(() => {
+    if (!userId) {
+      return;
+    }
+    const unsubscribe = subscribeToSyncStream((event) => {
+      if (event.type !== "attention-refresh") {
+        return;
+      }
+      if (
+        event.scope === "all" ||
+        (event.scope === "users" && event.userIds?.includes(userId))
+      ) {
+        void fetchNotificationCount();
+      }
+    });
+    return unsubscribe;
+  }, [fetchNotificationCount, userId]);
 
   const notificationsHref = useMemo(() => {
     if (!userId) {

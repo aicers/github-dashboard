@@ -87,6 +87,13 @@ export type SyncStreamEvent =
       error?: string | null;
     }
   | {
+      type: "attention-refresh";
+      scope: "all" | "users";
+      userIds?: string[];
+      trigger: "automatic-sync" | "manual-override";
+      timestamp: string;
+    }
+  | {
       type: "heartbeat";
       timestamp: string;
     };
