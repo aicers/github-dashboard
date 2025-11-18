@@ -228,11 +228,16 @@ export function buildActivityListResult(
     overrides.timezone !== undefined ? overrides.timezone : "UTC";
   const dateTimeFormat =
     overrides.dateTimeFormat !== undefined ? overrides.dateTimeFormat : "auto";
+  const generatedAt =
+    overrides.generatedAt !== undefined
+      ? overrides.generatedAt
+      : "2024-01-03T00:10:00.000Z";
 
   return {
     items,
     pageInfo,
     lastSyncCompletedAt,
+    generatedAt,
     timezone,
     dateTimeFormat,
   };

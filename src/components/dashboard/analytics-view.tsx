@@ -34,6 +34,7 @@ import {
   individualMetricTooltips,
   organizationMetricTooltips,
 } from "@/components/dashboard/metric-tooltips";
+import { PageGenerationNotice } from "@/components/dashboard/page-generation-notice";
 import { RepoDistributionList } from "@/components/dashboard/repo-distribution-list";
 import {
   type FilterState,
@@ -230,6 +231,9 @@ export function AnalyticsView({
         range={analytics.range}
         timeZone={timeZone}
         weekStart={weekStart}
+        generatedAt={analytics.generatedAt}
+        latestSyncCompletedAt={analytics.lastSyncCompletedAt}
+        dateTimeFormat={analytics.dateTimeFormat}
       />
 
       <OrganizationMetricsSection
@@ -286,6 +290,9 @@ type AnalyticsHeaderSectionProps = {
   range: DashboardAnalytics["range"];
   timeZone: string;
   weekStart: WeekStart;
+  generatedAt?: string | null;
+  latestSyncCompletedAt?: string | null;
+  dateTimeFormat?: DashboardAnalytics["dateTimeFormat"];
 };
 
 function AnalyticsHeaderSection({
@@ -302,6 +309,9 @@ function AnalyticsHeaderSection({
   range,
   timeZone,
   weekStart,
+  generatedAt,
+  latestSyncCompletedAt,
+  dateTimeFormat,
 }: AnalyticsHeaderSectionProps) {
   return (
     <header className="flex flex-col gap-3">
@@ -309,6 +319,12 @@ function AnalyticsHeaderSection({
         <p className="text-sm text-muted-foreground">
           {orgName ? `${orgName} 조직의 활동 지표` : "조직 활동 지표"}
         </p>
+        <PageGenerationNotice
+          generatedAt={generatedAt}
+          latestSyncCompletedAt={latestSyncCompletedAt}
+          timezone={timeZone}
+          dateTimeFormat={dateTimeFormat}
+        />
       </div>
 
       <DashboardFilterPanel

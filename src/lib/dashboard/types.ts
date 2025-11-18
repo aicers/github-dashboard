@@ -1,3 +1,4 @@
+import type { DateTimeDisplayFormat } from "@/lib/date-time-format";
 import type { RepositoryProfile, UserProfile } from "@/lib/db/operations";
 
 export type ComparisonBreakdownEntry = {
@@ -262,6 +263,9 @@ export type DashboardAnalytics = {
   leaderboard: LeaderboardSummary;
   timeZone: string;
   weekStart: WeekStart;
+  dateTimeFormat: DateTimeDisplayFormat;
+  generatedAt: string;
+  lastSyncCompletedAt: string | null;
 };
 
 export type AnalyticsParams = {

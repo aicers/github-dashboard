@@ -55,7 +55,7 @@ function teardownEventSource() {
 }
 
 function ensureEventSource() {
-  if (typeof window === "undefined") {
+  if (typeof window === "undefined" || typeof EventSource === "undefined") {
     return;
   }
   if (source) {

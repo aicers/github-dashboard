@@ -400,6 +400,9 @@ export function buildDashboardAnalyticsFixture(): DashboardAnalytics {
     leaderboard: BASE_LEADERBOARD,
     timeZone: "UTC",
     weekStart: "monday",
+    dateTimeFormat: "auto",
+    generatedAt: "2024-01-04T00:00:00.000Z",
+    lastSyncCompletedAt: "2024-01-04T00:00:00.000Z",
   };
 }
 

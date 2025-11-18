@@ -55,6 +55,7 @@ describe("GET /api/activity", () => {
         totalPages: 5,
       },
       lastSyncCompletedAt: null,
+      generatedAt: "2024-01-01T00:00:00.000Z",
       timezone: null,
       dateTimeFormat: "auto",
     };

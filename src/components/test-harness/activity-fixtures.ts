@@ -215,6 +215,7 @@ export function buildActivityListResultFixture(
     items,
     pageInfo,
     lastSyncCompletedAt: overrides.lastSyncCompletedAt ?? NOW,
+    generatedAt: overrides.generatedAt ?? NOW,
     timezone: overrides.timezone ?? "UTC",
     dateTimeFormat: overrides.dateTimeFormat ?? "auto",
   };

@@ -2108,6 +2108,7 @@ export async function getActivityItems(
   const trimmedTimezone = userTimeSettings.timezone.trim();
   const timezone = trimmedTimezone.length ? trimmedTimezone : null;
   const lastSyncCompletedAt = toIso(config?.last_sync_completed_at ?? null);
+  const generatedAt = new Date().toISOString();
 
   if (
     attentionSelection &&
@@ -2123,6 +2124,7 @@ export async function getActivityItems(
         totalPages: 0,
       },
       lastSyncCompletedAt,
+      generatedAt,
       timezone,
       dateTimeFormat,
     };
@@ -2261,6 +2263,7 @@ export async function getActivityItems(
       totalPages,
     },
     lastSyncCompletedAt,
+    generatedAt,
     timezone,
     dateTimeFormat,
   };

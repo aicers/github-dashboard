@@ -10,6 +10,7 @@ import {
 } from "@/components/dashboard/metric-card.config";
 import { toCardHistory } from "@/components/dashboard/metric-history";
 import { individualMetricTooltips } from "@/components/dashboard/metric-tooltips";
+import { PageGenerationNotice } from "@/components/dashboard/page-generation-notice";
 import { RepoActivityTable } from "@/components/dashboard/repo-activity-table";
 import { useDashboardAnalytics } from "@/components/dashboard/use-dashboard-analytics";
 import { Button } from "@/components/ui/button";
@@ -238,6 +239,12 @@ export function PeopleView({
           <p className="text-sm text-muted-foreground">
             구성원의 활동을 살펴보세요.
           </p>
+          <PageGenerationNotice
+            generatedAt={analytics.generatedAt}
+            latestSyncCompletedAt={analytics.lastSyncCompletedAt}
+            timezone={timeZone}
+            dateTimeFormat={analytics.dateTimeFormat}
+          />
         </div>
 
         <DashboardFilterPanel

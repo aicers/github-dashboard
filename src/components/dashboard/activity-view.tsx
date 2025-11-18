@@ -24,6 +24,8 @@ import {
   useRef,
   useState,
 } from "react";
+
+import { PageGenerationNotice } from "@/components/dashboard/page-generation-notice";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -60,6 +62,7 @@ import type {
   IssueProjectStatus,
 } from "@/lib/activity/types";
 import type { DateTimeDisplayFormat } from "@/lib/date-time-format";
+import { subscribeToSyncStream } from "@/lib/sync/client-stream";
 import { cn } from "@/lib/utils";
 import { ActivityDetailOverlay } from "./activity/activity-detail-overlay";
 import { ActivityListItemSummary } from "./activity/activity-list-item-summary";
@@ -1634,7 +1637,7 @@ function AiFilterControl({
           {checked ? "AI 분류 사용 중" : "AI 분류 사용 안 함"}
         </span>
       </button>
-      <style jsx>{`
+      <style>{`
         @keyframes aiPulse {
           0% {
             transform: scale(1);
@@ -2248,6 +2251,18 @@ export function ActivityView({
   }, [normalizeFilterState]);
 
   useEffect(() => {
+    const unsubscribe = subscribeToSyncStream((event) => {
+      if (event.type === "run-completed" && event.status === "success") {
+        setListData((current) => ({
+          ...current,
+          lastSyncCompletedAt: event.completedAt,
+        }));
+      }
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
     setDraft(initialState);
     setApplied(initialState);
     setListData(initialData);
@@ -2271,6 +2286,7 @@ export function ActivityView({
     [activeTimezone, activeDateTimeFormat],
   );
   const lastSyncCompletedAt = listData.lastSyncCompletedAt;
+  const generatedAt = listData.generatedAt;
   const currentPage = listData.pageInfo.page;
   const visibleItems = listData.items;
   const totalPages = listData.pageInfo.totalPages;
@@ -4250,16 +4266,18 @@ export function ActivityView({
           </p>
         </div>
         <div className="flex flex-col items-end gap-1 text-xs text-muted-foreground">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100/80 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/80">
-            Last sync:
-            <span
-              className="font-semibold text-foreground/80"
-              title={timezoneTitle}
-            >
-              {formatDateTimeWithSettings(lastSyncCompletedAt) ??
-                "Not available"}
-            </span>
-          </span>
+          <PageGenerationNotice
+            label="Page Generated:"
+            generatedAt={generatedAt}
+            latestSyncCompletedAt={lastSyncCompletedAt}
+            timezone={activeTimezone ?? undefined}
+            dateTimeFormat={activeDateTimeFormat}
+            staleMessage={({ formattedLatestSync }) =>
+              formattedLatestSync
+                ? `Latest GitHub Sync ${formattedLatestSync} 이후에 새 데이터가 있어요. 필터를 다시 적용해 최신 결과를 확인해 주세요.`
+                : "Latest GitHub Sync 이후에 새 데이터가 있어요. 필터를 다시 적용해 최신 결과를 확인해 주세요."
+            }
+          />
           {notification ? (
             <span className="text-xs text-foreground/70">{notification}</span>
           ) : null}

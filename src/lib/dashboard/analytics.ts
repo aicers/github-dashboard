@@ -52,6 +52,7 @@ import {
   normalizeText,
   resolveRange,
   roundToOneDecimal,
+  toIso,
 } from "@/lib/dashboard/analytics/shared";
 import { loadCombinedHolidaySet } from "@/lib/dashboard/business-days";
 import type {
@@ -282,6 +283,7 @@ export async function getDashboardAnalytics(
   const organizationHolidayCodes = normalizeOrganizationHolidayCodes(config);
   const holidaySet = await loadCombinedHolidaySet(organizationHolidayCodes);
   const timeZone = userTimeSettings.timezone;
+  const dateTimeFormat = userTimeSettings.dateTimeFormat;
   const weekStart: WeekStart = userTimeSettings.weekStart;
   const excludedUserIds = new Set<string>(
     Array.isArray(config?.excluded_user_ids)
@@ -315,6 +317,20 @@ export async function getDashboardAnalytics(
   const targetProject = normalizeText(env.TODO_PROJECT_NAME);
   const effectivePersonId =
     personId && !excludedUserIds.has(personId) ? personId : null;
+  const generatedAt = new Date().toISOString();
+  const rawLastSync = config?.last_sync_completed_at;
+  let lastSyncCompletedAt: string | null = null;
+  if (typeof rawLastSync === "string" && rawLastSync.trim().length) {
+    try {
+      lastSyncCompletedAt = toIso(rawLastSync);
+    } catch {
+      lastSyncCompletedAt = null;
+    }
+  } else if (rawLastSync instanceof Date) {
+    lastSyncCompletedAt = Number.isNaN(rawLastSync.valueOf())
+      ? null
+      : rawLastSync.toISOString();
+  }
 
   const [
     currentIssues,
@@ -1958,6 +1974,9 @@ export async function getDashboardAnalytics(
     leaderboard,
     timeZone,
     weekStart,
+    dateTimeFormat,
+    generatedAt,
+    lastSyncCompletedAt,
   };
 }
 
