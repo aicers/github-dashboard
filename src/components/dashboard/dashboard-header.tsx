@@ -188,6 +188,7 @@ export function DashboardHeader({
             aria-label={ariaLabel}
             className="relative flex size-10 items-center justify-center rounded-xl bg-white text-slate-600 shadow-[0px_8px_20px_rgba(37,0,105,0.15)] ring-1 ring-black/5 transition hover:-translate-y-px hover:shadow-[0px_12px_28px_rgba(37,0,105,0.18)]"
             onClick={() => {
+              void fetchNotificationCount();
               router.push(notificationsRoute);
             }}
           >

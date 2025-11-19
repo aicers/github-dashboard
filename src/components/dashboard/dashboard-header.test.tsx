@@ -135,6 +135,32 @@ describe("DashboardHeader", () => {
     expect(url.searchParams.getAll("peopleSelection")).toEqual(["user-77"]);
   });
 
+  it("forces a notification refresh when the badge is clicked", async () => {
+    mockFetchJsonOnce({ pageInfo: { totalCount: 2 } });
+    const user = userEvent.setup();
+
+    render(
+      <DashboardHeader
+        userId="user-20"
+        userName="테스터"
+        userLogin="tester"
+        userAvatarUrl={null}
+      />,
+    );
+
+    const button = await screen.findByRole("button", { name: "알림 (2건)" });
+
+    mockFetchJsonOnce({ pageInfo: { totalCount: 5 } });
+
+    await user.click(button);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    await screen.findByRole("button", { name: "알림 (5건)" });
+  });
+
   it("refetches notifications when an attention refresh targets the user", async () => {
     mockFetchJsonOnce({ pageInfo: { totalCount: 1 } });
 
