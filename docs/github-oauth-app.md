@@ -12,12 +12,17 @@ Next.js runtime.
    register staging or production environments.
 
 <!-- markdownlint-disable MD013 -->
-| Field                       | Local development value                  | Notes |
-| --------------------------- | ---------------------------------------- | ----- |
-| **Application name**        | GitHub Dashboard (local)                 | Any label that helps you identify the environment. |
-| **Homepage URL**            | `http://localhost:3000`                  | Use your deployed origin (for example `https://dashboard.example.com`). In NAT/tunnel or IP-only setups, supply the externally reachable address (e.g. `https://203.0.113.10`) that GitHub can open. |
-| **Authorization callback URL** | `http://localhost:3000/auth/github/callback` | Must match exactly. Duplicate the app per environment with its own callback (e.g. `https://dashboard.example.com/auth/github/callback`). For NAT/tunnel/IP-only setups, point this to the public address that forwards back to your local server. |
+| Field                          | Local development value                      | Notes                                                                   |
+| ------------------------------ | -------------------------------------------- | ----------------------------------------------------------------------- |
+| **Application name**           | GitHub Dashboard (local)                     | Any label that helps you identify the environment.                      |
+| **Homepage URL**               | `http://localhost:3000`                      | Use your deployed origin (for example `https://dashboard.example.com`). |
+| **Authorization callback URL** | `http://localhost:3000/auth/github/callback` | Must match exactly; create a dedicated OAuth App per environment.       |
 <!-- markdownlint-enable MD013 -->
+
+For NAT/tunnel or IP-only setups (such as GitHub Codespaces), set both the
+homepage and callback URLs to the externally reachable address (for example,
+`https://203.0.113.10`) that GitHub can open and forward back to your local
+server.
 
 When the form is submitted GitHub shows a page with the new **Client ID** and a
 button to generate a **Client secret**. Copy both values—you will need them in
