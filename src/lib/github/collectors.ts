@@ -21,6 +21,7 @@ import {
 import { env } from "@/lib/env";
 import { createGithubClient } from "@/lib/github/client";
 import {
+  activityNodeResyncQuery,
   discussionCommentsQuery,
   issueCommentsQuery,
   organizationRepositoriesQuery,
@@ -131,6 +132,7 @@ type IssueNode = {
   reactions?: {
     nodes: ReactionNode[] | null;
   } | null;
+  repository?: RepositoryNode | null;
 };
 
 type DiscussionCategoryNode = {
@@ -163,7 +165,53 @@ type DiscussionNode = {
   reactions?: {
     nodes: ReactionNode[] | null;
   } | null;
+  repository?: RepositoryNode | null;
 };
+
+type ActivityNodeResyncResponse = {
+  node?:
+    | (IssueNode & { __typename: "Issue" })
+    | (PullRequestNode & { __typename: "PullRequest" })
+    | (DiscussionNode & { __typename?: string | null })
+    | null;
+};
+
+function wrapGithubError(error: unknown, context: string): Error {
+  if (error instanceof ClientError) {
+    const messages =
+      error.response?.errors
+        ?.map((entry) =>
+          typeof entry?.message === "string" ? entry.message.trim() : null,
+        )
+        .filter((message): message is string => Boolean(message)) ?? [];
+    const details = messages.length
+      ? messages.join("; ")
+      : error.message || "Unknown GitHub API error.";
+    return new Error(`${context}: ${details}`, { cause: error });
+  }
+  if (error instanceof Error) {
+    return new Error(`${context}: ${error.message}`, { cause: error });
+  }
+  return new Error(context);
+}
+
+function isIssueResyncNode(
+  node: ActivityNodeResyncResponse["node"],
+): node is IssueNode & { __typename: "Issue" } {
+  return node?.__typename === "Issue";
+}
+
+function isPullRequestResyncNode(
+  node: ActivityNodeResyncResponse["node"],
+): node is PullRequestNode & { __typename: "PullRequest" } {
+  return node?.__typename === "PullRequest";
+}
+
+function isDiscussionResyncNode(
+  node: ActivityNodeResyncResponse["node"],
+): node is DiscussionNode & { __typename?: string | null } {
+  return node?.__typename === "Discussion";
+}
 
 type PullRequestNode = IssueNode & {
   mergedAt?: string | null;
@@ -2570,6 +2618,298 @@ export async function collectDiscussionsOnly(
     latestDiscussionUpdated,
     latestCommentUpdated,
   };
+}
+
+async function ensureRepositoryRecord(repository?: RepositoryNode | null) {
+  if (!repository) {
+    throw new Error("Repository information is missing for this node.");
+  }
+  if (repository.owner) {
+    await processActor(repository.owner);
+  }
+  await upsertRepository({
+    id: repository.id,
+    name: repository.name,
+    nameWithOwner: repository.nameWithOwner,
+    ownerId: repository.owner?.id ?? null,
+    url: repository.url ?? null,
+    isPrivate: repository.isPrivate ?? null,
+    createdAt: repository.createdAt ?? null,
+    updatedAt: repository.updatedAt ?? null,
+    raw: repository,
+  });
+  return repository;
+}
+
+async function reimportIssueNodeData(params: {
+  client: GraphQLClient;
+  repository: RepositoryNode;
+  issue: IssueNode;
+  options: SyncOptions;
+}) {
+  const { client, repository, issue, options } = params;
+  try {
+    const authorId = await processActor(issue.author);
+    await processActorNodes(issue.assignees?.nodes);
+    const existingIssueRaw = await fetchIssueRawMap([issue.id]);
+    const previousHistory = extractProjectStatusHistoryFromRaw(
+      existingIssueRaw.get(issue.id),
+    );
+    const snapshots = collectProjectStatusSnapshots(issue);
+    const removals = createRemovalEntries(
+      previousHistory,
+      snapshots,
+      typeof issue.updatedAt === "string" ? issue.updatedAt : null,
+    );
+    const mergedHistory = mergeProjectStatusHistory(previousHistory, [
+      ...snapshots,
+      ...removals,
+    ]);
+    if (
+      TARGET_TODO_PROJECT &&
+      mergedHistory.some((entry) => isTargetProject(entry.projectTitle))
+    ) {
+      await clearActivityStatuses(issue.id);
+      await clearProjectFieldOverrides(issue.id);
+    }
+    const rawIssue =
+      mergedHistory.length > 0
+        ? { ...issue, projectStatusHistory: mergedHistory }
+        : issue;
+
+    await upsertIssue({
+      id: issue.id,
+      number: issue.number,
+      repositoryId: repository.id,
+      authorId: authorId ?? null,
+      title: issue.title,
+      state: issue.state,
+      createdAt: issue.createdAt,
+      updatedAt: issue.updatedAt,
+      closedAt: issue.closedAt ?? null,
+      raw: rawIssue,
+    });
+
+    await processReactions(issue.reactions, "issue", issue.id);
+
+    await collectIssueComments(client, repository, issue, options, "issue");
+  } catch (error) {
+    throw wrapGithubError(
+      error,
+      `Failed to re-import issue ${issue.number ?? issue.id}`,
+    );
+  }
+}
+
+async function reimportDiscussionNodeData(params: {
+  client: GraphQLClient;
+  repository: RepositoryNode;
+  discussion: DiscussionNode;
+  options: SyncOptions;
+}) {
+  const { client, repository, discussion, options } = params;
+  try {
+    const authorId = await processActor(discussion.author);
+    await processActor(discussion.answerChosenBy);
+    const rawDiscussion =
+      typeof discussion.__typename === "string" &&
+      discussion.__typename.length > 0
+        ? discussion
+        : { ...discussion, __typename: "Discussion" };
+    const closedAt =
+      typeof discussion.closedAt === "string" &&
+      discussion.closedAt.trim().length > 0
+        ? discussion.closedAt
+        : null;
+    const normalizedState = closedAt !== null ? "closed" : "open";
+
+    await upsertIssue({
+      id: discussion.id,
+      number: discussion.number,
+      repositoryId: repository.id,
+      authorId: authorId ?? null,
+      title: discussion.title,
+      state: normalizedState,
+      createdAt: discussion.createdAt,
+      updatedAt: discussion.updatedAt,
+      closedAt,
+      raw: rawDiscussion,
+    });
+
+    await processReactions(discussion.reactions, "discussion", discussion.id);
+
+    await collectIssueComments(
+      client,
+      repository,
+      discussion,
+      options,
+      "discussion",
+    );
+  } catch (error) {
+    throw wrapGithubError(
+      error,
+      `Failed to re-import discussion ${discussion.number ?? discussion.id}`,
+    );
+  }
+}
+
+async function reimportPullRequestNodeData(params: {
+  client: GraphQLClient;
+  repository: RepositoryNode;
+  pullRequest: PullRequestNode;
+  options: SyncOptions;
+}) {
+  const { client, repository, pullRequest, options } = params;
+  try {
+    const authorId = await processActor(pullRequest.author);
+    await processActor(pullRequest.mergedBy);
+    await processActorNodes(pullRequest.assignees?.nodes);
+    await upsertPullRequest({
+      id: pullRequest.id,
+      number: pullRequest.number,
+      repositoryId: repository.id,
+      authorId: authorId ?? null,
+      title: pullRequest.title,
+      state: pullRequest.state,
+      createdAt: pullRequest.createdAt,
+      updatedAt: pullRequest.updatedAt,
+      closedAt: pullRequest.closedAt ?? null,
+      mergedAt: pullRequest.mergedAt ?? null,
+      merged: pullRequest.merged ?? null,
+      raw: pullRequest,
+    });
+
+    const closingIssuesNodes = (pullRequest.closingIssuesReferences?.nodes ??
+      []) as IssueRelationNode[];
+    const closingIssues = closingIssuesNodes
+      .filter((issue): issue is IssueRelationNode =>
+        Boolean(issue && typeof issue.id === "string"),
+      )
+      .map((issue) => ({
+        issueId: issue.id,
+        issueNumber: typeof issue.number === "number" ? issue.number : null,
+        issueTitle: issue.title ?? null,
+        issueState: issue.state ?? null,
+        issueUrl: issue.url ?? null,
+        issueRepository:
+          typeof issue.repository?.nameWithOwner === "string"
+            ? issue.repository.nameWithOwner
+            : null,
+      }));
+
+    await replacePullRequestIssues(pullRequest.id, closingIssues);
+
+    await collectIssueComments(
+      client,
+      repository,
+      pullRequest,
+      options,
+      "pull_request",
+    );
+
+    const reviewResult = await collectReviews(
+      client,
+      repository,
+      pullRequest,
+      options,
+    );
+    const reviewCache = new Set<string>();
+    for (const id of reviewResult.reviewIds) {
+      reviewCache.add(id);
+    }
+    await collectReviewComments(
+      client,
+      repository,
+      pullRequest,
+      options,
+      reviewCache,
+    );
+  } catch (error) {
+    throw wrapGithubError(
+      error,
+      `Failed to re-import pull request ${pullRequest.number ?? pullRequest.id}`,
+    );
+  }
+}
+
+export async function reimportActivityNode(options: {
+  nodeId: string;
+  logger?: SyncLogger;
+  client?: GraphQLClient;
+}) {
+  const trimmed = options.nodeId.trim();
+  if (!trimmed.length) {
+    throw new Error("Node id is required.");
+  }
+  const client = options.client ?? createGithubClient();
+  const { logger } = options;
+  let data: ActivityNodeResyncResponse;
+  try {
+    data = await requestWithRetry<ActivityNodeResyncResponse>(
+      client,
+      activityNodeResyncQuery,
+      { id: trimmed },
+      {
+        logger,
+        context: `node ${trimmed}`,
+      },
+    );
+  } catch (error) {
+    throw wrapGithubError(
+      error,
+      "Failed to load item data from GitHub. Verify that the token has access to the repository.",
+    );
+  }
+  const node = data.node;
+  if (!node) {
+    throw new Error("GitHub node was not found.");
+  }
+  if (
+    !isIssueResyncNode(node) &&
+    !isPullRequestResyncNode(node) &&
+    !isDiscussionResyncNode(node)
+  ) {
+    throw new Error(
+      "Only issues, pull requests, and discussions are supported.",
+    );
+  }
+  const repository = await ensureRepositoryRecord(node.repository);
+  if (!repository.nameWithOwner) {
+    throw new Error("Repository name is missing for this node.");
+  }
+  const org =
+    repository.nameWithOwner.split("/")[0]?.trim() ??
+    repository.nameWithOwner.trim();
+  const syncOptions: SyncOptions = {
+    org: org.length ? org : "unknown",
+    logger,
+    client,
+  };
+  if (isIssueResyncNode(node)) {
+    await reimportIssueNodeData({
+      client,
+      repository,
+      issue: node,
+      options: syncOptions,
+    });
+    return { nodeId: trimmed, type: "issue" as const };
+  }
+  if (isPullRequestResyncNode(node)) {
+    await reimportPullRequestNodeData({
+      client,
+      repository,
+      pullRequest: node,
+      options: syncOptions,
+    });
+    return { nodeId: trimmed, type: "pull_request" as const };
+  }
+  await reimportDiscussionNodeData({
+    client,
+    repository,
+    discussion: node,
+    options: syncOptions,
+  });
+  return { nodeId: trimmed, type: "discussion" as const };
 }
 
 export async function collectPullRequestLinks(options: SyncOptions) {

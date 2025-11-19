@@ -2242,6 +2242,10 @@ export function ActivityView({
   const [filtersManagerBusyId, setFiltersManagerBusyId] = useState<
     string | null
   >(null);
+  const [automaticSyncActive, setAutomaticSyncActive] = useState(false);
+  const [resyncingIds, setResyncingIds] = useState<Set<string>>(
+    () => new Set<string>(),
+  );
   const savedFilterSelectId = useId();
   const jumpDateInputId = useId();
   const attentionTooltipPrefix = useId();
@@ -2254,6 +2258,9 @@ export function ActivityView({
   }, [normalizeFilterState]);
 
   useEffect(() => {
+    const updateAutoSyncState = () => {
+      setAutomaticSyncActive(autoSyncRunIdsRef.current.size > 0);
+    };
     const unsubscribe = subscribeToSyncStream((event) => {
       if (event.type === "run-completed" && event.status === "success") {
         setListData((current) => ({
@@ -2261,8 +2268,73 @@ export function ActivityView({
           lastSyncCompletedAt: event.completedAt,
         }));
       }
+      if (event.type === "run-started" && event.runType === "automatic") {
+        if (!autoSyncRunIdsRef.current.has(event.runId)) {
+          autoSyncRunIdsRef.current.add(event.runId);
+          updateAutoSyncState();
+        }
+      } else if (event.type === "run-status") {
+        if (
+          autoSyncRunIdsRef.current.has(event.runId) &&
+          event.status !== "running"
+        ) {
+          autoSyncRunIdsRef.current.delete(event.runId);
+          updateAutoSyncState();
+        }
+      } else if (
+        event.type === "run-completed" ||
+        event.type === "run-failed"
+      ) {
+        if (autoSyncRunIdsRef.current.delete(event.runId)) {
+          updateAutoSyncState();
+        }
+      }
     });
     return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    let canceled = false;
+    const loadInitialSyncStatus = async () => {
+      try {
+        const response = await fetch("/api/sync/status");
+        if (!response.ok) {
+          return;
+        }
+        const payload = (await response.json()) as {
+          success?: boolean;
+          status?: {
+            runs?: Array<{
+              id: number;
+              runType?: string;
+              status?: string;
+            }>;
+          };
+        };
+        if (!payload?.success || !payload.status?.runs || canceled) {
+          return;
+        }
+        const ids = new Set<number>();
+        payload.status.runs.forEach((run) => {
+          if (run.runType === "automatic" && run.status === "running") {
+            const runId = Number(run.id);
+            if (Number.isFinite(runId)) {
+              ids.add(runId);
+            }
+          }
+        });
+        if (!canceled) {
+          autoSyncRunIdsRef.current = ids;
+          setAutomaticSyncActive(ids.size > 0);
+        }
+      } catch {
+        // Best-effort only
+      }
+    };
+    void loadInitialSyncStatus();
+    return () => {
+      canceled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -2302,12 +2374,15 @@ export function ActivityView({
   const totalCountDisplay = totalCount.toLocaleString();
   const canGoPrev = currentPage > 1;
   const canGoNext = currentPage < totalPages;
+  const resyncDisabledMessage =
+    "자동 동기화 중이므로 완료 후 실행할 수 있어요.";
 
   const fetchControllerRef = useRef<AbortController | null>(null);
   const detailControllersRef = useRef(new Map<string, AbortController>());
   const requestCounterRef = useRef(0);
   const notificationTimerRef = useRef<NodeJS.Timeout | null>(null);
   const appliedQuickParamRef = useRef<string | null>(null);
+  const autoSyncRunIdsRef = useRef(new Set<number>());
 
   useEffect(() => {
     return () => {
@@ -3889,6 +3964,59 @@ export function ActivityView({
       }
     },
     [applied.useMentionAi],
+  );
+  const handleResyncItem = useCallback(
+    async (item: ActivityItem) => {
+      const targetId = item.id;
+      if (!targetId) {
+        return;
+      }
+      setResyncingIds((current) => {
+        if (current.has(targetId)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.add(targetId);
+        return next;
+      });
+      try {
+        const response = await fetch(
+          `/api/activity/${encodeURIComponent(targetId)}/resync`,
+          {
+            method: "POST",
+          },
+        );
+        if (!response.ok) {
+          let message = "GitHub에서 다시 불러오지 못했어요.";
+          try {
+            const payload = (await response.json()) as { error?: string };
+            if (payload?.error) {
+              message = payload.error;
+            }
+          } catch {
+            // ignore JSON parse errors
+          }
+          showNotification(message);
+          return;
+        }
+        showNotification("GitHub에서 다시 불러왔어요.");
+        void fetchActivity(applied);
+        void loadDetail(targetId);
+      } catch (resyncError) {
+        console.error("Failed to re-import activity item", resyncError);
+        showNotification("GitHub에서 다시 불러오지 못했어요.");
+      } finally {
+        setResyncingIds((current) => {
+          if (!current.has(targetId)) {
+            return current;
+          }
+          const next = new Set(current);
+          next.delete(targetId);
+          return next;
+        });
+      }
+    },
+    [applied, fetchActivity, loadDetail, showNotification],
   );
   const handleUpdateIssueStatus = useCallback(
     async (item: ActivityItem, nextStatus: IssueProjectStatus) => {
@@ -5875,6 +6003,12 @@ export function ActivityView({
                           timezone={activeTimezone}
                           dateTimeFormat={activeDateTimeFormat}
                           onClose={handleCloseItem}
+                          onResync={() => handleResyncItem(item)}
+                          isResyncing={resyncingIds.has(item.id)}
+                          resyncDisabled={automaticSyncActive}
+                          resyncDisabledReason={
+                            automaticSyncActive ? resyncDisabledMessage : null
+                          }
                         >
                           {isDetailLoading ? (
                             <div className="text-muted-foreground/80">

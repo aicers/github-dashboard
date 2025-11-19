@@ -57,6 +57,7 @@ import {
   sortRankingByTotal,
 } from "@/lib/dashboard/attention-summaries";
 import type { DateTimeDisplayFormat } from "@/lib/date-time-format";
+import { subscribeToSyncStream } from "@/lib/sync/client-stream";
 import { cn } from "@/lib/utils";
 import { ActivityDetailOverlay } from "./activity/activity-detail-overlay";
 import { ActivityListItemSummary } from "./activity/activity-list-item-summary";
@@ -1189,6 +1190,10 @@ function PullRequestList({
   timezone,
   dateTimeFormat,
   segmented = false,
+  onResyncItem,
+  resyncingIds,
+  resyncDisabled = false,
+  resyncDisabledReason = null,
 }: {
   items: PullRequestAttentionItem[];
   emptyText: string;
@@ -1201,6 +1206,10 @@ function PullRequestList({
   timezone: string;
   dateTimeFormat: DateTimeDisplayFormat;
   segmented?: boolean;
+  onResyncItem?: (id: string) => void;
+  resyncingIds?: Set<string>;
+  resyncDisabled?: boolean;
+  resyncDisabledReason?: string | null;
 }) {
   const [authorFilter, setAuthorFilter] = useState("all");
   const [reviewerFilter, setReviewerFilter] = useState("all");
@@ -1557,6 +1566,16 @@ function PullRequestList({
                   timezone={timezone}
                   dateTimeFormat={dateTimeFormat}
                   onClose={closeItem}
+                  onResync={
+                    typeof onResyncItem === "function"
+                      ? () => onResyncItem(overlayItem.id)
+                      : undefined
+                  }
+                  isResyncing={resyncingIds?.has(overlayItem.id) ?? false}
+                  resyncDisabled={resyncDisabled}
+                  resyncDisabledReason={
+                    resyncDisabled ? resyncDisabledReason : null
+                  }
                 >
                   <FollowUpDetailContent
                     item={overlayItem}
@@ -1616,6 +1635,10 @@ function ReviewRequestList({
   timezone,
   dateTimeFormat,
   segmented = false,
+  onResyncItem,
+  resyncingIds,
+  resyncDisabled = false,
+  resyncDisabledReason = null,
 }: {
   items: ReviewRequestAttentionItem[];
   emptyText: string;
@@ -1625,6 +1648,10 @@ function ReviewRequestList({
   timezone: string;
   dateTimeFormat: DateTimeDisplayFormat;
   segmented?: boolean;
+  onResyncItem?: (id: string) => void;
+  resyncingIds?: Set<string>;
+  resyncDisabled?: boolean;
+  resyncDisabledReason?: string | null;
 }) {
   const [authorFilter, setAuthorFilter] = useState("all");
   const [reviewerFilter, setReviewerFilter] = useState("all");
@@ -2020,6 +2047,16 @@ function ReviewRequestList({
                     timezone={timezone}
                     dateTimeFormat={dateTimeFormat}
                     onClose={closeItem}
+                    onResync={
+                      typeof onResyncItem === "function"
+                        ? () => onResyncItem(overlayItem.id)
+                        : undefined
+                    }
+                    isResyncing={resyncingIds?.has(overlayItem.id) ?? false}
+                    resyncDisabled={resyncDisabled}
+                    resyncDisabledReason={
+                      resyncDisabled ? resyncDisabledReason : null
+                    }
                   >
                     <FollowUpDetailContent
                       item={overlayItem}
@@ -2082,6 +2119,10 @@ function IssueList({
   timezone,
   dateTimeFormat,
   segmented = false,
+  onResyncItem,
+  resyncingIds,
+  resyncDisabled = false,
+  resyncDisabledReason = null,
 }: {
   items: IssueAttentionItem[];
   emptyText: string;
@@ -2093,6 +2134,10 @@ function IssueList({
   timezone: string;
   dateTimeFormat: DateTimeDisplayFormat;
   segmented?: boolean;
+  onResyncItem?: (id: string) => void;
+  resyncingIds?: Set<string>;
+  resyncDisabled?: boolean;
+  resyncDisabledReason?: string | null;
 }) {
   const [authorFilter, setAuthorFilter] = useState("all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
@@ -2736,6 +2781,16 @@ function IssueList({
                   timezone={timezone}
                   dateTimeFormat={dateTimeFormat}
                   onClose={closeItem}
+                  onResync={
+                    typeof onResyncItem === "function"
+                      ? () => onResyncItem(overlayItem.id)
+                      : undefined
+                  }
+                  isResyncing={resyncingIds?.has(overlayItem.id) ?? false}
+                  resyncDisabled={resyncDisabled}
+                  resyncDisabledReason={
+                    resyncDisabled ? resyncDisabledReason : null
+                  }
                 >
                   <FollowUpDetailContent
                     item={overlayItem}
@@ -2799,6 +2854,10 @@ function MentionList({
   mentionWaitMap,
   attentionFlagMap,
   issueProjectInfoMap,
+  onResyncItem,
+  resyncingIds,
+  resyncDisabled = false,
+  resyncDisabledReason = null,
 }: {
   items: MentionAttentionItem[];
   emptyText: string;
@@ -2835,6 +2894,10 @@ function MentionList({
       issueTodoProjectStartDate: string | null;
     }
   >;
+  onResyncItem?: (id: string) => void;
+  resyncingIds?: Set<string>;
+  resyncDisabled?: boolean;
+  resyncDisabledReason?: string | null;
 }) {
   const [targetFilter, setTargetFilter] = useState("all");
   const [authorFilter, setAuthorFilter] = useState("all");
@@ -3427,6 +3490,16 @@ function MentionList({
                   timezone={timezone}
                   dateTimeFormat={dateTimeFormat}
                   onClose={closeItem}
+                  onResync={
+                    typeof onResyncItem === "function"
+                      ? () => onResyncItem(overlayItem.id)
+                      : undefined
+                  }
+                  isResyncing={resyncingIds?.has(overlayItem.id) ?? false}
+                  resyncDisabled={resyncDisabled}
+                  resyncDisabledReason={
+                    resyncDisabled ? resyncDisabledReason : null
+                  }
                 >
                   <FollowUpDetailContent
                     item={overlayItem}
@@ -3517,10 +3590,112 @@ export function AttentionView({
   const [pendingMentionOverrideKey, setPendingMentionOverrideKey] = useState<
     string | null
   >(null);
+  const [notification, setNotification] = useState<string | null>(null);
+  const notificationTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [automaticSyncActive, setAutomaticSyncActive] = useState(false);
+  const [resyncingIds, setResyncingIds] = useState<Set<string>>(
+    () => new Set<string>(),
+  );
+  const autoSyncRunIdsRef = useRef(new Set<number>());
+  const resyncDisabledMessage =
+    "자동 동기화 중이므로 완료 후 실행할 수 있어요.";
 
   useEffect(() => {
     latestSyncRef.current = insights.generatedAt ?? null;
   }, [insights.generatedAt]);
+
+  useEffect(() => {
+    return () => {
+      if (notificationTimerRef.current) {
+        clearTimeout(notificationTimerRef.current);
+      }
+    };
+  }, []);
+
+  const showNotification = useCallback((message: string) => {
+    setNotification(message);
+    if (notificationTimerRef.current) {
+      clearTimeout(notificationTimerRef.current);
+    }
+    notificationTimerRef.current = setTimeout(() => {
+      setNotification(null);
+      notificationTimerRef.current = null;
+    }, 4000);
+  }, []);
+
+  useEffect(() => {
+    const updateAutoSyncState = () => {
+      setAutomaticSyncActive(autoSyncRunIdsRef.current.size > 0);
+    };
+    const unsubscribe = subscribeToSyncStream((event) => {
+      if (event.type === "run-started" && event.runType === "automatic") {
+        if (!autoSyncRunIdsRef.current.has(event.runId)) {
+          autoSyncRunIdsRef.current.add(event.runId);
+          updateAutoSyncState();
+        }
+      } else if (event.type === "run-status") {
+        if (
+          autoSyncRunIdsRef.current.has(event.runId) &&
+          event.status !== "running"
+        ) {
+          autoSyncRunIdsRef.current.delete(event.runId);
+          updateAutoSyncState();
+        }
+      } else if (
+        event.type === "run-completed" ||
+        event.type === "run-failed"
+      ) {
+        if (autoSyncRunIdsRef.current.delete(event.runId)) {
+          updateAutoSyncState();
+        }
+      }
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    let canceled = false;
+    const loadInitialSyncState = async () => {
+      try {
+        const response = await fetch("/api/sync/status");
+        if (!response.ok) {
+          return;
+        }
+        const payload = (await response.json()) as {
+          success?: boolean;
+          status?: {
+            runs?: Array<{
+              id: number;
+              runType?: string;
+              status?: string;
+            }>;
+          };
+        };
+        if (!payload?.success || !payload.status?.runs || canceled) {
+          return;
+        }
+        const ids = new Set<number>();
+        payload.status.runs.forEach((run) => {
+          if (run.runType === "automatic" && run.status === "running") {
+            const runId = Number(run.id);
+            if (Number.isFinite(runId)) {
+              ids.add(runId);
+            }
+          }
+        });
+        if (!canceled) {
+          autoSyncRunIdsRef.current = ids;
+          setAutomaticSyncActive(ids.size > 0);
+        }
+      } catch {
+        // ignore failures
+      }
+    };
+    void loadInitialSyncState();
+    return () => {
+      canceled = true;
+    };
+  }, []);
 
   const handleMentionOverrideSuccess = useCallback(
     (params: {
@@ -3580,6 +3755,60 @@ export function AttentionView({
       });
     },
     [],
+  );
+
+  const handleResyncItem = useCallback(
+    async (itemId: string) => {
+      if (!itemId) {
+        return;
+      }
+      setResyncingIds((current) => {
+        if (current.has(itemId)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.add(itemId);
+        return next;
+      });
+      try {
+        const response = await fetch(
+          `/api/activity/${encodeURIComponent(itemId)}/resync`,
+          {
+            method: "POST",
+          },
+        );
+        if (!response.ok) {
+          let message = "GitHub에서 다시 불러오지 못했어요.";
+          try {
+            const payload = (await response.json()) as { error?: string };
+            if (payload?.error) {
+              message = payload.error;
+            }
+          } catch {
+            // ignore JSON parse errors
+          }
+          showNotification(message);
+          return;
+        }
+        showNotification("GitHub에서 다시 불러왔어요.");
+        startTransition(() => {
+          router.refresh();
+        });
+      } catch (error) {
+        console.error("Failed to re-import activity item", error);
+        showNotification("GitHub에서 다시 불러오지 못했어요.");
+      } finally {
+        setResyncingIds((current) => {
+          if (!current.has(itemId)) {
+            return current;
+          }
+          const next = new Set(current);
+          next.delete(itemId);
+          return next;
+        });
+      }
+    },
+    [router, showNotification],
   );
 
   const reviewWaitMap = useMemo(() => {
@@ -3745,6 +3974,12 @@ export function AttentionView({
           timezone={insights.timezone}
           dateTimeFormat={insights.dateTimeFormat}
           segmented
+          onResyncItem={handleResyncItem}
+          resyncingIds={resyncingIds}
+          resyncDisabled={automaticSyncActive}
+          resyncDisabledReason={
+            automaticSyncActive ? resyncDisabledMessage : null
+          }
         />
       ),
     },
@@ -3767,6 +4002,12 @@ export function AttentionView({
           timezone={insights.timezone}
           dateTimeFormat={insights.dateTimeFormat}
           segmented
+          onResyncItem={handleResyncItem}
+          resyncingIds={resyncingIds}
+          resyncDisabled={automaticSyncActive}
+          resyncDisabledReason={
+            automaticSyncActive ? resyncDisabledMessage : null
+          }
         />
       ),
     },
@@ -3787,6 +4028,12 @@ export function AttentionView({
           timezone={insights.timezone}
           dateTimeFormat={insights.dateTimeFormat}
           segmented
+          onResyncItem={handleResyncItem}
+          resyncingIds={resyncingIds}
+          resyncDisabled={automaticSyncActive}
+          resyncDisabledReason={
+            automaticSyncActive ? resyncDisabledMessage : null
+          }
         />
       ),
     },
@@ -3810,6 +4057,12 @@ export function AttentionView({
           timezone={insights.timezone}
           dateTimeFormat={insights.dateTimeFormat}
           segmented
+          onResyncItem={handleResyncItem}
+          resyncingIds={resyncingIds}
+          resyncDisabled={automaticSyncActive}
+          resyncDisabledReason={
+            automaticSyncActive ? resyncDisabledMessage : null
+          }
         />
       ),
     },
@@ -3831,6 +4084,12 @@ export function AttentionView({
           timezone={insights.timezone}
           dateTimeFormat={insights.dateTimeFormat}
           segmented
+          onResyncItem={handleResyncItem}
+          resyncingIds={resyncingIds}
+          resyncDisabled={automaticSyncActive}
+          resyncDisabledReason={
+            automaticSyncActive ? resyncDisabledMessage : null
+          }
         />
       ),
     },
@@ -3856,6 +4115,12 @@ export function AttentionView({
           mentionWaitMap={mentionWaitMap}
           issueProjectInfoMap={issueProjectInfoMap}
           attentionFlagMap={attentionFlagMap}
+          onResyncItem={handleResyncItem}
+          resyncingIds={resyncingIds}
+          resyncDisabled={automaticSyncActive}
+          resyncDisabledReason={
+            automaticSyncActive ? resyncDisabledMessage : null
+          }
         />
       ),
     },
@@ -3912,6 +4177,11 @@ export function AttentionView({
           </div>
         </div>
       </header>
+      {notification ? (
+        <div className="rounded-md border border-border/60 bg-muted px-3 py-2 text-xs text-muted-foreground">
+          {notification}
+        </div>
+      ) : null}
 
       <div className="flex flex-col gap-6">
         <nav

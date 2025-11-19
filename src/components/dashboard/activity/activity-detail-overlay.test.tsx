@@ -167,6 +167,33 @@ describe("ActivityDetailOverlay", () => {
     );
   });
 
+  it("renders the re-import button when a handler is provided", async () => {
+    const user = userEvent.setup();
+    const onResync = vi.fn();
+    render(createOverlay({ onResync }));
+
+    const button = screen.getByRole("button", {
+      name: "Re-import this item",
+    });
+    await user.click(button);
+    expect(onResync).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables the re-import button when syncing or automatic sync is active", () => {
+    render(
+      createOverlay({
+        onResync: vi.fn(),
+        isResyncing: true,
+        resyncDisabled: true,
+        resyncDisabledReason: "자동 동기화 중이에요.",
+      }),
+    );
+
+    const button = screen.getByRole("button", { name: "Re-importing..." });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("title", "자동 동기화 중이에요.");
+  });
+
   it("renders badge variants with expected styles and tooltips", async () => {
     const user = userEvent.setup();
     render(createOverlay());

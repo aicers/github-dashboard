@@ -108,7 +108,20 @@ describe("ActivityView", () => {
   beforeEach(() => {
     resetActivityHelperCounters();
     resetMockFetch();
-    setDefaultFetchHandler({ json: {} });
+    setDefaultFetchHandler((request) => {
+      if (request.url.includes("/api/activity/filters")) {
+        return createJsonResponse({ filters: [], limit: 5 });
+      }
+      if (request.url.includes("/api/sync/status")) {
+        return createJsonResponse({
+          success: true,
+          status: { runs: [], logs: [], config: null },
+        });
+      }
+      throw new Error(
+        `No fetch mock registered for ${request.method ?? "GET"} ${request.url}`,
+      );
+    });
     mockRouter.replace.mockReset();
     fetchActivityDetailMock.mockReset();
     fetchActivityDetailMock.mockResolvedValue(buildActivityItemDetailFixture());
@@ -315,11 +328,10 @@ describe("ActivityView", () => {
     });
 
     mockFetchJsonOnce({ filters: [], limit: 5 });
-    mockFetchJsonOnce(next);
-
     const props = createDefaultProps({ initialData: initial });
     render(<ActivityView {...props} />);
 
+    mockFetchJsonOnce(next);
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "다음" }));
     });
@@ -681,6 +693,7 @@ describe("ActivityView", () => {
       }),
     );
 
+    mockFetchJsonOnce({ filters, limit: 20 });
     mockFetchJsonOnce({ filters, limit: 20 });
     const props = createDefaultProps();
     render(<ActivityView {...props} />);
