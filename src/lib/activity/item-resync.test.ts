@@ -18,10 +18,15 @@ vi.mock("@/lib/github/collectors", () => ({
   reimportActivityNode: vi.fn(),
 }));
 
+vi.mock("@/lib/sync/event-bus", () => ({
+  emitSyncEvent: vi.fn(),
+}));
+
 import { refreshActivityCaches } from "@/lib/activity/cache";
 import { refreshActivityItemsSnapshot } from "@/lib/activity/snapshot";
 import { ensureSchema } from "@/lib/db";
 import { reimportActivityNode } from "@/lib/github/collectors";
+import { emitSyncEvent } from "@/lib/sync/event-bus";
 
 const ensureSchemaMock = vi.mocked(ensureSchema);
 const refreshActivityCachesMock = vi.mocked(refreshActivityCaches);
@@ -29,6 +34,7 @@ const refreshActivityItemsSnapshotMock = vi.mocked(
   refreshActivityItemsSnapshot,
 );
 const reimportActivityNodeMock = vi.mocked(reimportActivityNode);
+const emitSyncEventMock = vi.mocked(emitSyncEvent);
 
 describe("resyncActivityItem", () => {
   beforeEach(() => {
@@ -59,6 +65,12 @@ describe("resyncActivityItem", () => {
     });
     expect(refreshActivityCachesMock).toHaveBeenCalledWith({
       reason: "manual-item-resync",
+    });
+    expect(emitSyncEventMock).toHaveBeenCalledWith({
+      type: "attention-refresh",
+      scope: "all",
+      trigger: "manual-override",
+      timestamp: expect.any(String),
     });
     expect(logger).toHaveBeenNthCalledWith(
       1,

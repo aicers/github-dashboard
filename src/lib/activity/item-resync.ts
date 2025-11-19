@@ -2,6 +2,7 @@ import { refreshActivityCaches } from "@/lib/activity/cache";
 import { refreshActivityItemsSnapshot } from "@/lib/activity/snapshot";
 import { ensureSchema } from "@/lib/db";
 import { reimportActivityNode, type SyncLogger } from "@/lib/github/collectors";
+import { emitSyncEvent } from "@/lib/sync/event-bus";
 
 export type ActivityItemResyncSummary = {
   nodeId: string;
@@ -37,6 +38,12 @@ export async function resyncActivityItem(
 
     await refreshActivityItemsSnapshot({ ids: [trimmed] });
     await refreshActivityCaches({ reason: "manual-item-resync" });
+    emitSyncEvent({
+      type: "attention-refresh",
+      scope: "all",
+      trigger: "manual-override",
+      timestamp: new Date().toISOString(),
+    });
 
     logger(`Completed manual re-import for ${trimmed}`);
     return summary;
