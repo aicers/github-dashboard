@@ -33,6 +33,10 @@ export type ActivityDetailOverlayProps = {
   timezone?: string | null;
   dateTimeFormat?: DateTimeDisplayFormat | null;
   onClose: () => void;
+  onResync?: () => void;
+  isResyncing?: boolean;
+  resyncDisabled?: boolean;
+  resyncDisabledReason?: string | null;
   children: ReactNode;
 };
 
@@ -44,6 +48,10 @@ export function ActivityDetailOverlay({
   timezone,
   dateTimeFormat,
   onClose,
+  onResync,
+  isResyncing = false,
+  resyncDisabled = false,
+  resyncDisabledReason = null,
   children,
 }: ActivityDetailOverlayProps) {
   const headingId = useId();
@@ -255,6 +263,22 @@ export function ActivityDetailOverlay({
             </div>
           </div>
           <div className="flex items-center gap-2 self-end sm:self-start">
+            {typeof onResync === "function" ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={isResyncing || resyncDisabled}
+                onClick={onResync}
+                title={
+                  resyncDisabled && resyncDisabledReason
+                    ? resyncDisabledReason
+                    : undefined
+                }
+              >
+                {isResyncing ? "Re-importing..." : "Re-import this item"}
+              </Button>
+            ) : null}
             {item.url ? (
               <Button asChild size="sm" variant="outline">
                 <a href={item.url} target="_blank" rel="noreferrer">

@@ -1110,3 +1110,572 @@ export const pullRequestReviewCommentsQuery = gql`
     }
   }
 `;
+
+export const activityNodeResyncQuery = gql`
+  query ActivityNodeResync($id: ID!) {
+    node(id: $id) {
+      __typename
+      ... on Issue {
+        ...ActivityIssueFields
+      }
+      ... on PullRequest {
+        ...ActivityPullRequestFields
+      }
+      ... on Discussion {
+        ...ActivityDiscussionFields
+      }
+    }
+    rateLimit {
+      remaining
+      resetAt
+    }
+  }
+
+  fragment ActivityRepositoryFields on Repository {
+    id
+    name
+    nameWithOwner
+    url
+    isPrivate
+    createdAt
+    updatedAt
+    owner {
+      __typename
+      ... on User {
+        id
+        login
+        name
+        avatarUrl(size: 200)
+        createdAt
+        updatedAt
+      }
+      ... on Organization {
+        id
+        login
+        name
+        avatarUrl(size: 200)
+        createdAt
+        updatedAt
+      }
+    }
+  }
+
+  fragment ActivityIssueFields on Issue {
+    id
+    number
+    title
+    state
+    url
+    body
+    bodyText
+    bodyHTML
+    createdAt
+    updatedAt
+    closedAt
+    author {
+      __typename
+      ... on User {
+        id
+        login
+        name
+        avatarUrl(size: 200)
+        createdAt
+        updatedAt
+      }
+      ... on Organization {
+        id
+        login
+        name
+        avatarUrl(size: 200)
+        createdAt
+        updatedAt
+      }
+      ... on Bot {
+        id
+        login
+        avatarUrl(size: 200)
+      }
+      ... on Mannequin {
+        id
+        login
+        avatarUrl(size: 200)
+      }
+    }
+    participants(first: 10) {
+      nodes {
+        ... on User {
+          id
+          login
+          name
+          avatarUrl(size: 200)
+          createdAt
+          updatedAt
+        }
+      }
+    }
+    comments(first: 0) {
+      totalCount
+    }
+    assignees(first: 25) {
+      nodes {
+        __typename
+        ... on User {
+          id
+          login
+          name
+          avatarUrl(size: 200)
+          createdAt
+          updatedAt
+        }
+      }
+    }
+    trackedIssues(first: 10) {
+      totalCount
+      nodes {
+        id
+        number
+        title
+        url
+        state
+        repository {
+          nameWithOwner
+        }
+      }
+    }
+    trackedInIssues(first: 10) {
+      totalCount
+      nodes {
+        id
+        number
+        title
+        url
+        state
+        repository {
+          nameWithOwner
+        }
+      }
+    }
+    issueType {
+      id
+      name
+    }
+    milestone {
+      id
+      title
+      state
+      dueOn
+      url
+    }
+    labels(first: 50) {
+      nodes {
+        id
+        name
+        color
+      }
+    }
+    timelineItems(
+      last: 25
+      itemTypes: [ADDED_TO_PROJECT_EVENT, MOVED_COLUMNS_IN_PROJECT_EVENT]
+    ) {
+      nodes {
+        __typename
+        ... on AddedToProjectEvent {
+          createdAt
+          projectColumnName
+          project {
+            name
+          }
+        }
+        ... on MovedColumnsInProjectEvent {
+          createdAt
+          projectColumnName
+          previousProjectColumnName
+          project {
+            name
+          }
+        }
+      }
+    }
+    projectItems(first: 10) {
+      nodes {
+        id
+        createdAt
+        updatedAt
+        project {
+          title
+        }
+        status: fieldValueByName(name: "Status") {
+          __typename
+          ... on ProjectV2ItemFieldSingleSelectValue {
+            name
+            updatedAt
+          }
+          ... on ProjectV2ItemFieldIterationValue {
+            title
+            updatedAt
+          }
+          ... on ProjectV2ItemFieldTextValue {
+            text
+            updatedAt
+          }
+          ... on ProjectV2ItemFieldNumberValue {
+            number
+            updatedAt
+          }
+        }
+        priority: fieldValueByName(name: "Priority") {
+          __typename
+          ... on ProjectV2ItemFieldSingleSelectValue {
+            name
+            updatedAt
+          }
+          ... on ProjectV2ItemFieldIterationValue {
+            title
+            updatedAt
+          }
+          ... on ProjectV2ItemFieldTextValue {
+            text
+            updatedAt
+          }
+          ... on ProjectV2ItemFieldNumberValue {
+            number
+            updatedAt
+          }
+        }
+        initiationOptions: fieldValueByName(name: "Initiation Options") {
+          __typename
+          ... on ProjectV2ItemFieldSingleSelectValue {
+            name
+            updatedAt
+          }
+          ... on ProjectV2ItemFieldIterationValue {
+            title
+            updatedAt
+          }
+          ... on ProjectV2ItemFieldTextValue {
+            text
+            updatedAt
+          }
+          ... on ProjectV2ItemFieldNumberValue {
+            number
+            updatedAt
+          }
+        }
+        startDate: fieldValueByName(name: "Start date") {
+          __typename
+          ... on ProjectV2ItemFieldSingleSelectValue {
+            name
+            updatedAt
+          }
+          ... on ProjectV2ItemFieldIterationValue {
+            title
+            updatedAt
+          }
+          ... on ProjectV2ItemFieldTextValue {
+            text
+            updatedAt
+          }
+          ... on ProjectV2ItemFieldNumberValue {
+            number
+            updatedAt
+          }
+          ... on ProjectV2ItemFieldDateValue {
+            date
+            updatedAt
+          }
+        }
+      }
+    }
+    reactions(first: 25, orderBy: { field: CREATED_AT, direction: ASC }) {
+      nodes {
+        id
+        content
+        createdAt
+        user {
+          id
+          login
+          name
+          avatarUrl(size: 200)
+        }
+      }
+    }
+    repository {
+      ...ActivityRepositoryFields
+    }
+  }
+
+  fragment ActivityPullRequestFields on PullRequest {
+    id
+    number
+    title
+    state
+    url
+    body
+    bodyText
+    bodyHTML
+    createdAt
+    updatedAt
+    closedAt
+    author {
+      __typename
+      ... on User {
+        id
+        login
+        name
+        avatarUrl(size: 200)
+        createdAt
+        updatedAt
+      }
+      ... on Organization {
+        id
+        login
+        name
+        avatarUrl(size: 200)
+        createdAt
+        updatedAt
+      }
+      ... on Bot {
+        id
+        login
+        avatarUrl(size: 200)
+      }
+      ... on Mannequin {
+        id
+        login
+        avatarUrl(size: 200)
+      }
+    }
+    comments(first: 0) {
+      totalCount
+    }
+    assignees(first: 25) {
+      nodes {
+        __typename
+        ... on User {
+          id
+          login
+          name
+          avatarUrl(size: 200)
+          createdAt
+          updatedAt
+        }
+      }
+    }
+    labels(first: 50) {
+      nodes {
+        id
+        name
+        color
+      }
+    }
+    reactions(first: 25, orderBy: { field: CREATED_AT, direction: ASC }) {
+      nodes {
+        id
+        content
+        createdAt
+        user {
+          id
+          login
+          name
+          avatarUrl(size: 200)
+        }
+      }
+    }
+    repository {
+      ...ActivityRepositoryFields
+    }
+    merged
+    mergedAt
+    mergedBy {
+      __typename
+      ... on User {
+        id
+        login
+        name
+        avatarUrl(size: 200)
+        createdAt
+        updatedAt
+      }
+      ... on Organization {
+        id
+        login
+        name
+        avatarUrl(size: 200)
+        createdAt
+        updatedAt
+      }
+      ... on Bot {
+        id
+        login
+        avatarUrl(size: 200)
+      }
+      ... on Mannequin {
+        id
+        login
+        avatarUrl(size: 200)
+      }
+    }
+    reviewDecision
+    additions
+    deletions
+    changedFiles
+    closingIssuesReferences(first: 20) {
+      nodes {
+        id
+        number
+        title
+        url
+        state
+        repository {
+          nameWithOwner
+        }
+      }
+    }
+    timelineItems(
+      last: 50
+      itemTypes: [REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT]
+    ) {
+      nodes {
+        __typename
+        ... on ReviewRequestedEvent {
+          id
+          createdAt
+          requestedReviewer {
+            __typename
+            ... on User {
+              id
+              login
+              name
+              avatarUrl(size: 200)
+              createdAt
+              updatedAt
+            }
+            ... on Team {
+              id
+              slug
+              name
+            }
+          }
+        }
+        ... on ReviewRequestRemovedEvent {
+          id
+          createdAt
+          requestedReviewer {
+            __typename
+            ... on User {
+              id
+              login
+              name
+              avatarUrl(size: 200)
+              createdAt
+              updatedAt
+            }
+            ... on Team {
+              id
+              slug
+              name
+            }
+          }
+        }
+      }
+    }
+    reviews(first: 0) {
+      totalCount
+    }
+  }
+
+  fragment ActivityDiscussionFields on Discussion {
+    id
+    number
+    title
+    url
+    body
+    bodyText
+    bodyHTML
+    createdAt
+    updatedAt
+    closedAt
+    answerChosenAt
+    locked
+    author {
+      __typename
+      ... on User {
+        id
+        login
+        name
+        avatarUrl(size: 200)
+        createdAt
+        updatedAt
+      }
+      ... on Organization {
+        id
+        login
+        name
+        avatarUrl(size: 200)
+        createdAt
+        updatedAt
+      }
+      ... on Bot {
+        id
+        login
+        avatarUrl(size: 200)
+      }
+      ... on Mannequin {
+        id
+        login
+        avatarUrl(size: 200)
+      }
+    }
+    answerChosenBy {
+      __typename
+      ... on User {
+        id
+        login
+        name
+        avatarUrl(size: 200)
+        createdAt
+        updatedAt
+      }
+      ... on Organization {
+        id
+        login
+        name
+        avatarUrl(size: 200)
+        createdAt
+        updatedAt
+      }
+      ... on Bot {
+        id
+        login
+        avatarUrl(size: 200)
+      }
+      ... on Mannequin {
+        id
+        login
+        avatarUrl(size: 200)
+      }
+    }
+    category {
+      id
+      name
+      description
+      isAnswerable
+    }
+    reactions(first: 25, orderBy: { field: CREATED_AT, direction: ASC }) {
+      nodes {
+        id
+        content
+        createdAt
+        user {
+          id
+          login
+          name
+          avatarUrl(size: 200)
+        }
+      }
+    }
+    repository {
+      ...ActivityRepositoryFields
+    }
+  }
+`;

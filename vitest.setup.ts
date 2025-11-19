@@ -7,6 +7,7 @@ import {
   resetMockFetch,
   restoreMockFetch,
 } from "./tests/setup/mock-fetch";
+import "./tests/setup/mock-activity-client";
 
 beforeAll(() => {
   installMockFetch();
