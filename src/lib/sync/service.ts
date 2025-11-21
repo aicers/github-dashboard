@@ -81,20 +81,31 @@ async function logSyncStep(params: {
   resource: string;
   message: string;
   step: () => Promise<void>;
+  logger?: SyncLogger;
 }) {
-  const { runId, resource, message, step } = params;
+  const { runId, resource, message, step, logger } = params;
+  const prefix = `[sync-step] [${resource}]`;
+  const startMessage = `${prefix} starting: ${message}`;
+  console.info(startMessage, { runId });
+  logger?.(startMessage);
   const logId = await recordSyncLog(resource, "running", message, runId);
   try {
     await step();
     if (logId !== undefined) {
       await updateSyncLog(logId, "success", message);
     }
+    const successMessage = `${prefix} completed: ${message}`;
+    console.info(successMessage, { runId });
+    logger?.(successMessage);
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Unexpected error";
     if (logId !== undefined) {
       await updateSyncLog(logId, "failed", errorMessage);
     }
+    const failureMessage = `${prefix} failed: ${errorMessage}`;
+    console.error(failureMessage, { runId });
+    logger?.(failureMessage);
     throw error;
   }
 }
@@ -426,6 +437,7 @@ async function executeSync(params: {
         runId,
         resource: "reaction-refresh",
         message: "Refreshing reactions for unanswered attention items",
+        logger,
         step: async () => {
           await refreshAttentionReactions({
             logger,
@@ -438,6 +450,7 @@ async function executeSync(params: {
         runId,
         resource: "status-automation",
         message: "Applying issue status automation",
+        logger,
         step: async () => {
           await ensureIssueStatusAutomation({
             runId,
@@ -458,6 +471,7 @@ async function executeSync(params: {
         runId,
         resource: "activity-snapshot",
         message: "Refreshing activity snapshot",
+        logger,
         step: async () => {
           await refreshActivityItemsSnapshot({ truncate: true });
           console.info(
@@ -474,6 +488,7 @@ async function executeSync(params: {
         runId,
         resource: "activity-cache",
         message: "Refreshing activity caches",
+        logger,
         step: async () => {
           const cacheSummary = await refreshActivityCaches({
             runId,
@@ -490,6 +505,7 @@ async function executeSync(params: {
         runId,
         resource: "unanswered-mentions",
         message: "Classifying unanswered mentions",
+        logger,
         step: async () => {
           const summary = await runUnansweredMentionClassification({
             logger: ({ level, message, meta }) => {

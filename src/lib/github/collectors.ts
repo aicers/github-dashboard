@@ -1009,6 +1009,8 @@ async function syncReviewRequestsSnapshot(
   pullRequest: PullRequestMetadataNode,
   pendingRequests: PendingReviewRequest[] | undefined,
 ) {
+  let added = 0;
+  let removed = 0;
   const requests = pullRequest.reviewRequests?.nodes ?? [];
   const activeReviewerIds = new Set<string>();
 
@@ -1033,11 +1035,12 @@ async function syncReviewRequestsSnapshot(
       raw: entry,
     });
     activeReviewerIds.add(reviewer.id);
+    added += 1;
   }
 
   const pending = pendingRequests ?? [];
   if (!pending.length) {
-    return;
+    return { added, removed };
   }
 
   const removalTimestamp = new Date().toISOString();
@@ -1055,7 +1058,10 @@ async function syncReviewRequestsSnapshot(
         sourceRequestId: pendingRequest.id,
       },
     });
+    removed += 1;
   }
+
+  return { added, removed };
 }
 
 function normalizeReactionSubjectType(
@@ -2336,7 +2342,9 @@ async function refreshOpenPullRequestMetadataForRepository(
   const [owner, name] = repository.nameWithOwner.split("/");
   let cursor: string | null = null;
   let hasNextPage = true;
-  let count = 0;
+  let pullRequestCount = 0;
+  let reviewRequestsAdded = 0;
+  let reviewRequestsRemoved = 0;
 
   while (hasNextPage) {
     const data: OpenPullRequestMetadataQueryResponse = await requestWithRetry(
@@ -2367,18 +2375,24 @@ async function refreshOpenPullRequestMetadataForRepository(
         pullRequest.id,
         buildAssigneesPayload(pullRequest.assignees ?? null),
       );
-      await syncReviewRequestsSnapshot(
+      const reviewCounts = await syncReviewRequestsSnapshot(
         pullRequest,
         pendingRequests.get(pullRequest.id),
       );
-      count += 1;
+      reviewRequestsAdded += reviewCounts.added;
+      reviewRequestsRemoved += reviewCounts.removed;
+      pullRequestCount += 1;
     }
 
     hasNextPage = connection?.pageInfo?.hasNextPage ?? false;
     cursor = connection?.pageInfo?.endCursor ?? null;
   }
 
-  return count;
+  return {
+    pullRequests: pullRequestCount,
+    reviewRequestsAdded,
+    reviewRequestsRemoved,
+  };
 }
 
 async function refreshOpenItemMetadata(
@@ -2388,21 +2402,45 @@ async function refreshOpenItemMetadata(
 ) {
   let openIssues = 0;
   let openPullRequests = 0;
+  let totalReviewRequestsAdded = 0;
+  let totalReviewRequestsRemoved = 0;
+  const { logger } = options;
+
+  logger?.(
+    `[open-items] Refreshing metadata for ${repositories.length} repository${repositories.length === 1 ? "" : "ies"}.`,
+  );
 
   for (const repository of repositories) {
-    openIssues += await refreshOpenIssuesMetadataForRepository(
+    const issuesUpdated = await refreshOpenIssuesMetadataForRepository(
       client,
       repository,
       options,
     );
-    openPullRequests += await refreshOpenPullRequestMetadataForRepository(
+    openIssues += issuesUpdated;
+    const pullRequestResult = await refreshOpenPullRequestMetadataForRepository(
       client,
       repository,
       options,
+    );
+    openPullRequests += pullRequestResult.pullRequests;
+    totalReviewRequestsAdded += pullRequestResult.reviewRequestsAdded;
+    totalReviewRequestsRemoved += pullRequestResult.reviewRequestsRemoved;
+
+    logger?.(
+      `[open-items] ${repository.nameWithOwner}: refreshed ${issuesUpdated} open issue${issuesUpdated === 1 ? "" : "s"} and ${pullRequestResult.pullRequests} open pull request${pullRequestResult.pullRequests === 1 ? "" : "s"} (review requests +${pullRequestResult.reviewRequestsAdded}, -${pullRequestResult.reviewRequestsRemoved}).`,
     );
   }
 
-  return { openIssues, openPullRequests };
+  logger?.(
+    `[open-items] Completed metadata refresh (${openIssues} issues, ${openPullRequests} pull requests, review requests +${totalReviewRequestsAdded}, -${totalReviewRequestsRemoved}).`,
+  );
+
+  return {
+    openIssues,
+    openPullRequests,
+    reviewRequestsAdded: totalReviewRequestsAdded,
+    reviewRequestsRemoved: totalReviewRequestsRemoved,
+  };
 }
 
 async function collectPullRequestLinksForRepository(
@@ -2768,7 +2806,7 @@ export async function runCollection(options: SyncOptions) {
       await updateSyncLog(
         openMetadataLogId,
         "success",
-        `Refreshed metadata for ${metadataResult.openIssues} open issues and ${metadataResult.openPullRequests} open pull requests.`,
+        `Refreshed metadata for ${metadataResult.openIssues} open issues and ${metadataResult.openPullRequests} open pull requests (review requests +${metadataResult.reviewRequestsAdded}, -${metadataResult.reviewRequestsRemoved}).`,
       );
       openMetadataLogCompleted = true;
     } catch (error) {
