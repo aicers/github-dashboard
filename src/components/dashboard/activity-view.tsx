@@ -6304,6 +6304,7 @@ export function ActivityView({
                                 timezone={activeTimezone}
                                 dateTimeFormat={activeDateTimeFormat}
                                 mentionControls={mentionControlsProps}
+                                commentContext={item.type}
                               />
                               {item.type === "issue" &&
                               item.linkedPullRequests.length > 0 ? (
