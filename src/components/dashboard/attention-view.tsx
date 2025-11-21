@@ -898,6 +898,7 @@ export function FollowUpDetailContent({
         timezone={timezone}
         dateTimeFormat={dateTimeFormat}
         mentionControls={mentionControlsProps}
+        commentContext={detailItem.type}
       />
       {detailItem.type === "issue" &&
       detailItem.linkedPullRequests.length > 0 ? (

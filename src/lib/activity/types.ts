@@ -179,6 +179,24 @@ export type ActivityItemComment = {
   replyToId: string | null;
   isAnswer?: boolean | null;
   reactions: ActivityReactionGroup[];
+  commitContext?: {
+    repository: string;
+    commitOid: string;
+    path: string | null;
+    line: number | null;
+    diffHunk: string | null;
+  } | null;
+  projectContext?: {
+    projectName: string;
+    fieldName: string | null;
+    fieldValue: string | null;
+  } | null;
+  reviewerContext?: {
+    reviewStateLabel: string | null;
+    filePath: string | null;
+    line: number | null;
+    diffHunk: string | null;
+  } | null;
 };
 
 export type ActivityLinkedIssueFilter = "has_parent" | "has_sub";
