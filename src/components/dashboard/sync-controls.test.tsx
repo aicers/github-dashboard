@@ -206,8 +206,9 @@ describe("sync controls helpers", () => {
   it("formats bytes into human readable strings", () => {
     expect(formatBytes(null)).toBe("-");
     expect(formatBytes(0)).toBe("0 B");
-    expect(formatBytes(1024)).toBe("1.00 MB");
-    expect(formatBytes(10_485_760)).toBe("10.0 GB");
+    expect(formatBytes(1024)).toBe("1.00 KB");
+    expect(formatBytes(10_485_760)).toBe("10.0 MB");
+    expect(formatBytes(10_737_418_240)).toBe("10.0 GB");
   });
 
   it("normalizes ISO strings through toIsoString helper", () => {
