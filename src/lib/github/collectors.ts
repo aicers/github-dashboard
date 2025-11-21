@@ -28,6 +28,7 @@ import { env } from "@/lib/env";
 import { createGithubClient } from "@/lib/github/client";
 import {
   activityNodeResyncQuery,
+  discussionCommentRepliesQuery,
   discussionCommentsQuery,
   issueCommentsQuery,
   openIssueMetadataQuery,
@@ -265,6 +266,10 @@ type CommentNode = {
   pullRequestReview?: { id: string } | null;
   reactions?: {
     nodes: ReactionNode[] | null;
+  } | null;
+  replies?: {
+    pageInfo?: PageInfo | null;
+    nodes?: CommentNode[] | null;
   } | null;
 };
 
@@ -546,6 +551,13 @@ type DiscussionCommentsQueryResponse = {
       answer?: CommentNode | null;
       comments: GraphQLConnection<CommentNode> | null;
     } | null;
+  } | null;
+};
+
+type DiscussionCommentRepliesQueryResponse = {
+  node?: {
+    __typename?: string | null;
+    replies?: GraphQLConnection<CommentNode> | null;
   } | null;
 };
 
@@ -1596,10 +1608,20 @@ async function collectIssueComments(
     }
 
     const baseNodes: CommentNode[] = connection.nodes ?? [];
-    const commentNodes =
+    let commentNodes =
       extraDiscussionComments.length > 0
         ? [...baseNodes, ...extraDiscussionComments]
         : baseNodes;
+
+    if (target === "discussion" && commentNodes.length) {
+      commentNodes = await expandDiscussionCommentTree(
+        client,
+        repository,
+        issue.number ?? null,
+        commentNodes,
+        options,
+      );
+    }
     let reachedUpperBound = false;
 
     for (const comment of commentNodes) {
@@ -1659,6 +1681,159 @@ async function collectIssueComments(
   }
 
   return { latest, count };
+}
+
+function hasDiscussionReplies(comment: CommentNode | null | undefined) {
+  if (!comment?.replies) {
+    return false;
+  }
+  const nodes = Array.isArray(comment.replies.nodes)
+    ? comment.replies.nodes.filter((node): node is CommentNode => Boolean(node))
+    : [];
+  if (nodes.length) {
+    return true;
+  }
+  return Boolean(comment.replies.pageInfo?.hasNextPage);
+}
+
+async function expandDiscussionCommentTree(
+  client: GraphQLClient,
+  repository: RepositoryNode,
+  discussionNumber: number | null,
+  comments: CommentNode[],
+  options: SyncOptions,
+) {
+  const expanded: CommentNode[] = [];
+  for (const comment of comments) {
+    expanded.push(comment);
+    const replies = await collectDiscussionCommentRepliesRecursive(
+      client,
+      repository,
+      discussionNumber,
+      comment,
+      options,
+    );
+    if (replies.length) {
+      expanded.push(...replies);
+    }
+  }
+  return expanded;
+}
+
+async function collectDiscussionCommentRepliesRecursive(
+  client: GraphQLClient,
+  repository: RepositoryNode,
+  discussionNumber: number | null,
+  comment: CommentNode,
+  options: SyncOptions,
+): Promise<CommentNode[]> {
+  if (!hasDiscussionReplies(comment)) {
+    return [];
+  }
+
+  const immediateReplies = await gatherDiscussionCommentReplies(
+    client,
+    repository,
+    discussionNumber,
+    comment,
+    options,
+  );
+  if (!immediateReplies.length) {
+    return [];
+  }
+
+  const flattened: CommentNode[] = [...immediateReplies];
+  for (const reply of immediateReplies) {
+    const nested = await collectDiscussionCommentRepliesRecursive(
+      client,
+      repository,
+      discussionNumber,
+      reply,
+      options,
+    );
+    if (nested.length) {
+      flattened.push(...nested);
+    }
+  }
+
+  return flattened;
+}
+
+async function gatherDiscussionCommentReplies(
+  client: GraphQLClient,
+  repository: RepositoryNode,
+  discussionNumber: number | null,
+  comment: CommentNode,
+  options: SyncOptions,
+): Promise<CommentNode[]> {
+  const replies: CommentNode[] = [];
+  const initialNodes = Array.isArray(comment.replies?.nodes)
+    ? (comment.replies?.nodes ?? []).filter((node): node is CommentNode =>
+        Boolean(node),
+      )
+    : [];
+  if (initialNodes.length) {
+    replies.push(...initialNodes);
+  }
+
+  if (!comment.id) {
+    return replies;
+  }
+
+  let cursor = comment.replies?.pageInfo?.endCursor ?? null;
+  let hasNextPage = comment.replies?.pageInfo?.hasNextPage ?? false;
+  while (hasNextPage) {
+    const connection = await fetchDiscussionCommentRepliesConnection(
+      client,
+      comment.id,
+      cursor,
+      repository,
+      discussionNumber,
+      options,
+    );
+    if (!connection) {
+      break;
+    }
+    const nodes = Array.isArray(connection.nodes)
+      ? (connection.nodes ?? []).filter((node): node is CommentNode =>
+          Boolean(node),
+        )
+      : [];
+    if (nodes.length) {
+      replies.push(...nodes);
+    }
+    hasNextPage = connection.pageInfo?.hasNextPage ?? false;
+    cursor = connection.pageInfo?.endCursor ?? null;
+  }
+
+  return replies;
+}
+
+async function fetchDiscussionCommentRepliesConnection(
+  client: GraphQLClient,
+  commentId: string,
+  cursor: string | null,
+  repository: RepositoryNode,
+  discussionNumber: number | null,
+  options: SyncOptions,
+) {
+  const data: DiscussionCommentRepliesQueryResponse = await requestWithRetry(
+    client,
+    discussionCommentRepliesQuery,
+    {
+      id: commentId,
+      cursor,
+    },
+    {
+      logger: options.logger,
+      context: `discussion comment replies ${repository.nameWithOwner}#${discussionNumber ?? "unknown"}`,
+    },
+  );
+  const node = data.node;
+  if (!node || node.__typename !== "DiscussionComment") {
+    return null;
+  }
+  return node.replies ?? null;
 }
 
 async function collectDiscussionsForRepository(

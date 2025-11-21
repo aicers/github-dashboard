@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createGithubClient } from "@/lib/github/client";
 import { runCollection } from "@/lib/github/collectors";
 import {
+  discussionCommentRepliesQuery,
   discussionCommentsQuery,
   issueCommentsQuery,
   openIssueMetadataQuery,
@@ -553,7 +554,9 @@ describe("runCollection", () => {
     const discussionCommentConnection = {
       nodes: [
         {
+          __typename: "DiscussionComment",
           id: "discussion-comment-1",
+          isAnswer: false,
           author: {
             id: "author-comment",
             login: "participant",
@@ -565,9 +568,45 @@ describe("runCollection", () => {
           },
           createdAt: "2024-04-02T09:00:00.000Z",
           updatedAt: null,
+          url: "https://github.com/acme/repo/discussions/7#comment-1",
+          body: "Please review @user",
+          bodyText: "Please review @user",
+          bodyHTML: "<p>Please review @user</p>",
           replyTo: null,
           pullRequestReview: null,
           reactions: null,
+          replies: {
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes: [
+              {
+                __typename: "DiscussionComment",
+                id: "discussion-reply-1",
+                isAnswer: false,
+                author: {
+                  id: "author-reply",
+                  login: "responder",
+                  name: "Responder",
+                  avatarUrl: null,
+                  createdAt: "2024-01-01T00:00:00.000Z",
+                  updatedAt: "2024-01-01T00:00:00.000Z",
+                  __typename: "User",
+                },
+                createdAt: "2024-04-02T09:30:00.000Z",
+                updatedAt: null,
+                url: "https://github.com/acme/repo/discussions/7#reply-1",
+                body: "Replying here",
+                bodyText: "Replying here",
+                bodyHTML: "<p>Replying here</p>",
+                replyTo: { id: "discussion-comment-1" },
+                pullRequestReview: null,
+                reactions: null,
+                replies: {
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                  nodes: [],
+                },
+              },
+            ],
+          },
         },
       ],
       pageInfo: { hasNextPage: false, endCursor: null },
@@ -679,11 +718,243 @@ describe("runCollection", () => {
         issueId: "discussion-1",
       }),
     );
+    const discussionCommentCalls = upsertCommentMock.mock
+      .calls as unknown as Array<unknown[]>;
+    const discussionCommentIds = discussionCommentCalls
+      .map((call) => {
+        const payload = call[0] as { id?: string | null } | undefined;
+        return payload?.id ?? null;
+      })
+      .filter((id): id is string => Boolean(id));
+    expect(discussionCommentIds).toEqual(
+      expect.arrayContaining(["discussion-comment-1", "discussion-reply-1"]),
+    );
     expect(result.counts.discussions).toBe(1);
     expect(updateSyncStateMock).toHaveBeenCalledWith(
       "discussions",
       null,
       "2024-04-02T10:00:00.000Z",
+    );
+  });
+
+  it("fetches paginated discussion replies", async () => {
+    const discussionNode = {
+      __typename: "Discussion" as const,
+      id: "discussion-2",
+      number: 42,
+      title: "Thread",
+      url: "https://github.com/acme/repo/discussions/42",
+      body: "Root",
+      bodyText: "Root",
+      bodyHTML: "<p>Root</p>",
+      createdAt: "2024-04-01T12:00:00.000Z",
+      updatedAt: "2024-04-02T10:00:00.000Z",
+      closedAt: null,
+      answerChosenAt: null,
+      locked: false,
+      author: {
+        id: "author-discussion-2",
+        login: "threadstarter",
+        name: "Thread Starter",
+        avatarUrl: null,
+        createdAt: "2024-01-01T00:00:00.000Z",
+        updatedAt: "2024-01-01T00:00:00.000Z",
+        __typename: "User",
+      },
+      answerChosenBy: null,
+      category: null,
+      comments: { totalCount: 1 },
+      reactions: null,
+    } satisfies Record<string, unknown>;
+
+    const discussionCommentConnection = {
+      nodes: [
+        {
+          __typename: "DiscussionComment",
+          id: "discussion-comment-2",
+          isAnswer: false,
+          author: {
+            id: "author-comment-2",
+            login: "participant",
+            name: "Participant",
+            avatarUrl: null,
+            createdAt: "2024-01-01T00:00:00.000Z",
+            updatedAt: "2024-01-01T00:00:00.000Z",
+            __typename: "User",
+          },
+          createdAt: "2024-04-02T09:00:00.000Z",
+          updatedAt: null,
+          url: "https://github.com/acme/repo/discussions/42#comment-2",
+          body: "Ping",
+          bodyText: "Ping",
+          bodyHTML: "<p>Ping</p>",
+          replyTo: null,
+          pullRequestReview: null,
+          reactions: null,
+          replies: {
+            pageInfo: { hasNextPage: true, endCursor: "reply-cursor-1" },
+            nodes: [],
+          },
+        },
+      ],
+      pageInfo: { hasNextPage: false, endCursor: null },
+    };
+
+    const requestMock = vi.fn(
+      async (document: unknown, variables?: Record<string, unknown>) => {
+        if (document === organizationRepositoriesQuery) {
+          return {
+            organization: {
+              repositories: {
+                nodes: [
+                  {
+                    id: "repo-2",
+                    name: "repo",
+                    nameWithOwner: "acme/repo",
+                    url: "https://github.com/acme/repo",
+                    isPrivate: false,
+                    createdAt: "2024-01-01T00:00:00.000Z",
+                    updatedAt: "2024-04-02T12:00:00.000Z",
+                    owner: {
+                      id: "owner-1",
+                      login: "owner",
+                      name: "Owner",
+                      avatarUrl: null,
+                      createdAt: "2024-01-01T00:00:00.000Z",
+                      updatedAt: "2024-01-01T00:00:00.000Z",
+                      __typename: "User",
+                    },
+                  },
+                ],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            },
+          };
+        }
+
+        if (document === repositoryIssuesQuery) {
+          return { repository: { issues: emptyConnection } };
+        }
+
+        if (document === repositoryDiscussionsQuery) {
+          return {
+            repository: {
+              discussions: {
+                nodes: [discussionNode],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            },
+          };
+        }
+
+        if (document === discussionCommentsQuery) {
+          return {
+            repository: {
+              discussion: {
+                comments: discussionCommentConnection,
+              },
+            },
+          };
+        }
+
+        if (document === discussionCommentRepliesQuery) {
+          expect(variables).toEqual({
+            id: "discussion-comment-2",
+            cursor: "reply-cursor-1",
+          });
+          return {
+            node: {
+              __typename: "DiscussionComment",
+              replies: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    __typename: "DiscussionComment",
+                    id: "discussion-reply-extra",
+                    isAnswer: false,
+                    author: {
+                      id: "author-reply-extra",
+                      login: "helper",
+                      name: "Helper",
+                      avatarUrl: null,
+                      createdAt: "2024-01-01T00:00:00.000Z",
+                      updatedAt: "2024-01-01T00:00:00.000Z",
+                      __typename: "User",
+                    },
+                    createdAt: "2024-04-02T10:00:00.000Z",
+                    updatedAt: null,
+                    url: "https://github.com/acme/repo/discussions/42#reply-extra",
+                    body: "Extra reply",
+                    bodyText: "Extra reply",
+                    bodyHTML: "<p>Extra reply</p>",
+                    replyTo: { id: "discussion-comment-2" },
+                    pullRequestReview: null,
+                    reactions: null,
+                    replies: {
+                      pageInfo: { hasNextPage: false, endCursor: null },
+                      nodes: [],
+                    },
+                  },
+                ],
+              },
+            },
+          };
+        }
+
+        if (document === repositoryPullRequestsQuery) {
+          return { repository: { pullRequests: emptyConnection } };
+        }
+
+        if (document === pullRequestCommentsQuery) {
+          return { repository: { pullRequest: { comments: emptyConnection } } };
+        }
+
+        if (document === pullRequestReviewsQuery) {
+          return { repository: { pullRequest: { reviews: emptyConnection } } };
+        }
+
+        if (document === pullRequestReviewCommentsQuery) {
+          return {
+            repository: {
+              pullRequest: {
+                reviewThreads: {
+                  nodes: [],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+            },
+          };
+        }
+
+        if (document === openIssueMetadataQuery) {
+          return { repository: { issues: emptyConnection } };
+        }
+
+        if (document === openPullRequestMetadataQuery) {
+          return { repository: { pullRequests: emptyConnection } };
+        }
+
+        throw new Error("Unexpected query");
+      },
+    );
+
+    await runCollection({
+      org: "acme",
+      client: { request: requestMock } as unknown as GraphQLClient,
+    });
+
+    expect(requestMock).toHaveBeenCalledWith(
+      discussionCommentRepliesQuery,
+      expect.objectContaining({
+        id: "discussion-comment-2",
+        cursor: "reply-cursor-1",
+      }),
+    );
+    expect(upsertCommentMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "discussion-reply-extra",
+        issueId: "discussion-2",
+      }),
     );
   });
 
