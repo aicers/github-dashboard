@@ -143,8 +143,13 @@ export function formatDateTimeDisplay(
       return date.toFormat("yyyy-LL-dd HH:mm");
     case "dot-24h":
       return date.toFormat("yyyy.MM.dd HH:mm");
-    case "ko-12h":
-      return date.setLocale("ko").toFormat("yyyy년 M월 d일 a h:mm");
+    case "ko-12h": {
+      const hour24 = date.hour;
+      const meridiem = hour24 >= 12 ? "오후" : "오전";
+      const hour12 = hour24 % 12 || 12;
+      const paddedMinute = String(date.minute).padStart(2, "0");
+      return `${date.year}년 ${date.month}월 ${date.day}일 ${meridiem} ${hour12}:${paddedMinute}`;
+    }
     case "en-us-12h":
       return date.setLocale("en-US").toFormat("MMM d, yyyy h:mm a");
     case "en-gb-24h":
