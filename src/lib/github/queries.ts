@@ -988,66 +988,73 @@ export const pullRequestCommentsQuery = gql`
   }
 `;
 
+const discussionCommentBaseFields = gql`
+  fragment DiscussionCommentBaseFields on DiscussionComment {
+    __typename
+    id
+    isAnswer
+    author {
+      __typename
+      ... on User {
+        id
+        login
+        name
+        avatarUrl(size: 200)
+        createdAt
+        updatedAt
+      }
+      ... on Organization {
+        id
+        login
+        name
+        avatarUrl(size: 200)
+        createdAt
+        updatedAt
+      }
+      ... on Bot {
+        id
+        login
+        avatarUrl(size: 200)
+      }
+      ... on Mannequin {
+        id
+        login
+        avatarUrl(size: 200)
+      }
+    }
+    createdAt
+    updatedAt
+    url
+    body
+    bodyText
+    bodyHTML
+    replyTo {
+      id
+    }
+    reactions(first: 25, orderBy: { field: CREATED_AT, direction: ASC }) {
+      nodes {
+        __typename
+        id
+        content
+        createdAt
+        user {
+          id
+          login
+          name
+          avatarUrl(size: 200)
+        }
+      }
+    }
+  }
+`;
+
 export const discussionCommentsQuery = gql`
+  ${discussionCommentBaseFields}
   query DiscussionComments($owner: String!, $name: String!, $number: Int!, $cursor: String) {
     repository(owner: $owner, name: $name) {
       discussion(number: $number) {
         answer {
-          __typename
-          id
-          isAnswer
-          author {
-            __typename
-            ... on User {
-              id
-              login
-              name
-              avatarUrl(size: 200)
-              createdAt
-              updatedAt
-            }
-            ... on Organization {
-              id
-              login
-              name
-              avatarUrl(size: 200)
-              createdAt
-              updatedAt
-            }
-            ... on Bot {
-              id
-              login
-              avatarUrl(size: 200)
-            }
-            ... on Mannequin {
-              id
-              login
-              avatarUrl(size: 200)
-            }
-          }
-          createdAt
-          updatedAt
-          url
-          body
-          bodyText
-          bodyHTML
-          replyTo {
-            id
-          }
-          reactions(first: 25, orderBy: { field: CREATED_AT, direction: ASC }) {
-            nodes {
-              __typename
-              id
-              content
-              createdAt
-              user {
-                id
-                login
-                name
-                avatarUrl(size: 200)
-              }
-            }
-          }
+          ...DiscussionCommentBaseFields
         }
         comments(first: 50, after: $cursor) {
           pageInfo {
@@ -1055,61 +1062,36 @@ export const discussionCommentsQuery = gql`
             endCursor
           }
           nodes {
-            __typename
-            id
-            isAnswer
-            author {
-              __typename
-              ... on User {
-                id
-                login
-                name
-                avatarUrl(size: 200)
-                createdAt
-                updatedAt
+            ...DiscussionCommentBaseFields
+            replies(first: 50) {
+              pageInfo {
+                hasNextPage
+                endCursor
               }
-              ... on Organization {
-                id
-                login
-                name
-                avatarUrl(size: 200)
-                createdAt
-                updatedAt
-              }
-              ... on Bot {
-                id
-                login
-                avatarUrl(size: 200)
-              }
-              ... on Mannequin {
-                id
-                login
-                avatarUrl(size: 200)
-              }
-            }
-            createdAt
-            updatedAt
-            url
-            body
-            bodyText
-            bodyHTML
-            replyTo {
-              id
-            }
-            reactions(first: 25, orderBy: { field: CREATED_AT, direction: ASC }) {
               nodes {
-                __typename
-                id
-                content
-                createdAt
-                user {
-                  id
-                  login
-                  name
-                  avatarUrl(size: 200)
-                }
+                ...DiscussionCommentBaseFields
               }
             }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export const discussionCommentRepliesQuery = gql`
+  ${discussionCommentBaseFields}
+  query DiscussionCommentReplies($id: ID!, $cursor: String) {
+    node(id: $id) {
+      __typename
+      ... on DiscussionComment {
+        replies(first: 50, after: $cursor) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+          nodes {
+            ...DiscussionCommentBaseFields
           }
         }
       }
