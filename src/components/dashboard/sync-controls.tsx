@@ -180,7 +180,7 @@ function formatBytes(size: number | null | undefined) {
   }
 
   const units = ["KB", "MB", "GB", "TB"];
-  let value = absolute;
+  let value = absolute / 1024;
   let unitIndex = 0;
 
   while (value >= 1024 && unitIndex < units.length - 1) {
