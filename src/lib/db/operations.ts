@@ -150,6 +150,13 @@ export type DbReviewRequest = {
   raw: unknown;
 };
 
+export type PendingReviewRequest = {
+  id: string;
+  pullRequestId: string;
+  reviewerId: string | null;
+  requestedAt: string;
+};
+
 export type SyncLogStatus = "success" | "failed" | "running";
 
 function toJsonb(value: unknown) {
@@ -637,6 +644,44 @@ export async function upsertReviewRequest(request: DbReviewRequest) {
   );
 }
 
+export async function listPendingReviewRequestsByPullRequestIds(
+  pullRequestIds: readonly string[],
+): Promise<Map<string, PendingReviewRequest[]>> {
+  if (!pullRequestIds.length) {
+    return new Map();
+  }
+
+  const result = await query<{
+    id: string;
+    pull_request_id: string | null;
+    reviewer_id: string | null;
+    requested_at: string;
+  }>(
+    `SELECT id, pull_request_id, reviewer_id, requested_at
+       FROM review_requests
+       WHERE removed_at IS NULL
+         AND pull_request_id = ANY($1::text[])`,
+    [pullRequestIds],
+  );
+
+  const map = new Map<string, PendingReviewRequest[]>();
+  result.rows.forEach((row) => {
+    if (!row.pull_request_id) {
+      return;
+    }
+    const list = map.get(row.pull_request_id) ?? [];
+    list.push({
+      id: row.id,
+      pullRequestId: row.pull_request_id,
+      reviewerId: row.reviewer_id ?? null,
+      requestedAt: row.requested_at,
+    });
+    map.set(row.pull_request_id, list);
+  });
+
+  return map;
+}
+
 export async function markReviewRequestRemoved(params: {
   pullRequestId: string;
   reviewerId: string | null;
@@ -696,6 +741,32 @@ export async function upsertReview(review: DbReview) {
       review.submittedAt ?? null,
       toJsonb(review.raw),
     ],
+  );
+}
+
+export async function updateIssueAssignees(
+  issueId: string,
+  assignees: unknown,
+) {
+  await query(
+    `UPDATE issues
+     SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{assignees}', $2::jsonb, true),
+         updated_at = NOW()
+     WHERE id = $1`,
+    [issueId, toJsonb(assignees ?? null)],
+  );
+}
+
+export async function updatePullRequestAssignees(
+  pullRequestId: string,
+  assignees: unknown,
+) {
+  await query(
+    `UPDATE pull_requests
+     SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{assignees}', $2::jsonb, true),
+         updated_at = NOW()
+     WHERE id = $1`,
+    [pullRequestId, toJsonb(assignees ?? null)],
   );
 }
 

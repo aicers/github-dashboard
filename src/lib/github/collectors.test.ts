@@ -8,6 +8,8 @@ import { runCollection } from "@/lib/github/collectors";
 import {
   discussionCommentsQuery,
   issueCommentsQuery,
+  openIssueMetadataQuery,
+  openPullRequestMetadataQuery,
   organizationRepositoriesQuery,
   pullRequestCommentsQuery,
   pullRequestReviewCommentsQuery,
@@ -33,6 +35,9 @@ const {
   markReviewRequestRemovedMock,
   fetchIssueRawMapMock,
   reviewExistsMock,
+  updateIssueAssigneesMock,
+  updatePullRequestAssigneesMock,
+  listPendingReviewRequestsMock,
   resetLogSequence,
   nextLogId,
 } = vi.hoisted(() => {
@@ -56,6 +61,9 @@ const {
     markReviewRequestRemovedMock: vi.fn(async () => {}),
     fetchIssueRawMapMock: vi.fn(async () => new Map()),
     reviewExistsMock: vi.fn(async () => false),
+    updateIssueAssigneesMock: vi.fn(async () => {}),
+    updatePullRequestAssigneesMock: vi.fn(async () => {}),
+    listPendingReviewRequestsMock: vi.fn(async () => new Map()),
     resetLogSequence: () => {
       logIdValue = 0;
     },
@@ -99,6 +107,15 @@ vi.mock("@/lib/db/operations", () => ({
     fetchIssueRawMapMock(...args),
   reviewExists: (...args: Parameters<typeof reviewExistsMock>) =>
     reviewExistsMock(...args),
+  updateIssueAssignees: (
+    ...args: Parameters<typeof updateIssueAssigneesMock>
+  ) => updateIssueAssigneesMock(...args),
+  updatePullRequestAssignees: (
+    ...args: Parameters<typeof updatePullRequestAssigneesMock>
+  ) => updatePullRequestAssigneesMock(...args),
+  listPendingReviewRequestsByPullRequestIds: (
+    ...args: Parameters<typeof listPendingReviewRequestsMock>
+  ) => listPendingReviewRequestsMock(...args),
 }));
 
 vi.mock("@/lib/github/client", () => ({
@@ -268,6 +285,14 @@ describe("runCollection", () => {
           return {
             repository: { pullRequest: { reviewThreads: emptyThreads } },
           };
+        }
+
+        if (document === openIssueMetadataQuery) {
+          return { repository: { issues: emptyConnection } };
+        }
+
+        if (document === openPullRequestMetadataQuery) {
+          return { repository: { pullRequests: emptyConnection } };
         }
 
         throw new Error("Unexpected query");
@@ -463,6 +488,14 @@ describe("runCollection", () => {
         };
       }
 
+      if (document === openIssueMetadataQuery) {
+        return { repository: { issues: emptyConnection } };
+      }
+
+      if (document === openPullRequestMetadataQuery) {
+        return { repository: { pullRequests: emptyConnection } };
+      }
+
       throw new Error("Unexpected query");
     });
 
@@ -619,6 +652,14 @@ describe("runCollection", () => {
             },
           },
         };
+      }
+
+      if (document === openIssueMetadataQuery) {
+        return { repository: { issues: emptyConnection } };
+      }
+
+      if (document === openPullRequestMetadataQuery) {
+        return { repository: { pullRequests: emptyConnection } };
       }
 
       throw new Error("Unexpected query");
@@ -782,6 +823,14 @@ describe("runCollection", () => {
         };
       }
 
+      if (document === openIssueMetadataQuery) {
+        return { repository: { issues: emptyConnection } };
+      }
+
+      if (document === openPullRequestMetadataQuery) {
+        return { repository: { pullRequests: emptyConnection } };
+      }
+
       throw new Error("Unexpected query");
     });
 
@@ -912,6 +961,14 @@ describe("runCollection", () => {
         };
       }
 
+      if (document === openIssueMetadataQuery) {
+        return { repository: { issues: emptyConnection } };
+      }
+
+      if (document === openPullRequestMetadataQuery) {
+        return { repository: { pullRequests: emptyConnection } };
+      }
+
       throw new Error("Unexpected query");
     });
 
@@ -1007,6 +1064,14 @@ describe("runCollection", () => {
         };
       }
 
+      if (document === openIssueMetadataQuery) {
+        return { repository: { issues: emptyConnection } };
+      }
+
+      if (document === openPullRequestMetadataQuery) {
+        return { repository: { pullRequests: emptyConnection } };
+      }
+
       throw new Error("Unexpected query");
     });
 
@@ -1075,6 +1140,12 @@ describe("runCollection", () => {
                   },
                 },
               };
+            }
+            if (document === openIssueMetadataQuery) {
+              return { repository: { issues: emptyConnection } };
+            }
+            if (document === openPullRequestMetadataQuery) {
+              return { repository: { pullRequests: emptyConnection } };
             }
             throw new Error("Unexpected query");
           }),

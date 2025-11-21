@@ -5,9 +5,14 @@ import { clearProjectFieldOverrides } from "@/lib/activity/project-field-store";
 import { clearActivityStatuses } from "@/lib/activity/status-store";
 import {
   fetchIssueRawMap,
+  listPendingReviewRequestsByPullRequestIds,
+  markReviewRequestRemoved,
+  type PendingReviewRequest,
   recordSyncLog,
   replacePullRequestIssues,
   reviewExists,
+  updateIssueAssignees,
+  updatePullRequestAssignees,
   updateSyncLog,
   updateSyncState,
   upsertComment,
@@ -16,6 +21,7 @@ import {
   upsertReaction,
   upsertRepository,
   upsertReview,
+  upsertReviewRequest,
   upsertUser,
 } from "@/lib/db/operations";
 import { env } from "@/lib/env";
@@ -24,6 +30,8 @@ import {
   activityNodeResyncQuery,
   discussionCommentsQuery,
   issueCommentsQuery,
+  openIssueMetadataQuery,
+  openPullRequestMetadataQuery,
   organizationRepositoriesQuery,
   pullRequestCommentsQuery,
   pullRequestReviewCommentsQuery,
@@ -56,6 +64,15 @@ type GithubActor = {
   createdAt?: string | null;
   updatedAt?: string | null;
 };
+
+type ReviewRequestReviewer =
+  | GithubActor
+  | {
+      __typename: "Team";
+      id: string;
+      slug?: string | null;
+      name?: string | null;
+    };
 
 type RepositoryNode = {
   id: string;
@@ -421,6 +438,43 @@ type RepositoryDiscussionsQueryResponse = {
 type RepositoryPullRequestsQueryResponse = {
   repository: {
     pullRequests: GraphQLConnection<PullRequestNode> | null;
+  } | null;
+};
+
+type IssueMetadataNode = {
+  id: string;
+  number: number;
+  assignees?: {
+    nodes?: Maybe<GithubActor>[] | null;
+  } | null;
+};
+
+type OpenIssueMetadataQueryResponse = {
+  repository: {
+    issues: GraphQLConnection<IssueMetadataNode> | null;
+  } | null;
+};
+
+type PullRequestMetadataNode = {
+  id: string;
+  number: number;
+  assignees?: {
+    nodes?: Maybe<GithubActor>[] | null;
+  } | null;
+  reviewRequests?: {
+    nodes?:
+      | {
+          id: string;
+          createdAt?: string | null;
+          requestedReviewer?: ReviewRequestReviewer | null;
+        }[]
+      | null;
+  } | null;
+};
+
+type OpenPullRequestMetadataQueryResponse = {
+  repository: {
+    pullRequests: GraphQLConnection<PullRequestMetadataNode> | null;
   } | null;
 };
 
@@ -924,6 +978,83 @@ async function processActorNodes(
 
   for (const actor of nodes) {
     await processActor(actor);
+  }
+}
+
+function normalizeAssigneeNodes(
+  nodes: Maybe<GithubActor>[] | null | undefined,
+) {
+  if (!Array.isArray(nodes)) {
+    return [];
+  }
+
+  return nodes.map((node) => (node && typeof node === "object" ? node : null));
+}
+
+function buildAssigneesPayload(
+  assignees: { nodes?: Maybe<GithubActor>[] | null } | null | undefined,
+) {
+  return {
+    nodes: normalizeAssigneeNodes(assignees?.nodes ?? null),
+  };
+}
+
+function reviewerIsUser(
+  reviewer: ReviewRequestReviewer | null | undefined,
+): reviewer is GithubActor {
+  return Boolean(reviewer && reviewer.__typename === "User");
+}
+
+async function syncReviewRequestsSnapshot(
+  pullRequest: PullRequestMetadataNode,
+  pendingRequests: PendingReviewRequest[] | undefined,
+) {
+  const requests = pullRequest.reviewRequests?.nodes ?? [];
+  const activeReviewerIds = new Set<string>();
+
+  for (const entry of requests) {
+    if (!entry) {
+      continue;
+    }
+    const reviewer = entry.requestedReviewer;
+    if (!reviewerIsUser(reviewer)) {
+      continue;
+    }
+    await processActor(reviewer);
+    const requestedAt =
+      typeof entry.createdAt === "string" && entry.createdAt.trim().length
+        ? entry.createdAt
+        : new Date().toISOString();
+    await upsertReviewRequest({
+      id: entry.id,
+      pullRequestId: pullRequest.id,
+      reviewerId: reviewer.id,
+      requestedAt,
+      raw: entry,
+    });
+    activeReviewerIds.add(reviewer.id);
+  }
+
+  const pending = pendingRequests ?? [];
+  if (!pending.length) {
+    return;
+  }
+
+  const removalTimestamp = new Date().toISOString();
+  for (const pendingRequest of pending) {
+    const reviewerId = pendingRequest.reviewerId;
+    if (!reviewerId || activeReviewerIds.has(reviewerId)) {
+      continue;
+    }
+    await markReviewRequestRemoved({
+      pullRequestId: pullRequest.id,
+      reviewerId,
+      removedAt: removalTimestamp,
+      raw: {
+        reason: "open-item-metadata-refresh",
+        sourceRequestId: pendingRequest.id,
+      },
+    });
   }
 }
 
@@ -2154,6 +2285,126 @@ async function collectPullRequestsForRepository(
   };
 }
 
+async function refreshOpenIssuesMetadataForRepository(
+  client: GraphQLClient,
+  repository: RepositoryNode,
+  options: SyncOptions,
+) {
+  const [owner, name] = repository.nameWithOwner.split("/");
+  let cursor: string | null = null;
+  let hasNextPage = true;
+  let count = 0;
+
+  while (hasNextPage) {
+    const data: OpenIssueMetadataQueryResponse = await requestWithRetry(
+      client,
+      openIssueMetadataQuery,
+      {
+        owner,
+        name,
+        cursor,
+      },
+      {
+        logger: options.logger,
+        context: `open issues ${repository.nameWithOwner}`,
+      },
+    );
+
+    const connection = data.repository?.issues;
+    const nodes = connection?.nodes ?? [];
+    for (const issue of nodes) {
+      await processActorNodes(issue.assignees?.nodes);
+      await updateIssueAssignees(
+        issue.id,
+        buildAssigneesPayload(issue.assignees ?? null),
+      );
+      count += 1;
+    }
+
+    hasNextPage = connection?.pageInfo?.hasNextPage ?? false;
+    cursor = connection?.pageInfo?.endCursor ?? null;
+  }
+
+  return count;
+}
+
+async function refreshOpenPullRequestMetadataForRepository(
+  client: GraphQLClient,
+  repository: RepositoryNode,
+  options: SyncOptions,
+) {
+  const [owner, name] = repository.nameWithOwner.split("/");
+  let cursor: string | null = null;
+  let hasNextPage = true;
+  let count = 0;
+
+  while (hasNextPage) {
+    const data: OpenPullRequestMetadataQueryResponse = await requestWithRetry(
+      client,
+      openPullRequestMetadataQuery,
+      {
+        owner,
+        name,
+        cursor,
+      },
+      {
+        logger: options.logger,
+        context: `open pull requests ${repository.nameWithOwner}`,
+      },
+    );
+
+    const connection = data.repository?.pullRequests;
+    const nodes = connection?.nodes ?? [];
+    const pendingRequests = nodes.length
+      ? await listPendingReviewRequestsByPullRequestIds(
+          nodes.map((node) => node.id),
+        )
+      : new Map();
+
+    for (const pullRequest of nodes) {
+      await processActorNodes(pullRequest.assignees?.nodes);
+      await updatePullRequestAssignees(
+        pullRequest.id,
+        buildAssigneesPayload(pullRequest.assignees ?? null),
+      );
+      await syncReviewRequestsSnapshot(
+        pullRequest,
+        pendingRequests.get(pullRequest.id),
+      );
+      count += 1;
+    }
+
+    hasNextPage = connection?.pageInfo?.hasNextPage ?? false;
+    cursor = connection?.pageInfo?.endCursor ?? null;
+  }
+
+  return count;
+}
+
+async function refreshOpenItemMetadata(
+  client: GraphQLClient,
+  repositories: RepositoryNode[],
+  options: SyncOptions,
+) {
+  let openIssues = 0;
+  let openPullRequests = 0;
+
+  for (const repository of repositories) {
+    openIssues += await refreshOpenIssuesMetadataForRepository(
+      client,
+      repository,
+      options,
+    );
+    openPullRequests += await refreshOpenPullRequestMetadataForRepository(
+      client,
+      repository,
+      options,
+    );
+  }
+
+  return { openIssues, openPullRequests };
+}
+
 async function collectPullRequestLinksForRepository(
   client: GraphQLClient,
   repository: RepositoryNode,
@@ -2474,6 +2725,15 @@ export async function runCollection(options: SyncOptions) {
   const reviewLogId = ensureLogId(
     await recordSyncLog("reviews", "running", undefined, runId),
   );
+  const openMetadataLogId = ensureLogId(
+    await recordSyncLog(
+      "open_items",
+      "running",
+      "Refreshing open issue and pull request metadata",
+      runId,
+    ),
+  );
+  let openMetadataLogCompleted = false;
 
   try {
     for (const repository of repositories) {
@@ -2497,6 +2757,28 @@ export async function runCollection(options: SyncOptions) {
       totalPullRequests += prsResult.pullRequestCount;
       totalReviews += prsResult.reviewCount;
       totalComments += prsResult.commentCount;
+    }
+
+    try {
+      const metadataResult = await refreshOpenItemMetadata(
+        client,
+        repositories,
+        options,
+      );
+      await updateSyncLog(
+        openMetadataLogId,
+        "success",
+        `Refreshed metadata for ${metadataResult.openIssues} open issues and ${metadataResult.openPullRequests} open pull requests.`,
+      );
+      openMetadataLogCompleted = true;
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unexpected error while refreshing open item metadata.";
+      await updateSyncLog(openMetadataLogId, "failed", message);
+      openMetadataLogCompleted = true;
+      throw error;
     }
 
     if (latestPullRequestUpdated) {
@@ -2525,6 +2807,9 @@ export async function runCollection(options: SyncOptions) {
         : "Unexpected error while collecting pull requests.";
     await updateSyncLog(pullRequestLogId, "failed", message);
     await updateSyncLog(reviewLogId, "failed", message);
+    if (!openMetadataLogCompleted) {
+      await updateSyncLog(openMetadataLogId, "failed", message);
+    }
     await updateSyncLog(commentLogId, "failed", message);
     throw error;
   }

@@ -610,6 +610,88 @@ export const repositoryPullRequestsQuery = gql`
         }
       }
     }
+}
+`;
+
+export const openIssueMetadataQuery = gql`
+  query OpenIssueMetadata($owner: String!, $name: String!, $cursor: String) {
+    repository(owner: $owner, name: $name) {
+      issues(first: 50, after: $cursor, states: OPEN, orderBy: { field: UPDATED_AT, direction: DESC }) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        nodes {
+          id
+          number
+          assignees(first: 25) {
+            nodes {
+              __typename
+              ... on User {
+                id
+                login
+                name
+                avatarUrl(size: 200)
+                createdAt
+                updatedAt
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export const openPullRequestMetadataQuery = gql`
+  query OpenPullRequestMetadata($owner: String!, $name: String!, $cursor: String) {
+    repository(owner: $owner, name: $name) {
+      pullRequests(first: 25, after: $cursor, states: [OPEN], orderBy: { field: UPDATED_AT, direction: DESC }) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        nodes {
+          id
+          number
+          assignees(first: 25) {
+            nodes {
+              __typename
+              ... on User {
+                id
+                login
+                name
+                avatarUrl(size: 200)
+                createdAt
+                updatedAt
+              }
+            }
+          }
+          reviewRequests(first: 50) {
+            nodes {
+              id
+              createdAt
+              requestedReviewer {
+                __typename
+                ... on User {
+                  id
+                  login
+                  name
+                  avatarUrl(size: 200)
+                  createdAt
+                  updatedAt
+                }
+                ... on Team {
+                  id
+                  slug
+                  name
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   }
 `;
 
