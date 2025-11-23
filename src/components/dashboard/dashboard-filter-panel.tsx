@@ -4,7 +4,7 @@ import { DateTime } from "luxon";
 import { useCallback, useId, useMemo } from "react";
 import type { FilterState } from "@/components/dashboard/use-dashboard-analytics";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { PickerInput } from "@/components/ui/picker-input";
 import {
   buildRangeFromPreset,
   fromDateInputValue,
@@ -223,11 +223,12 @@ export function DashboardFilterPanel({
           </div>
           {filters.preset === "custom" && (
             <div className="grid gap-3 pt-1 sm:grid-cols-2">
-              <label className="flex flex-col gap-1" htmlFor={customStartId}>
-                <span className={helperTextClass}>시작일</span>
-                <Input
+              <div className="flex flex-col gap-1">
+                <label className={helperTextClass} htmlFor={customStartId}>
+                  시작일
+                </label>
+                <PickerInput
                   id={customStartId}
-                  type="date"
                   value={toDateInputValue(filters.start, timeZone)}
                   onChange={(event) =>
                     setFilters((current) => ({
@@ -240,13 +241,15 @@ export function DashboardFilterPanel({
                       ),
                     }))
                   }
+                  pickerButtonLabel="달력 열기"
                 />
-              </label>
-              <label className="flex flex-col gap-1" htmlFor={customEndId}>
-                <span className={helperTextClass}>종료일</span>
-                <Input
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className={helperTextClass} htmlFor={customEndId}>
+                  종료일
+                </label>
+                <PickerInput
                   id={customEndId}
-                  type="date"
                   value={toDateInputValue(filters.end, timeZone)}
                   onChange={(event) =>
                     setFilters((current) => ({
@@ -259,8 +262,9 @@ export function DashboardFilterPanel({
                       ),
                     }))
                   }
+                  pickerButtonLabel="달력 열기"
                 />
-              </label>
+              </div>
             </div>
           )}
         </div>

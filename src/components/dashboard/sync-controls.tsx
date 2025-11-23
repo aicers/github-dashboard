@@ -14,7 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { PickerInput } from "@/components/ui/picker-input";
 import type { ActivityCacheRefreshResult } from "@/lib/activity/cache";
 import type { ActivitySnapshotSummary } from "@/lib/activity/snapshot";
 import type {
@@ -392,6 +392,7 @@ export function SyncControls({
   );
   const backfillInputId = useId();
   const backfillEndInputId = useId();
+  const statusAutomationStartId = useId();
   const [autoEnabled, setAutoEnabled] = useState(
     config?.auto_sync_enabled ?? false,
   );
@@ -1331,30 +1332,34 @@ export function SyncControls({
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              <label
-                className="flex flex-col gap-2 text-sm"
-                htmlFor={backfillInputId}
-              >
-                <span className="text-muted-foreground">시작 날짜</span>
-                <Input
+              <div className="flex flex-col gap-2 text-sm">
+                <label
+                  className="text-muted-foreground"
+                  htmlFor={backfillInputId}
+                >
+                  시작 날짜
+                </label>
+                <PickerInput
                   id={backfillInputId}
                   value={backfillDate}
                   onChange={(event) => setBackfillDate(event.target.value)}
-                  type="date"
+                  pickerButtonLabel="달력 열기"
                 />
-              </label>
-              <label
-                className="flex flex-col gap-2 text-sm"
-                htmlFor={backfillEndInputId}
-              >
-                <span className="text-muted-foreground">종료 날짜</span>
-                <Input
+              </div>
+              <div className="flex flex-col gap-2 text-sm">
+                <label
+                  className="text-muted-foreground"
+                  htmlFor={backfillEndInputId}
+                >
+                  종료 날짜
+                </label>
+                <PickerInput
                   id={backfillEndInputId}
                   value={backfillEndDate}
                   onChange={(event) => setBackfillEndDate(event.target.value)}
-                  type="date"
+                  pickerButtonLabel="달력 열기"
                 />
-              </label>
+              </div>
             </CardContent>
             <CardFooter>
               <Button
@@ -1707,15 +1712,20 @@ export function SyncControls({
                 )}
               </div>
               <div className="flex flex-col gap-2">
-                <span className="text-muted-foreground">
+                <label
+                  className="text-muted-foreground"
+                  htmlFor={statusAutomationStartId}
+                >
                   대상 동기화 시각 (선택)
-                </span>
-                <Input
+                </label>
+                <PickerInput
+                  id={statusAutomationStartId}
                   type="datetime-local"
                   value={statusAutomationStart}
                   onChange={(event) =>
                     setStatusAutomationStart(event.target.value)
                   }
+                  pickerButtonLabel="달력 열기"
                 />
                 {statusAutomationStart.trim().length ? (
                   (() => {

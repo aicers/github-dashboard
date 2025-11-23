@@ -142,6 +142,16 @@ body {
   input[type="time"] {
     color-scheme: light;
   }
+
+  .picker-input::-webkit-calendar-picker-indicator {
+    opacity: 0;
+    display: none;
+  }
+
+  .picker-input::-webkit-inner-spin-button,
+  .picker-input::-webkit-clear-button {
+    display: none;
+  }
 }
 
 @layer components {

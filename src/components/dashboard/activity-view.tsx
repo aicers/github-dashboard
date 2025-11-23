@@ -33,6 +33,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PickerInput } from "@/components/ui/picker-input";
 import {
   ATTENTION_OPTIONS,
   ATTENTION_REQUIRED_VALUES,
@@ -2212,7 +2213,10 @@ export function ActivityView({
   const [updatingProjectFieldIds, setUpdatingProjectFieldIds] = useState<
     Set<string>
   >(() => new Set<string>());
-  const [jumpDate, setJumpDate] = useState("");
+  const [jumpDate, setJumpDate] = useState(() => {
+    const today = DateTime.local().toISODate();
+    return today ?? "";
+  });
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [savedFilters, setSavedFilters] = useState<ActivitySavedFilter[]>([]);
   const [savedFiltersLimit, setSavedFiltersLimit] = useState(
@@ -5587,8 +5591,7 @@ export function ActivityView({
               <Label className="font-medium" htmlFor={jumpDateInputId}>
                 날짜 이동
               </Label>
-              <Input
-                type="date"
+              <PickerInput
                 id={jumpDateInputId}
                 value={jumpDate}
                 onChange={(event) => setJumpDate(event.target.value)}
@@ -5597,8 +5600,10 @@ export function ActivityView({
                     jumpToDate();
                   }
                 }}
-                className="h-8 w-auto"
+                className="h-8"
+                wrapperClassName="w-[9rem]"
                 disabled={isLoading}
+                pickerButtonLabel="날짜 이동 달력 열기"
               />
               <Button
                 type="button"

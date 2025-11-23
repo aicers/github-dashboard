@@ -23,6 +23,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PickerInput } from "@/components/ui/picker-input";
 import {
   DATE_TIME_FORMAT_OPTIONS,
   type DateTimeDisplayFormat,
@@ -348,6 +349,8 @@ export function SettingsView({
   const holidayWeekdayInputId = useId();
   const holidayNameInputId = useId();
   const holidayNoteInputId = useId();
+  const personalHolidayStartInputId = useId();
+  const personalHolidayEndInputId = useId();
   const personalHolidayNoteInputId = useId();
   const feedbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -1708,27 +1711,39 @@ export function SettingsView({
               </CardHeader>
               <CardContent className="flex flex-col gap-4 text-sm">
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <label className="flex flex-col gap-2">
-                    <span className="text-muted-foreground">시작일</span>
-                    <input
-                      type="date"
+                  <div className="flex flex-col gap-2">
+                    <label
+                      htmlFor={personalHolidayStartInputId}
+                      className="text-muted-foreground"
+                    >
+                      시작일
+                    </label>
+                    <PickerInput
+                      id={personalHolidayStartInputId}
                       value={personalHolidayForm.startDate}
                       onChange={handlePersonalHolidayFieldChange("startDate")}
                       className="rounded-md border border-border/60 bg-background p-2 text-sm"
+                      pickerButtonLabel="달력 열기"
                     />
-                  </label>
-                  <label className="flex flex-col gap-2">
-                    <span className="text-muted-foreground">종료일</span>
-                    <input
-                      type="date"
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <label
+                      htmlFor={personalHolidayEndInputId}
+                      className="text-muted-foreground"
+                    >
+                      종료일
+                    </label>
+                    <PickerInput
+                      id={personalHolidayEndInputId}
                       value={personalHolidayForm.endDate}
                       onChange={handlePersonalHolidayFieldChange("endDate")}
                       className="rounded-md border border-border/60 bg-background p-2 text-sm"
+                      pickerButtonLabel="달력 열기"
                     />
                     <span className="text-xs text-muted-foreground">
                       날짜를 비워두면 시작일 하루만 적용돼요.
                     </span>
-                  </label>
+                  </div>
                   <div className="flex flex-col gap-2 sm:col-span-2 lg:col-span-2">
                     <label
                       htmlFor={personalHolidayNoteInputId}
@@ -2579,19 +2594,21 @@ export function SettingsView({
                     )}
                   </div>
                   <div className="grid gap-3 md:grid-cols-4">
-                    <label
-                      className="flex flex-col gap-2"
-                      htmlFor={holidayDateInputId}
-                    >
-                      <span className="text-muted-foreground">날짜</span>
-                      <Input
+                    <div className="flex flex-col gap-2">
+                      <label
+                        className="text-muted-foreground"
+                        htmlFor={holidayDateInputId}
+                      >
+                        날짜
+                      </label>
+                      <PickerInput
                         id={holidayDateInputId}
-                        type="date"
                         value={holidayForm.date}
                         onChange={handleHolidayFormChange("date")}
                         maxLength={10}
+                        pickerButtonLabel="달력 열기"
                       />
-                    </label>
+                    </div>
                     <label
                       className="flex flex-col gap-2"
                       htmlFor={holidayWeekdayInputId}
