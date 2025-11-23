@@ -1117,16 +1117,19 @@ function buildQueryFilters(
     if (isSyncedSelection) {
       peopleSelection = baselineValues;
       peopleSelectionValues = baselineValues;
-      const parameterIndex = ensurePeopleSelectionParam();
-      if (parameterIndex !== null) {
-        const peopleClauses = populatedPeopleFilters.map((entry) =>
-          entry.buildClause(parameterIndex),
-        );
-        const hasActiveAttention =
-          params.attention?.some((value) => value !== "no_attention") ?? false;
-        if (!hasActiveAttention) {
+      const hasActiveAttention =
+        params.attention?.some((value) => value !== "no_attention") ?? false;
+      if (!hasActiveAttention) {
+        const parameterIndex = ensurePeopleSelectionParam();
+        if (parameterIndex !== null) {
+          const peopleClauses = populatedPeopleFilters.map((entry) =>
+            entry.buildClause(parameterIndex),
+          );
           clauses.push(`(${peopleClauses.join(" OR ")})`);
+          peopleFiltersHandled = true;
         }
+      } else {
+        // For attention filters, defer parameter insertion until actually needed.
         peopleFiltersHandled = true;
       }
     }
@@ -1308,39 +1311,46 @@ function buildQueryFilters(
         case "review_requests_pending":
           ids = Array.from(attentionSets.reviewRequests);
           constraints.push(`items.item_type = 'pull_request'`);
-          if (selectionSet && selectionSet.size > 0) {
-            const reviewerExpr = withPeopleConstraint(buildReviewerExpr);
-            if (reviewerExpr) {
-              constraints.push(reviewerExpr);
-            }
-          }
           break;
         case "pr_open_too_long": {
           ids = Array.from(attentionSets.stalePullRequests);
           constraints.push(`items.item_type = 'pull_request'`);
           constraints.push(`items.status = 'open'`);
-          if (selectionSet && selectionSet.size > 0) {
-            const assigneeExpr = withPeopleConstraint(buildAssigneeExpr);
-            const authorExpr = withPeopleConstraint(buildAuthorExpr);
-            const reviewerExpr = withPeopleConstraint(buildReviewerExpr);
-            const maintainerExpr = withPeopleConstraint(buildMaintainerExpr);
-            const parts = [
-              assigneeExpr,
-              authorExpr,
-              reviewerExpr,
-              maintainerExpr,
-            ].filter((expr): expr is string => Boolean(expr));
-            if (parts.length) {
-              constraints.push(`(${parts.join(" OR ")})`);
-            }
-          }
           break;
         }
         case "pr_inactive": {
           ids = Array.from(attentionSets.idlePullRequests);
           constraints.push(`items.item_type = 'pull_request'`);
           constraints.push(`items.status = 'open'`);
-          if (selectionSet && selectionSet.size > 0) {
+          break;
+        }
+        case "issue_backlog":
+          ids = Array.from(attentionSets.backlogIssues);
+          constraints.push(`items.item_type = 'issue'`);
+          break;
+        case "issue_stalled":
+          ids = Array.from(attentionSets.stalledIssues);
+          constraints.push(`items.item_type = 'issue'`);
+          break;
+        default:
+          return null;
+      }
+
+      if (ids.length === 0) {
+        return null;
+      }
+
+      if (selectionSet && selectionSet.size > 0) {
+        switch (filter) {
+          case "review_requests_pending": {
+            const reviewerExpr = withPeopleConstraint(buildReviewerExpr);
+            if (reviewerExpr) {
+              constraints.push(reviewerExpr);
+            }
+            break;
+          }
+          case "pr_open_too_long":
+          case "pr_inactive": {
             const assigneeExpr = withPeopleConstraint(buildAssigneeExpr);
             const authorExpr = withPeopleConstraint(buildAuthorExpr);
             const reviewerExpr = withPeopleConstraint(buildReviewerExpr);
@@ -1354,23 +1364,16 @@ function buildQueryFilters(
             if (parts.length) {
               constraints.push(`(${parts.join(" OR ")})`);
             }
+            break;
           }
-          break;
-        }
-        case "issue_backlog":
-          ids = Array.from(attentionSets.backlogIssues);
-          constraints.push(`items.item_type = 'issue'`);
-          if (selectionSet && selectionSet.size > 0) {
+          case "issue_backlog": {
             const maintainerExpr = withPeopleConstraint(buildMaintainerExpr);
             if (maintainerExpr) {
               constraints.push(maintainerExpr);
             }
+            break;
           }
-          break;
-        case "issue_stalled":
-          ids = Array.from(attentionSets.stalledIssues);
-          constraints.push(`items.item_type = 'issue'`);
-          if (selectionSet && selectionSet.size > 0) {
+          case "issue_stalled": {
             const paramIndex = ensurePeopleSelectionParam();
             if (paramIndex !== null) {
               const personIsAssigneeExpr = buildAssigneeExpr(paramIndex);
@@ -1380,14 +1383,11 @@ function buildQueryFilters(
                 `((${hasAssigneeExpr} AND ${personIsAssigneeExpr}) OR (${noAssigneeExpr} AND ${maintainerExistsExpr} AND ${personIsMaintainerExpr}) OR (${noAssigneeExpr} AND NOT ${maintainerExistsExpr} AND ${personIsAuthorExpr}))`,
               );
             }
+            break;
           }
-          break;
-        default:
-          return null;
-      }
-
-      if (ids.length === 0) {
-        return null;
+          default:
+            break;
+        }
       }
 
       values.push(ids);
