@@ -56,6 +56,7 @@ function buildIssueItem(params: {
   url: string;
   repository: RepositoryReference;
   author: UserReference;
+  repositoryMaintainers?: UserReference[];
   assignees: UserReference[];
   createdAt: string;
   updatedAt: string | null;
@@ -69,6 +70,7 @@ function buildIssueItem(params: {
     url,
     repository,
     author,
+    repositoryMaintainers = [author],
     assignees,
     createdAt,
     updatedAt,
@@ -82,6 +84,7 @@ function buildIssueItem(params: {
     title,
     url,
     repository,
+    repositoryMaintainers: repositoryMaintainers ?? [],
     author,
     assignees,
     linkedPullRequests: [],

@@ -17,6 +17,7 @@ import { ensureSchema } from "@/lib/db";
 import {
   type DbComment,
   type DbIssue,
+  replaceRepositoryMaintainers,
   updateSyncConfig,
   upsertComment,
   upsertIssue,
@@ -191,6 +192,9 @@ describe("follow-up overview summaries (db)", () => {
       owner.login ?? "owner",
     );
     await upsertRepository(mainRepo);
+    await replaceRepositoryMaintainers([
+      { repositoryId: mainRepo.id, maintainerIds: [erin.id, grace.id] },
+    ]);
 
     const stalePrOne = buildPullRequest({
       id: "pr-stale-1",
@@ -556,7 +560,7 @@ describe("follow-up overview summaries (db)", () => {
       ),
     );
     expect(stalledSummary.highlights).toContain(
-      "최다 작성자: 1위 Erin, 2위 Grace",
+      "최다 저장소 책임자: 1위 Erin, 2위 Grace",
     );
     expect(stalledSummary.highlights).toContain(
       "최다 담당자: 1위 Frank, 2위 Hank",

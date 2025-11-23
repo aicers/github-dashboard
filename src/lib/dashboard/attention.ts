@@ -100,6 +100,7 @@ export type IssueReference = {
   title: string | null;
   url: string | null;
   repository: RepositoryReference | null;
+  repositoryMaintainers: UserReference[];
   author: UserReference | null;
   assignees: UserReference[];
   linkedPullRequests: ActivityLinkedPullRequest[];
@@ -291,6 +292,7 @@ type IssueReferenceRaw = {
   repositoryId: string | null;
   repositoryName: string | null;
   repositoryNameWithOwner: string | null;
+  repositoryMaintainerIds: string[];
   authorId: string | null;
   assigneeIds: string[];
   linkedPullRequests: ActivityLinkedPullRequest[];
@@ -1558,6 +1560,27 @@ async function fetchIssueInsights(
   );
 
   const issueIds = result.rows.map((row) => row.id);
+  const repositoryIds = Array.from(
+    new Set(
+      result.rows
+        .map((row) => row.repository_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+  const maintainersResult = repositoryIds.length
+    ? await query<{ repository_id: string; user_id: string }>(
+        `SELECT repository_id, user_id
+           FROM repository_maintainers
+          WHERE repository_id = ANY($1::text[])`,
+        [repositoryIds],
+      )
+    : { rows: [] as { repository_id: string; user_id: string }[] };
+  const repositoryMaintainerMap = new Map<string, string[]>();
+  maintainersResult.rows.forEach((row) => {
+    const list = repositoryMaintainerMap.get(row.repository_id) ?? [];
+    list.push(row.user_id);
+    repositoryMaintainerMap.set(row.repository_id, list);
+  });
   const [activityHistory, projectOverrides] = await Promise.all([
     getActivityStatusHistory(issueIds),
     getProjectFieldOverrides(issueIds),
@@ -1602,6 +1625,8 @@ async function fetchIssueInsights(
       repositoryId: row.repository_id,
       repositoryNameWithOwner: row.repository_name_with_owner,
     });
+    const repositoryMaintainerIds =
+      repositoryMaintainerMap.get(row.repository_id ?? "") ?? [];
     const baseItem: IssueRawItem = {
       id: row.id,
       number: row.number,
@@ -1610,6 +1635,7 @@ async function fetchIssueInsights(
       repositoryId: row.repository_id,
       repositoryName: row.repository_name,
       repositoryNameWithOwner: row.repository_name_with_owner,
+      repositoryMaintainerIds,
       authorId: row.author_id,
       assigneeIds,
       linkedPullRequests: [],
@@ -1640,6 +1666,9 @@ async function fetchIssueInsights(
     if (isBacklogStatus) {
       if (ageDays >= BACKLOG_ISSUE_BUSINESS_DAYS) {
         backlogItems.push(baseItem);
+        for (const id of repositoryMaintainerIds) {
+          addUserId(backlogUserIds, id);
+        }
         addUserId(backlogUserIds, row.author_id);
         assigneeIds.forEach((id) => {
           addUserId(backlogUserIds, id);
@@ -1661,6 +1690,9 @@ async function fetchIssueInsights(
 
       if (qualifiesInProgress || qualifiesPending) {
         stalledItems.push(baseItem);
+        for (const id of repositoryMaintainerIds) {
+          addUserId(stalledUserIds, id);
+        }
         addUserId(stalledUserIds, row.author_id);
         assigneeIds.forEach((id) => {
           addUserId(stalledUserIds, id);
@@ -2143,6 +2175,9 @@ function toIssueReference(
   const assignees = raw.assigneeIds
     .map((id) => users.get(id))
     .filter((value): value is UserReference => Boolean(value));
+  const repositoryMaintainers = raw.repositoryMaintainerIds
+    .map((id) => users.get(id))
+    .filter((value): value is UserReference => Boolean(value));
 
   return {
     id: raw.id,
@@ -2154,6 +2189,7 @@ function toIssueReference(
       raw.repositoryName,
       raw.repositoryNameWithOwner,
     ),
+    repositoryMaintainers,
     author: raw.authorId ? (users.get(raw.authorId) ?? null) : null,
     assignees,
     linkedPullRequests: raw.linkedPullRequests ?? [],
