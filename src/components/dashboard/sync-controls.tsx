@@ -367,6 +367,8 @@ export function SyncControls({
   const config = status.config;
   const backupInfo = status.backup;
   const backupSchedule = backupInfo.schedule;
+  const transferInfo = status.transferSync;
+  const transferSchedule = transferInfo.schedule;
   const backupDirectory = backupInfo.directory;
   const backupRetentionCount = backupInfo.retentionCount;
   const backupRecords = backupInfo.records ?? [];
@@ -408,14 +410,31 @@ export function SyncControls({
     useState<IssueStatusAutomationSummary | null>(null);
   const [statusAutomationStart, setStatusAutomationStart] = useState("");
   const [backupHour, setBackupHour] = useState(backupSchedule.hourLocal ?? 2);
+  const [transferHour, setTransferHour] = useState(
+    transferSchedule.hourLocal ?? 0,
+  );
+  const [transferMinute, setTransferMinute] = useState(
+    transferSchedule.minuteLocal ?? 0,
+  );
   const [isSavingBackupSchedule, setIsSavingBackupSchedule] = useState(false);
+  const [isSavingTransferSchedule, setIsSavingTransferSchedule] =
+    useState(false);
   const [isRunningBackup, setIsRunningBackup] = useState(false);
+  const [isRunningTransferSync, setIsRunningTransferSync] = useState(
+    transferInfo.isRunning,
+  );
   const [restoringBackupId, setRestoringBackupId] = useState<string | null>(
     null,
   );
   const backupHourSelectId = useId();
+  const transferHourSelectId = useId();
+  const transferMinuteSelectId = useId();
   const backupHourOptions = useMemo(
     () => Array.from({ length: 24 }, (_value, hour) => hour),
+    [],
+  );
+  const transferMinuteOptions = useMemo(
+    () => Array.from({ length: 60 }, (_value, minute) => minute),
     [],
   );
   const [isRunningBackfill, setIsRunningBackfill] = useState(false);
@@ -450,6 +469,18 @@ export function SyncControls({
   useEffect(() => {
     setBackupHour(backupSchedule.hourLocal ?? 2);
   }, [backupSchedule.hourLocal]);
+
+  useEffect(() => {
+    setTransferHour(transferSchedule.hourLocal ?? 0);
+  }, [transferSchedule.hourLocal]);
+
+  useEffect(() => {
+    setTransferMinute(transferSchedule.minuteLocal ?? 0);
+  }, [transferSchedule.minuteLocal]);
+
+  useEffect(() => {
+    setIsRunningTransferSync(transferInfo.isRunning);
+  }, [transferInfo.isRunning]);
 
   useEffect(() => {
     if (!canManageSync) {
@@ -640,6 +671,22 @@ export function SyncControls({
   );
   const backupLastError = backupSchedule.lastError ?? null;
   const backupTimezoneLabel = timeZone ?? backupSchedule.timezone ?? "UTC";
+  const transferStatusKey = transferInfo.isRunning
+    ? "running"
+    : (transferSchedule.lastStatus ?? "idle").toLowerCase();
+  const transferStatusLabel =
+    backupStatusLabels[transferStatusKey] ?? capitalize(transferStatusKey);
+  const transferStatusClass =
+    backupStatusColors[transferStatusKey] ?? "text-muted-foreground";
+  const transferNextRunLabel = transferSchedule.nextRunAt
+    ? formatDateTime(transferSchedule.nextRunAt)
+    : "-";
+  const transferLastRange = formatRange(
+    transferSchedule.lastStartedAt ?? null,
+    transferSchedule.lastCompletedAt ?? null,
+  );
+  const transferLastError = transferSchedule.lastError ?? null;
+  const transferTimezoneLabel = timeZone ?? transferSchedule.timezone ?? "UTC";
 
   const viewPathMap: Record<SyncView, string> = {
     overview: "/dashboard/sync",
@@ -1029,6 +1076,113 @@ export function SyncControls({
       );
     } finally {
       setIsSavingBackupSchedule(false);
+    }
+  }
+
+  async function handleTransferScheduleSave() {
+    if (!canManageSync) {
+      setFeedback(ADMIN_ONLY_MESSAGE);
+      return;
+    }
+
+    if (
+      !Number.isFinite(transferHour) ||
+      transferHour < 0 ||
+      transferHour > 23
+    ) {
+      setFeedback("Transfer 동기화 시각은 0시에서 23시 사이여야 합니다.");
+      return;
+    }
+
+    if (
+      !Number.isFinite(transferMinute) ||
+      transferMinute < 0 ||
+      transferMinute > 59
+    ) {
+      setFeedback("Transfer 동기화 분은 0분에서 59분 사이여야 합니다.");
+      return;
+    }
+
+    setIsSavingTransferSchedule(true);
+    try {
+      const response = await fetch("/api/sync/config", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          transferSyncHour: transferHour,
+          transferSyncMinute: transferMinute,
+        }),
+      });
+      const data = await parseApiResponse<SyncStatus>(response);
+      if (!data.success) {
+        throw new Error(
+          data.message ?? "Transfer 동기화 시간을 저장하지 못했습니다.",
+        );
+      }
+
+      setFeedback("Transfer 항목 동기화 시간을 저장했습니다.");
+      router.refresh();
+    } catch (error) {
+      setFeedback(
+        error instanceof Error
+          ? error.message
+          : "Transfer 동기화 시간 저장 중 오류가 발생했습니다.",
+      );
+    } finally {
+      setIsSavingTransferSchedule(false);
+    }
+  }
+
+  async function handleTransferSyncRun() {
+    if (!canManageSync) {
+      setFeedback(ADMIN_ONLY_MESSAGE);
+      return;
+    }
+
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        "지금 Transfer 항목 동기화를 실행할까요? 실행 중에는 자동 동기화와 백업이 순차적으로 대기합니다.",
+      )
+    ) {
+      return;
+    }
+
+    setIsRunningTransferSync(true);
+    try {
+      const response = await fetch("/api/sync/transfer/run", {
+        method: "POST",
+      });
+      const data = await parseApiResponse<{
+        summary?: { updated: number; candidates: number };
+      }>(response);
+
+      if (!data.success) {
+        throw new Error(
+          data.message ?? "Transfer 항목 동기화를 실행하지 못했습니다.",
+        );
+      }
+
+      const summary = data.result?.summary ?? null;
+      if (summary) {
+        setFeedback(
+          `Transfer 항목 ${summary.updated.toLocaleString()}건을 업데이트했습니다 (후보 ${summary.candidates.toLocaleString()}건).`,
+        );
+      } else {
+        setFeedback("Transfer 항목 동기화를 완료했습니다.");
+      }
+
+      router.refresh();
+    } catch (error) {
+      setFeedback(
+        error instanceof Error
+          ? error.message
+          : "Transfer 항목 동기화 중 오류가 발생했습니다.",
+      );
+    } finally {
+      setIsRunningTransferSync(false);
     }
   }
 
@@ -1426,6 +1580,130 @@ export function SyncControls({
                   : autoEnabled
                     ? "자동 동기화 중단"
                     : "자동 동기화 시작"}
+              </Button>
+            </CardFooter>
+          </Card>
+
+          <Card className="border-border/70">
+            <CardHeader>
+              <CardTitle>Transfer 항목 동기화</CardTitle>
+              <CardDescription>
+                매일 지정한 시간에 저장소가 변경된 아이템을 확인하여 최신 상태로
+                유지합니다.
+              </CardDescription>
+              <CardAction>
+                <span
+                  className={`rounded-full bg-muted px-3 py-1 text-xs ${transferStatusClass}`}
+                >
+                  {transferStatusLabel}
+                </span>
+              </CardAction>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm text-muted-foreground">
+              <div className="space-y-3 rounded-md border border-border/60 p-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div className="flex flex-col gap-2">
+                    <label
+                      htmlFor={transferHourSelectId}
+                      className="text-sm font-medium text-foreground"
+                    >
+                      Transfer 동기화 실행 시각 ({transferTimezoneLabel})
+                    </label>
+                    <div className="flex gap-2">
+                      <select
+                        id={transferHourSelectId}
+                        value={transferHour}
+                        onChange={(event) =>
+                          setTransferHour(
+                            Number.parseInt(event.target.value, 10),
+                          )
+                        }
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                        disabled={!canManageSync}
+                        title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+                      >
+                        {backupHourOptions.map((hour) => (
+                          <option key={hour} value={hour}>
+                            {formatHourLabel(hour)}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="flex flex-col">
+                        <label
+                          htmlFor={transferMinuteSelectId}
+                          className="sr-only"
+                        >
+                          Transfer 실행 분
+                        </label>
+                        <select
+                          id={transferMinuteSelectId}
+                          value={transferMinute}
+                          onChange={(event) =>
+                            setTransferMinute(
+                              Number.parseInt(event.target.value, 10),
+                            )
+                          }
+                          className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                          disabled={!canManageSync}
+                          title={
+                            !canManageSync ? ADMIN_ONLY_MESSAGE : undefined
+                          }
+                        >
+                          {transferMinuteOptions.map((minute) => (
+                            <option key={minute} value={minute}>
+                              {minute.toString().padStart(2, "0")}분
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      실행 중에는 자동 동기화와 백업이 순차적으로 대기합니다.
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={handleTransferScheduleSave}
+                    disabled={
+                      isSavingTransferSchedule ||
+                      isRunningTransferSync ||
+                      !canManageSync
+                    }
+                    title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+                    className="sm:self-start"
+                  >
+                    {isSavingTransferSchedule ? "저장 중..." : "시각 저장"}
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <p>
+                  다음 실행: <span>{transferNextRunLabel}</span>
+                </p>
+                <p>
+                  최근 실행: <span>{transferLastRange}</span>
+                </p>
+                <p>
+                  최근 상태:{" "}
+                  <span className={`${transferStatusClass} font-medium`}>
+                    {transferStatusLabel}
+                  </span>
+                </p>
+                {transferLastError ? (
+                  <p className="text-sm text-destructive">
+                    최근 오류: {transferLastError}
+                  </p>
+                ) : null}
+              </div>
+            </CardContent>
+            <CardFooter>
+              <Button
+                onClick={handleTransferSyncRun}
+                disabled={isRunningTransferSync || !canManageSync}
+                title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+                className="w-full sm:w-auto"
+              >
+                {isRunningTransferSync ? "재정렬 실행 중..." : "지금 실행"}
               </Button>
             </CardFooter>
           </Card>

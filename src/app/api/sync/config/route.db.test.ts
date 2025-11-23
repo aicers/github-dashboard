@@ -55,6 +55,13 @@ async function resetDatabaseState() {
          backup_last_completed_at = NULL,
          backup_last_status = 'idle',
          backup_last_error = NULL,
+         transfer_sync_hour_local = 4,
+         transfer_sync_minute_local = 0,
+         transfer_sync_timezone = 'UTC',
+         transfer_sync_last_started_at = NULL,
+         transfer_sync_last_completed_at = NULL,
+         transfer_sync_last_status = 'idle',
+         transfer_sync_last_error = NULL,
          updated_at = NOW()
      WHERE id = 'default'`,
   );

@@ -1,4 +1,4 @@
-export type JobType = "sync" | "backup" | "restore";
+export type JobType = "sync" | "backup" | "restore" | "transfer";
 
 type TailResolver = (value?: void | PromiseLike<void>) => void;
 

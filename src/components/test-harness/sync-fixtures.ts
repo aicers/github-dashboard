@@ -24,6 +24,13 @@ export function buildSyncStatusFixture(): SyncStatus {
       backup_last_completed_at: "2024-04-01T17:02:00.000Z",
       backup_last_status: "success",
       backup_last_error: null,
+      transfer_sync_hour_local: 4,
+      transfer_sync_minute_local: 15,
+      transfer_sync_timezone: "Asia/Seoul",
+      transfer_sync_last_started_at: "2024-04-01T18:00:00.000Z",
+      transfer_sync_last_completed_at: "2024-04-01T18:05:00.000Z",
+      transfer_sync_last_status: "success",
+      transfer_sync_last_error: null,
     },
     runs: [
       {
@@ -152,6 +159,19 @@ export function buildSyncStatusFixture(): SyncStatus {
           restoreKey: "db:1",
         },
       ],
+    },
+    transferSync: {
+      schedule: {
+        hourLocal: 4,
+        minuteLocal: 30,
+        timezone: "Asia/Seoul",
+        nextRunAt: "2024-04-03T18:30:00.000Z",
+        lastStartedAt: "2024-04-01T18:00:00.000Z",
+        lastCompletedAt: "2024-04-01T18:05:00.000Z",
+        lastStatus: "success",
+        lastError: null,
+      },
+      isRunning: false,
     },
   };
 }
