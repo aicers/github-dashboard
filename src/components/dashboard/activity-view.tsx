@@ -2252,6 +2252,7 @@ export function ActivityView({
   );
   const savedFilterSelectId = useId();
   const jumpDateInputId = useId();
+  const rowsSelectId = useId();
   const attentionTooltipPrefix = useId();
   const mentionAiTooltipId = `${attentionTooltipPrefix}-mention-ai`;
   const mentionAiTooltipText = "응답을 요구한 멘션인지 여부를 AI가 판단합니다.";
@@ -5617,20 +5618,31 @@ export function ActivityView({
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium text-foreground">Rows</span>
-            <select
-              className="rounded-md border border-border bg-background px-2 py-1 text-sm"
-              value={draft.perPage}
-              onChange={(event) =>
-                changePerPage(toPositiveInt(event.target.value, perPageDefault))
-              }
+            <Label
+              className="text-xs font-medium text-foreground"
+              htmlFor={rowsSelectId}
             >
-              {perPageChoices.map((choice) => (
-                <option key={choice} value={choice}>
-                  {choice}
-                </option>
-              ))}
-            </select>
+              Rows
+            </Label>
+            <div className="relative">
+              <select
+                id={rowsSelectId}
+                className="h-8 appearance-none rounded-md border border-border bg-background px-2 pr-8 text-sm"
+                value={draft.perPage}
+                onChange={(event) =>
+                  changePerPage(
+                    toPositiveInt(event.target.value, perPageDefault),
+                  )
+                }
+              >
+                {perPageChoices.map((choice) => (
+                  <option key={choice} value={choice}>
+                    {choice}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            </div>
           </div>
         </div>
         <div className="space-y-3">
