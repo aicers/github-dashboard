@@ -1214,7 +1214,6 @@ function PullRequestList({
 }) {
   const [authorFilter, setAuthorFilter] = useState("all");
   const [reviewerFilter, setReviewerFilter] = useState("all");
-  const prefetchedIdsRef = useRef<Set<string>>(new Set());
   const trimmedTimezone = timezone.trim();
   const timezoneTitle = trimmedTimezone.length ? trimmedTimezone : undefined;
 
@@ -1320,25 +1319,8 @@ function PullRequestList({
 
   const hasReviewerFilter = reviewerOptions.length > 0;
 
-  const {
-    openItemId,
-    detailMap,
-    loadingDetailIds,
-    selectItem,
-    closeItem,
-    loadDetail,
-  } = useActivityDetailState();
-
-  useEffect(() => {
-    sortedItems.forEach((item) => {
-      const id = item.id;
-      if (!id || prefetchedIdsRef.current.has(id)) {
-        return;
-      }
-      prefetchedIdsRef.current.add(id);
-      void loadDetail(id);
-    });
-  }, [sortedItems, loadDetail]);
+  const { openItemId, detailMap, loadingDetailIds, selectItem, closeItem } =
+    useActivityDetailState();
 
   if (!items.length && !segmented) {
     return <p className="text-sm text-muted-foreground">{emptyText}</p>;
@@ -1656,7 +1638,6 @@ function ReviewRequestList({
 }) {
   const [authorFilter, setAuthorFilter] = useState("all");
   const [reviewerFilter, setReviewerFilter] = useState("all");
-  const prefetchedIdsRef = useRef<Set<string>>(new Set());
   const trimmedTimezone = timezone.trim();
   const timezoneTitle = trimmedTimezone.length ? trimmedTimezone : undefined;
 
@@ -1797,26 +1778,8 @@ function ReviewRequestList({
   const hasReviewerFilter = reviewerOptions.length > 0;
   const metricLabel = "대기일수";
 
-  const {
-    openItemId,
-    detailMap,
-    loadingDetailIds,
-    selectItem,
-    closeItem,
-    loadDetail,
-  } = useActivityDetailState();
-
-  useEffect(() => {
-    sortedItems.forEach(({ selectionId, representative }) => {
-      const pullRequestId = (representative.pullRequest.id ?? "").trim();
-      const resolvedId = pullRequestId.length ? pullRequestId : selectionId;
-      if (!resolvedId || prefetchedIdsRef.current.has(resolvedId)) {
-        return;
-      }
-      prefetchedIdsRef.current.add(resolvedId);
-      void loadDetail(resolvedId);
-    });
-  }, [sortedItems, loadDetail]);
+  const { openItemId, detailMap, loadingDetailIds, selectItem, closeItem } =
+    useActivityDetailState();
 
   if (!items.length && !segmented) {
     return <p className="text-sm text-muted-foreground">{emptyText}</p>;
@@ -2186,7 +2149,6 @@ function IssueList({
           : [],
     [primaryUserRole],
   );
-  const prefetchedIdsRef = useRef<Set<string>>(new Set());
 
   const aggregation = useMemo(() => {
     const primaryMap = new Map<string, RankingEntry>();
@@ -2365,19 +2327,7 @@ function IssueList({
     selectItem,
     closeItem,
     updateDetailItem,
-    loadDetail,
   } = useActivityDetailState();
-
-  useEffect(() => {
-    sortedItems.forEach((item) => {
-      const id = item.id;
-      if (!id || prefetchedIdsRef.current.has(id)) {
-        return;
-      }
-      prefetchedIdsRef.current.add(id);
-      void loadDetail(id);
-    });
-  }, [sortedItems, loadDetail]);
 
   const handleUpdateIssueStatus = useCallback(
     async (activityItem: ActivityItem, nextStatus: IssueProjectStatus) => {
@@ -2708,6 +2658,8 @@ function IssueList({
           author: item.author,
           attention: attentionFlags,
         });
+        activityItem.issueType = item.issueType ?? null;
+        activityItem.milestone = item.milestone ?? null;
         activityItem.assignees = toActivityUsers(item.assignees);
         activityItem.linkedPullRequests = item.linkedPullRequests ?? [];
         activityItem.labels = item.labels ?? [];
@@ -3046,7 +2998,6 @@ function MentionList({
 }) {
   const [targetFilter, setTargetFilter] = useState("all");
   const [authorFilter, setAuthorFilter] = useState("all");
-  const prefetchedIdsRef = useRef<Set<string>>(new Set());
   const trimmedTimezone = timezone.trim();
   const timezoneTitle = trimmedTimezone.length ? trimmedTimezone : undefined;
 
@@ -3183,18 +3134,7 @@ function MentionList({
     selectItem,
     closeItem,
     updateDetailItem,
-    loadDetail,
   } = useActivityDetailState();
-
-  useEffect(() => {
-    aggregatedItems.forEach(({ selectionId }) => {
-      if (!selectionId || prefetchedIdsRef.current.has(selectionId)) {
-        return;
-      }
-      prefetchedIdsRef.current.add(selectionId);
-      void loadDetail(selectionId);
-    });
-  }, [aggregatedItems, loadDetail]);
 
   if (!aggregatedItems.length && !segmented) {
     return <p className="text-sm text-muted-foreground">{emptyText}</p>;
