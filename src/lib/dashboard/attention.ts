@@ -190,6 +190,8 @@ export type AttentionInsights = {
   backlogIssues: IssueAttentionItem[];
   stalledInProgressIssues: IssueAttentionItem[];
   unansweredMentions: MentionAttentionItem[];
+  organizationMaintainers?: UserReference[];
+  repositoryMaintainersByRepository?: Record<string, UserReference[]>;
 };
 
 type Maybe<T> = T | null | undefined;
@@ -1521,6 +1523,18 @@ export async function fetchStuckReviewRequests(
   return { items, userIds };
 }
 
+async function fetchOrganizationMaintainerIds(): Promise<string[]> {
+  const result = await query<{ user_id: string | null }>(
+    `SELECT DISTINCT user_id
+       FROM repository_maintainers
+      WHERE user_id IS NOT NULL`,
+  );
+
+  return result.rows
+    .map((row) => row.user_id)
+    .filter((id): id is string => Boolean(id));
+}
+
 async function fetchIssueInsights(
   excludedRepositoryIds: readonly string[],
   excludedUserIds: readonly string[],
@@ -1530,6 +1544,7 @@ async function fetchIssueInsights(
 ): Promise<{
   backlog: Dataset<IssueRawItem>;
   stalled: Dataset<IssueRawItem>;
+  repositoryMaintainersByRepository: Map<string, string[]>;
 }> {
   const result = await query<IssueRow>(
     `SELECT
@@ -1718,6 +1733,7 @@ async function fetchIssueInsights(
   return {
     backlog: { items: backlogItems, userIds: backlogUserIds },
     stalled: { items: stalledItems, userIds: stalledUserIds },
+    repositoryMaintainersByRepository: repositoryMaintainerMap,
   };
 }
 
@@ -2232,46 +2248,53 @@ export async function getAttentionInsights(options?: {
   const now = new Date();
   const targetProject = normalizeProjectTarget(env.TODO_PROJECT_NAME);
 
-  const [stale, idle, stuckReviews, issueInsights, mentions] =
-    await Promise.all([
-      fetchStalePullRequests(
-        excludedReposArray,
-        excludedUsersArray,
-        now,
-        organizationHolidaySet,
-      ),
-      fetchIdlePullRequests(
-        excludedReposArray,
-        excludedUsersArray,
-        now,
-        organizationHolidaySet,
-      ),
-      fetchStuckReviewRequests(
-        excludedReposArray,
-        excludedUsersArray,
-        now,
-        organizationHolidayCodes,
-        organizationHolidaySet,
-      ),
-      fetchIssueInsights(
-        excludedReposArray,
-        excludedUsersArray,
-        targetProject,
-        now,
-        organizationHolidaySet,
-      ),
-      fetchUnansweredMentions(
-        excludedReposArray,
-        excludedUsersArray,
-        now,
-        organizationHolidayCodes,
-        organizationHolidaySet,
-        targetProject,
-        {
-          useClassifier: options?.useMentionClassifier ?? true,
-        },
-      ),
-    ]);
+  const [
+    stale,
+    idle,
+    stuckReviews,
+    issueInsights,
+    mentions,
+    organizationMaintainerIds,
+  ] = await Promise.all([
+    fetchStalePullRequests(
+      excludedReposArray,
+      excludedUsersArray,
+      now,
+      organizationHolidaySet,
+    ),
+    fetchIdlePullRequests(
+      excludedReposArray,
+      excludedUsersArray,
+      now,
+      organizationHolidaySet,
+    ),
+    fetchStuckReviewRequests(
+      excludedReposArray,
+      excludedUsersArray,
+      now,
+      organizationHolidayCodes,
+      organizationHolidaySet,
+    ),
+    fetchIssueInsights(
+      excludedReposArray,
+      excludedUsersArray,
+      targetProject,
+      now,
+      organizationHolidaySet,
+    ),
+    fetchUnansweredMentions(
+      excludedReposArray,
+      excludedUsersArray,
+      now,
+      organizationHolidayCodes,
+      organizationHolidaySet,
+      targetProject,
+      {
+        useClassifier: options?.useMentionClassifier ?? true,
+      },
+    ),
+    fetchOrganizationMaintainerIds(),
+  ]);
 
   const userIdSet = new Set<string>();
   stale.userIds.forEach((id) => {
@@ -2292,6 +2315,9 @@ export async function getAttentionInsights(options?: {
   mentions.userIds.forEach((id) => {
     userIdSet.add(id);
   });
+  organizationMaintainerIds.forEach((id) => {
+    userIdSet.add(id);
+  });
 
   const userProfiles = userIdSet.size
     ? await getUserProfiles(Array.from(userIdSet))
@@ -2301,6 +2327,18 @@ export async function getAttentionInsights(options?: {
     const reference = toUserReference(profile);
     if (reference) {
       userMap.set(reference.id, reference);
+    }
+  });
+  const organizationMaintainers = organizationMaintainerIds
+    .map((id) => userMap.get(id))
+    .filter((user): user is UserReference => Boolean(user));
+  const repositoryMaintainersByRepository: Record<string, UserReference[]> = {};
+  issueInsights.repositoryMaintainersByRepository.forEach((ids, repoId) => {
+    const entries = ids
+      .map((id) => userMap.get(id))
+      .filter((user): user is UserReference => Boolean(user));
+    if (entries.length) {
+      repositoryMaintainersByRepository[repoId] = entries;
     }
   });
 
@@ -2429,5 +2467,7 @@ export async function getAttentionInsights(options?: {
     backlogIssues,
     stalledInProgressIssues,
     unansweredMentions,
+    organizationMaintainers,
+    repositoryMaintainersByRepository,
   } satisfies AttentionInsights;
 }
