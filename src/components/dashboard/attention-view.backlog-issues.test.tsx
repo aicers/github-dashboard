@@ -303,6 +303,11 @@ describe("AttentionView backlog issues", () => {
       backlogIssues: backlogItems,
       stalledInProgressIssues: [],
       unansweredMentions: [],
+      organizationMaintainers: [alice, carol],
+      repositoryMaintainersByRepository: {
+        [repositoryOne.id]: [alice],
+        [repositoryTwo.id]: [carol],
+      },
     } satisfies AttentionInsights;
 
     render(<AttentionView insights={insights} />);
@@ -328,6 +333,20 @@ describe("AttentionView backlog issues", () => {
     expect(
       screen.getByText("Improve deployment configurables"),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText("저장소 책임자 경과일수 합계 순위"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("저장소 책임자 건수 순위")).toBeInTheDocument();
+
+    const maintainerFilter = screen.getByLabelText("저장소 책임자 필터");
+    await user.selectOptions(maintainerFilter, alice.id);
+
+    expect(
+      screen.queryByText("Improve deployment configurables"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Refactor backlog workflows")).toBeInTheDocument();
+
+    await user.selectOptions(maintainerFilter, "all");
 
     const firstItem = screen
       .getByText("Refactor backlog workflows")

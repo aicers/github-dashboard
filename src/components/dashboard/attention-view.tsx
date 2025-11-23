@@ -2116,6 +2116,9 @@ function IssueList({
   metricKey = "ageDays",
   metricLabel = "경과일수",
   primaryUserRole = "author",
+  showMaintainerControls = false,
+  maintainerOptionsOverride,
+  repositoryMaintainersByRepository = {},
   mentionWaitMap,
   attentionFlagMap,
   timezone,
@@ -2132,6 +2135,9 @@ function IssueList({
   metricKey?: "ageDays" | "inProgressAgeDays";
   metricLabel?: string;
   primaryUserRole?: "author" | "repositoryMaintainer";
+  showMaintainerControls?: boolean;
+  maintainerOptionsOverride?: UserReference[];
+  repositoryMaintainersByRepository?: Record<string, UserReference[]>;
   mentionWaitMap: Map<string, MentionAttentionItem[]>;
   attentionFlagMap: Map<string, Partial<ActivityItem["attention"]>>;
   timezone: string;
@@ -2143,6 +2149,7 @@ function IssueList({
   resyncDisabledReason?: string | null;
 }) {
   const [primaryFilter, setPrimaryFilter] = useState("all");
+  const [maintainerFilter, setMaintainerFilter] = useState("all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
   const [updatingStatusIds, setUpdatingStatusIds] = useState<Set<string>>(
     () => new Set<string>(),
@@ -2154,6 +2161,22 @@ function IssueList({
   const timezoneTitle = trimmedTimezone.length ? trimmedTimezone : undefined;
   const primaryLabel =
     primaryUserRole === "repositoryMaintainer" ? "저장소 책임자" : "작성자";
+  const resolveItemMaintainers = useCallback(
+    (item: IssueAttentionItem) => {
+      if (item.repositoryMaintainers?.length) {
+        return item.repositoryMaintainers;
+      }
+      const repoId = item.repository?.id;
+      if (repoId) {
+        const fallback = repositoryMaintainersByRepository[repoId];
+        if (fallback?.length) {
+          return fallback;
+        }
+      }
+      return [];
+    },
+    [repositoryMaintainersByRepository],
+  );
   const resolvePrimaryUser = useCallback(
     (item: IssueAttentionItem) =>
       primaryUserRole === "repositoryMaintainer"
@@ -2167,6 +2190,7 @@ function IssueList({
 
   const aggregation = useMemo(() => {
     const primaryMap = new Map<string, RankingEntry>();
+    const maintainerMap = new Map<string, RankingEntry>();
     const assigneeMap = new Map<string, RankingEntry>();
 
     const getMetric = (item: IssueAttentionItem) =>
@@ -2190,6 +2214,21 @@ function IssueList({
         primaryMap.set(primaryUser.id, entry);
       });
 
+      if (showMaintainerControls) {
+        const maintainers = resolveItemMaintainers(item);
+        maintainers.forEach((maintainer) => {
+          const entry = maintainerMap.get(maintainer.id) ?? {
+            key: maintainer.id,
+            user: maintainer,
+            total: 0,
+            count: 0,
+          };
+          entry.total += metricValue;
+          entry.count += 1;
+          maintainerMap.set(maintainer.id, entry);
+        });
+      }
+
       item.assignees.forEach((assignee) => {
         const assigneeEntry = assigneeMap.get(assignee.id) ?? {
           key: assignee.id,
@@ -2205,15 +2244,36 @@ function IssueList({
 
     return {
       primary: Array.from(primaryMap.values()),
+      maintainers: Array.from(maintainerMap.values()),
       assignees: Array.from(assigneeMap.values()),
     };
-  }, [items, metricKey, resolvePrimaryUser]);
+  }, [
+    items,
+    metricKey,
+    resolveItemMaintainers,
+    resolvePrimaryUser,
+    showMaintainerControls,
+  ]);
 
   const primaryOptions = useMemo(() => {
     return aggregation.primary
       .map((entry) => ({ key: entry.key, label: formatUser(entry.user) }))
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [aggregation.primary]);
+
+  const maintainerOptions = useMemo(() => {
+    if (
+      Array.isArray(maintainerOptionsOverride) &&
+      maintainerOptionsOverride.length
+    ) {
+      return maintainerOptionsOverride
+        .map((user) => ({ key: user.id, label: formatUser(user) }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+    }
+    return aggregation.maintainers
+      .map((entry) => ({ key: entry.key, label: formatUser(entry.user) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [aggregation.maintainers, maintainerOptionsOverride]);
 
   const assigneeOptions = useMemo(() => {
     return aggregation.assignees
@@ -2228,13 +2288,28 @@ function IssueList({
         primaryFilter === "all" ||
         primaryUsers.some((primaryUser) => primaryUser.id === primaryFilter);
 
+      const maintainerMatch =
+        !showMaintainerControls ||
+        maintainerFilter === "all" ||
+        resolveItemMaintainers(item).some(
+          (maintainer) => maintainer.id === maintainerFilter,
+        );
+
       const assigneeMatch =
         assigneeFilter === "all" ||
         item.assignees.some((assignee) => assignee.id === assigneeFilter);
 
-      return primaryMatch && assigneeMatch;
+      return primaryMatch && maintainerMatch && assigneeMatch;
     });
-  }, [items, assigneeFilter, primaryFilter, resolvePrimaryUser]);
+  }, [
+    items,
+    assigneeFilter,
+    maintainerFilter,
+    primaryFilter,
+    resolveItemMaintainers,
+    resolvePrimaryUser,
+    showMaintainerControls,
+  ]);
 
   const sortedItems = useMemo(() => {
     const metricFor = (item: IssueAttentionItem) =>
@@ -2253,6 +2328,14 @@ function IssueList({
     return sortRankingByCount(aggregation.primary);
   }, [aggregation.primary]);
 
+  const maintainerRankingByTotal = useMemo(() => {
+    return sortRankingByTotal(aggregation.maintainers);
+  }, [aggregation.maintainers]);
+
+  const maintainerRankingByCount = useMemo(() => {
+    return sortRankingByCount(aggregation.maintainers);
+  }, [aggregation.maintainers]);
+
   const assigneeRankingByTotal = useMemo(() => {
     return sortRankingByTotal(aggregation.assignees);
   }, [aggregation.assignees]);
@@ -2261,11 +2344,19 @@ function IssueList({
     return sortRankingByCount(aggregation.assignees);
   }, [aggregation.assignees]);
 
+  const maintainerFilterEnabled = showMaintainerControls;
   const hasAssigneeFilter = assigneeOptions.length > 0;
 
   useEffect(() => {
     setPrimaryFilter("all");
   }, []);
+  useEffect(() => {
+    if (showMaintainerControls) {
+      setMaintainerFilter("all");
+      return;
+    }
+    setMaintainerFilter("all");
+  }, [showMaintainerControls]);
 
   const {
     openItemId,
@@ -2505,18 +2596,6 @@ function IssueList({
   const rankingGrid = (
     <div className="grid gap-4 md:grid-cols-2">
       <RankingCard
-        title={`${primaryLabel} ${metricLabel} 합계 순위`}
-        entries={primaryRankingByTotal}
-        valueFormatter={(entry) => formatDays(entry.total)}
-        emptyText={`${primaryLabel} 데이터가 없습니다.`}
-      />
-      <RankingCard
-        title={`${primaryLabel} 건수 순위`}
-        entries={primaryRankingByCount}
-        valueFormatter={(entry) => formatCount(entry.count)}
-        emptyText={`${primaryLabel} 데이터가 없습니다.`}
-      />
-      <RankingCard
         title={`담당자 ${metricLabel} 합계 순위`}
         entries={assigneeRankingByTotal}
         valueFormatter={(entry) => formatDays(entry.total)}
@@ -2528,26 +2607,39 @@ function IssueList({
         valueFormatter={(entry) => formatCount(entry.count)}
         emptyText="담당자 데이터가 없습니다."
       />
+      {showMaintainerControls ? (
+        <>
+          <RankingCard
+            title={`저장소 책임자 ${metricLabel} 합계 순위`}
+            entries={maintainerRankingByTotal}
+            valueFormatter={(entry) => formatDays(entry.total)}
+            emptyText="저장소 책임자 데이터가 없습니다."
+          />
+          <RankingCard
+            title="저장소 책임자 건수 순위"
+            entries={maintainerRankingByCount}
+            valueFormatter={(entry) => formatCount(entry.count)}
+            emptyText="저장소 책임자 데이터가 없습니다."
+          />
+        </>
+      ) : null}
+      <RankingCard
+        title={`${primaryLabel} ${metricLabel} 합계 순위`}
+        entries={primaryRankingByTotal}
+        valueFormatter={(entry) => formatDays(entry.total)}
+        emptyText={`${primaryLabel} 데이터가 없습니다.`}
+      />
+      <RankingCard
+        title={`${primaryLabel} 건수 순위`}
+        entries={primaryRankingByCount}
+        valueFormatter={(entry) => formatCount(entry.count)}
+        emptyText={`${primaryLabel} 데이터가 없습니다.`}
+      />
     </div>
   );
 
   const filterControls = (
     <div className="flex flex-wrap gap-4">
-      <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-        {primaryLabel} 필터
-        <select
-          className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          value={primaryFilter}
-          onChange={(event) => setPrimaryFilter(event.target.value)}
-        >
-          <option value="all">미적용</option>
-          {primaryOptions.map((option) => (
-            <option key={option.key} value={option.key}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </label>
       {hasAssigneeFilter ? (
         <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
           담당자 필터
@@ -2565,6 +2657,38 @@ function IssueList({
           </select>
         </label>
       ) : null}
+      {maintainerFilterEnabled ? (
+        <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground min-w-[220px]">
+          저장소 책임자 필터
+          <select
+            className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            value={maintainerFilter}
+            onChange={(event) => setMaintainerFilter(event.target.value)}
+          >
+            <option value="all">미적용</option>
+            {maintainerOptions.map((option) => (
+              <option key={option.key} value={option.key}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+        {primaryLabel} 필터
+        <select
+          className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          value={primaryFilter}
+          onChange={(event) => setPrimaryFilter(event.target.value)}
+        >
+          <option value="all">미적용</option>
+          {primaryOptions.map((option) => (
+            <option key={option.key} value={option.key}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
     </div>
   );
 
@@ -3990,6 +4114,11 @@ export function AttentionView({
           items={insights.backlogIssues}
           emptyText="현재 조건을 만족하는 이슈가 없습니다."
           metricLabel="경과일수"
+          showMaintainerControls
+          maintainerOptionsOverride={insights.organizationMaintainers ?? []}
+          repositoryMaintainersByRepository={
+            insights.repositoryMaintainersByRepository ?? {}
+          }
           mentionWaitMap={mentionWaitMap}
           attentionFlagMap={attentionFlagMap}
           timezone={insights.timezone}
