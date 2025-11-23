@@ -16,6 +16,7 @@ import {
   useState,
 } from "react";
 import { Button } from "@/components/ui/button";
+import { PickerInput } from "@/components/ui/picker-input";
 import type {
   ActivityItem,
   ActivityItemComment,
@@ -1445,13 +1446,16 @@ export function ProjectFieldEditor({
               ))}
             </select>
           ) : (
-            <input
-              type="date"
+            <PickerInput
               value={draft}
               disabled={isUpdating}
               onChange={handleChange}
               className="h-7 rounded border border-border bg-background px-1.5 text-[11px] text-foreground focus:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
+              wrapperClassName="w-auto"
+              iconClassName="h-3 w-3"
+              iconButtonClassName="px-1.5"
               ref={handleInputRef}
+              pickerButtonLabel="프로젝트 시작일을 선택하세요"
             />
           )}
           <div className="flex items-center gap-1">
