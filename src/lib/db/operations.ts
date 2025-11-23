@@ -935,6 +935,13 @@ export async function getSyncConfig() {
             backup_last_completed_at,
             backup_last_status,
             backup_last_error,
+            transfer_sync_hour_local,
+            transfer_sync_minute_local,
+            transfer_sync_timezone,
+            transfer_sync_last_started_at,
+            transfer_sync_last_completed_at,
+            transfer_sync_last_status,
+            transfer_sync_last_error,
             unanswered_mentions_last_started_at,
             unanswered_mentions_last_completed_at,
             unanswered_mentions_last_success_at,
@@ -970,6 +977,13 @@ export async function updateSyncConfig(params: {
   backupLastCompletedAt?: string | null;
   backupLastStatus?: string;
   backupLastError?: string | null;
+  transferSyncHourLocal?: number;
+  transferSyncMinuteLocal?: number;
+  transferSyncTimezone?: string;
+  transferSyncLastStartedAt?: string | null;
+  transferSyncLastCompletedAt?: string | null;
+  transferSyncLastStatus?: string;
+  transferSyncLastError?: string | null;
   unansweredMentionsLastStartedAt?: string | null;
   unansweredMentionsLastCompletedAt?: string | null;
   unansweredMentionsLastSuccessAt?: string | null;
@@ -1091,6 +1105,41 @@ export async function updateSyncConfig(params: {
   if (params.backupLastError !== undefined) {
     fields.push(`backup_last_error = $${fields.length + 1}`);
     values.push(params.backupLastError);
+  }
+
+  if (typeof params.transferSyncHourLocal === "number") {
+    fields.push(`transfer_sync_hour_local = $${fields.length + 1}`);
+    values.push(params.transferSyncHourLocal);
+  }
+
+  if (typeof params.transferSyncMinuteLocal === "number") {
+    fields.push(`transfer_sync_minute_local = $${fields.length + 1}`);
+    values.push(params.transferSyncMinuteLocal);
+  }
+
+  if (typeof params.transferSyncTimezone === "string") {
+    fields.push(`transfer_sync_timezone = $${fields.length + 1}`);
+    values.push(params.transferSyncTimezone);
+  }
+
+  if (params.transferSyncLastStartedAt !== undefined) {
+    fields.push(`transfer_sync_last_started_at = $${fields.length + 1}`);
+    values.push(params.transferSyncLastStartedAt);
+  }
+
+  if (params.transferSyncLastCompletedAt !== undefined) {
+    fields.push(`transfer_sync_last_completed_at = $${fields.length + 1}`);
+    values.push(params.transferSyncLastCompletedAt);
+  }
+
+  if (typeof params.transferSyncLastStatus === "string") {
+    fields.push(`transfer_sync_last_status = $${fields.length + 1}`);
+    values.push(params.transferSyncLastStatus);
+  }
+
+  if (params.transferSyncLastError !== undefined) {
+    fields.push(`transfer_sync_last_error = $${fields.length + 1}`);
+    values.push(params.transferSyncLastError);
   }
 
   if (params.unansweredMentionsLastStartedAt !== undefined) {

@@ -45,6 +45,11 @@ import { withJobLock } from "@/lib/jobs/lock";
 import { emitSyncEvent } from "@/lib/sync/event-bus";
 import type { SyncRunSummaryEvent } from "@/lib/sync/events";
 import { refreshAttentionReactions } from "@/lib/sync/reaction-refresh";
+import type { TransferSyncRuntimeInfo } from "@/lib/transfer/service";
+import {
+  getTransferSyncRuntimeInfo,
+  updateTransferSyncSchedule,
+} from "@/lib/transfer/service";
 
 const dateSchema = z.string().transform((value, ctx) => {
   const date = new Date(value);
@@ -147,6 +152,7 @@ export type SyncStatus = {
   logs: Awaited<ReturnType<typeof getLatestSyncLogs>>;
   dataFreshness: Awaited<ReturnType<typeof getDataFreshness>>;
   backup: BackupRuntimeInfo;
+  transferSync: TransferSyncRuntimeInfo;
 };
 
 export type DashboardStats = Awaited<ReturnType<typeof getDashboardStats>>;
@@ -1041,6 +1047,9 @@ export async function updateSyncSettings(params: {
   orgHolidayCalendarCodes?: (HolidayCalendarCode | string)[];
   backupHourLocal?: number;
   backupTimezone?: string;
+  transferSyncHourLocal?: number;
+  transferSyncMinuteLocal?: number;
+  transferSyncTimezone?: string;
   repositoryMaintainers?: Record<string, string[]>;
 }) {
   await ensureSchema();
@@ -1201,6 +1210,29 @@ export async function updateSyncSettings(params: {
       timezone,
     });
   }
+
+  if (
+    params.transferSyncHourLocal !== undefined ||
+    params.transferSyncMinuteLocal !== undefined ||
+    params.transferSyncTimezone !== undefined
+  ) {
+    const config = await getSyncConfig();
+    const hour =
+      params.transferSyncHourLocal ?? config?.transfer_sync_hour_local ?? 4;
+    const minute =
+      params.transferSyncMinuteLocal ?? config?.transfer_sync_minute_local ?? 0;
+    const timezone =
+      params.transferSyncTimezone ??
+      config?.transfer_sync_timezone ??
+      config?.timezone ??
+      "UTC";
+
+    await updateTransferSyncSchedule({
+      hourLocal: hour,
+      minuteLocal: minute,
+      timezone,
+    });
+  }
 }
 
 export async function resetData({
@@ -1219,15 +1251,17 @@ export async function resetData({
 
 export async function fetchSyncStatus(): Promise<SyncStatus> {
   await ensureSchema();
-  const [config, runs, logs, dataFreshness, backup] = await Promise.all([
-    getSyncConfig(),
-    getLatestSyncRuns(36),
-    getLatestSyncLogs(36),
-    getDataFreshness(),
-    getBackupRuntimeInfo(),
-  ]);
+  const [config, runs, logs, dataFreshness, backup, transferSync] =
+    await Promise.all([
+      getSyncConfig(),
+      getLatestSyncRuns(36),
+      getLatestSyncLogs(36),
+      getDataFreshness(),
+      getBackupRuntimeInfo(),
+      getTransferSyncRuntimeInfo(),
+    ]);
 
-  return { config, runs, logs, dataFreshness, backup };
+  return { config, runs, logs, dataFreshness, backup, transferSync };
 }
 
 export async function fetchSyncConfig() {

@@ -16,6 +16,8 @@ const patchSchema = z.object({
   timezone: z.string().min(1).optional(),
   weekStart: z.enum(["sunday", "monday"]).optional(),
   backupHour: z.number().int().min(0).max(23).optional(),
+  transferSyncHour: z.number().int().min(0).max(23).optional(),
+  transferSyncMinute: z.number().int().min(0).max(59).optional(),
   dateTimeFormat: z
     .string()
     .min(1)
@@ -156,6 +158,8 @@ export async function PATCH(request: Request) {
       holidayCalendarCodes,
       organizationHolidayCalendarCodes,
       backupHour,
+      transferSyncHour,
+      transferSyncMinute,
       activityRowsPerPage,
     } = payload;
 
@@ -177,6 +181,8 @@ export async function PATCH(request: Request) {
         allowedUsers !== undefined ||
         repositoryMaintainers !== undefined ||
         backupHour !== undefined ||
+        transferSyncHour !== undefined ||
+        transferSyncMinute !== undefined ||
         organizationHolidayCalendarCodes !== undefined;
 
       if (attemptedAdminUpdate) {
@@ -234,6 +240,22 @@ export async function PATCH(request: Request) {
         backupScheduleTimezone = timezone;
       }
 
+      let transferScheduleTimezone: string | undefined;
+      if (
+        (transferSyncHour !== undefined ||
+          transferSyncMinute !== undefined ||
+          timezone !== undefined) &&
+        session.userId
+      ) {
+        const userSettings = await readUserTimeSettings(session.userId);
+        transferScheduleTimezone = userSettings.timezone;
+      } else if (
+        (transferSyncHour !== undefined || transferSyncMinute !== undefined) &&
+        typeof timezone === "string"
+      ) {
+        transferScheduleTimezone = timezone;
+      }
+
       await updateSyncSettings({
         orgName,
         syncIntervalMinutes,
@@ -244,6 +266,9 @@ export async function PATCH(request: Request) {
         orgHolidayCalendarCodes: organizationHolidayCalendarCodes,
         backupHourLocal: backupHour,
         backupTimezone: backupScheduleTimezone,
+        transferSyncHourLocal: transferSyncHour,
+        transferSyncMinuteLocal: transferSyncMinute,
+        transferSyncTimezone: transferScheduleTimezone,
         repositoryMaintainers,
       });
     }

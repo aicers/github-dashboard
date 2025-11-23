@@ -128,6 +128,13 @@ function buildStatus(overrides: Partial<SyncStatus> = {}): SyncStatus {
       backup_last_completed_at: null,
       backup_last_status: "idle",
       backup_last_error: null,
+      transfer_sync_hour_local: 3,
+      transfer_sync_minute_local: 0,
+      transfer_sync_timezone: "UTC",
+      transfer_sync_last_started_at: null,
+      transfer_sync_last_completed_at: null,
+      transfer_sync_last_status: "idle",
+      transfer_sync_last_error: null,
       ...(overrides.config ?? {}),
     },
     runs: overrides.runs ?? [],
@@ -147,6 +154,19 @@ function buildStatus(overrides: Partial<SyncStatus> = {}): SyncStatus {
         lastError: null,
       },
       records: [],
+    },
+    transferSync: overrides.transferSync ?? {
+      schedule: {
+        hourLocal: 3,
+        minuteLocal: 0,
+        timezone: "UTC",
+        nextRunAt: null,
+        lastStartedAt: null,
+        lastCompletedAt: null,
+        lastStatus: "idle",
+        lastError: null,
+      },
+      isRunning: false,
     },
   };
 }
@@ -1304,6 +1324,85 @@ describe("SyncControls", () => {
     const payload = request ? JSON.parse(await request.clone().text()) : null;
     expect(payload).toEqual({ backupHour: 5 });
     expect(routerRefreshMock).toHaveBeenCalled();
+  });
+
+  it("allows admins to update the transfer sync schedule", async () => {
+    const user = userEvent.setup();
+    const status = buildStatus({
+      transferSync: {
+        schedule: {
+          hourLocal: 3,
+          minuteLocal: 0,
+          timezone: "UTC",
+          nextRunAt: null,
+          lastStartedAt: null,
+          lastCompletedAt: null,
+          lastStatus: "idle",
+          lastError: null,
+        },
+        isRunning: false,
+      },
+    });
+
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+        view="overview"
+        currentPathname="/dashboard/sync"
+      />,
+    );
+
+    const hourSelect = screen.getByLabelText("Transfer 동기화 실행 시각 (UTC)");
+    await user.selectOptions(hourSelect, ["5"]);
+    const minuteSelect = screen.getByLabelText("Transfer 실행 분");
+    await user.selectOptions(minuteSelect, ["15"]);
+
+    const saveButton = screen.getByRole("button", {
+      name: "시각 저장",
+    });
+    await user.click(saveButton);
+
+    await waitFor(() =>
+      expect(hasRequest("/api/sync/config", "PATCH")).toBe(true),
+    );
+    const request = findRequest("/api/sync/config", "PATCH");
+    const payload = request ? JSON.parse(await request.clone().text()) : null;
+    expect(payload).toEqual({
+      transferSyncHour: 5,
+      transferSyncMinute: 15,
+    });
+    expect(routerRefreshMock).toHaveBeenCalled();
+  });
+
+  it("runs transfer sync immediately when admins trigger it manually", async () => {
+    const user = userEvent.setup();
+    const confirmMock = vi
+      .spyOn(window, "confirm")
+      .mockImplementation(() => true);
+
+    const status = buildStatus();
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+        view="overview"
+        currentPathname="/dashboard/sync"
+      />,
+    );
+
+    const runButton = screen.getByRole("button", { name: "지금 실행" });
+    await user.click(runButton);
+
+    await waitFor(() =>
+      expect(hasRequest("/api/sync/transfer/run", "POST")).toBe(true),
+    );
+    expect(routerRefreshMock).toHaveBeenCalled();
+    confirmMock.mockRestore();
   });
 
   it("posts a restore request when admins restore a backup", async () => {
