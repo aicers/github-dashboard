@@ -18,9 +18,11 @@ import {
   resolveWorkTimestamps,
 } from "@/lib/activity/status-utils";
 import type {
+  ActivityIssueType,
   ActivityLabel,
   ActivityLinkedIssue,
   ActivityLinkedPullRequest,
+  ActivityMilestone,
   IssueProjectStatus,
 } from "@/lib/activity/types";
 import {
@@ -105,6 +107,8 @@ export type IssueReference = {
   assignees: UserReference[];
   linkedPullRequests: ActivityLinkedPullRequest[];
   labels: ActivityLabel[];
+  issueType: ActivityIssueType | null;
+  milestone: ActivityMilestone | null;
 };
 
 export type IssueAttentionItem = IssueReference & {
@@ -299,6 +303,13 @@ type IssueReferenceRaw = {
   assigneeIds: string[];
   linkedPullRequests: ActivityLinkedPullRequest[];
   labels: ActivityLabel[];
+  issueTypeId: string | null;
+  issueTypeName: string | null;
+  milestoneId: string | null;
+  milestoneTitle: string | null;
+  milestoneState: string | null;
+  milestoneDueOn: string | Date | null;
+  milestoneUrl: string | null;
 };
 
 type IssueRawItem = IssueReferenceRaw & {
@@ -418,6 +429,13 @@ type IssueRow = {
   repository_name_with_owner: string | null;
   label_keys: string[] | null;
   label_names: string[] | null;
+  issue_type_id: string | null;
+  issue_type_name: string | null;
+  milestone_id: string | null;
+  milestone_title: string | null;
+  milestone_state: string | null;
+  milestone_due_on: string | Date | null;
+  milestone_url: string | null;
 };
 
 async function fetchLinkedPullRequestsForIssues(
@@ -631,6 +649,27 @@ function buildIssueLabels({
     repositoryId: repoId,
     repositoryNameWithOwner: repositoryNameWithOwner ?? null,
   }));
+}
+
+function toIsoDate(value: string | Date | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  if (!trimmed.length) {
+    return null;
+  }
+
+  const date = new Date(trimmed);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date.toISOString();
 }
 
 function parseIssueRaw(data: unknown): IssueRaw | null {
@@ -1562,7 +1601,14 @@ async function fetchIssueInsights(
        items.repository_name,
        items.repository_name_with_owner,
        items.label_keys,
-       items.label_names
+       items.label_names,
+       items.issue_type_id,
+       items.issue_type_name,
+       items.milestone_id,
+       items.milestone_title,
+       items.milestone_state,
+       items.milestone_due_on,
+       items.milestone_url
      FROM activity_items AS items
      WHERE items.item_type = 'issue'
        AND items.status = 'open'
@@ -1655,6 +1701,13 @@ async function fetchIssueInsights(
       assigneeIds,
       linkedPullRequests: [],
       labels,
+      issueTypeId: row.issue_type_id,
+      issueTypeName: row.issue_type_name,
+      milestoneId: row.milestone_id,
+      milestoneTitle: row.milestone_title,
+      milestoneState: row.milestone_state,
+      milestoneDueOn: row.milestone_due_on,
+      milestoneUrl: row.milestone_url,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       ageDays,
@@ -2194,6 +2247,23 @@ function toIssueReference(
   const repositoryMaintainers = raw.repositoryMaintainerIds
     .map((id) => users.get(id))
     .filter((value): value is UserReference => Boolean(value));
+  const issueTypeId = raw.issueTypeId?.trim();
+  const milestoneId = raw.milestoneId?.trim();
+  const issueType: ActivityIssueType | null = issueTypeId?.length
+    ? {
+        id: issueTypeId,
+        name: raw.issueTypeName ?? null,
+      }
+    : null;
+  const milestone: ActivityMilestone | null = milestoneId?.length
+    ? {
+        id: milestoneId,
+        title: raw.milestoneTitle ?? null,
+        state: raw.milestoneState ?? null,
+        dueOn: toIsoDate(raw.milestoneDueOn),
+        url: raw.milestoneUrl ?? null,
+      }
+    : null;
 
   return {
     id: raw.id,
@@ -2210,6 +2280,8 @@ function toIssueReference(
     assignees,
     linkedPullRequests: raw.linkedPullRequests ?? [],
     labels: raw.labels ?? [],
+    issueType,
+    milestone,
   } satisfies IssueReference;
 }
 

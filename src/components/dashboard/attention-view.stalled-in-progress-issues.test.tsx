@@ -95,6 +95,8 @@ function buildIssueItem(params: {
     assignees,
     linkedPullRequests,
     labels: [],
+    issueType: null,
+    milestone: null,
     createdAt,
     updatedAt,
     ageDays,
