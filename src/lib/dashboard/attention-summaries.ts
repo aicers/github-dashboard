@@ -217,9 +217,9 @@ export function buildFollowUpSummaries(
   const stalledIssues = insights.stalledInProgressIssues;
   const stalledMetric = (item: IssueAttentionItem) =>
     item.inProgressAgeDays ?? item.ageDays ?? 0;
-  const stalledAuthors = aggregateUsers(
+  const stalledRepositoryMaintainers = aggregateUsers(
     stalledIssues,
-    (item) => (item.author ? [item.author] : []),
+    (item) => item.repositoryMaintainers ?? [],
     stalledMetric,
   );
   const stalledAssignees = aggregateUsers(
@@ -314,7 +314,10 @@ export function buildFollowUpSummaries(
       count: stalledIssues.length,
       totalMetric: sumMetric(stalledIssues, stalledMetric),
       highlights: [
-        highlightLine("최다 작성자", findTopByTotal(stalledAuthors, 3)),
+        highlightLine(
+          "최다 저장소 책임자",
+          findTopByTotal(stalledRepositoryMaintainers, 3),
+        ),
         highlightLine("최다 담당자", findTopByTotal(stalledAssignees, 3)),
       ].filter((line): line is string => Boolean(line)),
     },

@@ -125,6 +125,7 @@ function buildIssueItem(params: {
   url: string;
   repository: RepositoryReference;
   author: UserReference | null;
+  repositoryMaintainers?: UserReference[];
   assignees: UserReference[];
   linkedPullRequests?: IssueAttentionItem["linkedPullRequests"];
   createdAt: string;
@@ -140,6 +141,7 @@ function buildIssueItem(params: {
     url,
     repository,
     author,
+    repositoryMaintainers = author ? [author] : [],
     assignees,
     linkedPullRequests = [],
     createdAt,
@@ -155,6 +157,7 @@ function buildIssueItem(params: {
     title,
     url,
     repository,
+    repositoryMaintainers: repositoryMaintainers ?? [],
     author,
     assignees,
     linkedPullRequests,
@@ -640,6 +643,17 @@ describe("Follow-up overview", () => {
     ).toBeInTheDocument();
     expect(
       within(backlogCard).getByText("최다 담당자: 1위 Bob, 2위 Dave"),
+    ).toBeInTheDocument();
+
+    const stalledCard = screen.getByTestId(
+      "follow-up-summary-stalled-in-progress-issues",
+    );
+    expect(within(stalledCard).getByText("2건")).toBeInTheDocument();
+    expect(
+      within(stalledCard).getByText("최다 저장소 책임자: 1위 Erin, 2위 Grace"),
+    ).toBeInTheDocument();
+    expect(
+      within(stalledCard).getByText("최다 담당자: 1위 Frank, 2위 Hank"),
     ).toBeInTheDocument();
 
     const mentionCard = screen.getByTestId(

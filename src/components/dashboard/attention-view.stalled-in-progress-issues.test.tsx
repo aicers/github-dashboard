@@ -56,6 +56,7 @@ function buildIssueItem(params: {
   url: string;
   repository: RepositoryReference;
   author: UserReference;
+  repositoryMaintainers?: UserReference[];
   assignees: UserReference[];
   linkedPullRequests?: IssueAttentionItem["linkedPullRequests"];
   createdAt: string;
@@ -72,6 +73,7 @@ function buildIssueItem(params: {
     url,
     repository,
     author,
+    repositoryMaintainers = [author],
     assignees,
     linkedPullRequests = [],
     createdAt,
@@ -88,6 +90,7 @@ function buildIssueItem(params: {
     title,
     url,
     repository,
+    repositoryMaintainers: repositoryMaintainers ?? [],
     author,
     assignees,
     linkedPullRequests,
@@ -221,6 +224,8 @@ describe("AttentionView stalled in-progress issues", () => {
     const bob = buildUser("user-bob", "Bob", "bob");
     const carol = buildUser("user-carol", "Carol", "carol");
     const dave = buildUser("user-dave", "Dave", "dave");
+    const oliver = buildUser("user-oliver", "Oliver", "oliver");
+    const reina = buildUser("user-reina", "Reina", "reina");
 
     const repository = buildRepository(
       "repo-engineering",
@@ -235,6 +240,7 @@ describe("AttentionView stalled in-progress issues", () => {
         title: "Stabilize rollout scripts",
         url: "https://github.com/acme/engineering/issues/310",
         repository,
+        repositoryMaintainers: [oliver],
         author: alice,
         assignees: [bob, dave],
         createdAt: "2023-12-01T00:00:00.000Z",
@@ -264,6 +270,7 @@ describe("AttentionView stalled in-progress issues", () => {
         title: "Improve telemetry reliability",
         url: "https://github.com/acme/engineering/issues/311",
         repository,
+        repositoryMaintainers: [reina],
         author: carol,
         assignees: [bob],
         createdAt: "2023-12-15T00:00:00.000Z",
@@ -311,7 +318,7 @@ describe("AttentionView stalled in-progress issues", () => {
     render(<AttentionView insights={insights} />);
 
     expect(
-      screen.getByText("최다 작성자: 1위 Alice, 2위 Carol"),
+      screen.getByText("최다 저장소 책임자: 1위 Oliver, 2위 Reina"),
     ).toBeInTheDocument();
     expect(
       screen.getByText("최다 담당자: 1위 Bob, 2위 Dave"),
@@ -382,16 +389,17 @@ describe("AttentionView stalled in-progress issues", () => {
     expect(within(secondItem).getByText("P2")).toBeInTheDocument();
 
     expect(
-      screen.getByText("작성자 In Progress 경과일수 합계 순위"),
+      screen.getByText("저장소 책임자 In Progress 경과일수 합계 순위"),
     ).toBeInTheDocument();
-    expect(screen.getByText("작성자 건수 순위")).toBeInTheDocument();
+    expect(screen.getByText("저장소 책임자 건수 순위")).toBeInTheDocument();
     expect(
       screen.getByText("담당자 In Progress 경과일수 합계 순위"),
     ).toBeInTheDocument();
     expect(screen.getByText("담당자 건수 순위")).toBeInTheDocument();
 
-    const authorFilter = screen.getByLabelText("작성자 필터");
-    await user.selectOptions(authorFilter, carol.id);
+    const repositoryMaintainerFilter =
+      screen.getByLabelText("저장소 책임자 필터");
+    await user.selectOptions(repositoryMaintainerFilter, reina.id);
 
     expect(
       screen.queryByText("Stabilize rollout scripts"),
@@ -400,7 +408,7 @@ describe("AttentionView stalled in-progress issues", () => {
       screen.getByText("Improve telemetry reliability"),
     ).toBeInTheDocument();
 
-    await user.selectOptions(authorFilter, "all");
+    await user.selectOptions(repositoryMaintainerFilter, "all");
 
     const assigneeFilter = screen.getByLabelText("담당자 필터");
     await user.selectOptions(assigneeFilter, dave.id);

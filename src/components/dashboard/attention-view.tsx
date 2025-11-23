@@ -2115,6 +2115,7 @@ function IssueList({
   highlightInProgress,
   metricKey = "ageDays",
   metricLabel = "경과일수",
+  primaryUserRole = "author",
   mentionWaitMap,
   attentionFlagMap,
   timezone,
@@ -2130,6 +2131,7 @@ function IssueList({
   highlightInProgress?: boolean;
   metricKey?: "ageDays" | "inProgressAgeDays";
   metricLabel?: string;
+  primaryUserRole?: "author" | "repositoryMaintainer";
   mentionWaitMap: Map<string, MentionAttentionItem[]>;
   attentionFlagMap: Map<string, Partial<ActivityItem["attention"]>>;
   timezone: string;
@@ -2140,7 +2142,7 @@ function IssueList({
   resyncDisabled?: boolean;
   resyncDisabledReason?: string | null;
 }) {
-  const [authorFilter, setAuthorFilter] = useState("all");
+  const [primaryFilter, setPrimaryFilter] = useState("all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
   const [updatingStatusIds, setUpdatingStatusIds] = useState<Set<string>>(
     () => new Set<string>(),
@@ -2150,10 +2152,21 @@ function IssueList({
   >(() => new Set<string>());
   const trimmedTimezone = timezone.trim();
   const timezoneTitle = trimmedTimezone.length ? trimmedTimezone : undefined;
+  const primaryLabel =
+    primaryUserRole === "repositoryMaintainer" ? "저장소 책임자" : "작성자";
+  const resolvePrimaryUser = useCallback(
+    (item: IssueAttentionItem) =>
+      primaryUserRole === "repositoryMaintainer"
+        ? (item.repositoryMaintainers ?? [])
+        : item.author
+          ? [item.author]
+          : [],
+    [primaryUserRole],
+  );
   const prefetchedIdsRef = useRef<Set<string>>(new Set());
 
   const aggregation = useMemo(() => {
-    const authorMap = new Map<string, RankingEntry>();
+    const primaryMap = new Map<string, RankingEntry>();
     const assigneeMap = new Map<string, RankingEntry>();
 
     const getMetric = (item: IssueAttentionItem) =>
@@ -2163,18 +2176,19 @@ function IssueList({
 
     items.forEach((item) => {
       const metricValue = getMetric(item);
+      const primaryUsers = resolvePrimaryUser(item);
 
-      if (item.author) {
-        const authorEntry = authorMap.get(item.author.id) ?? {
-          key: item.author.id,
-          user: item.author,
+      primaryUsers.forEach((primaryUser) => {
+        const entry = primaryMap.get(primaryUser.id) ?? {
+          key: primaryUser.id,
+          user: primaryUser,
           total: 0,
           count: 0,
         };
-        authorEntry.total += metricValue;
-        authorEntry.count += 1;
-        authorMap.set(item.author.id, authorEntry);
-      }
+        entry.total += metricValue;
+        entry.count += 1;
+        primaryMap.set(primaryUser.id, entry);
+      });
 
       item.assignees.forEach((assignee) => {
         const assigneeEntry = assigneeMap.get(assignee.id) ?? {
@@ -2190,16 +2204,16 @@ function IssueList({
     });
 
     return {
-      authors: Array.from(authorMap.values()),
+      primary: Array.from(primaryMap.values()),
       assignees: Array.from(assigneeMap.values()),
     };
-  }, [items, metricKey]);
+  }, [items, metricKey, resolvePrimaryUser]);
 
-  const authorOptions = useMemo(() => {
-    return aggregation.authors
+  const primaryOptions = useMemo(() => {
+    return aggregation.primary
       .map((entry) => ({ key: entry.key, label: formatUser(entry.user) }))
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [aggregation.authors]);
+  }, [aggregation.primary]);
 
   const assigneeOptions = useMemo(() => {
     return aggregation.assignees
@@ -2209,16 +2223,18 @@ function IssueList({
 
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
-      const authorMatch =
-        authorFilter === "all" || item.author?.id === authorFilter;
+      const primaryUsers = resolvePrimaryUser(item);
+      const primaryMatch =
+        primaryFilter === "all" ||
+        primaryUsers.some((primaryUser) => primaryUser.id === primaryFilter);
 
       const assigneeMatch =
         assigneeFilter === "all" ||
         item.assignees.some((assignee) => assignee.id === assigneeFilter);
 
-      return authorMatch && assigneeMatch;
+      return primaryMatch && assigneeMatch;
     });
-  }, [items, authorFilter, assigneeFilter]);
+  }, [items, assigneeFilter, primaryFilter, resolvePrimaryUser]);
 
   const sortedItems = useMemo(() => {
     const metricFor = (item: IssueAttentionItem) =>
@@ -2229,13 +2245,13 @@ function IssueList({
     return filteredItems.slice().sort((a, b) => metricFor(b) - metricFor(a));
   }, [filteredItems, metricKey]);
 
-  const authorRankingByTotal = useMemo(() => {
-    return sortRankingByTotal(aggregation.authors);
-  }, [aggregation.authors]);
+  const primaryRankingByTotal = useMemo(() => {
+    return sortRankingByTotal(aggregation.primary);
+  }, [aggregation.primary]);
 
-  const authorRankingByCount = useMemo(() => {
-    return sortRankingByCount(aggregation.authors);
-  }, [aggregation.authors]);
+  const primaryRankingByCount = useMemo(() => {
+    return sortRankingByCount(aggregation.primary);
+  }, [aggregation.primary]);
 
   const assigneeRankingByTotal = useMemo(() => {
     return sortRankingByTotal(aggregation.assignees);
@@ -2246,6 +2262,10 @@ function IssueList({
   }, [aggregation.assignees]);
 
   const hasAssigneeFilter = assigneeOptions.length > 0;
+
+  useEffect(() => {
+    setPrimaryFilter("all");
+  }, []);
 
   const {
     openItemId,
@@ -2485,16 +2505,16 @@ function IssueList({
   const rankingGrid = (
     <div className="grid gap-4 md:grid-cols-2">
       <RankingCard
-        title={`작성자 ${metricLabel} 합계 순위`}
-        entries={authorRankingByTotal}
+        title={`${primaryLabel} ${metricLabel} 합계 순위`}
+        entries={primaryRankingByTotal}
         valueFormatter={(entry) => formatDays(entry.total)}
-        emptyText="작성자 데이터가 없습니다."
+        emptyText={`${primaryLabel} 데이터가 없습니다.`}
       />
       <RankingCard
-        title="작성자 건수 순위"
-        entries={authorRankingByCount}
+        title={`${primaryLabel} 건수 순위`}
+        entries={primaryRankingByCount}
         valueFormatter={(entry) => formatCount(entry.count)}
-        emptyText="작성자 데이터가 없습니다."
+        emptyText={`${primaryLabel} 데이터가 없습니다.`}
       />
       <RankingCard
         title={`담당자 ${metricLabel} 합계 순위`}
@@ -2514,14 +2534,14 @@ function IssueList({
   const filterControls = (
     <div className="flex flex-wrap gap-4">
       <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-        작성자 필터
+        {primaryLabel} 필터
         <select
           className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          value={authorFilter}
-          onChange={(event) => setAuthorFilter(event.target.value)}
+          value={primaryFilter}
+          onChange={(event) => setPrimaryFilter(event.target.value)}
         >
           <option value="all">미적용</option>
-          {authorOptions.map((option) => (
+          {primaryOptions.map((option) => (
             <option key={option.key} value={option.key}>
               {option.label}
             </option>
@@ -3998,6 +4018,7 @@ export function AttentionView({
           highlightInProgress
           metricKey="inProgressAgeDays"
           metricLabel="In Progress 경과일수"
+          primaryUserRole="repositoryMaintainer"
           mentionWaitMap={mentionWaitMap}
           attentionFlagMap={attentionFlagMap}
           timezone={insights.timezone}
