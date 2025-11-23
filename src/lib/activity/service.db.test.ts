@@ -857,6 +857,20 @@ describe("activity service integration", () => {
     expect(withBob.items.map((item) => item.id)).toEqual([]);
   });
 
+  it("returns empty results without errors when attention matches are empty but peopleSelection is set", async () => {
+    mockedAttentionInsights.mockResolvedValueOnce(emptyInsights());
+
+    await refreshActivityItemsSnapshot();
+
+    const result = await getActivityItems({
+      attention: ["unanswered_mentions", "review_requests_pending"],
+      peopleSelection: ["user-missing"],
+    });
+
+    expect(result.items).toHaveLength(0);
+    expect(result.pageInfo.totalCount).toBe(0);
+  });
+
   it("limits unanswered mention attention results to unresolved targets", async () => {
     const mentionAuthor: DbActor = {
       id: "user-mention-author",
