@@ -848,6 +848,46 @@ const COMMENT_REACTION_TYPES = [
   "comment",
 ];
 
+type DeletedCommentRow = {
+  id: string;
+  issue_id: string | null;
+  pull_request_id: string | null;
+};
+
+async function applyCommentDeletionSideEffects(rows: DeletedCommentRow[]) {
+  if (!rows.length) {
+    return;
+  }
+
+  const deletedIds = rows.map((row) => row.id);
+  await query(
+    `DELETE FROM reactions
+       WHERE subject_id = ANY($1::text[])
+         AND LOWER(subject_type) = ANY($2::text[])`,
+    [deletedIds, COMMENT_REACTION_TYPES],
+  );
+
+  const issueIds = new Set<string>();
+  const pullRequestIds = new Set<string>();
+  rows.forEach((row) => {
+    if (row.issue_id) {
+      issueIds.add(row.issue_id);
+    }
+    if (row.pull_request_id) {
+      pullRequestIds.add(row.pull_request_id);
+    }
+  });
+
+  if (issueIds.size || pullRequestIds.size) {
+    await refreshActivitySocialSignals({
+      issueIds: issueIds.size ? Array.from(issueIds) : undefined,
+      pullRequestIds: pullRequestIds.size
+        ? Array.from(pullRequestIds)
+        : undefined,
+    });
+  }
+}
+
 export async function deleteMissingCommentsForTarget(options: {
   issueId?: string | null;
   pullRequestId?: string | null;
@@ -905,11 +945,7 @@ export async function deleteMissingCommentsForTarget(options: {
 
   const whereClause = clauses.length ? clauses.join(" AND ") : "TRUE";
 
-  const deleteResult = await query<{
-    id: string;
-    issue_id: string | null;
-    pull_request_id: string | null;
-  }>(
+  const deleteResult = await query<DeletedCommentRow>(
     `DELETE FROM comments
       WHERE ${whereClause}
       RETURNING id, issue_id, pull_request_id`,
@@ -920,35 +956,30 @@ export async function deleteMissingCommentsForTarget(options: {
     return 0;
   }
 
-  const deletedIds = deleteResult.rows.map((row) => row.id);
-  await query(
-    `DELETE FROM reactions
-       WHERE subject_id = ANY($1::text[])
-         AND LOWER(subject_type) = ANY($2::text[])`,
-    [deletedIds, COMMENT_REACTION_TYPES],
-  );
-
-  const issueIds = new Set<string>();
-  const pullRequestIds = new Set<string>();
-  deleteResult.rows.forEach((row) => {
-    if (row.issue_id) {
-      issueIds.add(row.issue_id);
-    }
-    if (row.pull_request_id) {
-      pullRequestIds.add(row.pull_request_id);
-    }
-  });
-
-  if (issueIds.size || pullRequestIds.size) {
-    await refreshActivitySocialSignals({
-      issueIds: issueIds.size ? Array.from(issueIds) : undefined,
-      pullRequestIds: pullRequestIds.size
-        ? Array.from(pullRequestIds)
-        : undefined,
-    });
-  }
+  await applyCommentDeletionSideEffects(deleteResult.rows);
 
   return deleteResult.rowCount;
+}
+
+export async function deleteCommentsByIds(ids: readonly string[]) {
+  if (!ids.length) {
+    return 0;
+  }
+
+  const result = await query<DeletedCommentRow>(
+    `DELETE FROM comments
+       WHERE id = ANY($1::text[])
+       RETURNING id, issue_id, pull_request_id`,
+    [ids],
+  );
+
+  if (!result.rowCount) {
+    return 0;
+  }
+
+  await applyCommentDeletionSideEffects(result.rows);
+
+  return result.rowCount;
 }
 
 export async function recordSyncLog(
