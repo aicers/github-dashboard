@@ -252,10 +252,7 @@ function extractGraphqlErrorType(error: unknown): string | null {
   const extensionType = (
     error as { extensions?: { type?: unknown } | null | undefined }
   ).extensions?.type;
-  if (
-    typeof extensionType === "string" &&
-    extensionType.trim().length > 0
-  ) {
+  if (typeof extensionType === "string" && extensionType.trim().length > 0) {
     return extensionType.trim().toUpperCase();
   }
 
