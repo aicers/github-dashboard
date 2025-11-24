@@ -547,6 +547,24 @@ export async function upsertReaction(reaction: DbReaction) {
   }
 }
 
+export async function deleteReactionsForSubject({
+  subjectType,
+  subjectId,
+  keepIds,
+}: {
+  subjectType: string;
+  subjectId: string;
+  keepIds: readonly string[];
+}) {
+  await query(
+    `DELETE FROM reactions
+       WHERE subject_type = $1
+         AND subject_id = $2
+         AND NOT (id = ANY($3::text[]))`,
+    [subjectType, subjectId, keepIds],
+  );
+}
+
 export async function listCommentIdsByPullRequestIds(
   pullRequestIds: readonly string[],
 ): Promise<Map<string, string[]>> {

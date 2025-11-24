@@ -39,6 +39,8 @@ const {
   updateIssueAssigneesMock,
   updatePullRequestAssigneesMock,
   listPendingReviewRequestsMock,
+  deleteReactionsForSubjectMock,
+  deleteMissingCommentsForTargetMock,
   resetLogSequence,
   nextLogId,
 } = vi.hoisted(() => {
@@ -65,6 +67,8 @@ const {
     updateIssueAssigneesMock: vi.fn(async () => {}),
     updatePullRequestAssigneesMock: vi.fn(async () => {}),
     listPendingReviewRequestsMock: vi.fn(async () => new Map()),
+    deleteReactionsForSubjectMock: vi.fn(async () => {}),
+    deleteMissingCommentsForTargetMock: vi.fn(async () => 0),
     resetLogSequence: () => {
       logIdValue = 0;
     },
@@ -117,6 +121,12 @@ vi.mock("@/lib/db/operations", () => ({
   listPendingReviewRequestsByPullRequestIds: (
     ...args: Parameters<typeof listPendingReviewRequestsMock>
   ) => listPendingReviewRequestsMock(...args),
+  deleteReactionsForSubject: (
+    ...args: Parameters<typeof deleteReactionsForSubjectMock>
+  ) => deleteReactionsForSubjectMock(...args),
+  deleteMissingCommentsForTarget: (
+    ...args: Parameters<typeof deleteMissingCommentsForTargetMock>
+  ) => deleteMissingCommentsForTargetMock(...args),
 }));
 
 vi.mock("@/lib/github/client", () => ({
