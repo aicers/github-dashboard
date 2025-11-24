@@ -1,4 +1,4 @@
-import { type GraphQLClient, gql } from "graphql-request";
+import { ClientError, type GraphQLClient, gql } from "graphql-request";
 
 import { normalizeProjectTarget } from "@/lib/activity/base-query";
 import {
@@ -11,6 +11,7 @@ import {
 import { loadCombinedHolidaySet } from "@/lib/dashboard/business-days";
 import { ensureSchema } from "@/lib/db";
 import {
+  deleteCommentsByIds,
   getSyncConfig,
   listCommentIdsByPullRequestIds,
   listReviewIdsByPullRequestIds,
@@ -18,12 +19,22 @@ import {
 } from "@/lib/db/operations";
 import { env } from "@/lib/env";
 import { createGithubClient } from "@/lib/github/client";
-import type { SyncLogger } from "@/lib/github/collectors";
+import { reimportActivityNode, type SyncLogger } from "@/lib/github/collectors";
 
 type ReactionRefreshOptions = {
   logger?: SyncLogger;
   now?: Date;
 };
+
+type ParentType = "issue" | "pull_request" | "discussion";
+
+type NodeParentContext = {
+  kind: "comment" | "review" | "pull_request";
+  parentId: string;
+  parentType: ParentType;
+};
+
+type ParentReimportStatus = "succeeded" | "not_found" | "failed";
 
 type NodeReactionsQuery = {
   node?:
@@ -118,6 +129,8 @@ async function collectNodeReactions(
   client: GraphQLClient,
   nodeId: string,
   logger?: SyncLogger,
+  context?: NodeParentContext,
+  parentStatuses?: Map<string, ParentReimportStatus>,
 ): Promise<number> {
   let cursor: string | null = null;
   let total = 0;
@@ -133,8 +146,18 @@ async function collectNodeReactions(
       });
     } catch (error) {
       logger?.(
-        `[reaction-refresh] Failed to fetch reactions for node ${nodeId}: ${error instanceof Error ? error.message : "unknown error"}`,
+        `[reaction-refresh] Failed to fetch reactions for node ${nodeId}: ${
+          error instanceof Error ? error.message : "unknown error"
+        }`,
       );
+      if (isNotFoundLikeError(error)) {
+        await handleMissingReactableNode(
+          nodeId,
+          context,
+          logger,
+          parentStatuses ?? new Map<string, ParentReimportStatus>(),
+        );
+      }
       break;
     }
 
@@ -145,6 +168,12 @@ async function collectNodeReactions(
           `[reaction-refresh] Node ${nodeId} does not implement Reactable or was not found`,
         );
       }
+      await handleMissingReactableNode(
+        nodeId,
+        context,
+        logger,
+        parentStatuses ?? new Map<string, ParentReimportStatus>(),
+      );
       break;
     }
 
@@ -210,6 +239,103 @@ function extractPullRequestIds(requests: ReviewRequestRawItem[]): Set<string> {
   return ids;
 }
 
+function extractGraphqlErrorType(error: unknown): string | null {
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+
+  const directType = (error as { type?: unknown }).type;
+  if (typeof directType === "string" && directType.trim().length > 0) {
+    return directType.trim().toUpperCase();
+  }
+
+  const extensionType = (
+    error as { extensions?: { type?: unknown } | null | undefined }
+  ).extensions?.type;
+  if (
+    typeof extensionType === "string" &&
+    extensionType.trim().length > 0
+  ) {
+    return extensionType.trim().toUpperCase();
+  }
+
+  return null;
+}
+
+function isNotFoundLikeError(error: unknown) {
+  if (error instanceof ClientError) {
+    const graphqlErrors = Array.isArray(error.response?.errors)
+      ? (error.response?.errors ?? [])
+      : [];
+    if (
+      graphqlErrors.some(
+        (entry) => extractGraphqlErrorType(entry) === "NOT_FOUND",
+      )
+    ) {
+      return true;
+    }
+  }
+
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : null;
+
+  if (!message) {
+    return false;
+  }
+
+  return /not\s+found/i.test(message) || /could\s+not\s+resolve/i.test(message);
+}
+
+async function handleMissingReactableNode(
+  nodeId: string,
+  context: NodeParentContext | undefined,
+  logger: SyncLogger | undefined,
+  parentStatuses: Map<string, ParentReimportStatus>,
+) {
+  if (!context) {
+    logger?.(
+      `[reaction-refresh] Missing parent context for node ${nodeId}; skipping re-import`,
+    );
+    return;
+  }
+
+  let status = parentStatuses.get(context.parentId);
+  if (!status) {
+    try {
+      await reimportActivityNode({ nodeId: context.parentId, logger });
+      status = "succeeded";
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger?.(
+        `[reaction-refresh] Failed to re-import ${context.parentId} for node ${nodeId}: ${message}`,
+      );
+      status = isNotFoundLikeError(error) ? "not_found" : "failed";
+    }
+    parentStatuses.set(context.parentId, status);
+  }
+
+  if (context.kind === "comment" && status !== "failed") {
+    try {
+      const deleted = await deleteCommentsByIds([nodeId]);
+      if (deleted) {
+        logger?.(
+          `[reaction-refresh] Deleted missing comment ${nodeId} after ${status === "succeeded" ? "re-importing parent" : "confirming parent removal"}.`,
+        );
+      }
+    } catch (error) {
+      logger?.(
+        `[reaction-refresh] Failed to delete missing comment ${nodeId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+}
+
 export async function refreshAttentionReactions(
   options?: ReactionRefreshOptions,
 ): Promise<void> {
@@ -254,6 +380,28 @@ export async function refreshAttentionReactions(
   const reviewRequests = reviewRequestDataset.items;
   const pullRequestIds = extractPullRequestIds(reviewRequests);
 
+  const nodeContextMap = new Map<string, NodeParentContext>();
+  const registerContext = (
+    nodeId: string | null | undefined,
+    context: NodeParentContext,
+  ) => {
+    if (!nodeId) {
+      return;
+    }
+    nodeContextMap.set(nodeId, context);
+  };
+
+  mentionCandidates.forEach((mention) => {
+    if (!mention.commentId || !mention.container?.id) {
+      return;
+    }
+    registerContext(mention.commentId, {
+      kind: "comment",
+      parentId: mention.container.id,
+      parentType: mention.container.type,
+    });
+  });
+
   if (!mentionCommentIds.size && !pullRequestIds.size) {
     logger?.(
       "[reaction-refresh] No unanswered mentions or review requests require reaction refresh",
@@ -272,6 +420,11 @@ export async function refreshAttentionReactions(
   }
   for (const id of pullRequestIds) {
     nodeIds.add(id);
+    registerContext(id, {
+      kind: "pull_request",
+      parentId: id,
+      parentType: "pull_request",
+    });
   }
 
   commentMap.forEach((ids) => {
@@ -283,6 +436,25 @@ export async function refreshAttentionReactions(
     for (const id of ids) {
       nodeIds.add(id);
     }
+  });
+
+  commentMap.forEach((ids, prId) => {
+    ids.forEach((commentId) => {
+      registerContext(commentId, {
+        kind: "comment",
+        parentId: prId,
+        parentType: "pull_request",
+      });
+    });
+  });
+  reviewMap.forEach((ids, prId) => {
+    ids.forEach((reviewId) => {
+      registerContext(reviewId, {
+        kind: "review",
+        parentId: prId,
+        parentType: "pull_request",
+      });
+    });
   });
 
   if (!nodeIds.size) {
@@ -298,8 +470,16 @@ export async function refreshAttentionReactions(
 
   const client = createGithubClient();
   let totalReactions = 0;
+  const parentReimportStatuses = new Map<string, ParentReimportStatus>();
   for (const nodeId of nodeIds) {
-    const count = await collectNodeReactions(client, nodeId, logger);
+    const context = nodeContextMap.get(nodeId);
+    const count = await collectNodeReactions(
+      client,
+      nodeId,
+      logger,
+      context,
+      parentReimportStatuses,
+    );
     totalReactions += count;
   }
 

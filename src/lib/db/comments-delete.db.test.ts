@@ -10,6 +10,7 @@ import {
   type DbIssue,
   type DbPullRequest,
   type DbReaction,
+  deleteCommentsByIds,
   deleteMissingCommentsForTarget,
   upsertComment,
   upsertIssue,
@@ -247,5 +248,58 @@ describe("deleteMissingCommentsForTarget", () => {
       "SELECT id FROM comments ORDER BY id",
     );
     expect(commentRows.rows.map((row) => row.id)).toEqual([oldComment.id]);
+  });
+
+  it("deletes comments directly by ids", async () => {
+    await upsertRepository({
+      id: "repo-4",
+      name: "repo",
+      nameWithOwner: "acme/repo",
+      raw: {},
+    });
+    const issue: DbIssue = {
+      id: "issue-4",
+      number: 77,
+      repositoryId: "repo-4",
+      authorId: null,
+      title: "Issue",
+      state: "OPEN",
+      createdAt: "2024-04-01T00:00:00.000Z",
+      updatedAt: "2024-04-02T00:00:00.000Z",
+      closedAt: null,
+      raw: {},
+    };
+    await upsertIssue(issue);
+
+    const target: DbComment = {
+      id: "comment-remove-direct",
+      issueId: issue.id,
+      createdAt: "2024-04-03T00:00:00.000Z",
+      updatedAt: "2024-04-03T00:00:00.000Z",
+      raw: {},
+    };
+    await upsertComment(target);
+    await upsertReaction({
+      id: "reaction-direct",
+      subjectType: "IssueComment",
+      subjectId: target.id,
+      createdAt: "2024-04-03T00:00:00.000Z",
+      userId: null,
+      content: "THUMBS_UP",
+      raw: {},
+    });
+
+    const deleted = await deleteCommentsByIds([target.id]);
+    expect(deleted).toBe(1);
+
+    const commentRows = await query("SELECT id FROM comments WHERE id = $1", [
+      target.id,
+    ]);
+    expect(commentRows.rowCount).toBe(0);
+
+    const reactionRows = await query(
+      "SELECT id FROM reactions WHERE id = 'reaction-direct'",
+    );
+    expect(reactionRows.rowCount).toBe(0);
   });
 });
