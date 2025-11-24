@@ -4,6 +4,7 @@ import { ClientError } from "graphql-request";
 import { clearProjectFieldOverrides } from "@/lib/activity/project-field-store";
 import { clearActivityStatuses } from "@/lib/activity/status-store";
 import {
+  deleteMissingCommentsForTarget,
   fetchIssueRawMap,
   listPendingReviewRequestsByPullRequestIds,
   markReviewRequestRemoved,
@@ -276,6 +277,7 @@ type CommentNode = {
 type CommentCollectionResult = {
   latest: string | null;
   count: number;
+  ids: string[];
 };
 
 type DiscussionCollectionResult = {
@@ -1497,7 +1499,7 @@ async function collectIssueComments(
   const effectiveUntil = resolveUntil(options);
   const bounds = createBounds(effectiveSince, effectiveUntil);
   if (!issue.number) {
-    return { latest: null, count: 0 };
+    return { latest: null, count: 0, ids: [] };
   }
 
   let cursor: string | null = null;
@@ -1505,6 +1507,7 @@ async function collectIssueComments(
   let latest: string | null = null;
   let count = 0;
   const processedCommentIds = new Set<string>();
+  const collectedIds = new Set<string>();
   const [owner, name] = repository.nameWithOwner.split("/");
 
   while (hasNextPage) {
@@ -1663,6 +1666,7 @@ async function collectIssueComments(
         comment.id,
       );
 
+      collectedIds.add(comment.id);
       latest = maxTimestamp(latest, timestamp);
       count += 1;
     }
@@ -1680,7 +1684,18 @@ async function collectIssueComments(
     }
   }
 
-  return { latest, count };
+  const deletionScope =
+    target === "pull_request" ? ("non_review" as const) : ("any" as const);
+  await deleteMissingCommentsForTarget({
+    issueId: target === "pull_request" ? null : issue.id,
+    pullRequestId: target === "pull_request" ? issue.id : null,
+    since: effectiveSince,
+    until: effectiveUntil,
+    keepIds: Array.from(collectedIds),
+    scope: deletionScope,
+  });
+
+  return { latest, count, ids: Array.from(collectedIds) };
 }
 
 function hasDiscussionReplies(comment: CommentNode | null | undefined) {
@@ -1984,6 +1999,7 @@ async function collectReviewComments(
   let hasNextPage = true;
   let latest: string | null = null;
   let count = 0;
+  const collectedIds = new Set<string>();
   const [owner, name] = repository.nameWithOwner.split("/");
 
   while (hasNextPage) {
@@ -2059,6 +2075,7 @@ async function collectReviewComments(
           comment.id,
         );
 
+        collectedIds.add(comment.id);
         latest = maxTimestamp(latest, timestamp);
         count += 1;
       }
@@ -2077,7 +2094,15 @@ async function collectReviewComments(
     cursor = threads?.pageInfo?.endCursor ?? null;
   }
 
-  return { latest, count };
+  await deleteMissingCommentsForTarget({
+    pullRequestId: pullRequest.id,
+    since: effectiveSince,
+    until: effectiveUntil,
+    keepIds: Array.from(collectedIds),
+    scope: "review_only",
+  });
+
+  return { latest, count, ids: Array.from(collectedIds) };
 }
 
 async function collectReviews(

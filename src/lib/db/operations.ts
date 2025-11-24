@@ -821,6 +821,118 @@ export async function upsertComment(comment: DbComment) {
   }
 }
 
+const COMMENT_REACTION_TYPES = [
+  "issuecomment",
+  "pullrequestreviewcomment",
+  "discussioncomment",
+  "teamdiscussioncomment",
+  "commitcomment",
+  "comment",
+];
+
+export async function deleteMissingCommentsForTarget(options: {
+  issueId?: string | null;
+  pullRequestId?: string | null;
+  since?: string | null;
+  until?: string | null;
+  keepIds: readonly string[];
+  scope?: "any" | "review_only" | "non_review";
+}) {
+  const {
+    issueId = null,
+    pullRequestId = null,
+    since = null,
+    until = null,
+    keepIds,
+    scope = "any",
+  } = options;
+
+  if (!issueId && !pullRequestId) {
+    return 0;
+  }
+
+  const values: unknown[] = [];
+  const clauses: string[] = [];
+
+  if (issueId) {
+    values.push(issueId);
+    clauses.push(`issue_id = $${values.length}`);
+  }
+
+  if (pullRequestId) {
+    values.push(pullRequestId);
+    clauses.push(`pull_request_id = $${values.length}`);
+  }
+
+  const timestampClause =
+    "COALESCE(github_updated_at, github_created_at, NOW())";
+  if (since) {
+    values.push(since);
+    clauses.push(`${timestampClause} >= $${values.length}`);
+  }
+  if (until) {
+    values.push(until);
+    clauses.push(`${timestampClause} < $${values.length}`);
+  }
+
+  if (scope === "review_only") {
+    clauses.push("review_id IS NOT NULL");
+  } else if (scope === "non_review") {
+    clauses.push("review_id IS NULL");
+  }
+
+  values.push(keepIds);
+  const keepIndex = values.length;
+  clauses.push(`NOT (id = ANY($${keepIndex}::text[]))`);
+
+  const whereClause = clauses.length ? clauses.join(" AND ") : "TRUE";
+
+  const deleteResult = await query<{
+    id: string;
+    issue_id: string | null;
+    pull_request_id: string | null;
+  }>(
+    `DELETE FROM comments
+      WHERE ${whereClause}
+      RETURNING id, issue_id, pull_request_id`,
+    values,
+  );
+
+  if (!deleteResult.rowCount) {
+    return 0;
+  }
+
+  const deletedIds = deleteResult.rows.map((row) => row.id);
+  await query(
+    `DELETE FROM reactions
+       WHERE subject_id = ANY($1::text[])
+         AND LOWER(subject_type) = ANY($2::text[])`,
+    [deletedIds, COMMENT_REACTION_TYPES],
+  );
+
+  const issueIds = new Set<string>();
+  const pullRequestIds = new Set<string>();
+  deleteResult.rows.forEach((row) => {
+    if (row.issue_id) {
+      issueIds.add(row.issue_id);
+    }
+    if (row.pull_request_id) {
+      pullRequestIds.add(row.pull_request_id);
+    }
+  });
+
+  if (issueIds.size || pullRequestIds.size) {
+    await refreshActivitySocialSignals({
+      issueIds: issueIds.size ? Array.from(issueIds) : undefined,
+      pullRequestIds: pullRequestIds.size
+        ? Array.from(pullRequestIds)
+        : undefined,
+    });
+  }
+
+  return deleteResult.rowCount;
+}
+
 export async function recordSyncLog(
   resource: string,
   status: SyncLogStatus,
