@@ -5,6 +5,7 @@ import { clearProjectFieldOverrides } from "@/lib/activity/project-field-store";
 import { clearActivityStatuses } from "@/lib/activity/status-store";
 import {
   deleteMissingCommentsForTarget,
+  deleteReactionsForSubject,
   fetchIssueRawMap,
   listPendingReviewRequestsByPullRequestIds,
   markReviewRequestRemoved,
@@ -1117,6 +1118,7 @@ async function processReactions(
 ) {
   const reactionNodes = reactions?.nodes ?? [];
   const normalizedSubjectType = normalizeReactionSubjectType(subjectType);
+  const collectedIds: string[] = [];
   for (const reaction of reactionNodes) {
     if (!reaction?.id) {
       continue;
@@ -1132,7 +1134,14 @@ async function processReactions(
       createdAt: reaction.createdAt ?? null,
       raw: reaction,
     });
+    collectedIds.push(reaction.id);
   }
+
+  await deleteReactionsForSubject({
+    subjectType: normalizedSubjectType,
+    subjectId,
+    keepIds: collectedIds,
+  });
 }
 
 function maxTimestamp(
