@@ -50,7 +50,7 @@
     "@types/luxon": "^3.3.3",
     "@types/node": "^22",
     "@types/pg": "^8.15.6",
-    "@types/react": "^19.2.6",
+    "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "jsdom": "^27.2.0",
     "markdownlint-cli": "^0.46.0",
