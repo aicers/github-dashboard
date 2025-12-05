@@ -670,6 +670,7 @@ export const openPullRequestMetadataQuery = gql`
           reviewRequests(first: 50) {
             nodes {
               id
+              createdAt
               requestedReviewer {
                 __typename
                 ... on User {
