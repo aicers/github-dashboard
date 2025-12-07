@@ -473,7 +473,15 @@ type PullRequestMetadataNode = {
     nodes?:
       | {
           id: string;
-          createdAt?: string | null;
+          requestedReviewer?: ReviewRequestReviewer | null;
+        }[]
+      | null;
+  } | null;
+  timelineItems?: {
+    nodes?:
+      | {
+          __typename: "ReviewRequestedEvent";
+          createdAt: string;
           requestedReviewer?: ReviewRequestReviewer | null;
         }[]
       | null;
@@ -1027,7 +1035,23 @@ async function syncReviewRequestsSnapshot(
   let added = 0;
   let removed = 0;
   const requests = pullRequest.reviewRequests?.nodes ?? [];
+  const events = pullRequest.timelineItems?.nodes ?? [];
   const activeReviewerIds = new Set<string>();
+
+  const latestEventByReviewer = new Map<string, string>(); // reviewerId -> createdAt
+  for (const node of events) {
+    if (!node || node.__typename !== "ReviewRequestedEvent") {
+      continue;
+    }
+    const reviewer = node.requestedReviewer;
+    if (!reviewerIsUser(reviewer)) {
+      continue;
+    }
+    const existing = latestEventByReviewer.get(reviewer.id);
+    if (!existing || existing < node.createdAt) {
+      latestEventByReviewer.set(reviewer.id, node.createdAt);
+    }
+  }
 
   for (const entry of requests) {
     if (!entry) {
@@ -1037,11 +1061,16 @@ async function syncReviewRequestsSnapshot(
     if (!reviewerIsUser(reviewer)) {
       continue;
     }
+    const requestedAt = latestEventByReviewer.get(reviewer.id);
+    if (!requestedAt) {
+      console.warn("[open-items] missing ReviewRequestedEvent for reviewer", {
+        pullRequestId: pullRequest.id,
+        reviewerId: reviewer.id,
+      });
+      activeReviewerIds.add(reviewer.id);
+      continue;
+    }
     await processActor(reviewer);
-    const requestedAt =
-      typeof entry.createdAt === "string" && entry.createdAt.trim().length
-        ? entry.createdAt
-        : new Date().toISOString();
     await upsertReviewRequest({
       id: entry.id,
       pullRequestId: pullRequest.id,

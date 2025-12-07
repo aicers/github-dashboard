@@ -1,5 +1,7 @@
 import { gql } from "graphql-request";
 
+const REVIEW_REQUEST_TIMELINE_PAGE_SIZE = 200;
+
 export const viewerQuery = gql`
   query ViewerQuery {
     viewer {
@@ -670,7 +672,6 @@ export const openPullRequestMetadataQuery = gql`
           reviewRequests(first: 50) {
             nodes {
               id
-              createdAt
               requestedReviewer {
                 __typename
                 ... on User {
@@ -685,6 +686,26 @@ export const openPullRequestMetadataQuery = gql`
                   id
                   slug
                   name
+                }
+              }
+            }
+          }
+          timelineItems(
+            itemTypes: [REVIEW_REQUESTED_EVENT],
+            first: ${REVIEW_REQUEST_TIMELINE_PAGE_SIZE}
+          ) {
+            nodes {
+              __typename
+              ... on ReviewRequestedEvent {
+                createdAt
+                requestedReviewer {
+                  __typename
+                  ... on User {
+                    id
+                  }
+                  ... on Team {
+                    id
+                  }
                 }
               }
             }
