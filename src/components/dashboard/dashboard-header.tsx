@@ -164,14 +164,12 @@ export function DashboardHeader({
     <header className="flex flex-col gap-2 pb-0.5">
       <div className="flex items-center justify-between gap-4 -mt-0.5">
         <div className="flex items-center gap-2.5 -ml-2 -translate-y-px transform">
-          {/* biome-ignore lint/performance/noImgElement: Next Image clips the drop shadow for this SVG */}
-          <img
+          <Image
             src="/entrance-icon.svg"
             alt="GitHub Dashboard icon"
             width={88}
             height={88}
             className="h-16 w-16 translate-y-1 transform"
-            loading="lazy"
           />
           <div className="space-y-1 -translate-x-px -translate-y-0.5 transform">
             <h1 className="text-xl font-semibold tracking-tight text-slate-900">
