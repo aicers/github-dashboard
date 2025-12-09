@@ -18,9 +18,15 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("next/image", () => ({
   __esModule: true,
-  default: (props: ComponentProps<"img">) => (
-    // biome-ignore lint/performance/noImgElement: lightweight mock for tests
-    <img {...props} alt={props.alt ?? ""} />
+  default: ({ src, alt, width, height, className }: ComponentProps<"img">) => (
+    <span
+      role="img"
+      aria-label={alt ?? ""}
+      data-src={src}
+      data-width={width}
+      data-height={height}
+      className={className}
+    />
   ),
 }));
 

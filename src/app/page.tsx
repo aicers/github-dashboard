@@ -1,4 +1,5 @@
 import { Github } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
@@ -17,14 +18,13 @@ export default function Home() {
       <div className="relative w-[672px] h-[317px]">
         {/* Icon Container */}
         <div className="absolute left-1/2 top-0 flex h-[88px] w-[88px] -translate-x-1/2 items-center justify-center">
-          {/* biome-ignore lint/performance/noImgElement: Next Image clips the drop shadow for this SVG */}
-          <img
+          <Image
             src="/entrance-icon.svg"
             alt="GitHub Dashboard icon"
             width={88}
             height={88}
             className="h-auto w-full"
-            loading="eager"
+            priority
           />
         </div>
 
