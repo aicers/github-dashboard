@@ -9,3 +9,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Added
 
 - Initial public release of the GitHub Dashboard
+
+### Changed
+
+- Migrated CI workflow from deprecated `articulate/actions-markdownlint`
+  to actively maintained `DavidAnson/markdownlint-cli2-action@v22`
