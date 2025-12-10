@@ -213,9 +213,9 @@ people who are only conditionally relevant to the selected attention type.
     other 사람 필터 fields empty.
   - 응답 없는 리뷰 요청 → `reviewerIds` blue, all other 사람 필터 fields empty.
   - 응답 없는 멘션 → `mentionedUserIds` blue, all other 사람 필터 fields empty.
-  - Conflicting attentions (예: 정체된 Backlog 이슈 + 응답 없는 멘션) degrade the
-    overlapping 사람 필터 roles to gray chips so the UI reflects that the selection is
-    optional for that combination.
+  - Conflicting attentions (예: 정체된 Backlog 이슈 + 응답 없는 멘션) degrade
+    the overlapping 사람 필터 roles to gray chips so the UI reflects that the
+    selection is optional for that combination.
 
 ### Optional GitHub to-do project integration
 

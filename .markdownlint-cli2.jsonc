@@ -1,0 +1,20 @@
+{
+  // Glob patterns to lint
+  "globs": ["**/*.md", "**/*.markdown"],
+
+  // Ignore patterns (migrated from .markdownlintignore)
+  "ignores": [
+    "node_modules/**",
+    ".next/**",
+    "dist/**",
+    "build/**",
+    "docs/node_modules/**"
+  ],
+
+  // Rule configuration (migrated from .markdownlint.yml)
+  "config": {
+    "MD024": {
+      "siblings_only": true
+    }
+  }
+}
