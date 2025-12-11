@@ -16,14 +16,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Setup Biome CLI
         uses: biomejs/setup-biome@v2
@@ -34,10 +39,10 @@ jobs:
         run: biome ci --error-on-warnings .
 
       - name: Run Tailwind lint
-        run: npm run lint:tailwind
+        run: pnpm run lint:tailwind
 
       - name: Type check
-        run: npm run typecheck
+        run: pnpm run typecheck
 
       - name: markdownlint
         uses: articulate/actions-markdownlint@v1
@@ -70,14 +75,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Generate session secret
         run: |
@@ -99,16 +109,16 @@ jobs:
           exit 1
 
       - name: Run unit tests
-        run: npm run test
+        run: pnpm run test
 
       - name: Run database integration tests
-        run: npm run test:db
+        run: pnpm run test:db
 
       - name: Install Playwright Browser Dependencies
-        run: npx playwright install --with-deps
+        run: pnpm dlx playwright install --with-deps
 
       - name: Run Playwright E2E tests
-        run: npm run test:e2e
+        run: pnpm run test:e2e
 
   image-build:
     runs-on: ubuntu-latest

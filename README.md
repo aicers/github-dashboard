@@ -14,7 +14,7 @@ configuration, sync controls, and analytics through a Next.js dashboard.
 ## Prerequisites
 
 - Node.js 22+
-- npm 10+
+- pnpm 10+
 - PostgreSQL 14+ running locally or reachable via connection string
 - A GitHub OAuth App configured for your environments (see [docs/github-oauth-app.md](docs/github-oauth-app.md))
 - (Optional) A GitHub personal access token with `read:user` and repository
@@ -25,16 +25,16 @@ configuration, sync controls, and analytics through a Next.js dashboard.
 1. Install dependencies:
 
    ```bash
-   npm install
+   pnpm install
    ```
 
 1. Install Playwright browsers (one-time per machine):
 
    ```bash
-   npx playwright install --with-deps
+   pnpm dlx playwright install --with-deps
    ```
 
-1. Provide environment variables (`npm run dev` reads from `.env.local` or the
+1. Provide environment variables (`pnpm run dev` reads from `.env.local` or the
    current shell). Copy `.env.example` to `.env.local` and replace the
    placeholders:
 
@@ -55,7 +55,7 @@ configuration, sync controls, and analytics through a Next.js dashboard.
 1. Start the dev server:
 
    ```bash
-   npm run dev
+   pnpm run dev
    ```
 
 1. Visit the app (all dashboard routes require GitHub sign-in and organization
@@ -213,9 +213,9 @@ people who are only conditionally relevant to the selected attention type.
     other 사람 필터 fields empty.
   - 응답 없는 리뷰 요청 → `reviewerIds` blue, all other 사람 필터 fields empty.
   - 응답 없는 멘션 → `mentionedUserIds` blue, all other 사람 필터 fields empty.
-  - Conflicting attentions (예: 정체된 Backlog 이슈 + 응답 없는 멘션) degrade the
-    overlapping 사람 필터 roles to gray chips so the UI reflects that the selection is
-    optional for that combination.
+  - Conflicting attentions (예: 정체된 Backlog 이슈 + 응답 없는 멘션) degrade
+    the overlapping 사람 필터 roles to gray chips so the UI reflects that the
+    selection is optional for that combination.
 
 ### Optional GitHub to-do project integration
 
@@ -340,23 +340,23 @@ refresh from the Sync tab if needed (the snapshot remains automatic-only).
 
 ## Quality Tooling
 
-- `npm run lint` — Biome linting (Rust binary via CI and local npm package)
-- `npm run format` — Biome formatter (writes changes)
+- `pnpm run lint` — Biome linting (Rust binary via CI and local pnpm package)
+- `pnpm run format` — Biome formatter (writes changes)
 - `biome ci --error-on-warnings .` — direct CLI run that combines Biome's
-  formatter and linter checks without writing files; it subsumes `npm run lint`
-  (lint-only wrapper) while differing from `npm run format`, which applies
+  formatter and linter checks without writing files; it subsumes `pnpm run lint`
+  (lint-only wrapper) while differing from `pnpm run format`, which applies
   formatting edits instead of reporting them
-- `npm run typecheck` — `tsc --noEmit`
-- `npm run test` — Vitest unit and component tests
-- `npm run test:db` — PostgreSQL integration suite scoped by `vitest.db.config.ts`
+- `pnpm run typecheck` — `tsc --noEmit`
+- `pnpm run test` — Vitest unit and component tests
+- `pnpm run test:db` — PostgreSQL integration suite scoped by `vitest.db.config.ts`
   to `*.db.test.ts` specs; each spec imports `tests/helpers/postgres-container`
   to launch a disposable PostgreSQL 16 Testcontainer, injects its connection URI
   into `DATABASE_URL`, runs `ensureSchema()` so tables exist, and stops the
   container once the suite finishes. Ensure Docker (or Colima on macOS) is
   running first, and keep each spec responsible for cleaning its tables (for
   example with `TRUNCATE`) to stay isolated.
-- `npm run test:watch` — watch mode
-- `npm run test:e2e` — Playwright browser tests (requires the Playwright browser
+- `pnpm run test:watch` — watch mode
+- `pnpm run test:e2e` — Playwright browser tests (requires the Playwright browser
   install step above); uses dedicated test harness routes under
   `/test-harness/*` such as:
   - SettingsView — `http://localhost:3000/test-harness/settings`
@@ -365,8 +365,8 @@ refresh from the Sync tab if needed (the snapshot remains automatic-only).
   - Analytics filters — `http://localhost:3000/test-harness/analytics`
   - People insights — `http://localhost:3000/test-harness/people`
   - Dashboard tabs — `http://localhost:3000/test-harness/dashboard-tabs`
-- `npm run ci` — sequentially runs `biome ci --error-on-warnings .`,
-  `npm run typecheck`, `npm run test`, and `npm run test:db`
+- `pnpm run ci` — sequentially runs `biome ci --error-on-warnings .`,
+  `pnpm run typecheck`, `pnpm run test`, and `pnpm run test:db`
 
 ## Continuous Integration
 
@@ -566,7 +566,7 @@ infra/               → Docker/nginx assets for HTTPS proxying
 - `scripts/backfill-node-ownership.ts` — fixes “card shows repo A but link opens
   repo B” situations by re-fetching the canonical repository/URL for each
   affected issue or discussion and upserting it back into PostgreSQL. The
-  default invocation (`npm run backfill:ownership`) processes up to 500
+  default invocation (`pnpm run backfill:ownership`) processes up to 500
   candidates per run; prepend `--dry-run` to log what would change without
   writing, pass `--limit <n>` or `--chunk-size <n>` to tune throughput, and use
   `--id <nodeID>` (repeatable) to inspect or repair specific GitHub nodes.
