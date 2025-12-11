@@ -27,6 +27,10 @@ test-results/
 github-dashboard-*.tar
 backups/
 
+# lockfiles (pnpm-lock.yaml is committed; npm/yarn lockfiles are ignored)
+package-lock.json
+yarn.lock
+
 # debug
 npm-debug.log*
 yarn-debug.log*

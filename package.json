@@ -9,14 +9,14 @@
     "lint": "biome lint --error-on-warnings .",
     "format:check": "biome check --formatter-enabled true --linter-enabled false",
     "lint:md": "markdownlint \"**/*.md\"",
-    "lint:tailwind": "npx @tailwindcss/cli --lint --content \"./src/**/*.{js,ts,jsx,tsx}\" --output /dev/null",
+    "lint:tailwind": "pnpm dlx @tailwindcss/cli --lint --content \"./src/**/*.{js,ts,jsx,tsx}\" --output /dev/null",
     "test": "vitest run",
     "test:db": "vitest run --config vitest.db.config.ts",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit",
-    "ci": "biome ci --error-on-warnings . && npm run typecheck && npm run test && npm run test:db",
+    "ci": "biome ci --error-on-warnings . && pnpm run typecheck && pnpm run test && pnpm run test:db",
     "backfill:ownership": "tsx scripts/backfill-node-ownership.ts"
   },
   "dependencies": {
@@ -40,6 +40,7 @@
     "zod": "^4.1.13"
   },
   "devDependencies": {
+    "@next/env": "^16.0.9",
     "@playwright/test": "^1.56.1",
     "@tailwindcss/cli": "^4.1.17",
     "@tailwindcss/postcss": "^4.1.17",
@@ -52,6 +53,7 @@
     "@types/pg": "^8.15.6",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
+    "graphql": "^16.12.0",
     "jsdom": "^27.2.0",
     "markdownlint-cli": "^0.46.0",
     "tailwindcss": "^4.1.17",
