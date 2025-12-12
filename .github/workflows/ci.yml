@@ -115,7 +115,7 @@ jobs:
         run: pnpm run test:db
 
       - name: Install Playwright Browser Dependencies
-        run: pnpm dlx playwright install --with-deps
+        run: pnpm exec playwright install --with-deps
 
       - name: Run Playwright E2E tests
         run: pnpm run test:e2e

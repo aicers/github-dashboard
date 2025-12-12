@@ -31,8 +31,13 @@ configuration, sync controls, and analytics through a Next.js dashboard.
 1. Install Playwright browsers (one-time per machine):
 
    ```bash
-   pnpm dlx playwright install --with-deps
+   pnpm exec playwright install --with-deps
    ```
+
+   - Linux (e.g., CI runners): `--with-deps` also installs required system
+     packages so browsers run out of the box.
+   - macOS: the flag is effectively a no-op; it only downloads the browser
+     binaries, so leaving it on is harmless.
 
 1. Provide environment variables (`pnpm run dev` reads from `.env.local` or the
    current shell). Copy `.env.example` to `.env.local` and replace the
