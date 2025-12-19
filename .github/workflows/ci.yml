@@ -47,7 +47,7 @@ jobs:
       - name: markdownlint
         uses: DavidAnson/markdownlint-cli2-action@v22
         with:
-          globs: '**/*.md'
+          globs: "**/*.md"
 
   test:
     runs-on: ubuntu-latest
