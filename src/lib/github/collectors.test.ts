@@ -1282,7 +1282,8 @@ describe("runCollection", () => {
         headers: {
           get: (key: string) =>
             key.toLowerCase() === "retry-after" ? "1" : null,
-        },
+        } as unknown as Headers,
+        body: "",
       },
       { query: "query", variables: {} },
     );
