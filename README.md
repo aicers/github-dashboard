@@ -28,6 +28,12 @@ configuration, sync controls, and analytics through a Next.js dashboard.
    pnpm install
    ```
 
+1. **(Important)** Approve build scripts (required for pnpm v9+):
+
+   ```bash
+   pnpm approve-builds
+   ```
+
 1. Install Playwright browsers (one-time per machine):
 
    ```bash
