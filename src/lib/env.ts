@@ -69,10 +69,7 @@ const envSchema = z.object({
   ),
   DATABASE_URL: z.preprocess(
     normalizeOptionalEnv,
-    z
-      .string()
-      .min(1, "Set DATABASE_URL to connect to PostgreSQL.")
-      .optional(),
+    z.string().min(1, "Set DATABASE_URL to connect to PostgreSQL.").optional(),
   ),
   SYNC_INTERVAL_MINUTES: z.preprocess(
     normalizeOptionalEnv,
@@ -88,10 +85,7 @@ const envSchema = z.object({
           .optional(),
       ),
   ),
-  TODO_PROJECT_NAME: z.preprocess(
-    normalizeOptionalEnv,
-    z.string().optional(),
-  ),
+  TODO_PROJECT_NAME: z.preprocess(normalizeOptionalEnv, z.string().optional()),
   DASHBOARD_ADMIN_IDS: z.preprocess(
     normalizeOptionalEnv,
     z.string().optional(),
@@ -115,10 +109,7 @@ const envSchema = z.object({
           .optional(),
       ),
   ),
-  OPENAI_API_KEY: z.preprocess(
-    normalizeOptionalEnv,
-    z.string().optional(),
-  ),
+  OPENAI_API_KEY: z.preprocess(normalizeOptionalEnv, z.string().optional()),
   OPENAI_API_BASE_URL: z.preprocess(
     normalizeOptionalEnv,
     z.string().url().optional(),
