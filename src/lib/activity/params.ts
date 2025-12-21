@@ -76,6 +76,9 @@ function parseThresholds(searchParams: URLSearchParams) {
     { query: "reviewRequestDays", field: "reviewRequestDays" },
     { query: "backlogIssueDays", field: "backlogIssueDays" },
     { query: "stalledIssueDays", field: "stalledIssueDays" },
+    { query: "reviewerUnassignedPrDays", field: "reviewerUnassignedPrDays" },
+    { query: "reviewStalledPrDays", field: "reviewStalledPrDays" },
+    { query: "mergeDelayedPrDays", field: "mergeDelayedPrDays" },
   ];
 
   const thresholds: ActivityThresholds = {};

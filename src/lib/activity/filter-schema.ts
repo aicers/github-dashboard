@@ -64,6 +64,9 @@ const thresholdsSchema = z
     reviewRequestDays: optionalPositiveIntegerField,
     backlogIssueDays: optionalPositiveIntegerField,
     stalledIssueDays: optionalPositiveIntegerField,
+    reviewerUnassignedPrDays: optionalPositiveIntegerField,
+    reviewStalledPrDays: optionalPositiveIntegerField,
+    mergeDelayedPrDays: optionalPositiveIntegerField,
   })
   .partial()
   .optional()

@@ -70,6 +70,9 @@ const DEFAULT_THRESHOLDS: Required<ActivityThresholds> = {
   reviewRequestDays: 5,
   backlogIssueDays: 40,
   stalledIssueDays: 20,
+  reviewerUnassignedPrDays: 2,
+  reviewStalledPrDays: 2,
+  mergeDelayedPrDays: 2,
 };
 
 type AttentionFilterWithoutNone = Exclude<
@@ -795,6 +798,9 @@ async function resolveAttentionSets(
   const insights = await getAttentionInsights({
     userId: options?.userId ?? null,
     useMentionClassifier: options?.useMentionClassifier ?? true,
+    reviewerUnassignedPrDays: thresholds.reviewerUnassignedPrDays,
+    reviewStalledPrDays: thresholds.reviewStalledPrDays,
+    mergeDelayedPrDays: thresholds.mergeDelayedPrDays,
   });
   const unansweredMentions = new Set<string>();
   const reviewRequests = new Set<string>();
@@ -834,15 +840,21 @@ async function resolveAttentionSets(
   });
 
   insights.reviewerUnassignedPrs.forEach((item) => {
-    reviewerUnassignedPullRequests.add(item.id);
+    if ((item.waitingDays ?? 0) >= thresholds.reviewerUnassignedPrDays) {
+      reviewerUnassignedPullRequests.add(item.id);
+    }
   });
 
   insights.reviewStalledPrs.forEach((item) => {
-    reviewStalledPullRequests.add(item.id);
+    if ((item.waitingDays ?? 0) >= thresholds.reviewStalledPrDays) {
+      reviewStalledPullRequests.add(item.id);
+    }
   });
 
   insights.mergeDelayedPrs.forEach((item) => {
-    mergeDelayedPullRequests.add(item.id);
+    if ((item.waitingDays ?? 0) >= thresholds.mergeDelayedPrDays) {
+      mergeDelayedPullRequests.add(item.id);
+    }
   });
 
   insights.backlogIssues.forEach((item) => {
@@ -2100,6 +2112,12 @@ export async function getActivityItems(
     DEFAULT_THRESHOLDS.unansweredMentionDays,
     thresholds.unansweredMentionDays,
   );
+  thresholds.reviewerUnassignedPrDays = Math.max(
+    1,
+    thresholds.reviewerUnassignedPrDays,
+  );
+  thresholds.reviewStalledPrDays = Math.max(1, thresholds.reviewStalledPrDays);
+  thresholds.mergeDelayedPrDays = Math.max(1, thresholds.mergeDelayedPrDays);
 
   const targetProject = normalizeProjectTarget(env.TODO_PROJECT_NAME);
 

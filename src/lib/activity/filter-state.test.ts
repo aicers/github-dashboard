@@ -119,6 +119,8 @@ describe("normalizeSearchParams", () => {
       thresholds: {
         ...DEFAULT_THRESHOLD_VALUES,
         backlogIssueDays: DEFAULT_THRESHOLD_VALUES.backlogIssueDays + 3,
+        reviewerUnassignedPrDays:
+          DEFAULT_THRESHOLD_VALUES.reviewerUnassignedPrDays + 1,
       },
     });
 
@@ -138,6 +140,10 @@ describe("normalizeSearchParams", () => {
       [
         "backlogIssueDays",
         (DEFAULT_THRESHOLD_VALUES.backlogIssueDays + 3).toString(),
+      ],
+      [
+        "reviewerUnassignedPrDays",
+        (DEFAULT_THRESHOLD_VALUES.reviewerUnassignedPrDays + 1).toString(),
       ],
     ]);
   });

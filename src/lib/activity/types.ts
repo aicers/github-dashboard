@@ -46,6 +46,9 @@ export type ActivityThresholds = {
   reviewRequestDays?: number;
   backlogIssueDays?: number;
   stalledIssueDays?: number;
+  reviewerUnassignedPrDays?: number;
+  reviewStalledPrDays?: number;
+  mergeDelayedPrDays?: number;
 };
 
 export type PeopleRoleKey =

@@ -625,22 +625,30 @@ test.describe("ActivityView thresholds & tooltips", () => {
     await page.getByRole("button", { name: "고급 필터 보기" }).click();
 
     const labels = [
-      "정체 Backlog 이슈 기준일",
-      "정체 In Progress 이슈 기준일",
-      "PR 주의 항목 기준일",
-      "응답 없는 리뷰 기준일",
-      "응답 없는 멘션 기준일",
+      "기준일",
+      "정체된 Backlog 이슈",
+      "정체된 In Progress 이슈",
+      "리뷰어 미지정 PR",
+      "리뷰 정체 PR",
+      "머지 지연 PR",
+      "응답 없는 리뷰 요청",
+      "응답 없는 멘션",
     ];
 
     const placeholders = [
       "Backlog 정체",
       "In Progress 정체",
+      "리뷰어 미지정",
+      "리뷰 정체",
+      "머지 지연",
       "리뷰 무응답",
       "멘션 무응답",
     ];
 
     for (const label of labels) {
-      await expect(page.getByText(label)).toBeVisible();
+      await expect(
+        page.locator("label").filter({ hasText: label }),
+      ).toBeVisible();
     }
 
     for (const placeholder of placeholders) {
