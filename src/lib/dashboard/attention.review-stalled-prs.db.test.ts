@@ -170,6 +170,38 @@ describe.sequential("attention insights for review-stalled pull requests", () =>
       await upsertReviewRequest(rr);
     }
 
+    // Eligible PR has reviewer activity after request, but is idle long enough afterwards.
+    await upsertComment({
+      id: "comment-reviewer-a-eligible",
+      issueId: null,
+      pullRequestId: prEligible.id,
+      reviewId: null,
+      authorId: reviewerA.id,
+      createdAt: "2024-02-15T12:00:00.000Z",
+      updatedAt: "2024-02-15T12:00:00.000Z",
+      raw: {
+        id: "comment-reviewer-a-eligible",
+        pullRequestId: prEligible.id,
+        url: "https://github.com/acme/review/pull/101#issuecomment-eligible-a",
+        body: "Taking a look.",
+      },
+    });
+    await upsertComment({
+      id: "comment-reviewer-b-eligible",
+      issueId: null,
+      pullRequestId: prEligible.id,
+      reviewId: null,
+      authorId: reviewerB.id,
+      createdAt: "2024-02-15T13:00:00.000Z",
+      updatedAt: "2024-02-15T13:00:00.000Z",
+      raw: {
+        id: "comment-reviewer-b-eligible",
+        pullRequestId: prEligible.id,
+        url: "https://github.com/acme/review/pull/101#issuecomment-eligible-b",
+        body: "Will review soon.",
+      },
+    });
+
     // Reviewer A recently commented on PR 102 (after request), so it should not be stalled.
     await upsertComment({
       id: "comment-reviewer-a-recent",

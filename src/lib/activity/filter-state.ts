@@ -50,8 +50,8 @@ export type ActivityFilterState = {
 };
 
 export const DEFAULT_THRESHOLD_VALUES: Required<ActivityThresholds> = {
-  unansweredMentionDays: 5,
-  reviewRequestDays: 5,
+  unansweredMentionDays: 2,
+  reviewRequestDays: 2,
   backlogIssueDays: 40,
   stalledIssueDays: 20,
   reviewerUnassignedPrDays: 2,

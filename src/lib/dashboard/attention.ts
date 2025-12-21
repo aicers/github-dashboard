@@ -524,10 +524,10 @@ type IssueProjectSnapshot = {
 };
 
 const PR_FOLLOW_UP_BUSINESS_DAYS = 2;
-const STUCK_REVIEW_BUSINESS_DAYS = 5;
+const STUCK_REVIEW_BUSINESS_DAYS = 2;
 const BACKLOG_ISSUE_BUSINESS_DAYS = 40;
 const STALLED_IN_PROGRESS_BUSINESS_DAYS = 20;
-const UNANSWERED_MENTION_BUSINESS_DAYS = 5;
+const UNANSWERED_MENTION_BUSINESS_DAYS = 2;
 const OCTOAIDE_LOGINS = ["octoaide"];
 
 function differenceInDays(
@@ -1252,7 +1252,7 @@ async function fetchReviewUnassignedPullRequests(
     FROM pull_requests pr
     JOIN repositories repo ON repo.id = pr.repository_id
     WHERE pr.github_closed_at IS NULL
-       AND pr.github_created_at <= NOW() - make_interval(days => $3)
+       AND pr.github_created_at <= $3::timestamptz - make_interval(days => $4)
        AND NOT (pr.repository_id = ANY($1::text[]))
        AND (pr.author_id IS NULL OR NOT (pr.author_id = ANY($2::text[])))
        AND NOT EXISTS (
@@ -1272,7 +1272,7 @@ async function fetchReviewUnassignedPullRequests(
            AND NOT (rv.author_id = ANY($2::text[]))
        )
      ORDER BY pr.github_created_at ASC`,
-    [excludedRepositoryIds, excludedUserIds, minimumDays],
+    [excludedRepositoryIds, excludedUserIds, now, minimumDays],
   );
 
   const repositoryIds = Array.from(
@@ -1422,7 +1422,7 @@ async function fetchReviewStalledPullRequests(
     FROM pull_requests pr
     JOIN repositories repo ON repo.id = pr.repository_id
     WHERE pr.github_closed_at IS NULL
-       AND pr.github_created_at <= NOW() - make_interval(days => $3)
+       AND pr.github_created_at <= $3::timestamptz - make_interval(days => $4)
        AND NOT (pr.repository_id = ANY($1::text[]))
        AND (pr.author_id IS NULL OR NOT (pr.author_id = ANY($2::text[])))
        AND EXISTS (
@@ -1434,7 +1434,7 @@ async function fetchReviewStalledPullRequests(
            AND NOT (rr.reviewer_id = ANY($2::text[]))
        )
      ORDER BY pr.github_updated_at ASC NULLS LAST`,
-    [excludedRepositoryIds, excludedUserIds, minimumDays],
+    [excludedRepositoryIds, excludedUserIds, now, minimumDays],
   );
 
   const prIds = result.rows.map((row) => row.id);
@@ -1652,11 +1652,11 @@ async function fetchMergeDelayedPullRequests(
     WHERE pr.github_closed_at IS NULL
       AND approval.approved_at IS NOT NULL
       AND pr.data->>'reviewDecision' = 'APPROVED'
-      AND approval.approved_at <= NOW() - make_interval(days => $3)
+      AND approval.approved_at <= $3::timestamptz - make_interval(days => $4)
       AND NOT (pr.repository_id = ANY($1::text[]))
       AND (pr.author_id IS NULL OR NOT (pr.author_id = ANY($2::text[])))
     ORDER BY approval.approved_at ASC`,
-    [excludedRepositoryIds, excludedUserIds, minimumDays],
+    [excludedRepositoryIds, excludedUserIds, now, minimumDays],
   );
 
   const prIds = result.rows.map((row) => row.id);
@@ -1812,7 +1812,7 @@ export async function fetchStuckReviewRequests(
        JOIN repositories repo ON repo.id = pr.repository_id
        WHERE rr.reviewer_id IS NOT NULL
          AND rr.removed_at IS NULL
-         AND rr.requested_at <= NOW() - INTERVAL '5 days'
+         AND rr.requested_at <= $3::timestamptz - INTERVAL '2 days'
          AND pr.github_closed_at IS NULL
          AND COALESCE(pr.data->>'reviewDecision', '') <> 'APPROVED'
          AND NOT (pr.repository_id = ANY($1::text[]))
@@ -1875,7 +1875,7 @@ export async function fetchStuckReviewRequests(
          AS pr_reviewers
      FROM base
      ORDER BY base.requested_at ASC`,
-    [excludedRepositoryIds, excludedUserIds],
+    [excludedRepositoryIds, excludedUserIds, now],
   );
 
   const userIds = new Set<string>();
@@ -2227,7 +2227,7 @@ export async function fetchUnansweredMentionCandidates(
        LEFT JOIN reviews review ON review.id = c.review_id
        CROSS JOIN LATERAL regexp_matches(COALESCE(c.data->>'body', ''), '@([A-Za-z0-9_-]+)', 'g') AS match(captures)
        LEFT JOIN users u ON LOWER(u.login) = LOWER(match.captures[1])
-       WHERE c.github_created_at <= NOW() - INTERVAL '5 days'
+       WHERE c.github_created_at <= $3::timestamptz - INTERVAL '2 days'
          AND u.id IS NOT NULL
          AND (c.author_id IS NULL OR c.author_id <> u.id)
          AND (c.author_id IS NULL OR NOT (c.author_id = ANY($2::text[])))
@@ -2313,7 +2313,7 @@ export async function fetchUnansweredMentionCandidates(
          AND NULLIF(iss.data->>'answerChosenAt', '')::timestamptz >= mc.mentioned_at
        )
      ORDER BY mc.comment_id, mc.mentioned_user_id, mc.mentioned_at`,
-    [excludedRepositoryIds, excludedUserIds],
+    [excludedRepositoryIds, excludedUserIds, now],
   );
 
   const mentionIssueIds = Array.from(
