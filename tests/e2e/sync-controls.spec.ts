@@ -190,4 +190,46 @@ test.describe("SyncControls (Playwright)", () => {
       page.getByRole("button", { name: "자동 동기화 시작" }),
     ).toBeVisible();
   });
+
+  test("cleans up stuck transfer sync runs", async ({ page }) => {
+    await page.goto(SYNC_PATH);
+
+    await page.route("**/api/sync/transfer/cleanup", async (route) => {
+      expect(route.request().method()).toBe("POST");
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ success: true, message: "Transfer 정리 완료" }),
+      });
+    });
+
+    page.once("dialog", async (dialog) => {
+      await dialog.accept();
+    });
+
+    await page.getByRole("button", { name: "Transfer 동기화 정리" }).click();
+
+    await expect(page.getByText("Transfer 정리 완료")).toBeVisible();
+  });
+
+  test("cleans up stuck database backup runs", async ({ page }) => {
+    await page.goto(SYNC_PATH);
+
+    await page.route("**/api/sync/backup/cleanup", async (route) => {
+      expect(route.request().method()).toBe("POST");
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ success: true, message: "백업 정리 완료" }),
+      });
+    });
+
+    page.once("dialog", async (dialog) => {
+      await dialog.accept();
+    });
+
+    await page.getByRole("button", { name: "DB 백업 정리" }).click();
+
+    await expect(page.getByText("백업 정리 완료")).toBeVisible();
+  });
 });

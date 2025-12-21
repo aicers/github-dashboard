@@ -164,6 +164,7 @@ const DEFAULT_BACKUP_HOUR = 2;
 const BACKUP_METADATA_SUFFIX = ".meta.json";
 const BACKUP_WAIT_TIMEOUT_MS = 15 * 60 * 1000;
 const BACKUP_EXECUTION_TIMEOUT_MS = 30 * 60 * 1000;
+const BACKUP_STALE_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 
 function getSchedulerState(): BackupSchedulerState {
   const globalWithScheduler = globalThis as SchedulerGlobal;
@@ -784,6 +785,50 @@ async function updateLastStatus(params: {
   });
 }
 
+async function recoverStaleBackupRun() {
+  const scheduler = getSchedulerState();
+  if (scheduler.currentRun || scheduler.isRunning || scheduler.isWaiting) {
+    return;
+  }
+
+  const config = await getSyncConfig();
+  if (!config) {
+    return;
+  }
+
+  const statusRaw =
+    typeof config.backup_last_status === "string"
+      ? config.backup_last_status
+      : "";
+  const status = statusRaw.trim().toLowerCase();
+  if (status !== "running" && status !== "waiting") {
+    return;
+  }
+
+  const startedAtRaw = config.backup_last_started_at ?? null;
+  if (!startedAtRaw) {
+    return;
+  }
+
+  const startedAtMs = new Date(startedAtRaw).getTime();
+  if (!Number.isFinite(startedAtMs)) {
+    return;
+  }
+
+  const ageMs = Date.now() - startedAtMs;
+  if (ageMs < BACKUP_STALE_TIMEOUT_MS) {
+    return;
+  }
+
+  const completedAt = new Date().toISOString();
+  await updateLastStatus({
+    status: "failed",
+    completedAt,
+    error:
+      "Database backup marked as failed after restart (stale running state).",
+  });
+}
+
 export async function runDatabaseBackup(options: {
   trigger: DbBackupTrigger;
   actorId?: string | null;
@@ -958,6 +1003,36 @@ export async function runDatabaseBackup(options: {
       await refreshScheduler();
     }
   });
+}
+
+export async function cleanupDatabaseBackup(options?: { actorId?: string }) {
+  await ensureSchema();
+  const scheduler = getSchedulerState();
+  scheduler.isWaiting = false;
+  scheduler.isRunning = false;
+  scheduler.waitStartedAt = null;
+  scheduler.currentRun = null;
+
+  const config = await getSyncConfig();
+  const status =
+    typeof config?.backup_last_status === "string"
+      ? config.backup_last_status
+      : "idle";
+  const completedAt = new Date().toISOString();
+  const message =
+    options?.actorId === undefined
+      ? "Database backup marked as failed by cleanup."
+      : `Database backup marked as failed by ${options.actorId}.`;
+
+  await updateLastStatus({
+    status: "failed",
+    completedAt,
+    error: status === "failed" ? (config?.backup_last_error ?? null) : message,
+  });
+
+  await refreshScheduler();
+
+  return { status, completedAt, message };
 }
 
 export async function restoreDatabaseBackup(params: {
@@ -1135,6 +1210,8 @@ export async function getBackupRuntimeInfo(): Promise<BackupRuntimeInfo> {
 }
 
 export async function initializeBackupScheduler() {
+  await ensureSchema();
+  await recoverStaleBackupRun();
   await refreshScheduler();
 }
 
