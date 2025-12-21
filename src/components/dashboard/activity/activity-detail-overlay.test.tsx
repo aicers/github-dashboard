@@ -1,5 +1,11 @@
 import { CommentDiscussionIcon } from "@primer/octicons-react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import type { MockInstance } from "vitest";
@@ -17,6 +23,8 @@ import {
 const originalRequestAnimationFrame = window.requestAnimationFrame;
 const originalCancelAnimationFrame = window.cancelAnimationFrame;
 
+const MAINTAINER_NODE_ID = "MDQ6VXNlcjE1OTMyMTQ4";
+
 function createOverlay(
   props?: Partial<ComponentProps<typeof ActivityDetailOverlay>>,
 ) {
@@ -27,7 +35,7 @@ function createOverlay(
           id: "repo-id",
           name: null,
           nameWithOwner: null,
-          maintainerIds: [],
+          maintainerIds: [MAINTAINER_NODE_ID],
         },
         title: null,
         number: null,
@@ -44,6 +52,14 @@ function createOverlay(
         { label: "AI 판단", variant: "ai-soft", tooltip: "AI generated" },
       ]}
       onClose={vi.fn()}
+      userDirectory={{
+        [MAINTAINER_NODE_ID]: {
+          id: MAINTAINER_NODE_ID,
+          login: "bob",
+          name: "Bob",
+          avatarUrl: null,
+        },
+      }}
       {...props}
     >
       {props?.children ?? <p>Overlay body</p>}
@@ -272,6 +288,47 @@ describe("ActivityDetailOverlay", () => {
     expect(screen.getByTestId("extra-badge")).toBeVisible();
     expect(screen.getByText("Bug")).toBeVisible();
     expect(screen.getByText("Critical")).toBeVisible();
+  });
+
+  it("shows author and assignee info in the header", async () => {
+    render(createOverlay());
+
+    const people = await screen.findByTestId("activity-detail-people");
+    expect(within(people).getByText("작성자")).toBeVisible();
+    expect(within(people).getByText("self")).toBeVisible();
+    expect(within(people).getByText("담당자")).toBeVisible();
+    expect(within(people).getByText("alice")).toBeVisible();
+    expect(within(people).getByText("저장소 책임자")).toBeVisible();
+    expect(within(people).getByText("bob")).toBeVisible();
+    expect(within(people).queryByText("리뷰어")).toBeNull();
+  });
+
+  it("shows reviewers when the item is a pull request", async () => {
+    render(
+      createOverlay({
+        item: buildActivityItemFixture({
+          type: "pull_request",
+          reviewers: [
+            {
+              id: "reviewer-1",
+              login: "reviewer1",
+              name: null,
+              avatarUrl: null,
+            },
+            {
+              id: "reviewer-2",
+              login: null,
+              name: "Reviewer Two",
+              avatarUrl: null,
+            },
+          ],
+        }),
+      }),
+    );
+
+    const people = await screen.findByTestId("activity-detail-people");
+    expect(within(people).getByText("리뷰어")).toBeVisible();
+    expect(within(people).getByText("reviewer1, Reviewer Two")).toBeVisible();
   });
 
   it("shows closed timestamp when item is closed", () => {

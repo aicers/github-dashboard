@@ -9,7 +9,7 @@ import {
 } from "react";
 
 import { Button } from "@/components/ui/button";
-import type { ActivityItem } from "@/lib/activity/types";
+import type { ActivityItem, ActivityUser } from "@/lib/activity/types";
 import type { DateTimeDisplayFormat } from "@/lib/date-time-format";
 import { formatDateTimeDisplay } from "@/lib/date-time-format";
 import { cn } from "@/lib/utils";
@@ -30,6 +30,7 @@ export type ActivityDetailOverlayProps = {
   iconInfo: ActivityIconInfo;
   badges: Array<string | OverlayBadgeDescriptor>;
   badgeExtras?: ReactNode;
+  userDirectory?: Record<string, ActivityUser> | null;
   timezone?: string | null;
   dateTimeFormat?: DateTimeDisplayFormat | null;
   onClose: () => void;
@@ -45,6 +46,7 @@ export function ActivityDetailOverlay({
   iconInfo,
   badges,
   badgeExtras,
+  userDirectory = null,
   timezone,
   dateTimeFormat,
   onClose,
@@ -57,6 +59,60 @@ export function ActivityDetailOverlay({
   const headingId = useId();
   const [isVisible, setIsVisible] = useState(false);
   const closeTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const formatUserLabel = (user: ActivityItem["author"]): string | null => {
+    if (!user) {
+      return null;
+    }
+    const candidate = user.login ?? user.name ?? user.id;
+    const trimmed = candidate?.trim();
+    return trimmed ? trimmed : null;
+  };
+
+  const authorLabel = formatUserLabel(item.author) ?? "-";
+  const assigneeLabels = (Array.isArray(item.assignees) ? item.assignees : [])
+    .map((assignee) => formatUserLabel(assignee) ?? assignee.id)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const assigneeLabel =
+    assigneeLabels.length > 0 ? assigneeLabels.join(", ") : "-";
+
+  const reviewerLabels = (Array.isArray(item.reviewers) ? item.reviewers : [])
+    .map((reviewer) => formatUserLabel(reviewer) ?? reviewer.id)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const reviewerLabel =
+    reviewerLabels.length > 0 ? reviewerLabels.join(", ") : "-";
+
+  const userById = new Map<string, ActivityItem["author"]>();
+  if (userDirectory) {
+    Object.entries(userDirectory).forEach(([id, user]) => {
+      if (id && user) {
+        userById.set(id, user);
+      }
+    });
+  }
+  const addUser = (user: ActivityItem["author"]) => {
+    if (user?.id) {
+      userById.set(user.id, user);
+    }
+  };
+  addUser(item.author);
+  (item.assignees ?? []).forEach(addUser);
+  (item.reviewers ?? []).forEach(addUser);
+  (item.mentionedUsers ?? []).forEach(addUser);
+  (item.commenters ?? []).forEach(addUser);
+  (item.reactors ?? []).forEach(addUser);
+
+  const maintainerIds = Array.isArray(item.repository?.maintainerIds)
+    ? item.repository.maintainerIds
+    : [];
+  const maintainerLabels = maintainerIds
+    .map((id) => formatUserLabel(userById.get(id) ?? null) ?? id)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const maintainerLabel =
+    maintainerLabels.length > 0 ? maintainerLabels.join(", ") : "-";
 
   const handleRequestClose = useCallback(() => {
     setIsVisible(false);
@@ -259,6 +315,39 @@ export function ActivityDetailOverlay({
                     </span>
                   );
                 })}
+              </div>
+              <div
+                data-testid="activity-detail-people"
+                className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground/80"
+              >
+                <span className="inline-flex items-center gap-1">
+                  <span className="text-muted-foreground/60">작성자</span>
+                  <span className="font-medium text-foreground/90">
+                    {authorLabel}
+                  </span>
+                </span>
+                {item.type === "pull_request" ? (
+                  <span className="inline-flex items-center gap-1">
+                    <span className="text-muted-foreground/60">리뷰어</span>
+                    <span className="font-medium text-foreground/90">
+                      {reviewerLabel}
+                    </span>
+                  </span>
+                ) : null}
+                <span className="inline-flex items-center gap-1">
+                  <span className="text-muted-foreground/60">담당자</span>
+                  <span className="font-medium text-foreground/90">
+                    {assigneeLabel}
+                  </span>
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <span className="text-muted-foreground/60">
+                    저장소 책임자
+                  </span>
+                  <span className="font-medium text-foreground/90">
+                    {maintainerLabel}
+                  </span>
+                </span>
               </div>
             </div>
           </div>
