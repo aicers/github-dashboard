@@ -29,8 +29,9 @@ let activityRepoCounter = 0;
 const DEFAULT_ATTENTION_FLAGS: ActivityAttentionFlags = {
   unansweredMention: false,
   reviewRequestPending: false,
-  staleOpenPr: false,
-  idlePr: false,
+  reviewerUnassignedPr: false,
+  reviewStalledPr: false,
+  mergeDelayedPr: false,
   backlogIssue: false,
   stalledIssue: false,
 };
@@ -249,8 +250,6 @@ export function buildActivityThresholds(
   return {
     unansweredMentionDays: overrides.unansweredMentionDays ?? 5,
     reviewRequestDays: overrides.reviewRequestDays ?? 5,
-    stalePrDays: overrides.stalePrDays ?? 20,
-    idlePrDays: overrides.idlePrDays ?? 10,
     backlogIssueDays: overrides.backlogIssueDays ?? 40,
     stalledIssueDays: overrides.stalledIssueDays ?? 20,
   };

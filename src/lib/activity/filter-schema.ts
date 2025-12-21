@@ -62,8 +62,6 @@ const thresholdsSchema = z
   .object({
     unansweredMentionDays: unansweredMentionThresholdField,
     reviewRequestDays: optionalPositiveIntegerField,
-    stalePrDays: optionalPositiveIntegerField,
-    idlePrDays: optionalPositiveIntegerField,
     backlogIssueDays: optionalPositiveIntegerField,
     stalledIssueDays: optionalPositiveIntegerField,
   })

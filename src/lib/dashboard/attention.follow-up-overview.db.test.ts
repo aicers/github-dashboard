@@ -206,6 +206,10 @@ describe("follow-up overview summaries (db)", () => {
       createdAt: "2023-12-01T09:00:00.000Z",
       updatedAt: "2024-02-12T10:00:00.000Z",
     });
+    stalePrOne.raw = {
+      ...((stalePrOne.raw ?? {}) as Record<string, unknown>),
+      reviewDecision: "APPROVED",
+    };
     const stalePrTwo = buildPullRequest({
       id: "pr-stale-2",
       number: 102,
@@ -216,6 +220,10 @@ describe("follow-up overview summaries (db)", () => {
       createdAt: "2023-12-08T09:00:00.000Z",
       updatedAt: "2024-02-13T10:00:00.000Z",
     });
+    stalePrTwo.raw = {
+      ...((stalePrTwo.raw ?? {}) as Record<string, unknown>),
+      reviewDecision: "APPROVED",
+    };
 
     const idlePrOne = buildPullRequest({
       id: "pr-idle-1",
@@ -238,6 +246,27 @@ describe("follow-up overview summaries (db)", () => {
       updatedAt: "2024-02-01T09:00:00.000Z",
     });
 
+    const unassignedPrOne = buildPullRequest({
+      id: "pr-unassigned-1",
+      number: 401,
+      repository: mainRepo,
+      authorId: grace.id,
+      title: "Waiting for reviewer assignment",
+      url: "https://github.com/acme/main/pull/401",
+      createdAt: "2024-02-15T09:00:00.000Z",
+      updatedAt: "2024-02-15T09:00:00.000Z",
+    });
+    const unassignedPrTwo = buildPullRequest({
+      id: "pr-unassigned-2",
+      number: 402,
+      repository: mainRepo,
+      authorId: hank.id,
+      title: "Still no reviewer",
+      url: "https://github.com/acme/main/pull/402",
+      createdAt: "2024-02-15T09:00:00.000Z",
+      updatedAt: "2024-02-15T09:00:00.000Z",
+    });
+
     const stuckPr = buildPullRequest({
       id: "pr-stuck-requests",
       number: 301,
@@ -249,7 +278,15 @@ describe("follow-up overview summaries (db)", () => {
       updatedAt: "2024-02-10T09:00:00.000Z",
     });
 
-    for (const pr of [stalePrOne, stalePrTwo, idlePrOne, idlePrTwo, stuckPr]) {
+    for (const pr of [
+      stalePrOne,
+      stalePrTwo,
+      idlePrOne,
+      idlePrTwo,
+      unassignedPrOne,
+      unassignedPrTwo,
+      stuckPr,
+    ]) {
       await upsertPullRequest(pr);
     }
 
@@ -272,47 +309,58 @@ describe("follow-up overview summaries (db)", () => {
       await upsertReviewRequest(request);
     }
 
-    const staleReviewCarol = buildReview({
-      id: "review-stale-carol",
-      pullRequestId: stalePrOne.id,
-      authorId: carol.id,
-      submittedAt: "2024-01-10T10:00:00.000Z",
-      state: "COMMENTED",
-    });
-    const staleReviewBobPrimary = buildReview({
-      id: "review-stale-bob-primary",
-      pullRequestId: stalePrOne.id,
-      authorId: bob.id,
-      submittedAt: "2024-01-18T10:00:00.000Z",
-      state: "COMMENTED",
-    });
-    const staleReviewBobSecondary = buildReview({
-      id: "review-stale-bob",
-      pullRequestId: stalePrTwo.id,
-      authorId: bob.id,
-      submittedAt: "2024-01-22T10:00:00.000Z",
-      state: "COMMENTED",
-    });
-    await upsertReview(staleReviewCarol);
-    await upsertReview(staleReviewBobPrimary);
-    await upsertReview(staleReviewBobSecondary);
+    const followUpReviewRequests = [
+      buildReviewRequest({
+        id: "rr-stale-bob",
+        pullRequestId: stalePrOne.id,
+        reviewerId: bob.id,
+        requestedAt: "2024-02-10T09:00:00.000Z",
+      }),
+      buildReviewRequest({
+        id: "rr-stale-carol",
+        pullRequestId: stalePrOne.id,
+        reviewerId: carol.id,
+        requestedAt: "2024-02-10T09:00:00.000Z",
+      }),
+      buildReviewRequest({
+        id: "rr-stale2-bob",
+        pullRequestId: stalePrTwo.id,
+        reviewerId: bob.id,
+        requestedAt: "2024-02-10T09:00:00.000Z",
+      }),
+      buildReviewRequest({
+        id: "rr-idle-erin",
+        pullRequestId: idlePrOne.id,
+        reviewerId: erin.id,
+        requestedAt: "2024-02-15T09:00:00.000Z",
+      }),
+      buildReviewRequest({
+        id: "rr-idle-frank",
+        pullRequestId: idlePrTwo.id,
+        reviewerId: frank.id,
+        requestedAt: "2024-02-15T09:00:00.000Z",
+      }),
+    ];
+    for (const request of followUpReviewRequests) {
+      await upsertReviewRequest(request);
+    }
 
-    const idleReviewErin = buildReview({
-      id: "review-idle-erin",
-      pullRequestId: idlePrOne.id,
-      authorId: erin.id,
-      submittedAt: "2024-02-01T12:00:00.000Z",
-      state: "COMMENTED",
+    const approvalOne = buildReview({
+      id: "review-approved-stale-1",
+      pullRequestId: stalePrOne.id,
+      authorId: bob.id,
+      submittedAt: "2024-02-15T10:00:00.000Z",
+      state: "APPROVED",
     });
-    const idleReviewFrank = buildReview({
-      id: "review-idle-frank",
-      pullRequestId: idlePrTwo.id,
-      authorId: frank.id,
-      submittedAt: "2024-02-02T12:00:00.000Z",
-      state: "COMMENTED",
+    const approvalTwo = buildReview({
+      id: "review-approved-stale-2",
+      pullRequestId: stalePrTwo.id,
+      authorId: carol.id,
+      submittedAt: "2024-02-15T10:00:00.000Z",
+      state: "APPROVED",
     });
-    await upsertReview(idleReviewErin);
-    await upsertReview(idleReviewFrank);
+    await upsertReview(approvalOne);
+    await upsertReview(approvalTwo);
 
     const backlogIssueOne = buildIssue({
       id: "issue-backlog-1",
@@ -453,8 +501,9 @@ describe("follow-up overview summaries (db)", () => {
 
     const insights = await getAttentionInsights();
 
-    expect(insights.staleOpenPrs).toHaveLength(2);
-    expect(insights.idleOpenPrs).toHaveLength(2);
+    expect(insights.reviewerUnassignedPrs).toHaveLength(2);
+    expect(insights.reviewStalledPrs).toHaveLength(2);
+    expect(insights.mergeDelayedPrs).toHaveLength(2);
     expect(insights.stuckReviewRequests).toHaveLength(2);
     expect(insights.backlogIssues).toHaveLength(2);
     expect(insights.stalledInProgressIssues).toHaveLength(2);
@@ -463,16 +512,18 @@ describe("follow-up overview summaries (db)", () => {
     const summaries = buildFollowUpSummaries(insights);
     const summaryMap = new Map(summaries.map((item) => [item.id, item]));
 
-    const staleSummary = summaryMap.get("stale-open-prs");
-    const idleSummary = summaryMap.get("idle-open-prs");
+    const reviewerUnassignedSummary = summaryMap.get("reviewer-unassigned-prs");
+    const reviewStalledSummary = summaryMap.get("review-stalled-prs");
+    const mergeDelayedSummary = summaryMap.get("merge-delayed-prs");
     const stuckSummary = summaryMap.get("stuck-review-requests");
     const backlogSummary = summaryMap.get("backlog-issues");
     const stalledSummary = summaryMap.get("stalled-in-progress-issues");
     const mentionSummary = summaryMap.get("unanswered-mentions");
 
     if (
-      !staleSummary ||
-      !idleSummary ||
+      !reviewerUnassignedSummary ||
+      !reviewStalledSummary ||
+      !mergeDelayedSummary ||
       !stuckSummary ||
       !backlogSummary ||
       !stalledSummary ||
@@ -481,29 +532,43 @@ describe("follow-up overview summaries (db)", () => {
       throw new Error("Expected follow-up summaries for all sections");
     }
 
-    expect(staleSummary.count).toBe(2);
-    expect(staleSummary.totalMetric).toBe(
-      insights.staleOpenPrs.reduce((total, pr) => total + (pr.ageDays ?? 0), 0),
-    );
-    expect(staleSummary.highlights).toContain(
-      "최다 작성자: 1위 Alice, 2위 Bob",
-    );
-    expect(staleSummary.highlights).toContain(
-      "최다 리뷰어: 1위 Bob, 2위 Carol",
-    );
-
-    expect(idleSummary.count).toBe(2);
-    expect(idleSummary.totalMetric).toBe(
-      insights.idleOpenPrs.reduce(
-        (total, pr) => total + (pr.inactivityDays ?? pr.ageDays ?? 0),
+    expect(reviewerUnassignedSummary.count).toBe(2);
+    expect(reviewerUnassignedSummary.totalMetric).toBe(
+      insights.reviewerUnassignedPrs.reduce(
+        (total, pr) => total + (pr.waitingDays ?? 0),
         0,
       ),
     );
-    expect(idleSummary.highlights).toContain(
+    expect(reviewerUnassignedSummary.highlights).toContain(
+      "최다 작성자: 1위 Grace, 2위 Hank",
+    );
+
+    expect(reviewStalledSummary.count).toBe(2);
+    expect(reviewStalledSummary.totalMetric).toBe(
+      insights.reviewStalledPrs.reduce(
+        (total, pr) => total + (pr.waitingDays ?? 0),
+        0,
+      ),
+    );
+    expect(reviewStalledSummary.highlights).toContain(
       "최다 작성자: 1위 Carol, 2위 Dave",
     );
-    expect(idleSummary.highlights).toContain(
+    expect(reviewStalledSummary.highlights).toContain(
       "최다 리뷰어: 1위 Erin, 2위 Frank",
+    );
+
+    expect(mergeDelayedSummary.count).toBe(2);
+    expect(mergeDelayedSummary.totalMetric).toBe(
+      insights.mergeDelayedPrs.reduce(
+        (total, pr) => total + (pr.waitingDays ?? 0),
+        0,
+      ),
+    );
+    expect(mergeDelayedSummary.highlights).toContain(
+      "최다 작성자: 1위 Alice, 2위 Bob",
+    );
+    expect(mergeDelayedSummary.highlights).toContain(
+      "최다 리뷰어: 1위 Bob, 2위 Carol",
     );
 
     const dedupedStuckRequests = Array.from(

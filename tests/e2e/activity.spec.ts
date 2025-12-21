@@ -464,12 +464,10 @@ const ATTENTION_SCENARIOS: Array<{
     expectedPeopleSelection: ["user-alice"],
   },
   {
-    name: "pr_inactive",
-    attentionLabels: ["업데이트 없는 PR"],
-    attentionValues: ["pr_inactive"],
+    name: "pr_review_stalled",
+    attentionLabels: ["리뷰 정체 PR"],
+    attentionValues: ["pr_review_stalled"],
     expected: {
-      authorId: ["user-alice"],
-      assigneeId: ["user-alice"],
       reviewerId: ["user-alice"],
       maintainerId: ["user-alice"],
     },
@@ -502,9 +500,9 @@ const ATTENTION_SCENARIOS: Array<{
     expectedCategories: null,
   },
   {
-    name: "unanswered_mentions_pr_inactive",
-    attentionLabels: ["응답 없는 멘션", "업데이트 없는 PR"],
-    attentionValues: ["unanswered_mentions", "pr_inactive"],
+    name: "unanswered_mentions_pr_review_stalled",
+    attentionLabels: ["응답 없는 멘션", "리뷰 정체 PR"],
+    attentionValues: ["unanswered_mentions", "pr_review_stalled"],
     expected: {},
     expectedPeopleSelection: ["user-alice"],
     expectedCategories: null,
@@ -600,7 +598,7 @@ test.describe("ActivityView attention + people query mapping", () => {
 test.describe("ActivityView thresholds & tooltips", () => {
   test.setTimeout(30000);
 
-  test("renders five threshold inputs with expected labels in advanced filter", async ({
+  test("renders advanced filter threshold inputs with expected labels", async ({
     page,
   }) => {
     await page.goto("/test-harness/auth/session?userId=activity-user");
@@ -629,7 +627,7 @@ test.describe("ActivityView thresholds & tooltips", () => {
     const labels = [
       "정체 Backlog 이슈 기준일",
       "정체 In Progress 이슈 기준일",
-      "업데이트 없는 PR 기준일",
+      "PR 주의 항목 기준일",
       "응답 없는 리뷰 기준일",
       "응답 없는 멘션 기준일",
     ];
@@ -637,7 +635,6 @@ test.describe("ActivityView thresholds & tooltips", () => {
     const placeholders = [
       "Backlog 정체",
       "In Progress 정체",
-      "PR 정체",
       "리뷰 무응답",
       "멘션 무응답",
     ];
@@ -651,7 +648,7 @@ test.describe("ActivityView thresholds & tooltips", () => {
     }
   });
 
-  test("shows updated tooltip text for 업데이트 없는 PR attention chip", async ({
+  test("shows updated tooltip text for 리뷰 정체 PR attention chip", async ({
     page,
   }) => {
     await page.goto("/test-harness/auth/session?userId=activity-user");
@@ -676,15 +673,15 @@ test.describe("ActivityView thresholds & tooltips", () => {
     await page.waitForTimeout(200);
 
     const attentionChip = page.getByRole("button", {
-      name: "업데이트 없는 PR",
+      name: "리뷰 정체 PR",
     });
     await attentionChip.hover();
 
     const tooltipText =
-      "구성원 선택 시, 구성원이 PR의 작성자, 담당자, 리뷰어, 또는 저장소 책임자인 항목만 표시합니다. octoaide가 남긴 활동은 업데이트로 간주하지 않습니다.";
+      "구성원 선택 시, 구성원이 PR의 저장소 책임자 또는 리뷰어인 항목만 표시합니다.";
     await expect(page.getByText(tooltipText)).toBeVisible();
     await expect(page.getByText(tooltipText)).toHaveText(
-      "구성원 선택 시, 구성원이 PR의 작성자, 담당자, 리뷰어, 또는 저장소 책임자인 항목만 표시합니다. octoaide가 남긴 활동은 업데이트로 간주하지 않습니다.",
+      "구성원 선택 시, 구성원이 PR의 저장소 책임자 또는 리뷰어인 항목만 표시합니다.",
     );
   });
 });

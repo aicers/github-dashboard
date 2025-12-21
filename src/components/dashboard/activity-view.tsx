@@ -116,11 +116,13 @@ const ATTENTION_TOOLTIPS: Partial<Record<ActivityAttentionFilter, string>> = {
   issue_backlog:
     "구성원 선택 시, 구성원이 이슈의 해당 저장소 책임자인 항목만 표시합니다.",
   issue_stalled:
-    "구성원 선택 시, 구성원이 이슈의 담당자이거나, 담당자 미정 시 해당 저장소 책임자이거나, 담당자/저장소 미지정 시 작성자인 항목만 표시합니다.",
-  pr_open_too_long:
-    "구성원 선택 시, 구성원이 PR의 작성자, 담당자, 리뷰어, 또는 저장소 책임자인 항목만 표시합니다.",
-  pr_inactive:
-    "구성원 선택 시, 구성원이 PR의 작성자, 담당자, 리뷰어, 또는 저장소 책임자인 항목만 표시합니다. octoaide가 남긴 활동은 업데이트로 간주하지 않습니다.",
+    "구성원 선택 시, 구성원이 이슈의 담당자이거나, 담당자 미지정 시 해당 저장소 책임자이거나, 담당자/저장소 미지정 시 작성자인 항목만 표시합니다.",
+  pr_reviewer_unassigned:
+    "구성원 선택 시, 구성원이 PR의 저장소 책임자 또는 작성자인 항목만 표시합니다.",
+  pr_review_stalled:
+    "구성원 선택 시, 구성원이 PR의 저장소 책임자 또는 리뷰어인 항목만 표시합니다.",
+  pr_merge_delayed:
+    "구성원 선택 시, 구성원이 PR의 담당자이거나, 담당자 미지정 시 해당 저장소 책임자인 항목만 표시합니다.",
   review_requests_pending:
     "구성원 선택 시, 구성원이 리뷰 요청을 받은 항목만 표시합니다.",
   unanswered_mentions:
@@ -252,15 +254,26 @@ const ATTENTION_ROLE_RULES: Record<
       "maintainerIds",
     ],
   },
-  pr_open_too_long: {
-    applied: ["authorIds", "assigneeIds", "reviewerIds", "maintainerIds"],
+  pr_reviewer_unassigned: {
+    applied: ["authorIds", "maintainerIds"],
     optional: [],
     cleared: ["mentionedUserIds", "commenterIds", "reactorIds"],
   },
-  pr_inactive: {
-    applied: ["authorIds", "assigneeIds", "reviewerIds", "maintainerIds"],
+  pr_review_stalled: {
+    applied: ["reviewerIds", "maintainerIds"],
     optional: [],
     cleared: ["mentionedUserIds", "commenterIds", "reactorIds"],
+  },
+  pr_merge_delayed: {
+    applied: ["assigneeIds"],
+    optional: [],
+    cleared: [
+      "authorIds",
+      "reviewerIds",
+      "mentionedUserIds",
+      "commenterIds",
+      "reactorIds",
+    ],
   },
   review_requests_pending: {
     applied: ["reviewerIds"],
@@ -686,8 +699,9 @@ const ATTENTION_CATEGORY_MAP = {
   no_attention: [],
   issue_backlog: ["issue"],
   issue_stalled: ["issue"],
-  pr_open_too_long: ["pull_request"],
-  pr_inactive: ["pull_request"],
+  pr_reviewer_unassigned: ["pull_request"],
+  pr_review_stalled: ["pull_request"],
+  pr_merge_delayed: ["pull_request"],
   review_requests_pending: ["pull_request"],
   unanswered_mentions: [],
 } satisfies Record<
@@ -5493,27 +5507,12 @@ export function ActivityView({
                   )}
                 >
                   <Label className="text-xs font-semibold text-foreground">
-                    업데이트 없는 PR 기준일
+                    PR 주의 항목 기준일
                   </Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={draft.thresholds.idlePrDays}
-                    disabled={prFiltersDisabled}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        thresholds: {
-                          ...current.thresholds,
-                          idlePrDays: toPositiveInt(
-                            event.target.value,
-                            DEFAULT_THRESHOLD_VALUES.idlePrDays,
-                          ),
-                        },
-                      }))
-                    }
-                    placeholder="PR 정체"
-                  />
+                  <p className="text-xs text-muted-foreground">
+                    리뷰어 미지정 · 리뷰 정체 · 머지 지연 PR은 2 업무일 기준으로
+                    계산합니다.
+                  </p>
                 </div>
                 <div
                   className={cn(

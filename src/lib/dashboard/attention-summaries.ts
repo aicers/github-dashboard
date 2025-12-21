@@ -142,31 +142,41 @@ export function buildFollowUpSummaries(
     return `${label}: ${ranked}`;
   };
 
-  const stalePrs = insights.staleOpenPrs;
-  const staleMetric = (item: PullRequestAttentionItem) => item.ageDays ?? 0;
-  const staleAuthors = aggregateUsers(
-    stalePrs,
+  const reviewerUnassignedPrs = insights.reviewerUnassignedPrs;
+  const reviewerUnassignedMetric = (item: PullRequestAttentionItem) =>
+    item.waitingDays ?? 0;
+  const reviewerUnassignedAuthors = aggregateUsers(
+    reviewerUnassignedPrs,
     (item) => (item.author ? [item.author] : []),
-    staleMetric,
-  );
-  const staleReviewers = aggregateUsers(
-    stalePrs,
-    (item) => item.reviewers,
-    staleMetric,
+    reviewerUnassignedMetric,
   );
 
-  const idlePrs = insights.idleOpenPrs;
-  const idleMetric = (item: PullRequestAttentionItem) =>
-    item.inactivityDays ?? item.ageDays ?? 0;
-  const idleAuthors = aggregateUsers(
-    idlePrs,
+  const reviewStalledPrs = insights.reviewStalledPrs;
+  const reviewStalledMetric = (item: PullRequestAttentionItem) =>
+    item.waitingDays ?? 0;
+  const reviewStalledAuthors = aggregateUsers(
+    reviewStalledPrs,
     (item) => (item.author ? [item.author] : []),
-    idleMetric,
+    reviewStalledMetric,
   );
-  const idleReviewers = aggregateUsers(
-    idlePrs,
+  const reviewStalledReviewers = aggregateUsers(
+    reviewStalledPrs,
     (item) => item.reviewers,
-    idleMetric,
+    reviewStalledMetric,
+  );
+
+  const mergeDelayedPrs = insights.mergeDelayedPrs;
+  const mergeDelayedMetric = (item: PullRequestAttentionItem) =>
+    item.waitingDays ?? 0;
+  const mergeDelayedAuthors = aggregateUsers(
+    mergeDelayedPrs,
+    (item) => (item.author ? [item.author] : []),
+    mergeDelayedMetric,
+  );
+  const mergeDelayedReviewers = aggregateUsers(
+    mergeDelayedPrs,
+    (item) => item.reviewers,
+    mergeDelayedMetric,
   );
 
   const reviewRequestGroups = new Map<string, ReviewRequestAttentionItem[]>();
@@ -264,25 +274,38 @@ export function buildFollowUpSummaries(
 
   return [
     {
-      id: "stale-open-prs",
-      title: "오래된 PR",
-      description: "20일 이상 머지되지 않은 PR",
-      count: stalePrs.length,
-      totalMetric: sumMetric(stalePrs, staleMetric),
+      id: "reviewer-unassigned-prs",
+      title: "리뷰어 미지정 PR",
+      description: "2 업무일 이상 리뷰어 미지정 PR",
+      count: reviewerUnassignedPrs.length,
+      totalMetric: sumMetric(reviewerUnassignedPrs, reviewerUnassignedMetric),
       highlights: [
-        highlightLine("최다 작성자", findTopByTotal(staleAuthors, 3)),
-        highlightLine("최다 리뷰어", findTopByTotal(staleReviewers, 3)),
+        highlightLine(
+          "최다 작성자",
+          findTopByTotal(reviewerUnassignedAuthors, 3),
+        ),
       ].filter((line): line is string => Boolean(line)),
     },
     {
-      id: "idle-open-prs",
-      title: "업데이트 없는 PR",
-      description: "10일 이상 업데이트가 없는 열린 PR",
-      count: idlePrs.length,
-      totalMetric: sumMetric(idlePrs, idleMetric),
+      id: "review-stalled-prs",
+      title: "리뷰 정체 PR",
+      description: "2 업무일 이상 리뷰 정체 PR",
+      count: reviewStalledPrs.length,
+      totalMetric: sumMetric(reviewStalledPrs, reviewStalledMetric),
       highlights: [
-        highlightLine("최다 작성자", findTopByTotal(idleAuthors, 3)),
-        highlightLine("최다 리뷰어", findTopByTotal(idleReviewers, 3)),
+        highlightLine("최다 작성자", findTopByTotal(reviewStalledAuthors, 3)),
+        highlightLine("최다 리뷰어", findTopByTotal(reviewStalledReviewers, 3)),
+      ].filter((line): line is string => Boolean(line)),
+    },
+    {
+      id: "merge-delayed-prs",
+      title: "머지 지연 PR",
+      description: "2 업무일 이상 머지 지연 PR",
+      count: mergeDelayedPrs.length,
+      totalMetric: sumMetric(mergeDelayedPrs, mergeDelayedMetric),
+      highlights: [
+        highlightLine("최다 작성자", findTopByTotal(mergeDelayedAuthors, 3)),
+        highlightLine("최다 리뷰어", findTopByTotal(mergeDelayedReviewers, 3)),
       ].filter((line): line is string => Boolean(line)),
     },
     {

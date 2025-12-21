@@ -2469,8 +2469,8 @@ export function SettingsView({
                   })}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  선택한 달력은 Activity 및 Follow-ups 메뉴의 Age · Idle
-                  계산에도 적용돼요.
+                  선택한 달력은 Activity 및 Follow-ups 메뉴의 업무일 계산에도
+                  적용돼요.
                 </p>
               </CardContent>
             </Card>

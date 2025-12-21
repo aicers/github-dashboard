@@ -74,8 +74,6 @@ function parseThresholds(searchParams: URLSearchParams) {
   }> = [
     { query: "unansweredMentionDays", field: "unansweredMentionDays" },
     { query: "reviewRequestDays", field: "reviewRequestDays" },
-    { query: "stalePrDays", field: "stalePrDays" },
-    { query: "idlePrDays", field: "idlePrDays" },
     { query: "backlogIssueDays", field: "backlogIssueDays" },
     { query: "stalledIssueDays", field: "stalledIssueDays" },
   ];
@@ -178,23 +176,40 @@ export function parseActivityListParams(
     attention: Array.from(
       new Set(
         (
-          parseEnumValues<ActivityAttentionFilter>(searchParams, "attention", [
+          parseEnumValues<string>(searchParams, "attention", [
             "unanswered_mentions",
             "review_requests_pending",
-            "pr_open_too_long",
-            "pr_inactive",
+            "pr_reviewer_unassigned",
+            "pr_review_stalled",
+            "pr_merge_delayed",
             "issue_backlog",
             "issue_stalled",
             "no_attention",
+            // Legacy values (migrated to the three new PR follow-ups).
+            "pr_open_too_long",
+            "pr_inactive",
           ]) ?? []
-        )
-          .filter(
-            (value): value is ActivityAttentionFilter =>
-              typeof value === "string",
-          )
-          .map((value) =>
-            value === "pr_open_too_long" ? "pr_inactive" : value,
-          ),
+        ).flatMap((value) => {
+          if (value === "pr_open_too_long" || value === "pr_inactive") {
+            return [
+              "pr_reviewer_unassigned",
+              "pr_review_stalled",
+              "pr_merge_delayed",
+            ] satisfies ActivityAttentionFilter[];
+          }
+
+          return [value].filter(
+            (entry): entry is ActivityAttentionFilter =>
+              entry === "unanswered_mentions" ||
+              entry === "review_requests_pending" ||
+              entry === "pr_reviewer_unassigned" ||
+              entry === "pr_review_stalled" ||
+              entry === "pr_merge_delayed" ||
+              entry === "issue_backlog" ||
+              entry === "issue_stalled" ||
+              entry === "no_attention",
+          );
+        }),
       ),
     ),
     linkedIssueStates: parseEnumValues<ActivityLinkedIssueFilter>(

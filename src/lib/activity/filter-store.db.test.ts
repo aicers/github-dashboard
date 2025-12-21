@@ -72,8 +72,8 @@ describe("activity filter store", () => {
         repositoryIds: [" repo-1 ", "repo-1", "repo-2"],
         search: "  needs triage ",
         thresholds: {
-          stalePrDays: 10,
-          idlePrDays: 5,
+          backlogIssueDays: 10,
+          reviewRequestDays: 5,
         },
       }),
     );
@@ -83,8 +83,8 @@ describe("activity filter store", () => {
     expect(first.payload.repositoryIds).toEqual(["repo-1", "repo-2"]);
     expect(first.payload.search).toBe("needs triage");
     expect(first.payload.thresholds).toEqual({
-      stalePrDays: 10,
-      idlePrDays: 5,
+      backlogIssueDays: 10,
+      reviewRequestDays: 5,
     });
 
     vi.setSystemTime(new Date("2024-01-01T01:00:00.000Z"));

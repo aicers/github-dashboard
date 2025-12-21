@@ -30,6 +30,7 @@ import {
   differenceInBusinessDaysOrNull,
   loadCombinedHolidaySet,
 } from "@/lib/dashboard/business-days";
+import { differenceInBusinessDaysInTimeZone } from "@/lib/dashboard/business-days-timezone";
 import { createPersonalHolidaySetLoader } from "@/lib/dashboard/personal-holidays";
 import {
   buildMentionClassificationKey,
@@ -83,6 +84,7 @@ export type PullRequestAttentionItem = PullRequestReference & {
   updatedAt: string | null;
   ageDays: number;
   inactivityDays?: number;
+  waitingDays?: number;
 };
 
 export type ReviewRequestAttentionItem = {
@@ -188,8 +190,9 @@ export type AttentionInsights = {
   generatedAt: string;
   timezone: string;
   dateTimeFormat: DateTimeDisplayFormat;
-  staleOpenPrs: PullRequestAttentionItem[];
-  idleOpenPrs: PullRequestAttentionItem[];
+  reviewerUnassignedPrs: PullRequestAttentionItem[];
+  reviewStalledPrs: PullRequestAttentionItem[];
+  mergeDelayedPrs: PullRequestAttentionItem[];
   stuckReviewRequests: ReviewRequestAttentionItem[];
   backlogIssues: IssueAttentionItem[];
   stalledInProgressIssues: IssueAttentionItem[];
@@ -276,6 +279,7 @@ type RawPullRequestItem = PullRequestReferenceRaw & {
   updatedAt: string | null;
   ageDays: number;
   inactivityDays?: number;
+  waitingDays?: number;
 };
 
 export type ReviewRequestRawItem = {
@@ -383,11 +387,6 @@ type PullRequestRow = {
   url: string | null;
   repository_name: string | null;
   repository_name_with_owner: string | null;
-};
-
-type IdlePullRequestRow = PullRequestRow & {
-  last_non_octoaide_activity_at: string | null;
-  last_octoaide_activity_at: string | null;
 };
 
 type ReviewRequestRow = {
@@ -518,8 +517,7 @@ type IssueProjectSnapshot = {
   startDate: string | null;
 };
 
-const STALE_PR_BUSINESS_DAYS = 20;
-const IDLE_PR_BUSINESS_DAYS = 10;
+const PR_FOLLOW_UP_BUSINESS_DAYS = 2;
 const STUCK_REVIEW_BUSINESS_DAYS = 5;
 const BACKLOG_ISSUE_BUSINESS_DAYS = 40;
 const STALLED_IN_PROGRESS_BUSINESS_DAYS = 20;
@@ -540,19 +538,6 @@ function differenceInDaysOrNull(
   holidays: ReadonlySet<string>,
 ) {
   return differenceInBusinessDaysOrNull(value ?? null, now, holidays);
-}
-
-function maxIsoDate(values: Array<Maybe<string>>): string | null {
-  let latest: string | null = null;
-  for (const value of values) {
-    if (!value) {
-      continue;
-    }
-    if (!latest || value > latest) {
-      latest = value;
-    }
-  }
-  return latest;
 }
 
 async function fetchUserIdsByLogins(
@@ -1145,11 +1130,53 @@ async function fetchReviewerMap(
   return map;
 }
 
-async function fetchStalePullRequests(
+async function fetchRepositoryMaintainersByRepository(
+  repositoryIds: readonly string[],
+): Promise<Map<string, string[]>> {
+  if (!repositoryIds.length) {
+    return new Map();
+  }
+
+  const result = await query<{ repository_id: string; user_id: string }>(
+    `SELECT repository_id, user_id
+       FROM repository_maintainers
+      WHERE repository_id = ANY($1::text[])`,
+    [repositoryIds],
+  );
+
+  const map = new Map<string, string[]>();
+  result.rows.forEach((row) => {
+    const list = map.get(row.repository_id) ?? [];
+    list.push(row.user_id);
+    map.set(row.repository_id, list);
+  });
+  return map;
+}
+
+function normalizeTimeZone(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: trimmed }).format();
+    return trimmed;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchReviewUnassignedPullRequests(
   excludedRepositoryIds: readonly string[],
   excludedUserIds: readonly string[],
   now: Date,
-  holidays: ReadonlySet<string>,
+  organizationHolidayCodes: HolidayCalendarCode[],
+  organizationHolidaySet: ReadonlySet<string>,
 ): Promise<Dataset<RawPullRequestItem>> {
   const result = await query<PullRequestRow>(
     `SELECT
@@ -1166,37 +1193,109 @@ async function fetchStalePullRequests(
     FROM pull_requests pr
     JOIN repositories repo ON repo.id = pr.repository_id
     WHERE pr.github_closed_at IS NULL
-       AND pr.github_created_at <= NOW() - INTERVAL '26 days'
+       AND pr.github_created_at <= NOW() - INTERVAL '2 days'
        AND NOT (pr.repository_id = ANY($1::text[]))
        AND (pr.author_id IS NULL OR NOT (pr.author_id = ANY($2::text[])))
+       AND NOT EXISTS (
+         SELECT 1
+         FROM review_requests rr
+         WHERE rr.pull_request_id = pr.id
+           AND (
+             rr.reviewer_id IS NULL
+             OR NOT (rr.reviewer_id = ANY($2::text[]))
+           )
+       )
+       AND NOT EXISTS (
+         SELECT 1
+         FROM reviews rv
+         WHERE rv.pull_request_id = pr.id
+           AND rv.author_id IS NOT NULL
+           AND NOT (rv.author_id = ANY($2::text[]))
+       )
      ORDER BY pr.github_created_at ASC`,
     [excludedRepositoryIds, excludedUserIds],
   );
 
-  const prIds = result.rows.map((row) => row.id);
-  const [reviewerMap, linkedIssuesMap] = await Promise.all([
-    fetchReviewerMap(prIds, excludedUserIds),
-    fetchLinkedIssuesForPullRequests(prIds),
+  const repositoryIds = Array.from(
+    new Set(
+      result.rows
+        .map((row) => row.repository_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+  const [maintainersByRepository, linkedIssuesMap] = await Promise.all([
+    fetchRepositoryMaintainersByRepository(repositoryIds),
+    fetchLinkedIssuesForPullRequests(result.rows.map((row) => row.id)),
   ]);
+
+  const maintainerIds = Array.from(
+    new Set(
+      repositoryIds.flatMap(
+        (repoId) => maintainersByRepository.get(repoId) ?? [],
+      ),
+    ),
+  );
+  const [preferencesMap, personalHolidayMap] = await Promise.all([
+    getUserPreferencesByIds(maintainerIds),
+    listUserPersonalHolidaysByIds(maintainerIds),
+  ]);
+  const getPersonalHolidaySet = createPersonalHolidaySetLoader({
+    organizationHolidayCodes,
+    organizationHolidaySet,
+    preferencesMap,
+    personalHolidayMap,
+  });
 
   const userIds = new Set<string>();
   const items: RawPullRequestItem[] = [];
 
-  result.rows.forEach((row) => {
-    const ageDays = differenceInDays(row.github_created_at, now, holidays);
-    if (ageDays < STALE_PR_BUSINESS_DAYS) {
-      return;
+  for (const row of result.rows) {
+    if (!row.repository_id || !row.github_created_at) {
+      continue;
     }
 
-    const reviewers = reviewerMap.get(row.id) ?? new Set<string>();
-    const reviewerIds = Array.from(reviewers);
+    const maintainerIdsForRepo = (
+      maintainersByRepository.get(row.repository_id) ?? []
+    ).filter((id) => !excludedUserIds.includes(id));
+    const people = maintainerIdsForRepo.length
+      ? maintainerIdsForRepo
+      : row.author_id
+        ? [row.author_id]
+        : [];
+
+    if (people.length === 0) {
+      continue;
+    }
+
+    let minWaiting = Number.POSITIVE_INFINITY;
+    let qualifies = true;
+
+    for (const personId of people) {
+      const holidays = await getPersonalHolidaySet(personId);
+      const tz =
+        normalizeTimeZone(preferencesMap.get(personId)?.timezone) ??
+        "Asia/Seoul";
+      const waitingDays = differenceInBusinessDaysInTimeZone(
+        row.github_created_at,
+        now,
+        holidays,
+        tz,
+      );
+      minWaiting = Math.min(minWaiting, waitingDays);
+      if (waitingDays < PR_FOLLOW_UP_BUSINESS_DAYS) {
+        qualifies = false;
+        break;
+      }
+    }
+
+    if (!qualifies || !Number.isFinite(minWaiting)) {
+      continue;
+    }
+
     addUserId(userIds, row.author_id);
-    for (const id of reviewerIds) {
+    for (const id of people) {
       addUserId(userIds, id);
     }
-
-    const inactivityDays =
-      differenceInDaysOrNull(row.github_updated_at, now, holidays) ?? undefined;
 
     items.push({
       id: row.id,
@@ -1207,27 +1306,266 @@ async function fetchStalePullRequests(
       repositoryName: row.repository_name,
       repositoryNameWithOwner: row.repository_name_with_owner,
       authorId: row.author_id,
-      reviewerIds,
+      reviewerIds: [],
       linkedIssues: linkedIssuesMap.get(row.id) ?? [],
       createdAt: row.github_created_at,
       updatedAt: row.github_updated_at,
-      ageDays,
-      inactivityDays,
+      ageDays: differenceInDays(
+        row.github_created_at,
+        now,
+        organizationHolidaySet,
+      ),
+      inactivityDays:
+        differenceInDaysOrNull(
+          row.github_updated_at,
+          now,
+          organizationHolidaySet,
+        ) ?? undefined,
+      waitingDays: minWaiting,
     });
-  });
+  }
 
   return { items, userIds };
 }
 
-async function fetchIdlePullRequests(
+type ReviewerRequestedAtRow = {
+  pull_request_id: string;
+  reviewer_id: string | null;
+  requested_at: string | null;
+};
+
+type ReviewerLastActivityRow = {
+  pull_request_id: string;
+  author_id: string | null;
+  last_activity_at: string | null;
+};
+
+async function fetchReviewStalledPullRequests(
   excludedRepositoryIds: readonly string[],
   excludedUserIds: readonly string[],
   now: Date,
-  holidays: ReadonlySet<string>,
+  organizationHolidayCodes: HolidayCalendarCode[],
+  organizationHolidaySet: ReadonlySet<string>,
 ): Promise<Dataset<RawPullRequestItem>> {
-  const octoaideUserIds = await fetchUserIdsByLogins(OCTOAIDE_LOGINS);
+  const result = await query<PullRequestRow>(
+    `SELECT
+       pr.id,
+       pr.number,
+       pr.title,
+       pr.repository_id,
+       pr.author_id,
+       pr.github_created_at,
+       pr.github_updated_at,
+       pr.data->>'url' AS url,
+       repo.name AS repository_name,
+       repo.name_with_owner AS repository_name_with_owner
+    FROM pull_requests pr
+    JOIN repositories repo ON repo.id = pr.repository_id
+    WHERE pr.github_closed_at IS NULL
+       AND pr.github_created_at <= NOW() - INTERVAL '2 days'
+       AND NOT (pr.repository_id = ANY($1::text[]))
+       AND (pr.author_id IS NULL OR NOT (pr.author_id = ANY($2::text[])))
+       AND EXISTS (
+         SELECT 1
+         FROM review_requests rr
+         WHERE rr.pull_request_id = pr.id
+           AND rr.reviewer_id IS NOT NULL
+           AND rr.removed_at IS NULL
+           AND NOT (rr.reviewer_id = ANY($2::text[]))
+       )
+     ORDER BY pr.github_updated_at ASC NULLS LAST`,
+    [excludedRepositoryIds, excludedUserIds],
+  );
 
-  const result = await query<IdlePullRequestRow>(
+  const prIds = result.rows.map((row) => row.id);
+  const [reviewerMap, linkedIssuesMap, octoaideUserIds] = await Promise.all([
+    fetchReviewerMap(prIds, excludedUserIds),
+    fetchLinkedIssuesForPullRequests(prIds),
+    fetchUserIdsByLogins(OCTOAIDE_LOGINS),
+  ]);
+
+  const reviewerIds = Array.from(
+    new Set(Array.from(reviewerMap.values()).flatMap((set) => Array.from(set))),
+  );
+  const [preferencesMap, personalHolidayMap] = await Promise.all([
+    getUserPreferencesByIds(reviewerIds),
+    listUserPersonalHolidaysByIds(reviewerIds),
+  ]);
+  const getPersonalHolidaySet = createPersonalHolidaySetLoader({
+    organizationHolidayCodes,
+    organizationHolidaySet,
+    preferencesMap,
+    personalHolidayMap,
+  });
+
+  const requestedAtResult = prIds.length
+    ? await query<ReviewerRequestedAtRow>(
+        `SELECT pull_request_id,
+                reviewer_id,
+                MAX(requested_at) AS requested_at
+           FROM review_requests
+          WHERE pull_request_id = ANY($1::text[])
+            AND reviewer_id IS NOT NULL
+            AND removed_at IS NULL
+            AND NOT (reviewer_id = ANY($2::text[]))
+          GROUP BY pull_request_id, reviewer_id`,
+        [prIds, excludedUserIds],
+      )
+    : { rows: [] as ReviewerRequestedAtRow[] };
+
+  const requestedAtMap = new Map<string, string>();
+  requestedAtResult.rows.forEach((row) => {
+    if (!row.pull_request_id || !row.reviewer_id || !row.requested_at) {
+      return;
+    }
+    requestedAtMap.set(
+      `${row.pull_request_id}:${row.reviewer_id}`,
+      row.requested_at,
+    );
+  });
+
+  const excludedForActivity = Array.from(
+    new Set([...excludedUserIds, ...octoaideUserIds]),
+  );
+  const activityResult = prIds.length
+    ? await query<ReviewerLastActivityRow>(
+        `SELECT pull_request_id,
+                author_id,
+                MAX(activity_at) AS last_activity_at
+           FROM (
+             SELECT pull_request_id,
+                    author_id,
+                    github_created_at AS activity_at
+               FROM comments
+              WHERE pull_request_id = ANY($1::text[])
+                AND author_id IS NOT NULL
+                AND NOT (author_id = ANY($2::text[]))
+             UNION ALL
+             SELECT pull_request_id,
+                    author_id,
+                    github_submitted_at AS activity_at
+               FROM reviews
+              WHERE pull_request_id = ANY($1::text[])
+                AND github_submitted_at IS NOT NULL
+                AND author_id IS NOT NULL
+                AND NOT (author_id = ANY($2::text[]))
+           ) activities
+          GROUP BY pull_request_id, author_id`,
+        [prIds, excludedForActivity],
+      )
+    : { rows: [] as ReviewerLastActivityRow[] };
+
+  const activityMap = new Map<string, string>();
+  activityResult.rows.forEach((row) => {
+    if (!row.pull_request_id || !row.author_id || !row.last_activity_at) {
+      return;
+    }
+    activityMap.set(
+      `${row.pull_request_id}:${row.author_id}`,
+      row.last_activity_at,
+    );
+  });
+
+  const userIds = new Set<string>();
+  const items: RawPullRequestItem[] = [];
+
+  for (const row of result.rows) {
+    if (!row.github_created_at) {
+      continue;
+    }
+    const reviewers = reviewerMap.get(row.id) ?? new Set<string>();
+    const reviewerIdList = Array.from(reviewers);
+    if (reviewerIdList.length === 0) {
+      continue;
+    }
+
+    let minWaiting = Number.POSITIVE_INFINITY;
+    let lastActivity = null as string | null;
+    let qualifies = true;
+
+    for (const reviewerId of reviewerIdList) {
+      const key = `${row.id}:${reviewerId}`;
+      const requestedAt = requestedAtMap.get(key) ?? null;
+      const latestActivity = activityMap.get(key) ?? null;
+
+      let baseline = requestedAt ?? row.github_created_at;
+      if (latestActivity && (!requestedAt || latestActivity >= requestedAt)) {
+        baseline = latestActivity;
+      }
+
+      const holidays = await getPersonalHolidaySet(reviewerId);
+      const tz =
+        normalizeTimeZone(preferencesMap.get(reviewerId)?.timezone) ??
+        "Asia/Seoul";
+      const waitingDays = differenceInBusinessDaysInTimeZone(
+        baseline,
+        now,
+        holidays,
+        tz,
+      );
+      minWaiting = Math.min(minWaiting, waitingDays);
+      if (waitingDays < PR_FOLLOW_UP_BUSINESS_DAYS) {
+        qualifies = false;
+        break;
+      }
+
+      if (!lastActivity || baseline > lastActivity) {
+        lastActivity = baseline;
+      }
+    }
+
+    if (!qualifies || !Number.isFinite(minWaiting)) {
+      continue;
+    }
+
+    addUserId(userIds, row.author_id);
+    reviewerIdList.forEach((id) => {
+      addUserId(userIds, id);
+    });
+
+    items.push({
+      id: row.id,
+      number: row.number,
+      title: row.title,
+      url: row.url,
+      repositoryId: row.repository_id,
+      repositoryName: row.repository_name,
+      repositoryNameWithOwner: row.repository_name_with_owner,
+      authorId: row.author_id,
+      reviewerIds: reviewerIdList,
+      linkedIssues: linkedIssuesMap.get(row.id) ?? [],
+      createdAt: row.github_created_at,
+      updatedAt: lastActivity ?? row.github_updated_at,
+      ageDays: differenceInDays(
+        row.github_created_at,
+        now,
+        organizationHolidaySet,
+      ),
+      inactivityDays:
+        differenceInDaysOrNull(
+          row.github_updated_at,
+          now,
+          organizationHolidaySet,
+        ) ?? undefined,
+      waitingDays: minWaiting,
+    });
+  }
+
+  return { items, userIds };
+}
+
+type MergeDelayedPullRequestRow = PullRequestRow & {
+  approved_at: string | null;
+};
+
+async function fetchMergeDelayedPullRequests(
+  excludedRepositoryIds: readonly string[],
+  excludedUserIds: readonly string[],
+  now: Date,
+  organizationHolidayCodes: HolidayCalendarCode[],
+  organizationHolidaySet: ReadonlySet<string>,
+): Promise<Dataset<RawPullRequestItem>> {
+  const result = await query<MergeDelayedPullRequestRow>(
     `SELECT
        pr.id,
        pr.number,
@@ -1239,117 +1577,112 @@ async function fetchIdlePullRequests(
        pr.data->>'url' AS url,
        repo.name AS repository_name,
        repo.name_with_owner AS repository_name_with_owner,
-       non_octoaide_activity.last_activity_at AS last_non_octoaide_activity_at,
-       octoaide_activity.last_activity_at AS last_octoaide_activity_at
+       approval.approved_at
     FROM pull_requests pr
     JOIN repositories repo ON repo.id = pr.repository_id
-    LEFT JOIN LATERAL (
-       SELECT MAX(activity_at) AS last_activity_at
-         FROM (
-           SELECT c.github_created_at AS activity_at
-             FROM comments c
-            WHERE c.pull_request_id = pr.id
-              AND (c.author_id IS NULL OR NOT (c.author_id = ANY($2::text[])))
-              AND (c.author_id IS NULL OR NOT (c.author_id = ANY($3::text[])))
-           UNION ALL
-           SELECT r.github_submitted_at AS activity_at
-             FROM reviews r
-            WHERE r.pull_request_id = pr.id
-              AND r.github_submitted_at IS NOT NULL
-              AND (r.author_id IS NULL OR NOT (r.author_id = ANY($2::text[])))
-              AND (r.author_id IS NULL OR NOT (r.author_id = ANY($3::text[])))
-         ) AS activities
-     ) AS non_octoaide_activity ON TRUE
-    LEFT JOIN LATERAL (
-       SELECT MAX(activity_at) AS last_activity_at
-         FROM (
-           SELECT c.github_created_at AS activity_at
-             FROM comments c
-            WHERE c.pull_request_id = pr.id
-              AND c.author_id IS NOT NULL
-              AND c.author_id = ANY($3::text[])
-           UNION ALL
-           SELECT r.github_submitted_at AS activity_at
-             FROM reviews r
-            WHERE r.pull_request_id = pr.id
-              AND r.github_submitted_at IS NOT NULL
-              AND r.author_id IS NOT NULL
-              AND r.author_id = ANY($3::text[])
-         ) AS activities
-     ) AS octoaide_activity ON TRUE
+    JOIN LATERAL (
+       SELECT MAX(github_submitted_at) AS approved_at
+       FROM reviews r
+       WHERE r.pull_request_id = pr.id
+         AND r.github_submitted_at IS NOT NULL
+         AND r.state = 'APPROVED'
+    ) approval ON TRUE
     WHERE pr.github_closed_at IS NULL
-       AND pr.github_created_at <= NOW() - INTERVAL '12 days'
-       AND NOT (pr.repository_id = ANY($1::text[]))
-       AND (pr.author_id IS NULL OR NOT (pr.author_id = ANY($2::text[])))
-     ORDER BY pr.github_updated_at ASC NULLS LAST`,
-    [excludedRepositoryIds, excludedUserIds, octoaideUserIds],
+      AND approval.approved_at IS NOT NULL
+      AND pr.data->>'reviewDecision' = 'APPROVED'
+      AND approval.approved_at <= NOW() - INTERVAL '2 days'
+      AND NOT (pr.repository_id = ANY($1::text[]))
+      AND (pr.author_id IS NULL OR NOT (pr.author_id = ANY($2::text[])))
+    ORDER BY approval.approved_at ASC`,
+    [excludedRepositoryIds, excludedUserIds],
   );
 
   const prIds = result.rows.map((row) => row.id);
-  const [reviewerMap, linkedIssuesMap] = await Promise.all([
-    fetchReviewerMap(prIds, excludedUserIds),
-    fetchLinkedIssuesForPullRequests(prIds),
+  const repositoryIds = Array.from(
+    new Set(
+      result.rows
+        .map((row) => row.repository_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+  const [reviewerMap, linkedIssuesMap, maintainersByRepository] =
+    await Promise.all([
+      fetchReviewerMap(prIds, excludedUserIds),
+      fetchLinkedIssuesForPullRequests(prIds),
+      fetchRepositoryMaintainersByRepository(repositoryIds),
+    ]);
+
+  const maintainerIds = Array.from(
+    new Set(
+      repositoryIds.flatMap(
+        (repoId) => maintainersByRepository.get(repoId) ?? [],
+      ),
+    ),
+  );
+  const [preferencesMap, personalHolidayMap] = await Promise.all([
+    getUserPreferencesByIds(maintainerIds),
+    listUserPersonalHolidaysByIds(maintainerIds),
   ]);
+  const getPersonalHolidaySet = createPersonalHolidaySetLoader({
+    organizationHolidayCodes,
+    organizationHolidaySet,
+    preferencesMap,
+    personalHolidayMap,
+  });
 
   const userIds = new Set<string>();
   const items: RawPullRequestItem[] = [];
-  const hasOctoaide = octoaideUserIds.length > 0;
 
-  result.rows.forEach((row) => {
-    const ageDays = differenceInDays(row.github_created_at, now, holidays);
-    if (ageDays < IDLE_PR_BUSINESS_DAYS) {
-      return;
+  for (const row of result.rows) {
+    if (!row.repository_id || !row.approved_at || !row.github_created_at) {
+      continue;
     }
 
-    const latestNonOctoaideActivity = row.last_non_octoaide_activity_at;
-    let effectiveUpdatedAt = row.github_updated_at ?? row.github_created_at;
+    const maintainerIdsForRepo = (
+      maintainersByRepository.get(row.repository_id) ?? []
+    ).filter((id) => !excludedUserIds.includes(id));
+    const people = maintainerIdsForRepo.length
+      ? maintainerIdsForRepo
+      : row.author_id
+        ? [row.author_id]
+        : [];
+    if (people.length === 0) {
+      continue;
+    }
 
-    if (hasOctoaide && row.last_octoaide_activity_at) {
-      const latestKnownActivity = maxIsoDate([
-        row.github_updated_at,
-        latestNonOctoaideActivity,
-        row.last_octoaide_activity_at,
-      ]);
-      const latestKnownActivityTime = latestKnownActivity
-        ? Date.parse(latestKnownActivity)
-        : Number.NaN;
-      const lastOctoaideActivityTime = Date.parse(
-        row.last_octoaide_activity_at,
+    let minWaiting = Number.POSITIVE_INFINITY;
+    let qualifies = true;
+    for (const personId of people) {
+      const holidays = await getPersonalHolidaySet(personId);
+      const tz =
+        normalizeTimeZone(preferencesMap.get(personId)?.timezone) ??
+        "Asia/Seoul";
+      const waitingDays = differenceInBusinessDaysInTimeZone(
+        row.approved_at,
+        now,
+        holidays,
+        tz,
       );
-
-      if (
-        Number.isFinite(latestKnownActivityTime) &&
-        Number.isFinite(lastOctoaideActivityTime) &&
-        latestKnownActivityTime === lastOctoaideActivityTime
-      ) {
-        const candidateHumanDates: Array<Maybe<string>> = [
-          row.github_updated_at &&
-          Date.parse(row.github_updated_at) !== lastOctoaideActivityTime
-            ? row.github_updated_at
-            : null,
-          latestNonOctoaideActivity,
-          row.github_created_at,
-        ];
-        effectiveUpdatedAt =
-          maxIsoDate(candidateHumanDates) ?? row.github_created_at;
+      minWaiting = Math.min(minWaiting, waitingDays);
+      if (waitingDays < PR_FOLLOW_UP_BUSINESS_DAYS) {
+        qualifies = false;
+        break;
       }
     }
 
-    if (!effectiveUpdatedAt) {
-      effectiveUpdatedAt = row.github_created_at;
-    }
-
-    const inactivityDays = differenceInDays(effectiveUpdatedAt, now, holidays);
-    if (inactivityDays < IDLE_PR_BUSINESS_DAYS) {
-      return;
+    if (!qualifies || !Number.isFinite(minWaiting)) {
+      continue;
     }
 
     const reviewers = reviewerMap.get(row.id) ?? new Set<string>();
     const reviewerIds = Array.from(reviewers);
     addUserId(userIds, row.author_id);
-    for (const id of reviewerIds) {
+    reviewerIds.forEach((id) => {
       addUserId(userIds, id);
-    }
+    });
+    people.forEach((id) => {
+      addUserId(userIds, id);
+    });
 
     items.push({
       id: row.id,
@@ -1363,11 +1696,21 @@ async function fetchIdlePullRequests(
       reviewerIds,
       linkedIssues: linkedIssuesMap.get(row.id) ?? [],
       createdAt: row.github_created_at,
-      updatedAt: effectiveUpdatedAt,
-      ageDays,
-      inactivityDays,
+      updatedAt: row.approved_at,
+      ageDays: differenceInDays(
+        row.github_created_at,
+        now,
+        organizationHolidaySet,
+      ),
+      inactivityDays:
+        differenceInDaysOrNull(
+          row.github_updated_at,
+          now,
+          organizationHolidaySet,
+        ) ?? undefined,
+      waitingDays: minWaiting,
     });
-  });
+  }
 
   return { items, userIds };
 }
@@ -1402,6 +1745,7 @@ export async function fetchStuckReviewRequests(
          AND rr.removed_at IS NULL
          AND rr.requested_at <= NOW() - INTERVAL '5 days'
          AND pr.github_closed_at IS NULL
+         AND COALESCE(pr.data->>'reviewDecision', '') <> 'APPROVED'
          AND NOT (pr.repository_id = ANY($1::text[]))
          AND (pr.author_id IS NULL OR NOT (pr.author_id = ANY($2::text[])))
          AND NOT (rr.reviewer_id = ANY($2::text[]))
@@ -2321,23 +2665,33 @@ export async function getAttentionInsights(options?: {
   const targetProject = normalizeProjectTarget(env.TODO_PROJECT_NAME);
 
   const [
-    stale,
-    idle,
+    reviewerUnassigned,
+    reviewStalled,
+    mergeDelayed,
     stuckReviews,
     issueInsights,
     mentions,
     organizationMaintainerIds,
   ] = await Promise.all([
-    fetchStalePullRequests(
+    fetchReviewUnassignedPullRequests(
       excludedReposArray,
       excludedUsersArray,
       now,
+      organizationHolidayCodes,
       organizationHolidaySet,
     ),
-    fetchIdlePullRequests(
+    fetchReviewStalledPullRequests(
       excludedReposArray,
       excludedUsersArray,
       now,
+      organizationHolidayCodes,
+      organizationHolidaySet,
+    ),
+    fetchMergeDelayedPullRequests(
+      excludedReposArray,
+      excludedUsersArray,
+      now,
+      organizationHolidayCodes,
       organizationHolidaySet,
     ),
     fetchStuckReviewRequests(
@@ -2368,11 +2722,39 @@ export async function getAttentionInsights(options?: {
     fetchOrganizationMaintainerIds(),
   ]);
 
+  const reviewStalledExcludedPullRequestIds = new Set<string>();
+  reviewerUnassigned.items.forEach((item) => {
+    reviewStalledExcludedPullRequestIds.add(item.id);
+  });
+  mergeDelayed.items.forEach((item) => {
+    reviewStalledExcludedPullRequestIds.add(item.id);
+  });
+  stuckReviews.items.forEach((item) => {
+    reviewStalledExcludedPullRequestIds.add(item.pullRequest.id);
+  });
+  if (reviewStalledExcludedPullRequestIds.size > 0) {
+    reviewStalled.items = reviewStalled.items.filter(
+      (item) => !reviewStalledExcludedPullRequestIds.has(item.id),
+    );
+    reviewStalled.userIds = new Set<string>();
+    reviewStalled.items.forEach((item) => {
+      if (item.authorId) {
+        reviewStalled.userIds.add(item.authorId);
+      }
+      item.reviewerIds.forEach((id) => {
+        reviewStalled.userIds.add(id);
+      });
+    });
+  }
+
   const userIdSet = new Set<string>();
-  stale.userIds.forEach((id) => {
+  reviewerUnassigned.userIds.forEach((id) => {
     userIdSet.add(id);
   });
-  idle.userIds.forEach((id) => {
+  reviewStalled.userIds.forEach((id) => {
+    userIdSet.add(id);
+  });
+  mergeDelayed.userIds.forEach((id) => {
     userIdSet.add(id);
   });
   stuckReviews.userIds.forEach((id) => {
@@ -2414,21 +2796,37 @@ export async function getAttentionInsights(options?: {
     }
   });
 
-  const staleOpenPrs = stale.items.map<PullRequestAttentionItem>((item) => ({
-    ...toPullRequestReference(item, userMap),
-    createdAt: item.createdAt,
-    updatedAt: item.updatedAt,
-    ageDays: item.ageDays,
-    inactivityDays: item.inactivityDays,
-  }));
+  const reviewerUnassignedPrs =
+    reviewerUnassigned.items.map<PullRequestAttentionItem>((item) => ({
+      ...toPullRequestReference(item, userMap),
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+      ageDays: item.ageDays,
+      inactivityDays: item.inactivityDays,
+      waitingDays: item.waitingDays,
+    }));
 
-  const idleOpenPrs = idle.items.map<PullRequestAttentionItem>((item) => ({
-    ...toPullRequestReference(item, userMap),
-    createdAt: item.createdAt,
-    updatedAt: item.updatedAt,
-    ageDays: item.ageDays,
-    inactivityDays: item.inactivityDays,
-  }));
+  const reviewStalledPrs = reviewStalled.items.map<PullRequestAttentionItem>(
+    (item) => ({
+      ...toPullRequestReference(item, userMap),
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+      ageDays: item.ageDays,
+      inactivityDays: item.inactivityDays,
+      waitingDays: item.waitingDays,
+    }),
+  );
+
+  const mergeDelayedPrs = mergeDelayed.items.map<PullRequestAttentionItem>(
+    (item) => ({
+      ...toPullRequestReference(item, userMap),
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+      ageDays: item.ageDays,
+      inactivityDays: item.inactivityDays,
+      waitingDays: item.waitingDays,
+    }),
+  );
 
   const stuckReviewRequests =
     stuckReviews.items.map<ReviewRequestAttentionItem>((item) => ({
@@ -2533,8 +2931,9 @@ export async function getAttentionInsights(options?: {
     generatedAt: now.toISOString(),
     timezone,
     dateTimeFormat,
-    staleOpenPrs,
-    idleOpenPrs,
+    reviewerUnassignedPrs,
+    reviewStalledPrs,
+    mergeDelayedPrs,
     stuckReviewRequests,
     backlogIssues,
     stalledInProgressIssues,

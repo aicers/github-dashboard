@@ -49,6 +49,8 @@ function buildPullRequestItem(params: {
   createdAt: string;
   updatedAt: string | null;
   ageDays: number;
+  inactivityDays?: number;
+  waitingDays: number;
 }): PullRequestAttentionItem {
   const {
     id,
@@ -61,6 +63,8 @@ function buildPullRequestItem(params: {
     createdAt,
     updatedAt,
     ageDays,
+    inactivityDays,
+    waitingDays,
   } = params;
 
   return {
@@ -75,15 +79,17 @@ function buildPullRequestItem(params: {
     createdAt,
     updatedAt,
     ageDays,
+    inactivityDays,
+    waitingDays,
   } satisfies PullRequestAttentionItem;
 }
 
-describe("AttentionView stale pull requests", () => {
+describe("AttentionView merge-delayed pull requests", () => {
   beforeEach(() => {
     refreshMock.mockReset();
   });
 
-  it("shows stale PR overview, interactive filters, and refresh control", async () => {
+  it("shows merge-delayed PR overview, interactive filters, and refresh control", async () => {
     const user = userEvent.setup();
 
     const alice = buildUser("user-alice", "Alice", "alice");
@@ -93,7 +99,7 @@ describe("AttentionView stale pull requests", () => {
     const repoOne = buildRepository("repo-one", "repo-one", "acme/repo-one");
     const repoTwo = buildRepository("repo-two", "repo-two", "acme/repo-two");
 
-    const staleItems: PullRequestAttentionItem[] = [
+    const mergeDelayedItems: PullRequestAttentionItem[] = [
       buildPullRequestItem({
         id: "pr-1",
         number: 101,
@@ -104,7 +110,8 @@ describe("AttentionView stale pull requests", () => {
         reviewers: [bob],
         createdAt: "2023-12-01T00:00:00.000Z",
         updatedAt: "2024-01-15T10:00:00.000Z",
-        ageDays: 40,
+        ageDays: 60,
+        waitingDays: 40,
       }),
       buildPullRequestItem({
         id: "pr-2",
@@ -116,7 +123,8 @@ describe("AttentionView stale pull requests", () => {
         reviewers: [carol],
         createdAt: "2023-12-15T00:00:00.000Z",
         updatedAt: "2024-02-10T08:00:00.000Z",
-        ageDays: 20,
+        ageDays: 40,
+        waitingDays: 20,
       }),
     ];
 
@@ -124,8 +132,9 @@ describe("AttentionView stale pull requests", () => {
       generatedAt: "2024-02-20T00:00:00.000Z",
       timezone: "Asia/Seoul",
       dateTimeFormat: "auto",
-      staleOpenPrs: staleItems,
-      idleOpenPrs: [],
+      reviewerUnassignedPrs: [],
+      reviewStalledPrs: [],
+      mergeDelayedPrs: mergeDelayedItems,
       stuckReviewRequests: [],
       backlogIssues: [],
       stalledInProgressIssues: [],
@@ -143,10 +152,10 @@ describe("AttentionView stale pull requests", () => {
     expect(screen.getByText("2건")).toBeInTheDocument();
     expect(screen.getByText("60일")).toBeInTheDocument();
 
-    const overviewButton = screen.getByRole("button", { name: /오래된 PR/ });
+    const overviewButton = screen.getByRole("button", { name: /머지 지연 PR/ });
     await user.click(overviewButton);
 
-    expect(screen.getByText("20일 이상 머지되지 않은 PR")).toBeInTheDocument();
+    expect(screen.getByText("2 업무일 이상 머지 지연 PR")).toBeInTheDocument();
     expect(screen.getByText("Refine search experience")).toBeInTheDocument();
     expect(screen.getByText("Fix caching logic")).toBeInTheDocument();
 
@@ -177,7 +186,9 @@ describe("AttentionView stale pull requests", () => {
       within(secondPrItem).getByText("리뷰어 Carol (@carol)"),
     ).toBeInTheDocument();
 
-    expect(screen.getByText("작성자 경과일수 합계 순위")).toBeInTheDocument();
+    expect(
+      screen.getByText("작성자 기준 경과일수 합계 순위"),
+    ).toBeInTheDocument();
 
     const authorFilter = screen.getByLabelText("작성자 필터");
     await user.selectOptions(authorFilter, "user-bob");
@@ -207,14 +218,15 @@ describe("AttentionView stale pull requests", () => {
     });
   });
 
-  it("renders empty state messaging when no stale pull requests exist", async () => {
+  it("renders empty state messaging when no merge-delayed pull requests exist", async () => {
     const user = userEvent.setup();
     const emptyInsights: AttentionInsights = {
       generatedAt: "2024-02-20T00:00:00.000Z",
       timezone: "UTC",
       dateTimeFormat: "auto",
-      staleOpenPrs: [],
-      idleOpenPrs: [],
+      reviewerUnassignedPrs: [],
+      reviewStalledPrs: [],
+      mergeDelayedPrs: [],
       stuckReviewRequests: [],
       backlogIssues: [],
       stalledInProgressIssues: [],
@@ -227,13 +239,17 @@ describe("AttentionView stale pull requests", () => {
     expect(screen.getAllByText("0일").length).toBeGreaterThan(0);
     expect(screen.queryByText(/최다 작성자:/)).not.toBeInTheDocument();
 
-    const staleButton = screen.getByRole("button", { name: /오래된 PR/ });
-    await user.click(staleButton);
+    const mergeDelayedButton = screen.getByRole("button", {
+      name: /머지 지연 PR/,
+    });
+    await user.click(mergeDelayedButton);
 
     expect(
       screen.getByText("현재 조건을 만족하는 PR이 없습니다."),
     ).toBeInTheDocument();
-    expect(screen.getByText("작성자 경과일수 합계 순위")).toBeInTheDocument();
+    expect(
+      screen.getByText("작성자 기준 경과일수 합계 순위"),
+    ).toBeInTheDocument();
     expect(
       screen.getAllByText("작성자 데이터가 없습니다.").length,
     ).toBeGreaterThan(0);

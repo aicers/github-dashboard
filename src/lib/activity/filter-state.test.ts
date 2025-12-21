@@ -19,7 +19,7 @@ describe("buildFilterState", () => {
       page: 0,
       perPage: -5,
       thresholds: {
-        stalePrDays: 12,
+        backlogIssueDays: 12,
       },
     });
 
@@ -27,9 +27,9 @@ describe("buildFilterState", () => {
 
     expect(result.page).toBe(1);
     expect(result.perPage).toBe(30);
-    expect(result.thresholds.stalePrDays).toBe(12);
-    expect(result.thresholds.idlePrDays).toBe(
-      DEFAULT_THRESHOLD_VALUES.idlePrDays,
+    expect(result.thresholds.backlogIssueDays).toBe(12);
+    expect(result.thresholds.reviewRequestDays).toBe(
+      DEFAULT_THRESHOLD_VALUES.reviewRequestDays,
     );
   });
 
@@ -72,7 +72,7 @@ describe("buildSavedFilterPayload", () => {
     const filters = buildActivityFilterState({
       thresholds: {
         ...DEFAULT_THRESHOLD_VALUES,
-        stalePrDays: DEFAULT_THRESHOLD_VALUES.stalePrDays + 5,
+        backlogIssueDays: DEFAULT_THRESHOLD_VALUES.backlogIssueDays + 5,
         reviewRequestDays: DEFAULT_THRESHOLD_VALUES.reviewRequestDays,
       },
     });
@@ -80,7 +80,7 @@ describe("buildSavedFilterPayload", () => {
     const payload = buildSavedFilterPayload(filters);
 
     expect(payload.thresholds).toEqual({
-      stalePrDays: DEFAULT_THRESHOLD_VALUES.stalePrDays + 5,
+      backlogIssueDays: DEFAULT_THRESHOLD_VALUES.backlogIssueDays + 5,
     });
   });
 

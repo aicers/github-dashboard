@@ -34,8 +34,7 @@ describe("parseActivityListParams", () => {
   it("parses thresholds while enforcing minimum values", () => {
     const params = new URLSearchParams();
     params.set("backlogIssueDays", "30");
-    params.set("stalePrDays", "0");
-    params.set("idlePrDays", "-5");
+    params.set("reviewRequestDays", "0");
 
     const result = parseActivityListParams(params);
 
@@ -116,6 +115,21 @@ describe("parseActivityListParams", () => {
     expect(result.discussionStatuses).toEqual(["discussion_closed"]);
     expect(result.pullRequestStatuses).toEqual(["pr_open", "pr_merged"]);
     expect(result.issueBaseStatuses).toEqual(["issue_closed"]);
+  });
+
+  it("migrates legacy PR attention values into the new follow-ups", () => {
+    const params = new URLSearchParams();
+    params.append("attention", "pr_inactive");
+
+    const result = parseActivityListParams(params);
+
+    expect(result.attention?.sort()).toEqual(
+      [
+        "pr_reviewer_unassigned",
+        "pr_review_stalled",
+        "pr_merge_delayed",
+      ].sort(),
+    );
   });
 
   it("parses task mode values", () => {

@@ -294,8 +294,9 @@ describe("ActivityView", () => {
           attention: {
             unansweredMention: false,
             reviewRequestPending: false,
-            staleOpenPr: false,
-            idlePr: false,
+            reviewerUnassignedPr: false,
+            reviewStalledPr: false,
+            mergeDelayedPr: false,
             backlogIssue: false,
             stalledIssue: false,
           },
@@ -750,7 +751,7 @@ describe("ActivityView", () => {
     if (stalledTooltipId) {
       const stalledTooltip = document.getElementById(stalledTooltipId);
       expect(stalledTooltip?.textContent).toContain(
-        "구성원이 이슈의 담당자이거나, 담당자 미정 시 해당 저장소 책임자이거나, 담당자/저장소 미지정 시 작성자인 항목만 표시합니다.",
+        "구성원이 이슈의 담당자이거나, 담당자 미지정 시 해당 저장소 책임자이거나, 담당자/저장소 미지정 시 작성자인 항목만 표시합니다.",
       );
     }
   });
@@ -792,19 +793,14 @@ describe("ActivityView", () => {
     });
   });
 
-  it("applies author, assignee, and reviewer for inactive PR attention", async () => {
+  it("applies reviewer and maintainer for 리뷰 정체 PR attention", async () => {
     mockFetchJsonOnce({ filters: [], limit: 5 });
     const props = createDefaultProps();
     render(<ActivityView {...props} />);
 
     fireEvent.click(screen.getByRole("button", { name: "alice" }));
-    fireEvent.click(screen.getByRole("button", { name: "업데이트 없는 PR" }));
+    fireEvent.click(screen.getByRole("button", { name: "리뷰 정체 PR" }));
     fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
-
-    await waitFor(() => {
-      expect(screen.getAllByLabelText("Remove alice")).toHaveLength(3);
-    });
-    expect(screen.queryAllByLabelText("Remove optional alice")).toHaveLength(0);
 
     mockFetchJsonOnce(buildActivityListResultFixture());
     await act(async () => {
@@ -816,9 +812,11 @@ describe("ActivityView", () => {
       expect(request).toBeTruthy();
       if (!request) return;
       const url = new URL(request.url);
-      expect(url.searchParams.getAll("attention")).toEqual(["pr_inactive"]);
-      expect(url.searchParams.getAll("authorId")).toEqual(["user-alice"]);
-      expect(url.searchParams.getAll("assigneeId")).toEqual(["user-alice"]);
+      expect(url.searchParams.getAll("attention")).toEqual([
+        "pr_review_stalled",
+      ]);
+      expect(url.searchParams.has("authorId")).toBe(false);
+      expect(url.searchParams.has("assigneeId")).toBe(false);
       expect(url.searchParams.getAll("reviewerId")).toEqual(["user-alice"]);
       expect(url.searchParams.getAll("maintainerId")).toEqual(["user-alice"]);
       expect(url.searchParams.has("mentionedUserId")).toBe(false);
@@ -945,7 +943,7 @@ describe("ActivityView", () => {
     });
   });
 
-  it("applies multiple selected people across blue roles for inactive PR attention", async () => {
+  it("applies multiple selected people across author/maintainer for 리뷰어 미지정 PR attention", async () => {
     mockFetchJsonOnce({ filters: [], limit: 5 });
     const props = createDefaultProps();
 
@@ -953,13 +951,8 @@ describe("ActivityView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "alice" }));
     fireEvent.click(screen.getByRole("button", { name: "bob" }));
-    fireEvent.click(screen.getByRole("button", { name: "업데이트 없는 PR" }));
+    fireEvent.click(screen.getByRole("button", { name: "리뷰어 미지정 PR" }));
     fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
-
-    await waitFor(() => {
-      expect(screen.getAllByLabelText(/Remove alice/)).toHaveLength(3);
-      expect(screen.getAllByLabelText(/Remove bob/)).toHaveLength(3);
-    });
 
     mockFetchJsonOnce(buildActivityListResultFixture());
 
@@ -981,13 +974,15 @@ describe("ActivityView", () => {
         expect(values).toEqual(expect.arrayContaining(expected));
       };
       assertParam("authorId");
-      assertParam("assigneeId");
-      assertParam("reviewerId");
       assertParam("maintainerId");
+      expect(url.searchParams.has("assigneeId")).toBe(false);
+      expect(url.searchParams.has("reviewerId")).toBe(false);
       expect(url.searchParams.has("mentionedUserId")).toBe(false);
       expect(url.searchParams.has("commenterId")).toBe(false);
       expect(url.searchParams.has("reactorId")).toBe(false);
-      expect(url.searchParams.getAll("attention")).toEqual(["pr_inactive"]);
+      expect(url.searchParams.getAll("attention")).toEqual([
+        "pr_reviewer_unassigned",
+      ]);
     });
   });
 
@@ -998,8 +993,8 @@ describe("ActivityView", () => {
     render(<ActivityView {...props} />);
 
     fireEvent.click(screen.getByRole("button", { name: "alice" }));
-    fireEvent.click(screen.getByRole("button", { name: "업데이트 없는 PR" }));
-    fireEvent.click(screen.getByRole("button", { name: "업데이트 없는 PR" }));
+    fireEvent.click(screen.getByRole("button", { name: "리뷰어 미지정 PR" }));
+    fireEvent.click(screen.getByRole("button", { name: "리뷰어 미지정 PR" }));
     fireEvent.click(screen.getByRole("button", { name: "alice" }));
     fireEvent.click(screen.getByRole("button", { name: "고급 필터 보기" }));
 
@@ -1230,8 +1225,9 @@ describe("ActivityView", () => {
       attention: {
         unansweredMention: true,
         reviewRequestPending: false,
-        staleOpenPr: false,
-        idlePr: false,
+        reviewerUnassignedPr: false,
+        reviewStalledPr: false,
+        mergeDelayedPr: false,
         backlogIssue: true,
         stalledIssue: false,
       },
@@ -1355,8 +1351,9 @@ describe("ActivityView", () => {
       attention: {
         unansweredMention: true,
         reviewRequestPending: false,
-        staleOpenPr: false,
-        idlePr: false,
+        reviewerUnassignedPr: false,
+        reviewStalledPr: false,
+        mergeDelayedPr: false,
         backlogIssue: false,
         stalledIssue: false,
       },
@@ -1476,8 +1473,9 @@ describe("ActivityView", () => {
       attention: {
         unansweredMention: true,
         reviewRequestPending: false,
-        staleOpenPr: false,
-        idlePr: false,
+        reviewerUnassignedPr: false,
+        reviewStalledPr: false,
+        mergeDelayedPr: false,
         backlogIssue: false,
         stalledIssue: false,
       },

@@ -131,8 +131,9 @@ function buildActivityDetailFromIssue(
   const attentionFlags = {
     unansweredMention: false,
     reviewRequestPending: false,
-    staleOpenPr: false,
-    idlePr: false,
+    reviewerUnassignedPr: false,
+    reviewStalledPr: false,
+    mergeDelayedPr: false,
     backlogIssue: attention === "backlog",
     stalledIssue: attention === "stalled",
   };
@@ -299,8 +300,9 @@ describe("AttentionView backlog issues", () => {
       generatedAt: "2024-02-20T00:00:00.000Z",
       timezone: "Asia/Seoul",
       dateTimeFormat: "auto",
-      staleOpenPrs: [],
-      idleOpenPrs: [],
+      reviewerUnassignedPrs: [],
+      reviewStalledPrs: [],
+      mergeDelayedPrs: [],
       stuckReviewRequests: [],
       backlogIssues: backlogItems,
       stalledInProgressIssues: [],
