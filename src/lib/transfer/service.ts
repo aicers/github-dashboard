@@ -15,6 +15,7 @@ type TransferSchedulerState = {
   currentRun: Promise<void> | null;
   isScheduling: boolean;
   isWaiting: boolean;
+  waitStartedAt: number | null;
 };
 
 type SchedulerGlobal = typeof globalThis & {
@@ -45,6 +46,7 @@ type TransferSyncRunResult = {
 type TransferRunTrigger = "automatic" | "manual";
 
 const dtfCache = new Map<string, Intl.DateTimeFormat>();
+const TRANSFER_WAIT_TIMEOUT_MS = 15 * 60 * 1000;
 
 function getSchedulerState(): TransferSchedulerState {
   const globalWithScheduler = globalThis as SchedulerGlobal;
@@ -55,6 +57,7 @@ function getSchedulerState(): TransferSchedulerState {
       currentRun: null,
       isScheduling: false,
       isWaiting: false,
+      waitStartedAt: null,
     };
   }
 
@@ -290,10 +293,32 @@ function buildLogMessage(trigger: TransferRunTrigger, actorId?: string | null) {
 export async function runTransferSync(options?: {
   trigger?: TransferRunTrigger;
   actorId?: string | null;
+  waitTimeoutMs?: number;
 }): Promise<TransferSyncRunResult> {
   const trigger: TransferRunTrigger = options?.trigger ?? "manual";
+  const waitTimeoutMs =
+    typeof options?.waitTimeoutMs === "number" && options.waitTimeoutMs > 0
+      ? options.waitTimeoutMs
+      : TRANSFER_WAIT_TIMEOUT_MS;
   const scheduler = getSchedulerState();
   scheduler.isWaiting = true;
+  scheduler.waitStartedAt = Date.now();
+  let timedOut = false;
+  const timeoutHandle = setTimeout(() => {
+    if (!scheduler.isWaiting) {
+      return;
+    }
+    timedOut = true;
+    scheduler.isWaiting = false;
+    scheduler.waitStartedAt = null;
+    const completedAt = new Date().toISOString();
+    const timeoutMinutes = Math.round(waitTimeoutMs / 60000);
+    void updateSyncConfig({
+      transferSyncLastCompletedAt: completedAt,
+      transferSyncLastStatus: "failed",
+      transferSyncLastError: `Transfer sync timed out waiting ${timeoutMinutes} minutes for other jobs.`,
+    });
+  }, waitTimeoutMs);
 
   return withTrackedRun(async () => {
     await ensureSchema();
@@ -307,7 +332,17 @@ export async function runTransferSync(options?: {
 
     try {
       const result = await withJobLock("transfer", async () => {
+        if (timeoutHandle) {
+          clearTimeout(timeoutHandle);
+        }
+        if (timedOut) {
+          throw new Error(
+            "Transfer sync timed out while waiting for other jobs.",
+          );
+        }
+
         scheduler.isWaiting = false;
+        scheduler.waitStartedAt = null;
         const startedAt = new Date().toISOString();
 
         await updateSyncConfig({
@@ -374,7 +409,11 @@ export async function runTransferSync(options?: {
 
       return result;
     } finally {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
       scheduler.isWaiting = false;
+      scheduler.waitStartedAt = null;
       await refreshScheduler();
     }
   });

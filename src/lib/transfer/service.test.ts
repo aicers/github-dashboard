@@ -104,4 +104,31 @@ describe("runTransferSync", () => {
     expect(runtime.isWaiting).toBe(false);
     expect(runtime.isRunning).toBe(false);
   });
+
+  it("fails when waiting too long for other jobs", async () => {
+    const waitTimeoutMs = 20;
+    vi.mocked(withJobLock).mockImplementation(async (_type, handler) => {
+      await new Promise((resolve) => setTimeout(resolve, waitTimeoutMs * 3));
+      return handler();
+    });
+
+    const runPromise = runTransferSync({
+      trigger: "manual",
+      actorId: "user-1",
+      waitTimeoutMs,
+    });
+
+    await expect(runPromise).rejects.toThrow(/timed out/i);
+
+    const calls = vi
+      .mocked(updateSyncConfig)
+      .mock.calls.map(([payload]) => payload);
+    const failedCall = calls.find(
+      (call) => call.transferSyncLastStatus === "failed",
+    );
+    expect(failedCall?.transferSyncLastError).toContain("timed out");
+
+    const runtime = await getTransferSyncRuntimeInfo();
+    expect(runtime.isWaiting).toBe(false);
+  });
 });
