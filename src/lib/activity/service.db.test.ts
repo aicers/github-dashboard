@@ -58,8 +58,9 @@ const emptyInsights = (): AttentionInsights => ({
   generatedAt: BASE_TIME,
   timezone: "UTC",
   dateTimeFormat: "auto",
-  staleOpenPrs: [],
-  idleOpenPrs: [],
+  reviewerUnassignedPrs: [],
+  reviewStalledPrs: [],
+  mergeDelayedPrs: [],
   stuckReviewRequests: [],
   backlogIssues: [],
   stalledInProgressIssues: [],
@@ -613,7 +614,7 @@ describe("activity service integration", () => {
 
     const attention: AttentionInsights = {
       ...emptyInsights(),
-      staleOpenPrs: [
+      reviewerUnassignedPrs: [
         {
           id: pullRequestBeta.id,
           number: pullRequestBeta.number,
@@ -630,6 +631,7 @@ describe("activity service integration", () => {
           createdAt: pullRequestBeta.createdAt,
           updatedAt: pullRequestBeta.updatedAt,
           ageDays: 25,
+          waitingDays: 3,
         } satisfies PullRequestAttentionItem,
       ],
       backlogIssues: [
@@ -693,7 +695,7 @@ describe("activity service integration", () => {
     const [pullRequestItem] = repoItems.items;
     expect(pullRequestItem.id).toBe(pullRequestBeta.id);
     expect(pullRequestItem.type).toBe("pull_request");
-    expect(pullRequestItem.attention.staleOpenPr).toBeTruthy();
+    expect(pullRequestItem.attention.reviewerUnassignedPr).toBeTruthy();
     expect(pullRequestItem.attention.reviewRequestPending).toBeTruthy();
     expect(repoItems.pageInfo).toEqual({
       page: 1,
@@ -736,7 +738,7 @@ describe("activity service integration", () => {
 
     const attention: AttentionInsights = {
       ...emptyInsights(),
-      staleOpenPrs: [
+      reviewerUnassignedPrs: [
         {
           id: pullRequestBeta.id,
           number: pullRequestBeta.number,
@@ -753,13 +755,14 @@ describe("activity service integration", () => {
           createdAt: pullRequestBeta.createdAt,
           updatedAt: pullRequestBeta.updatedAt,
           ageDays: 30,
+          waitingDays: 3,
         } satisfies PullRequestAttentionItem,
       ],
     };
     mockedAttentionInsights.mockResolvedValueOnce(attention);
 
     const result = await getActivityItems({
-      attention: ["pr_open_too_long"],
+      attention: ["pr_reviewer_unassigned"],
     });
 
     expect(result.items).toHaveLength(0);
@@ -1205,8 +1208,9 @@ describe("activity service integration", () => {
     expect(discussionItem.type).toBe("discussion");
     expect(discussionItem.attention.unansweredMention).toBe(true);
     expect(discussionItem.attention.reviewRequestPending).toBe(false);
-    expect(discussionItem.attention.staleOpenPr).toBe(false);
-    expect(discussionItem.attention.idlePr).toBe(false);
+    expect(discussionItem.attention.reviewerUnassignedPr).toBe(false);
+    expect(discussionItem.attention.reviewStalledPr).toBe(false);
+    expect(discussionItem.attention.mergeDelayedPr).toBe(false);
     expect(discussionItem.attention.backlogIssue).toBe(false);
     expect(discussionItem.attention.stalledIssue).toBe(false);
   });

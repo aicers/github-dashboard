@@ -92,33 +92,90 @@ function evaluateStaleOrIdlePr(
   attention: ActivityAttentionFilter,
   context: PersonRoleContext,
 ): AttentionPersonResolution {
-  const applied: PersonRole[] = [];
+  if (attention === "pr_reviewer_unassigned") {
+    if (context.isMaintainer) {
+      return {
+        attention,
+        match: true,
+        appliedRoles: ["maintainer"],
+        optionalRoles: [],
+      };
+    }
 
-  if (context.isAssignee) {
-    applied.push("assignee");
-  }
-  if (context.isMaintainer) {
-    applied.push("maintainer");
-  }
-  if (context.isAuthor) {
-    applied.push("author");
-  }
-  if (context.isReviewer) {
-    applied.push("reviewer");
-  }
+    if (context.isAuthor) {
+      return {
+        attention,
+        match: true,
+        appliedRoles: ["author"],
+        optionalRoles: [],
+      };
+    }
 
-  if (applied.length > 0) {
     return {
       attention,
-      match: true,
-      appliedRoles: applied,
+      match: false,
+      appliedRoles: [],
+      optionalRoles: [],
+    };
+  }
+
+  if (attention === "pr_review_stalled") {
+    if (context.isMaintainer) {
+      return {
+        attention,
+        match: true,
+        appliedRoles: ["maintainer"],
+        optionalRoles: [],
+      };
+    }
+
+    if (context.isReviewer) {
+      return {
+        attention,
+        match: true,
+        appliedRoles: ["reviewer"],
+        optionalRoles: [],
+      };
+    }
+
+    return {
+      attention,
+      match: false,
+      appliedRoles: [],
+      optionalRoles: [],
+    };
+  }
+
+  if (attention === "pr_merge_delayed") {
+    if (context.isAssignee) {
+      return {
+        attention,
+        match: true,
+        appliedRoles: ["assignee"],
+        optionalRoles: [],
+      };
+    }
+
+    if (!context.hasAssignee && context.isMaintainer) {
+      return {
+        attention,
+        match: true,
+        appliedRoles: ["maintainer"],
+        optionalRoles: [],
+      };
+    }
+
+    return {
+      attention,
+      match: false,
+      appliedRoles: [],
       optionalRoles: [],
     };
   }
 
   return {
     attention,
-    match: false,
+    match: true,
     appliedRoles: [],
     optionalRoles: [],
   };
@@ -177,8 +234,9 @@ const RESOLVERS: Partial<
 > = {
   issue_backlog: evaluateBacklogIssue,
   issue_stalled: evaluateStalledIssue,
-  pr_open_too_long: evaluateStaleOrIdlePr,
-  pr_inactive: evaluateStaleOrIdlePr,
+  pr_reviewer_unassigned: evaluateStaleOrIdlePr,
+  pr_review_stalled: evaluateStaleOrIdlePr,
+  pr_merge_delayed: evaluateStaleOrIdlePr,
   review_requests_pending: evaluateReviewRequest,
   unanswered_mentions: evaluateUnansweredMention,
 };

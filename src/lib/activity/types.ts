@@ -34,8 +34,9 @@ export type ActivityIssueWeightFilter = "Heavy" | "Medium" | "Light";
 export type ActivityAttentionFilter =
   | "unanswered_mentions"
   | "review_requests_pending"
-  | "pr_open_too_long"
-  | "pr_inactive"
+  | "pr_reviewer_unassigned"
+  | "pr_review_stalled"
+  | "pr_merge_delayed"
   | "issue_backlog"
   | "issue_stalled"
   | "no_attention";
@@ -43,8 +44,6 @@ export type ActivityAttentionFilter =
 export type ActivityThresholds = {
   unansweredMentionDays?: number;
   reviewRequestDays?: number;
-  stalePrDays?: number;
-  idlePrDays?: number;
   backlogIssueDays?: number;
   stalledIssueDays?: number;
 };
@@ -137,8 +136,9 @@ export type ActivityMilestone = {
 export type ActivityAttentionFlags = {
   unansweredMention: boolean;
   reviewRequestPending: boolean;
-  staleOpenPr: boolean;
-  idlePr: boolean;
+  reviewerUnassignedPr: boolean;
+  reviewStalledPr: boolean;
+  mergeDelayedPr: boolean;
   backlogIssue: boolean;
   stalledIssue: boolean;
 };

@@ -89,32 +89,52 @@ describe("evaluateAttentionPersonRule", () => {
     expect(result.optionalRoles).toEqual([]);
   });
 
-  it("permits multiple roles for stale or idle PR attentions", () => {
-    const result = evaluateAttentionPersonRule(
-      "pr_open_too_long",
-      context({
-        isAuthor: true,
-        isReviewer: true,
-        isMaintainer: true,
-      }),
+  it("matches author or maintainer for pr_reviewer_unassigned attention", () => {
+    const maintainerMatch = evaluateAttentionPersonRule(
+      "pr_reviewer_unassigned",
+      context({ isMaintainer: true, hasMaintainer: true }),
     );
-    expect(result.match).toBe(true);
-    expect(result.appliedRoles).toEqual(
-      expect.arrayContaining(["author", "reviewer", "maintainer"]),
+    expect(maintainerMatch.match).toBe(true);
+    expect(maintainerMatch.appliedRoles).toEqual(["maintainer"]);
+
+    const authorMatch = evaluateAttentionPersonRule(
+      "pr_reviewer_unassigned",
+      context({ isAuthor: true }),
     );
-    expect(result.optionalRoles).toEqual([]);
+    expect(authorMatch.match).toBe(true);
+    expect(authorMatch.appliedRoles).toEqual(["author"]);
   });
 
-  it("matches maintainers for stale or idle PR attentions", () => {
-    const result = evaluateAttentionPersonRule(
-      "pr_inactive",
-      context({
-        isMaintainer: true,
-      }),
+  it("matches reviewer or maintainer for pr_review_stalled attention", () => {
+    const reviewerMatch = evaluateAttentionPersonRule(
+      "pr_review_stalled",
+      context({ isReviewer: true }),
     );
-    expect(result.match).toBe(true);
-    expect(result.appliedRoles).toEqual(["maintainer"]);
-    expect(result.optionalRoles).toEqual([]);
+    expect(reviewerMatch.match).toBe(true);
+    expect(reviewerMatch.appliedRoles).toEqual(["reviewer"]);
+
+    const maintainerMatch = evaluateAttentionPersonRule(
+      "pr_review_stalled",
+      context({ isMaintainer: true, hasMaintainer: true }),
+    );
+    expect(maintainerMatch.match).toBe(true);
+    expect(maintainerMatch.appliedRoles).toEqual(["maintainer"]);
+  });
+
+  it("prefers assignee and falls back to maintainer for pr_merge_delayed attention", () => {
+    const assigneeMatch = evaluateAttentionPersonRule(
+      "pr_merge_delayed",
+      context({ isAssignee: true, hasAssignee: true }),
+    );
+    expect(assigneeMatch.match).toBe(true);
+    expect(assigneeMatch.appliedRoles).toEqual(["assignee"]);
+
+    const maintainerFallback = evaluateAttentionPersonRule(
+      "pr_merge_delayed",
+      context({ hasAssignee: false, isMaintainer: true, hasMaintainer: true }),
+    );
+    expect(maintainerFallback.match).toBe(true);
+    expect(maintainerFallback.appliedRoles).toEqual(["maintainer"]);
   });
 
   it("limits review request attention to reviewers", () => {

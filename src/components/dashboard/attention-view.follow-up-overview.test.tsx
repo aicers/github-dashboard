@@ -69,6 +69,7 @@ function buildPullRequestItem(params: {
   updatedAt: string | null;
   ageDays: number;
   inactivityDays?: number;
+  waitingDays?: number;
 }): PullRequestAttentionItem {
   const {
     id,
@@ -83,6 +84,7 @@ function buildPullRequestItem(params: {
     updatedAt,
     ageDays,
     inactivityDays,
+    waitingDays,
   } = params;
 
   return {
@@ -98,6 +100,7 @@ function buildPullRequestItem(params: {
     updatedAt,
     ageDays,
     inactivityDays,
+    waitingDays,
   } satisfies PullRequestAttentionItem;
 }
 
@@ -275,7 +278,11 @@ function buildIssueDetailFromAttention(
 
 function buildPullRequestDetailFromAttention(
   pr: PullRequestAttentionItem,
-  attention: "stale" | "idle" | "review",
+  attention:
+    | "reviewer-unassigned"
+    | "review-stalled"
+    | "merge-delayed"
+    | "review",
 ) {
   const reviewerUsers = pr.reviewers
     .map((reviewer) => toActivityUserOverride(reviewer))
@@ -297,11 +304,13 @@ function buildPullRequestDetailFromAttention(
       businessDaysOpen: pr.ageDays ?? null,
       businessDaysIdle: pr.inactivityDays ?? null,
       attention:
-        attention === "stale"
-          ? { ...BASE_ATTENTION_FLAGS, staleOpenPr: true }
-          : attention === "idle"
-            ? { ...BASE_ATTENTION_FLAGS, idlePr: true }
-            : { ...BASE_ATTENTION_FLAGS, reviewRequestPending: true },
+        attention === "reviewer-unassigned"
+          ? { ...BASE_ATTENTION_FLAGS, reviewerUnassignedPr: true }
+          : attention === "review-stalled"
+            ? { ...BASE_ATTENTION_FLAGS, reviewStalledPr: true }
+            : attention === "merge-delayed"
+              ? { ...BASE_ATTENTION_FLAGS, mergeDelayedPr: true }
+              : { ...BASE_ATTENTION_FLAGS, reviewRequestPending: true },
     }),
   });
 }
@@ -337,6 +346,7 @@ describe("Follow-up overview", () => {
       createdAt: "2024-01-01T00:00:00.000Z",
       updatedAt: "2024-02-10T00:00:00.000Z",
       ageDays: 40,
+      waitingDays: 40,
     });
     staleOne.linkedIssues = [
       {
@@ -359,6 +369,7 @@ describe("Follow-up overview", () => {
       createdAt: "2024-01-08T00:00:00.000Z",
       updatedAt: "2024-02-11T00:00:00.000Z",
       ageDays: 20,
+      waitingDays: 20,
     });
 
     const idleOne = buildPullRequestItem({
@@ -373,6 +384,7 @@ describe("Follow-up overview", () => {
       updatedAt: "2024-02-06T00:00:00.000Z",
       ageDays: 12,
       inactivityDays: 11,
+      waitingDays: 11,
     });
     const idleTwo = buildPullRequestItem({
       id: "pr-idle-2",
@@ -386,6 +398,35 @@ describe("Follow-up overview", () => {
       updatedAt: "2024-02-07T00:00:00.000Z",
       ageDays: 11,
       inactivityDays: 10,
+      waitingDays: 10,
+    });
+
+    const unassignedOne = buildPullRequestItem({
+      id: "pr-unassigned-1",
+      number: 301,
+      title: "Document deployment checklist",
+      url: "https://github.com/acme/ops/pull/301",
+      repository: repoOps,
+      author: grace,
+      reviewers: [],
+      createdAt: "2024-02-09T00:00:00.000Z",
+      updatedAt: "2024-02-09T00:00:00.000Z",
+      ageDays: 3,
+      waitingDays: 3,
+    });
+
+    const unassignedTwo = buildPullRequestItem({
+      id: "pr-unassigned-2",
+      number: 302,
+      title: "Refine incident template",
+      url: "https://github.com/acme/ops/pull/302",
+      repository: repoOps,
+      author: hank,
+      reviewers: [],
+      createdAt: "2024-02-10T00:00:00.000Z",
+      updatedAt: "2024-02-10T00:00:00.000Z",
+      ageDays: 2,
+      waitingDays: 2,
     });
 
     const stuckOne = buildReviewRequestItem({
@@ -546,15 +587,19 @@ describe("Follow-up overview", () => {
 
     const registerPullRequestDetail = (
       pr: PullRequestAttentionItem,
-      attention: "stale" | "idle" | "review",
+      attention:
+        | "reviewer-unassigned"
+        | "review-stalled"
+        | "merge-delayed"
+        | "review",
     ) => {
       detailMap.set(pr.id, buildPullRequestDetailFromAttention(pr, attention));
     };
 
-    registerPullRequestDetail(staleOne, "stale");
-    registerPullRequestDetail(staleTwo, "stale");
-    registerPullRequestDetail(idleOne, "idle");
-    registerPullRequestDetail(idleTwo, "idle");
+    registerPullRequestDetail(staleOne, "merge-delayed");
+    registerPullRequestDetail(staleTwo, "merge-delayed");
+    registerPullRequestDetail(idleOne, "review-stalled");
+    registerPullRequestDetail(idleTwo, "review-stalled");
     registerPullRequestDetail(staleOne, "review");
     registerPullRequestDetail(idleTwo, "review");
 
@@ -581,11 +626,27 @@ describe("Follow-up overview", () => {
         registerIssueDetail(issueMatch, "backlog");
         return;
       }
-      const prMatch = [staleOne, staleTwo, idleOne, idleTwo].find(
+      const mergeDelayedMatch = [staleOne, staleTwo].find(
         (pr) => pr.id === containerId,
       );
-      if (prMatch) {
-        registerPullRequestDetail(prMatch, "stale");
+      if (mergeDelayedMatch) {
+        registerPullRequestDetail(mergeDelayedMatch, "merge-delayed");
+        return;
+      }
+
+      const reviewStalledMatch = [idleOne, idleTwo].find(
+        (pr) => pr.id === containerId,
+      );
+      if (reviewStalledMatch) {
+        registerPullRequestDetail(reviewStalledMatch, "review-stalled");
+        return;
+      }
+
+      const unassignedMatch = [unassignedOne, unassignedTwo].find(
+        (pr) => pr.id === containerId,
+      );
+      if (unassignedMatch) {
+        registerPullRequestDetail(unassignedMatch, "reviewer-unassigned");
       }
     });
 
@@ -602,8 +663,9 @@ describe("Follow-up overview", () => {
       generatedAt: "2024-02-20T00:00:00.000Z",
       timezone: "Asia/Seoul",
       dateTimeFormat: "auto",
-      staleOpenPrs: [staleOne, staleTwo],
-      idleOpenPrs: [idleOne, idleTwo],
+      reviewerUnassignedPrs: [unassignedOne, unassignedTwo],
+      reviewStalledPrs: [idleOne, idleTwo],
+      mergeDelayedPrs: [staleOne, staleTwo],
       stuckReviewRequests: [stuckOne, stuckDuplicate, stuckTwo],
       backlogIssues: [backlogOne, backlogTwo],
       stalledInProgressIssues: [stalledOne, stalledTwo],
@@ -617,24 +679,39 @@ describe("Follow-up overview", () => {
     });
     expect(overviewButton).toHaveAttribute("aria-current", "true");
 
-    const staleCard = screen.getByTestId("follow-up-summary-stale-open-prs");
-    expect(within(staleCard).getByText("2건")).toBeInTheDocument();
-    expect(within(staleCard).getByText("60일")).toBeInTheDocument();
+    const reviewerUnassignedCard = screen.getByTestId(
+      "follow-up-summary-reviewer-unassigned-prs",
+    );
+    expect(within(reviewerUnassignedCard).getByText("2건")).toBeInTheDocument();
+    expect(within(reviewerUnassignedCard).getByText("5일")).toBeInTheDocument();
     expect(
-      within(staleCard).getByText("최다 작성자: 1위 Alice, 2위 Bob"),
-    ).toBeInTheDocument();
-    expect(
-      within(staleCard).getByText("최다 리뷰어: 1위 Bob, 2위 Carol"),
+      within(reviewerUnassignedCard).getByText(
+        "최다 작성자: 1위 Grace, 2위 Hank",
+      ),
     ).toBeInTheDocument();
 
-    const idleCard = screen.getByTestId("follow-up-summary-idle-open-prs");
-    expect(within(idleCard).getByText("2건")).toBeInTheDocument();
-    expect(within(idleCard).getByText("21일")).toBeInTheDocument();
+    const reviewStalledCard = screen.getByTestId(
+      "follow-up-summary-review-stalled-prs",
+    );
+    expect(within(reviewStalledCard).getByText("2건")).toBeInTheDocument();
+    expect(within(reviewStalledCard).getByText("21일")).toBeInTheDocument();
     expect(
-      within(idleCard).getByText("최다 작성자: 1위 Carol, 2위 Dave"),
+      within(reviewStalledCard).getByText("최다 작성자: 1위 Carol, 2위 Dave"),
     ).toBeInTheDocument();
     expect(
-      within(idleCard).getByText("최다 리뷰어: 1위 Erin, 2위 Frank"),
+      within(reviewStalledCard).getByText("최다 리뷰어: 1위 Erin, 2위 Frank"),
+    ).toBeInTheDocument();
+
+    const mergeDelayedCard = screen.getByTestId(
+      "follow-up-summary-merge-delayed-prs",
+    );
+    expect(within(mergeDelayedCard).getByText("2건")).toBeInTheDocument();
+    expect(within(mergeDelayedCard).getByText("60일")).toBeInTheDocument();
+    expect(
+      within(mergeDelayedCard).getByText("최다 작성자: 1위 Alice, 2위 Bob"),
+    ).toBeInTheDocument();
+    expect(
+      within(mergeDelayedCard).getByText("최다 리뷰어: 1위 Bob, 2위 Carol"),
     ).toBeInTheDocument();
 
     const backlogCard = screen.getByTestId("follow-up-summary-backlog-issues");
@@ -671,7 +748,7 @@ describe("Follow-up overview", () => {
     const quickView = within(stuckCard).getByRole("button", {
       name: "바로 보기",
     });
-    expect(quickButtons).toHaveLength(6);
+    expect(quickButtons).toHaveLength(7);
 
     await user.click(quickView);
 

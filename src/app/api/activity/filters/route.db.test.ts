@@ -94,8 +94,8 @@ describe("activity saved filters routes (collection)", () => {
             repositoryIds: [" repo-1 ", "repo-1", "repo-2"],
             search: "   needs-triage   ",
             thresholds: {
-              stalePrDays: "10",
-              idlePrDays: 5,
+              backlogIssueDays: "10",
+              reviewRequestDays: 5,
             },
           },
         }),
@@ -131,8 +131,8 @@ describe("activity saved filters routes (collection)", () => {
     ]);
     expect(createBody.filter.payload.search).toBe("needs-triage");
     expect(createBody.filter.payload.thresholds).toEqual({
-      stalePrDays: 10,
-      idlePrDays: 5,
+      backlogIssueDays: 10,
+      reviewRequestDays: 5,
     });
     expect(createBody.limit).toBe(SAVED_FILTER_LIMIT);
 

@@ -341,11 +341,14 @@ export function buildAttentionBadges(
   if (item.attention.reviewRequestPending) {
     push("review-request", "응답 없는 리뷰 요청");
   }
-  if (item.attention.staleOpenPr) {
-    push("stale-pr", "오래된 PR");
+  if (item.attention.reviewerUnassignedPr) {
+    push("pr-reviewer-unassigned", "리뷰어 미지정 PR");
   }
-  if (item.attention.idlePr) {
-    push("idle-pr", "업데이트 없는 PR");
+  if (item.attention.reviewStalledPr) {
+    push("pr-review-stalled", "리뷰 정체 PR");
+  }
+  if (item.attention.mergeDelayedPr) {
+    push("pr-merge-delayed", "머지 지연 PR");
   }
   if (item.attention.backlogIssue) {
     push("backlog-issue", "정체된 Backlog 이슈");

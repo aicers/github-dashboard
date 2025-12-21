@@ -214,8 +214,9 @@ describe("GET /api/activity/[id]", () => {
         attention: {
           unansweredMention: false,
           reviewRequestPending: false,
-          staleOpenPr: false,
-          idlePr: false,
+          reviewerUnassignedPr: false,
+          reviewStalledPr: false,
+          mergeDelayedPr: false,
           backlogIssue: false,
           stalledIssue: false,
         },

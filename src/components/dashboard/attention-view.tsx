@@ -197,8 +197,9 @@ function formatCount(value: number) {
 const FOLLOW_UP_SECTION_ORDER = [
   "backlog-issues",
   "stalled-in-progress-issues",
-  "stale-open-prs",
-  "idle-open-prs",
+  "reviewer-unassigned-prs",
+  "review-stalled-prs",
+  "merge-delayed-prs",
   "stuck-review-requests",
   "unanswered-mentions",
 ] as const;
@@ -272,8 +273,9 @@ function buildAttention(
   return {
     unansweredMention: false,
     reviewRequestPending: false,
-    staleOpenPr: false,
-    idlePr: false,
+    reviewerUnassignedPr: false,
+    reviewStalledPr: false,
+    mergeDelayedPr: false,
     backlogIssue: false,
     stalledIssue: false,
     ...overrides,
@@ -1185,6 +1187,7 @@ function PullRequestList({
   showUpdated,
   metricKey = "ageDays",
   metricLabel = "경과일수",
+  attentionOverride,
   reviewWaitMap,
   mentionWaitMap,
   attentionFlagMap,
@@ -1199,8 +1202,9 @@ function PullRequestList({
   items: PullRequestAttentionItem[];
   emptyText: string;
   showUpdated?: boolean;
-  metricKey?: "ageDays" | "inactivityDays";
+  metricKey?: "ageDays" | "inactivityDays" | "waitingDays";
   metricLabel?: string;
+  attentionOverride?: Partial<ActivityItem["attention"]>;
   reviewWaitMap: Map<string, ReviewRequestAttentionItem[]>;
   mentionWaitMap: Map<string, MentionAttentionItem[]>;
   attentionFlagMap: Map<string, Partial<ActivityItem["attention"]>>;
@@ -1224,7 +1228,9 @@ function PullRequestList({
     const getMetric = (item: PullRequestAttentionItem) =>
       metricKey === "inactivityDays"
         ? (item.inactivityDays ?? item.ageDays ?? 0)
-        : (item.ageDays ?? 0);
+        : metricKey === "waitingDays"
+          ? (item.waitingDays ?? item.ageDays ?? 0)
+          : (item.ageDays ?? 0);
 
     items.forEach((item) => {
       const metricValue = getMetric(item);
@@ -1296,7 +1302,9 @@ function PullRequestList({
     const getMetric = (item: PullRequestAttentionItem) =>
       metricKey === "inactivityDays"
         ? (item.inactivityDays ?? item.ageDays ?? 0)
-        : (item.ageDays ?? 0);
+        : metricKey === "waitingDays"
+          ? (item.waitingDays ?? item.ageDays ?? 0)
+          : (item.ageDays ?? 0);
 
     return filteredItems.slice().sort((a, b) => getMetric(b) - getMetric(a));
   }, [filteredItems, metricKey]);
@@ -1395,9 +1403,7 @@ function PullRequestList({
   const listContent = sortedItems.length ? (
     <ul className="space-y-4">
       {sortedItems.map((item) => {
-        const attentionFlags = showUpdated
-          ? { idlePr: true }
-          : { staleOpenPr: true };
+        const attentionFlags = attentionOverride ?? {};
         const activityItem = createBaseActivityItem({
           id: item.id,
           type: "pull_request",
@@ -1411,8 +1417,11 @@ function PullRequestList({
           attention: attentionFlags,
         });
         activityItem.reviewers = toActivityUsers(item.reviewers);
-        activityItem.businessDaysOpen = item.ageDays ?? null;
-        if (item.inactivityDays !== undefined) {
+        activityItem.businessDaysOpen =
+          metricKey === "waitingDays"
+            ? (item.waitingDays ?? item.ageDays ?? null)
+            : (item.ageDays ?? null);
+        if (metricKey === "inactivityDays" || showUpdated) {
           activityItem.businessDaysIdle = item.inactivityDays ?? null;
         }
         activityItem.linkedIssues = item.linkedIssues ?? [];
@@ -3937,11 +3946,14 @@ export function AttentionView({
       map.set(id, existing ? { ...existing, ...patch } : { ...patch });
     };
 
-    insights.staleOpenPrs.forEach((item) => {
-      merge(item.id, { staleOpenPr: true });
+    insights.reviewerUnassignedPrs.forEach((item) => {
+      merge(item.id, { reviewerUnassignedPr: true });
     });
-    insights.idleOpenPrs.forEach((item) => {
-      merge(item.id, { idlePr: true });
+    insights.reviewStalledPrs.forEach((item) => {
+      merge(item.id, { reviewStalledPr: true });
+    });
+    insights.mergeDelayedPrs.forEach((item) => {
+      merge(item.id, { mergeDelayedPr: true });
     });
     insights.stuckReviewRequests.forEach((item) => {
       const prId = item.pullRequest.id;
@@ -3960,8 +3972,9 @@ export function AttentionView({
     return map;
   }, [
     insights.backlogIssues,
-    insights.idleOpenPrs,
-    insights.staleOpenPrs,
+    insights.mergeDelayedPrs,
+    insights.reviewStalledPrs,
+    insights.reviewerUnassignedPrs,
     insights.stalledInProgressIssues,
     insights.stuckReviewRequests,
     insights.unansweredMentions,
@@ -4103,16 +4116,19 @@ export function AttentionView({
       ),
     },
     {
-      id: "stale-open-prs",
-      menuLabel: "오래된 PR",
-      menuDescription: "20일 이상 머지되지 않은 PR",
-      title: "20일 이상 (주말과 공휴일 제외) 머지되지 않은 PR",
+      id: "reviewer-unassigned-prs",
+      menuLabel: "리뷰어 미지정 PR",
+      menuDescription: "2 업무일 이상 리뷰어 미지정 PR",
+      title: "2 업무일 이상 리뷰어가 지정되지 않은 PR",
       description:
-        "열린 상태로 주말과 공휴일을 제외한 20일 이상 유지되고 있는 PR 목록입니다.",
+        "PR 생성 이후 2 업무일 이상 리뷰어가 지정되지 않은 PR입니다 (저장소 책임자 기준).",
       content: (
         <PullRequestList
-          items={insights.staleOpenPrs}
+          items={insights.reviewerUnassignedPrs}
           emptyText="현재 조건을 만족하는 PR이 없습니다."
+          metricKey="waitingDays"
+          metricLabel="기준 경과일수"
+          attentionOverride={{ reviewerUnassignedPr: true }}
           reviewWaitMap={reviewWaitMap}
           mentionWaitMap={mentionWaitMap}
           attentionFlagMap={attentionFlagMap}
@@ -4129,19 +4145,48 @@ export function AttentionView({
       ),
     },
     {
-      id: "idle-open-prs",
-      menuLabel: "업데이트 없는 PR",
-      menuDescription: "10일 이상 업데이트가 없는 열린 PR",
-      title: "10일 이상 (주말과 공휴일 제외) 업데이트가 없는 열린 PR",
+      id: "review-stalled-prs",
+      menuLabel: "리뷰 정체 PR",
+      menuDescription: "2 업무일 이상 리뷰 정체 PR",
+      title: "2 업무일 이상 리뷰가 정체된 PR",
       description:
-        "최근 업데이트가 주말과 공휴일을 제외한 10일 이상 없었던 열린 PR을 보여줍니다.",
+        "리뷰어가 지정된 이후 2 업무일 이상 리뷰어 활동이 없는 PR입니다 (리뷰어 기준, 모든 리뷰어 충족).",
       content: (
         <PullRequestList
-          items={insights.idleOpenPrs}
+          items={insights.reviewStalledPrs}
           emptyText="현재 조건을 만족하는 PR이 없습니다."
-          showUpdated
-          metricKey="inactivityDays"
-          metricLabel="미업데이트 경과일수"
+          metricKey="waitingDays"
+          metricLabel="기준 경과일수"
+          attentionOverride={{ reviewStalledPr: true }}
+          reviewWaitMap={reviewWaitMap}
+          mentionWaitMap={mentionWaitMap}
+          attentionFlagMap={attentionFlagMap}
+          timezone={insights.timezone}
+          dateTimeFormat={insights.dateTimeFormat}
+          segmented
+          onResyncItem={handleResyncItem}
+          resyncingIds={resyncingIds}
+          resyncDisabled={automaticSyncActive}
+          resyncDisabledReason={
+            automaticSyncActive ? resyncDisabledMessage : null
+          }
+        />
+      ),
+    },
+    {
+      id: "merge-delayed-prs",
+      menuLabel: "머지 지연 PR",
+      menuDescription: "2 업무일 이상 머지 지연 PR",
+      title: "2 업무일 이상 머지가 지연된 PR",
+      description:
+        "유효한 최근 approval 이후 2 업무일이 지났는데도 머지되지 않은 PR입니다 (저장소 책임자 기준).",
+      content: (
+        <PullRequestList
+          items={insights.mergeDelayedPrs}
+          emptyText="현재 조건을 만족하는 PR이 없습니다."
+          metricKey="waitingDays"
+          metricLabel="기준 경과일수"
+          attentionOverride={{ mergeDelayedPr: true }}
           reviewWaitMap={reviewWaitMap}
           mentionWaitMap={mentionWaitMap}
           attentionFlagMap={attentionFlagMap}
@@ -4300,10 +4345,12 @@ export function AttentionView({
               // 각 섹션별 아이콘 매핑
               const getIcon = () => {
                 switch (section.id) {
-                  case "stale-open-prs":
-                    return <GitPullRequest className="h-4 w-4" />;
-                  case "idle-open-prs":
+                  case "reviewer-unassigned-prs":
                     return <GitPullRequestDraft className="h-4 w-4" />;
+                  case "review-stalled-prs":
+                    return <GitPullRequest className="h-4 w-4" />;
+                  case "merge-delayed-prs":
+                    return <GitPullRequest className="h-4 w-4" />;
                   case "stuck-review-requests":
                     return <MessageSquare className="h-4 w-4" />;
                   case "backlog-issues":

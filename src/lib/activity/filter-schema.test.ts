@@ -15,8 +15,8 @@ describe("activityFilterPayloadSchema", () => {
       repositoryIds: ["repo-1", " repo-2 ", "repo-2"],
       search: "  needs triage  ",
       thresholds: {
-        stalePrDays: "10",
-        idlePrDays: 5,
+        backlogIssueDays: "10",
+        reviewRequestDays: 5,
         unansweredMentionDays: null,
       },
     }) satisfies ActivityFilterPayload;
@@ -27,8 +27,8 @@ describe("activityFilterPayloadSchema", () => {
     expect(result.repositoryIds).toEqual(["repo-1", "repo-2"]);
     expect(result.search).toBe("needs triage");
     expect(result.thresholds).toEqual({
-      stalePrDays: 10,
-      idlePrDays: 5,
+      backlogIssueDays: 10,
+      reviewRequestDays: 5,
     });
   });
 
@@ -62,7 +62,7 @@ describe("activityFilterPayloadSchema", () => {
     expect(() =>
       activityFilterPayloadSchema.parse({
         thresholds: {
-          idlePrDays: 0,
+          backlogIssueDays: 0,
         },
       }),
     ).toThrow("Expected positive integer value.");

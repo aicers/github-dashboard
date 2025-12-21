@@ -220,8 +220,10 @@ people who are only conditionally relevant to the selected attention type.
   - 정체된 Backlog 이슈 → `maintainerIds` blue, all other 사람 필터 fields empty.
   - 정체된 In Progress 이슈 → `assigneeIds` blue, `authorIds` gray, the remaining four
     사람 필터 fields empty.
-  - 업데이트 없는 PR → `authorIds`, `assigneeIds`, `reviewerIds` blue,
-    other 사람 필터 fields empty.
+  - 리뷰어 미지정 PR → `maintainerIds`, `authorIds` blue, other 사람 필터 fields empty.
+  - 리뷰 정체 PR → `maintainerIds`, `reviewerIds` blue, other 사람 필터 fields empty.
+  - 머지 지연 PR → `assigneeIds` (if any) else `maintainerIds` blue, other 사람 필터
+    fields empty.
   - 응답 없는 리뷰 요청 → `reviewerIds` blue, all other 사람 필터 fields empty.
   - 응답 없는 멘션 → `mentionedUserIds` blue, all other 사람 필터 fields empty.
   - Conflicting attentions (예: 정체된 Backlog 이슈 + 응답 없는 멘션) degrade
@@ -251,8 +253,8 @@ state.
 - The dashboard treats weekends as non-working time across all business-day and
   business-hour calculations.
 - Organization-wide metrics (예: Activity/Follow-ups의 “정체된 Backlog/In
-  Progress 이슈”, Follow-ups의 “오래된 PR”, Activity/Follow-ups의 “업데이트 없는 PR”,
-  Age/Idle, Analytics/People의
+  Progress 이슈”, Activity/Follow-ups의 “리뷰어 미지정 PR”, “리뷰 정체 PR”, “머지 지연 PR”,
+  Analytics/People의
   평균 해결/작업 시간) rely on the organization holiday calendar codes
   configured in `sync_config`. Those dates are combined with weekends to form
   the working calendar.

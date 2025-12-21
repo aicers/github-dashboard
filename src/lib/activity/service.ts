@@ -68,8 +68,6 @@ const MAX_PER_PAGE = 100;
 const DEFAULT_THRESHOLDS: Required<ActivityThresholds> = {
   unansweredMentionDays: 5,
   reviewRequestDays: 5,
-  stalePrDays: 20,
-  idlePrDays: 10,
   backlogIssueDays: 40,
   stalledIssueDays: 20,
 };
@@ -82,8 +80,9 @@ type AttentionFilterWithoutNone = Exclude<
 const ATTENTION_FILTER_KEYS: AttentionFilterWithoutNone[] = [
   "unanswered_mentions",
   "review_requests_pending",
-  "pr_open_too_long",
-  "pr_inactive",
+  "pr_reviewer_unassigned",
+  "pr_review_stalled",
+  "pr_merge_delayed",
   "issue_backlog",
   "issue_stalled",
 ];
@@ -287,8 +286,9 @@ type ActivityRow = {
 type AttentionSets = {
   unansweredMentions: Set<string>;
   reviewRequests: Set<string>;
-  stalePullRequests: Set<string>;
-  idlePullRequests: Set<string>;
+  reviewerUnassignedPullRequests: Set<string>;
+  reviewStalledPullRequests: Set<string>;
+  mergeDelayedPullRequests: Set<string>;
   backlogIssues: Set<string>;
   stalledIssues: Set<string>;
   reviewRequestDetails: Map<string, ReviewRequestAttentionItem[]>;
@@ -798,8 +798,9 @@ async function resolveAttentionSets(
   });
   const unansweredMentions = new Set<string>();
   const reviewRequests = new Set<string>();
-  const stalePullRequests = new Set<string>();
-  const idlePullRequests = new Set<string>();
+  const reviewerUnassignedPullRequests = new Set<string>();
+  const reviewStalledPullRequests = new Set<string>();
+  const mergeDelayedPullRequests = new Set<string>();
   const backlogIssues = new Set<string>();
   const stalledIssues = new Set<string>();
   const reviewRequestDetails = new Map<string, ReviewRequestAttentionItem[]>();
@@ -832,17 +833,16 @@ async function resolveAttentionSets(
     reviewRequestDetails.set(pullRequestId, existing);
   });
 
-  insights.staleOpenPrs.forEach((item) => {
-    if (item.ageDays >= thresholds.stalePrDays) {
-      stalePullRequests.add(item.id);
-    }
+  insights.reviewerUnassignedPrs.forEach((item) => {
+    reviewerUnassignedPullRequests.add(item.id);
   });
 
-  insights.idleOpenPrs.forEach((item) => {
-    const inactivity = item.inactivityDays ?? 0;
-    if (inactivity >= thresholds.idlePrDays) {
-      idlePullRequests.add(item.id);
-    }
+  insights.reviewStalledPrs.forEach((item) => {
+    reviewStalledPullRequests.add(item.id);
+  });
+
+  insights.mergeDelayedPrs.forEach((item) => {
+    mergeDelayedPullRequests.add(item.id);
   });
 
   insights.backlogIssues.forEach((item) => {
@@ -861,8 +861,9 @@ async function resolveAttentionSets(
   return {
     unansweredMentions,
     reviewRequests,
-    stalePullRequests,
-    idlePullRequests,
+    reviewerUnassignedPullRequests,
+    reviewStalledPullRequests,
+    mergeDelayedPullRequests,
     backlogIssues,
     stalledIssues,
     reviewRequestDetails,
@@ -892,13 +893,18 @@ function collectAttentionFilterIds(
           union.add(id);
         }
         break;
-      case "pr_open_too_long":
-        for (const id of sets.stalePullRequests) {
+      case "pr_reviewer_unassigned":
+        for (const id of sets.reviewerUnassignedPullRequests) {
           union.add(id);
         }
         break;
-      case "pr_inactive":
-        for (const id of sets.idlePullRequests) {
+      case "pr_review_stalled":
+        for (const id of sets.reviewStalledPullRequests) {
+          union.add(id);
+        }
+        break;
+      case "pr_merge_delayed":
+        for (const id of sets.mergeDelayedPullRequests) {
           union.add(id);
         }
         break;
@@ -1312,14 +1318,20 @@ function buildQueryFilters(
           ids = Array.from(attentionSets.reviewRequests);
           constraints.push(`items.item_type = 'pull_request'`);
           break;
-        case "pr_open_too_long": {
-          ids = Array.from(attentionSets.stalePullRequests);
+        case "pr_reviewer_unassigned": {
+          ids = Array.from(attentionSets.reviewerUnassignedPullRequests);
           constraints.push(`items.item_type = 'pull_request'`);
           constraints.push(`items.status = 'open'`);
           break;
         }
-        case "pr_inactive": {
-          ids = Array.from(attentionSets.idlePullRequests);
+        case "pr_review_stalled": {
+          ids = Array.from(attentionSets.reviewStalledPullRequests);
+          constraints.push(`items.item_type = 'pull_request'`);
+          constraints.push(`items.status = 'open'`);
+          break;
+        }
+        case "pr_merge_delayed": {
+          ids = Array.from(attentionSets.mergeDelayedPullRequests);
           constraints.push(`items.item_type = 'pull_request'`);
           constraints.push(`items.status = 'open'`);
           break;
@@ -1349,20 +1361,37 @@ function buildQueryFilters(
             }
             break;
           }
-          case "pr_open_too_long":
-          case "pr_inactive": {
-            const assigneeExpr = withPeopleConstraint(buildAssigneeExpr);
+          case "pr_reviewer_unassigned": {
             const authorExpr = withPeopleConstraint(buildAuthorExpr);
-            const reviewerExpr = withPeopleConstraint(buildReviewerExpr);
             const maintainerExpr = withPeopleConstraint(buildMaintainerExpr);
-            const parts = [
-              assigneeExpr,
-              authorExpr,
-              reviewerExpr,
-              maintainerExpr,
-            ].filter((expr): expr is string => Boolean(expr));
+            const parts = [authorExpr, maintainerExpr].filter(
+              (expr): expr is string => Boolean(expr),
+            );
             if (parts.length) {
               constraints.push(`(${parts.join(" OR ")})`);
+            }
+            break;
+          }
+          case "pr_review_stalled": {
+            const reviewerExpr = withPeopleConstraint(buildReviewerExpr);
+            const maintainerExpr = withPeopleConstraint(buildMaintainerExpr);
+            const parts = [reviewerExpr, maintainerExpr].filter(
+              (expr): expr is string => Boolean(expr),
+            );
+            if (parts.length) {
+              constraints.push(`(${parts.join(" OR ")})`);
+            }
+            break;
+          }
+          case "pr_merge_delayed": {
+            const paramIndex = ensurePeopleSelectionParam();
+            if (paramIndex !== null) {
+              const personIsAssigneeExpr = buildAssigneeExpr(paramIndex);
+              const personIsMaintainerExpr = buildMaintainerExpr(paramIndex);
+              const personIsAuthorExpr = buildAuthorExpr(paramIndex);
+              constraints.push(
+                `((${hasAssigneeExpr} AND ${personIsAssigneeExpr}) OR (${noAssigneeExpr} AND ${maintainerExistsExpr} AND ${personIsMaintainerExpr}) OR (${noAssigneeExpr} AND NOT ${maintainerExistsExpr} AND ${personIsAuthorExpr}))`,
+              );
             }
             break;
           }
@@ -1687,8 +1716,12 @@ function buildAttentionFlags(
     return {
       unansweredMention: sets.unansweredMentions.has(row.id),
       reviewRequestPending: sets.reviewRequests.has(row.id),
-      staleOpenPr: status === "open" && sets.stalePullRequests.has(row.id),
-      idlePr: status === "open" && sets.idlePullRequests.has(row.id),
+      reviewerUnassignedPr:
+        status === "open" && sets.reviewerUnassignedPullRequests.has(row.id),
+      reviewStalledPr:
+        status === "open" && sets.reviewStalledPullRequests.has(row.id),
+      mergeDelayedPr:
+        status === "open" && sets.mergeDelayedPullRequests.has(row.id),
       backlogIssue: false,
       stalledIssue: false,
     };
@@ -1698,8 +1731,9 @@ function buildAttentionFlags(
     return {
       unansweredMention: sets.unansweredMentions.has(row.id),
       reviewRequestPending: false,
-      staleOpenPr: false,
-      idlePr: false,
+      reviewerUnassignedPr: false,
+      reviewStalledPr: false,
+      mergeDelayedPr: false,
       backlogIssue: false,
       stalledIssue: false,
     };
@@ -1711,8 +1745,9 @@ function buildAttentionFlags(
   return {
     unansweredMention: sets.unansweredMentions.has(row.id),
     reviewRequestPending: false,
-    staleOpenPr: false,
-    idlePr: false,
+    reviewerUnassignedPr: false,
+    reviewStalledPr: false,
+    mergeDelayedPr: false,
     backlogIssue: backlog,
     stalledIssue: stalled,
   };
