@@ -216,15 +216,11 @@ describe("AttentionView stuck review requests", () => {
     ).toBe(1);
 
     expect(within(indexingItem).getByText("Idle 11일")).toBeInTheDocument();
-    expect(
-      within(indexingItem).getByText("작성자 Bob (@bob)"),
-    ).toBeInTheDocument();
+    expect(within(indexingItem).getByText("작성자 bob")).toBeInTheDocument();
     expect(within(indexingItem).getByText("Review 11일")).toBeInTheDocument();
 
     expect(within(cacheItem).getByText("Idle 7일")).toBeInTheDocument();
-    expect(
-      within(cacheItem).getByText("작성자 Alice (@alice)"),
-    ).toBeInTheDocument();
+    expect(within(cacheItem).getByText("작성자 alice")).toBeInTheDocument();
     expect(within(cacheItem).getByText("Review 7일, 5일")).toBeInTheDocument();
 
     await user.selectOptions(authorFilter, "user-bob");

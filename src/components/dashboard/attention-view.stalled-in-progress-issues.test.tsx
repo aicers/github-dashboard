@@ -358,12 +358,8 @@ describe("AttentionView stalled in-progress issues", () => {
     expect(
       within(firstItem).getByText("acme/engineering#310"),
     ).toBeInTheDocument();
-    expect(
-      within(firstItem).getByText("작성자 Alice (@alice)"),
-    ).toBeInTheDocument();
-    expect(
-      within(firstItem).getByText("담당자 Bob (@bob), Dave (@dave)"),
-    ).toBeInTheDocument();
+    expect(within(firstItem).getByText("작성자 alice")).toBeInTheDocument();
+    expect(within(firstItem).getByText("담당자 bob, dave")).toBeInTheDocument();
     expect(within(firstItem).getByText("Age 55일")).toBeInTheDocument();
     expect(within(firstItem).getByText("Progress 35일")).toBeInTheDocument();
     expect(within(firstItem).getByText("Idle 18일")).toBeInTheDocument();
@@ -380,12 +376,8 @@ describe("AttentionView stalled in-progress issues", () => {
     expect(
       within(secondItem).getByText("acme/engineering#311"),
     ).toBeInTheDocument();
-    expect(
-      within(secondItem).getByText("작성자 Carol (@carol)"),
-    ).toBeInTheDocument();
-    expect(
-      within(secondItem).getByText("담당자 Bob (@bob)"),
-    ).toBeInTheDocument();
+    expect(within(secondItem).getByText("작성자 carol")).toBeInTheDocument();
+    expect(within(secondItem).getByText("담당자 bob")).toBeInTheDocument();
     expect(within(secondItem).getByText("Age 50일")).toBeInTheDocument();
     expect(within(secondItem).getByText("Progress 30일")).toBeInTheDocument();
     expect(within(secondItem).getByText("Idle 9일")).toBeInTheDocument();

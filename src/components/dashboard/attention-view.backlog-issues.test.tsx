@@ -366,11 +366,9 @@ describe("AttentionView backlog issues", () => {
     expect(
       within(firstItem).getByText("acme/repo-one#101"),
     ).toBeInTheDocument();
+    expect(within(firstItem).getByText("작성자 alice")).toBeInTheDocument();
     expect(
-      within(firstItem).getByText("작성자 Alice (@alice)"),
-    ).toBeInTheDocument();
-    expect(
-      within(firstItem).getByText("담당자 Bob (@bob), Carol (@carol)"),
+      within(firstItem).getByText("담당자 bob, carol"),
     ).toBeInTheDocument();
     expect(within(firstItem).getByText("Age 60일")).toBeInTheDocument();
     expect(within(firstItem).getByText("Idle 22일")).toBeInTheDocument();
@@ -387,12 +385,8 @@ describe("AttentionView backlog issues", () => {
     expect(
       within(secondItem).getByText("acme/repo-two#202"),
     ).toBeInTheDocument();
-    expect(
-      within(secondItem).getByText("작성자 Carol (@carol)"),
-    ).toBeInTheDocument();
-    expect(
-      within(secondItem).getByText("담당자 Bob (@bob)"),
-    ).toBeInTheDocument();
+    expect(within(secondItem).getByText("작성자 carol")).toBeInTheDocument();
+    expect(within(secondItem).getByText("담당자 bob")).toBeInTheDocument();
     expect(within(secondItem).getByText("Age 35일")).toBeInTheDocument();
     expect(within(secondItem).getByText("Idle 12일")).toBeInTheDocument();
     expect(within(secondItem).getByText("In Progress")).toBeInTheDocument();
