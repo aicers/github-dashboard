@@ -1327,6 +1327,40 @@ describe("SyncControls", () => {
     expect(routerRefreshMock).toHaveBeenCalled();
   });
 
+  it("shows a waiting status when a backup is queued", () => {
+    const status = buildStatus({
+      backup: {
+        directory: "/var/backups/github-dashboard",
+        retentionCount: 3,
+        schedule: {
+          enabled: true,
+          hourLocal: 2,
+          timezone: "Asia/Seoul",
+          nextRunAt: null,
+          lastStartedAt: "2024-04-01T17:00:00.000Z",
+          lastCompletedAt: null,
+          lastStatus: "waiting",
+          lastError: null,
+        },
+        records: [],
+      },
+    });
+
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="Asia/Seoul"
+        dateTimeFormat="iso-24h"
+        view="backup"
+        currentPathname="/dashboard/sync/backup"
+      />,
+    );
+
+    expect(screen.getByText("DB 백업 일정")).toBeInTheDocument();
+    expect(screen.getAllByText("대기 중").length).toBeGreaterThan(0);
+  });
+
   it("allows admins to update the transfer sync schedule", async () => {
     const user = userEvent.setup();
     const status = buildStatus({

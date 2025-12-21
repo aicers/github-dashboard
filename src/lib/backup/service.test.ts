@@ -247,6 +247,12 @@ describe("runDatabaseBackup", () => {
       actorId: "user-1",
     });
 
+    expect(updateSyncConfigMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        backupLastStatus: "waiting",
+        backupLastCompletedAt: null,
+      }),
+    );
     expect(ensureSchemaMock).toHaveBeenCalled();
     expect(createBackupRecordMock).toHaveBeenCalledWith(
       expect.objectContaining({
