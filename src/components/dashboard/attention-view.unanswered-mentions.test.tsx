@@ -286,9 +286,7 @@ describe("AttentionView unanswered mentions", () => {
     }
 
     expect(within(primaryItem).getByText("Idle 11일")).toBeInTheDocument();
-    expect(
-      within(primaryItem).getByText("요청자 Alice (@alice)"),
-    ).toBeInTheDocument();
+    expect(within(primaryItem).getByText("요청자 alice")).toBeInTheDocument();
     expect(
       within(primaryItem).getByText("@bob 11일, @bob 4일"),
     ).toBeInTheDocument();

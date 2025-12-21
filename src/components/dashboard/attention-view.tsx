@@ -95,12 +95,22 @@ import {
   resolveActivityIcon,
 } from "./activity/shared";
 
-function formatUserList(users: UserReference[]) {
-  if (!users.length) {
-    return "없음";
+function formatUserCompact(user: UserReference | null): string {
+  if (!user) {
+    return "-";
   }
 
-  return users.map((user) => formatUser(user)).join(", ");
+  const candidate = user.login ?? user.name ?? user.id;
+  const trimmed = candidate?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : "-";
+}
+
+function formatUserListCompact(users: UserReference[]): string {
+  const list = users
+    .map((user) => formatUserCompact(user))
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0 && value !== "-");
+  return list.length > 0 ? list.join(", ") : "-";
 }
 
 function formatRepository(repository: RepositoryReference | null) {
@@ -1549,9 +1559,11 @@ function PullRequestList({
               {metrics.map((metric) => (
                 <span key={metric.key}>{metric.content}</span>
               ))}
-              {item.author && <span>작성자 {formatUser(item.author)}</span>}
+              {item.author && (
+                <span>작성자 {formatUserCompact(item.author)}</span>
+              )}
               {item.reviewers.length > 0 && (
-                <span>리뷰어 {formatUserList(item.reviewers)}</span>
+                <span>리뷰어 {formatUserListCompact(item.reviewers)}</span>
               )}
               {renderAttentionBadgeElements(badges, item.id)}
               {(displayItem.labels ?? []).slice(0, 2).map((label) => (
@@ -2011,7 +2023,7 @@ function ReviewRequestList({
                   <span key={metric.key}>{metric.content}</span>
                 ))}
                 {pullRequest.author && (
-                  <span>작성자 {formatUser(pullRequest.author)}</span>
+                  <span>작성자 {formatUserCompact(pullRequest.author)}</span>
                 )}
                 {renderAttentionBadgeElements(badges, resolvedSelectionId)}
                 {(displayItem.labels ?? []).slice(0, 2).map((label) => (
@@ -2851,9 +2863,11 @@ function IssueList({
               {metrics.map((metric) => (
                 <span key={metric.key}>{metric.content}</span>
               ))}
-              {item.author && <span>작성자 {formatUser(item.author)}</span>}
+              {item.author && (
+                <span>작성자 {formatUserCompact(item.author)}</span>
+              )}
               {item.assignees.length > 0 && (
-                <span>담당자 {formatUserList(item.assignees)}</span>
+                <span>담당자 {formatUserListCompact(item.assignees)}</span>
               )}
               {displayItem.issueType ? (
                 <span className={ISSUE_TYPE_BADGE_CLASS}>
@@ -3392,7 +3406,9 @@ function MentionList({
               {metrics.map((metric) => (
                 <span key={metric.key}>{metric.content}</span>
               ))}
-              {item.author && <span>요청자 {formatUser(item.author)}</span>}
+              {item.author && (
+                <span>요청자 {formatUserCompact(item.author)}</span>
+              )}
               {displayItem.issueType ? (
                 <span className={ISSUE_TYPE_BADGE_CLASS}>
                   {displayItem.issueType.name ?? displayItem.issueType.id}
@@ -4397,19 +4413,19 @@ export function AttentionView({
           className="border-b border-slate-200"
           aria-label="Follow-ups 하위 메뉴"
         >
-          <div className="flex gap-1 overflow-x-auto">
+          <div className="flex flex-wrap gap-1">
             <button
               type="button"
               onClick={() => setActiveSectionId(null)}
               className={cn(
-                "flex items-center gap-2 px-4 py-3 text-sm font-medium transition border-b-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                "flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition border-b-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                 activeSectionId === null
                   ? "border-primary text-primary"
                   : "border-transparent text-muted-foreground hover:text-foreground",
               )}
               aria-current={activeSectionId === null ? "true" : undefined}
             >
-              <LayoutGrid className="h-4 w-4" />
+              <LayoutGrid className="h-3.5 w-3.5" />
               Overview
             </button>
             {sections.map((section) => {
@@ -4419,21 +4435,21 @@ export function AttentionView({
               const getIcon = () => {
                 switch (section.id) {
                   case "reviewer-unassigned-prs":
-                    return <GitPullRequestDraft className="h-4 w-4" />;
+                    return <GitPullRequestDraft className="h-3.5 w-3.5" />;
                   case "review-stalled-prs":
-                    return <GitPullRequest className="h-4 w-4" />;
+                    return <GitPullRequest className="h-3.5 w-3.5" />;
                   case "merge-delayed-prs":
-                    return <GitPullRequest className="h-4 w-4" />;
+                    return <GitPullRequest className="h-3.5 w-3.5" />;
                   case "stuck-review-requests":
-                    return <MessageSquare className="h-4 w-4" />;
+                    return <MessageSquare className="h-3.5 w-3.5" />;
                   case "backlog-issues":
-                    return <CircleDot className="h-4 w-4" />;
+                    return <CircleDot className="h-3.5 w-3.5" />;
                   case "stalled-in-progress-issues":
-                    return <Play className="h-4 w-4" />;
+                    return <Play className="h-3.5 w-3.5" />;
                   case "unanswered-mentions":
-                    return <AtSign className="h-4 w-4" />;
+                    return <AtSign className="h-3.5 w-3.5" />;
                   default:
-                    return <CircleDot className="h-4 w-4" />;
+                    return <CircleDot className="h-3.5 w-3.5" />;
                 }
               };
 
@@ -4443,7 +4459,7 @@ export function AttentionView({
                   type="button"
                   onClick={() => setActiveSectionId(section.id)}
                   className={cn(
-                    "flex items-center gap-2 px-4 py-3 text-sm font-medium transition border-b-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                    "flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition border-b-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                     selected
                       ? "border-primary text-primary"
                       : "border-transparent text-muted-foreground hover:text-foreground",

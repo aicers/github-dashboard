@@ -192,20 +192,12 @@ describe("AttentionView merge-delayed pull requests", () => {
     }
 
     expect(within(firstPrItem).getByText("Age 40일")).toBeInTheDocument();
-    expect(
-      within(firstPrItem).getByText("작성자 Alice (@alice)"),
-    ).toBeInTheDocument();
-    expect(
-      within(firstPrItem).getByText("리뷰어 Bob (@bob)"),
-    ).toBeInTheDocument();
+    expect(within(firstPrItem).getByText("작성자 alice")).toBeInTheDocument();
+    expect(within(firstPrItem).getByText("리뷰어 bob")).toBeInTheDocument();
 
     expect(within(secondPrItem).getByText("Age 20일")).toBeInTheDocument();
-    expect(
-      within(secondPrItem).getByText("작성자 Bob (@bob)"),
-    ).toBeInTheDocument();
-    expect(
-      within(secondPrItem).getByText("리뷰어 Carol (@carol)"),
-    ).toBeInTheDocument();
+    expect(within(secondPrItem).getByText("작성자 bob")).toBeInTheDocument();
+    expect(within(secondPrItem).getByText("리뷰어 carol")).toBeInTheDocument();
 
     expect(
       screen.getByText("담당자 기준 경과일수 합계 순위"),
