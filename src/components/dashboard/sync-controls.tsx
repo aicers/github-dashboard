@@ -107,6 +107,7 @@ const backupStatusLabels: Record<string, string> = {
   success: "성공",
   failed: "실패",
   running: "진행 중",
+  waiting: "대기 중",
   restored: "복구 완료",
   idle: "대기",
 };
@@ -115,6 +116,7 @@ const backupStatusColors: Record<string, string> = {
   success: "text-emerald-600",
   failed: "text-red-600",
   running: "text-amber-600",
+  waiting: "text-amber-600",
   restored: "text-sky-600",
   idle: "text-muted-foreground",
 };
@@ -421,7 +423,7 @@ export function SyncControls({
     useState(false);
   const [isRunningBackup, setIsRunningBackup] = useState(false);
   const [isRunningTransferSync, setIsRunningTransferSync] = useState(
-    transferInfo.isRunning,
+    transferInfo.isRunning || transferInfo.isWaiting,
   );
   const [restoringBackupId, setRestoringBackupId] = useState<string | null>(
     null,
@@ -479,8 +481,8 @@ export function SyncControls({
   }, [transferSchedule.minuteLocal]);
 
   useEffect(() => {
-    setIsRunningTransferSync(transferInfo.isRunning);
-  }, [transferInfo.isRunning]);
+    setIsRunningTransferSync(transferInfo.isRunning || transferInfo.isWaiting);
+  }, [transferInfo.isRunning, transferInfo.isWaiting]);
 
   useEffect(() => {
     if (!canManageSync) {
@@ -673,7 +675,9 @@ export function SyncControls({
   const backupTimezoneLabel = timeZone ?? backupSchedule.timezone ?? "UTC";
   const transferStatusKey = transferInfo.isRunning
     ? "running"
-    : (transferSchedule.lastStatus ?? "idle").toLowerCase();
+    : transferInfo.isWaiting
+      ? "waiting"
+      : (transferSchedule.lastStatus ?? "idle").toLowerCase();
   const transferStatusLabel =
     backupStatusLabels[transferStatusKey] ?? capitalize(transferStatusKey);
   const transferStatusClass =

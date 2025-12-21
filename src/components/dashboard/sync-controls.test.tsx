@@ -167,6 +167,7 @@ function buildStatus(overrides: Partial<SyncStatus> = {}): SyncStatus {
         lastError: null,
       },
       isRunning: false,
+      isWaiting: false,
     },
   };
 }
@@ -1341,6 +1342,7 @@ describe("SyncControls", () => {
           lastError: null,
         },
         isRunning: false,
+        isWaiting: false,
       },
     });
 
@@ -1375,6 +1377,40 @@ describe("SyncControls", () => {
       transferSyncMinute: 15,
     });
     expect(routerRefreshMock).toHaveBeenCalled();
+  });
+
+  it("shows waiting state when transfer sync is queued", () => {
+    const status = buildStatus({
+      transferSync: {
+        schedule: {
+          hourLocal: 1,
+          minuteLocal: 0,
+          timezone: "UTC",
+          nextRunAt: null,
+          lastStartedAt: null,
+          lastCompletedAt: null,
+          lastStatus: "idle",
+          lastError: null,
+        },
+        isRunning: false,
+        isWaiting: true,
+      },
+    });
+
+    render(
+      <SyncControls
+        status={status}
+        isAdmin
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+        view="overview"
+        currentPathname="/dashboard/sync"
+      />,
+    );
+
+    expect(screen.getAllByText("대기 중")[0]).toBeInTheDocument();
+    const runButton = screen.getByRole("button", { name: "재정렬 실행 중..." });
+    expect(runButton).toBeDisabled();
   });
 
   it("runs transfer sync immediately when admins trigger it manually", async () => {

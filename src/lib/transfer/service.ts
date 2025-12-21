@@ -14,6 +14,7 @@ type TransferSchedulerState = {
   nextRunAt: string | null;
   currentRun: Promise<void> | null;
   isScheduling: boolean;
+  isWaiting: boolean;
 };
 
 type SchedulerGlobal = typeof globalThis & {
@@ -32,6 +33,7 @@ export type TransferSyncRuntimeInfo = {
     lastError: string | null;
   };
   isRunning: boolean;
+  isWaiting: boolean;
 };
 
 type TransferSyncRunResult = {
@@ -52,6 +54,7 @@ function getSchedulerState(): TransferSchedulerState {
       nextRunAt: null,
       currentRun: null,
       isScheduling: false,
+      isWaiting: false,
     };
   }
 
@@ -289,73 +292,89 @@ export async function runTransferSync(options?: {
   actorId?: string | null;
 }): Promise<TransferSyncRunResult> {
   const trigger: TransferRunTrigger = options?.trigger ?? "manual";
+  const scheduler = getSchedulerState();
+  scheduler.isWaiting = true;
 
   return withTrackedRun(async () => {
     await ensureSchema();
-    const startedAt = new Date().toISOString();
 
     await updateSyncConfig({
-      transferSyncLastStartedAt: startedAt,
-      transferSyncLastStatus: "running",
+      transferSyncLastStartedAt: null,
+      transferSyncLastCompletedAt: null,
+      transferSyncLastStatus: "waiting",
       transferSyncLastError: null,
     });
 
-    const logId = await recordSyncLog(
-      "transfer-sync",
-      "running",
-      buildLogMessage(trigger, options?.actorId),
-    );
-
     try {
-      const summary = await withJobLock("transfer", async () => {
-        return realignRepositoryMismatches({
-          refreshArtifacts: true,
-          mode: trigger,
-          logger: (message) => console.info("[transfer-sync]", message),
+      const result = await withJobLock("transfer", async () => {
+        scheduler.isWaiting = false;
+        const startedAt = new Date().toISOString();
+
+        await updateSyncConfig({
+          transferSyncLastStartedAt: startedAt,
+          transferSyncLastStatus: "running",
+          transferSyncLastError: null,
         });
-      });
 
-      const completedAt = new Date().toISOString();
-
-      await updateSyncConfig({
-        transferSyncLastCompletedAt: completedAt,
-        transferSyncLastStatus: "success",
-        transferSyncLastError: null,
-      });
-
-      if (logId !== undefined) {
-        await updateSyncLog(
-          logId,
-          "success",
-          `Updated ${summary.updated} nodes (candidates: ${summary.candidates}).`,
+        const logId = await recordSyncLog(
+          "transfer-sync",
+          "running",
+          buildLogMessage(trigger, options?.actorId),
         );
-      }
 
-      console.info("[transfer-sync] Completed", {
-        trigger,
-        updated: summary.updated,
-        candidates: summary.candidates,
+        try {
+          const summary = await realignRepositoryMismatches({
+            refreshArtifacts: true,
+            mode: trigger,
+            logger: (message) => console.info("[transfer-sync]", message),
+          });
+
+          const completedAt = new Date().toISOString();
+
+          await updateSyncConfig({
+            transferSyncLastCompletedAt: completedAt,
+            transferSyncLastStatus: "success",
+            transferSyncLastError: null,
+          });
+
+          if (logId !== undefined) {
+            await updateSyncLog(
+              logId,
+              "success",
+              `Updated ${summary.updated} nodes (candidates: ${summary.candidates}).`,
+            );
+          }
+
+          console.info("[transfer-sync] Completed", {
+            trigger,
+            updated: summary.updated,
+            candidates: summary.candidates,
+          });
+
+          return { summary, startedAt, completedAt };
+        } catch (error) {
+          const completedAt = new Date().toISOString();
+          const message =
+            error instanceof Error ? error.message : "Transfer sync failed.";
+
+          await updateSyncConfig({
+            transferSyncLastCompletedAt: completedAt,
+            transferSyncLastStatus: "failed",
+            transferSyncLastError: message,
+          });
+
+          if (logId !== undefined) {
+            await updateSyncLog(logId, "failed", message);
+          }
+
+          console.error("[transfer-sync] Failed", { trigger, error });
+          throw error;
+        }
       });
 
-      return { summary, startedAt, completedAt };
-    } catch (error) {
-      const completedAt = new Date().toISOString();
-      const message =
-        error instanceof Error ? error.message : "Transfer sync failed.";
-
-      await updateSyncConfig({
-        transferSyncLastCompletedAt: completedAt,
-        transferSyncLastStatus: "failed",
-        transferSyncLastError: message,
-      });
-
-      if (logId !== undefined) {
-        await updateSyncLog(logId, "failed", message);
-      }
-
-      console.error("[transfer-sync] Failed", { trigger, error });
-      throw error;
+      return result;
     } finally {
+      scheduler.isWaiting = false;
       await refreshScheduler();
     }
   });
@@ -420,6 +439,7 @@ export async function getTransferSyncRuntimeInfo(): Promise<TransferSyncRuntimeI
       lastError: config?.transfer_sync_last_error ?? null,
     },
     isRunning: Boolean(scheduler.currentRun),
+    isWaiting: scheduler.isWaiting,
   };
 }
 
