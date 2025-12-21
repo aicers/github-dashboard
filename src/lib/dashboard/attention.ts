@@ -85,6 +85,7 @@ export type PullRequestAttentionItem = PullRequestReference & {
   ageDays: number;
   inactivityDays?: number;
   waitingDays?: number;
+  assignees?: UserReference[];
 };
 
 export type ReviewRequestAttentionItem = {
@@ -271,6 +272,7 @@ type PullRequestReferenceRaw = {
   repositoryNameWithOwner: string | null;
   authorId: string | null;
   reviewerIds: string[];
+  assigneeIds?: string[];
   linkedIssues: ActivityLinkedIssue[];
 };
 
@@ -387,6 +389,10 @@ type PullRequestRow = {
   url: string | null;
   repository_name: string | null;
   repository_name_with_owner: string | null;
+};
+
+type PullRequestRowWithRaw = PullRequestRow & {
+  raw_data: unknown;
 };
 
 type ReviewRequestRow = {
@@ -1057,6 +1063,58 @@ function extractAssigneeIds(raw: IssueRaw | null) {
   return Array.from(ids);
 }
 
+function parseRawRecord(data: unknown): Record<string, unknown> | null {
+  if (!data) {
+    return null;
+  }
+
+  if (typeof data === "string") {
+    try {
+      const parsed = JSON.parse(data);
+      if (parsed && typeof parsed === "object") {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  if (typeof data === "object") {
+    return data as Record<string, unknown>;
+  }
+
+  return null;
+}
+
+function extractPullRequestAssigneeIds(raw: unknown) {
+  const record = parseRawRecord(raw);
+  if (!record) {
+    return [] as string[];
+  }
+
+  const assignees = record.assignees;
+  if (!assignees || typeof assignees !== "object") {
+    return [] as string[];
+  }
+
+  const nodes = Array.isArray((assignees as { nodes?: unknown }).nodes)
+    ? ((assignees as { nodes?: unknown[] }).nodes ?? [])
+    : [];
+
+  const ids = new Set<string>();
+  nodes.forEach((node) => {
+    if (!node || typeof node !== "object") {
+      return;
+    }
+    const id = (node as { id?: unknown }).id;
+    if (typeof id === "string" && id.trim().length) {
+      ids.add(id);
+    }
+  });
+
+  return Array.from(ids);
+}
+
 function extractCommentExcerpt(body: string | null) {
   if (!body) {
     return null;
@@ -1554,7 +1612,7 @@ async function fetchReviewStalledPullRequests(
   return { items, userIds };
 }
 
-type MergeDelayedPullRequestRow = PullRequestRow & {
+type MergeDelayedPullRequestRow = PullRequestRowWithRaw & {
   approved_at: string | null;
 };
 
@@ -1574,6 +1632,7 @@ async function fetchMergeDelayedPullRequests(
        pr.author_id,
        pr.github_created_at,
        pr.github_updated_at,
+       pr.data AS raw_data,
        pr.data->>'url' AS url,
        repo.name AS repository_name,
        repo.name_with_owner AS repository_name_with_owner,
@@ -1676,11 +1735,17 @@ async function fetchMergeDelayedPullRequests(
 
     const reviewers = reviewerMap.get(row.id) ?? new Set<string>();
     const reviewerIds = Array.from(reviewers);
+    const assigneeIds = extractPullRequestAssigneeIds(row.raw_data).filter(
+      (id) => !excludedUserIds.includes(id),
+    );
     addUserId(userIds, row.author_id);
     reviewerIds.forEach((id) => {
       addUserId(userIds, id);
     });
     people.forEach((id) => {
+      addUserId(userIds, id);
+    });
+    assigneeIds.forEach((id) => {
       addUserId(userIds, id);
     });
 
@@ -1694,6 +1759,7 @@ async function fetchMergeDelayedPullRequests(
       repositoryNameWithOwner: row.repository_name_with_owner,
       authorId: row.author_id,
       reviewerIds,
+      assigneeIds,
       linkedIssues: linkedIssuesMap.get(row.id) ?? [],
       createdAt: row.github_created_at,
       updatedAt: row.approved_at,
@@ -2786,8 +2852,34 @@ export async function getAttentionInsights(options?: {
   const organizationMaintainers = organizationMaintainerIds
     .map((id) => userMap.get(id))
     .filter((user): user is UserReference => Boolean(user));
+  const allRepositoryIds = new Set<string>();
+  issueInsights.repositoryMaintainersByRepository.forEach((_ids, repoId) => {
+    allRepositoryIds.add(repoId);
+  });
+  reviewerUnassigned.items.forEach((item) => {
+    if (item.repositoryId) {
+      allRepositoryIds.add(item.repositoryId);
+    }
+  });
+  reviewStalled.items.forEach((item) => {
+    if (item.repositoryId) {
+      allRepositoryIds.add(item.repositoryId);
+    }
+  });
+  mergeDelayed.items.forEach((item) => {
+    if (item.repositoryId) {
+      allRepositoryIds.add(item.repositoryId);
+    }
+  });
+  stuckReviews.items.forEach((item) => {
+    if (item.pullRequest.repositoryId) {
+      allRepositoryIds.add(item.pullRequest.repositoryId);
+    }
+  });
+  const allMaintainersByRepository =
+    await fetchRepositoryMaintainersByRepository(Array.from(allRepositoryIds));
   const repositoryMaintainersByRepository: Record<string, UserReference[]> = {};
-  issueInsights.repositoryMaintainersByRepository.forEach((ids, repoId) => {
+  allMaintainersByRepository.forEach((ids, repoId) => {
     const entries = ids
       .map((id) => userMap.get(id))
       .filter((user): user is UserReference => Boolean(user));
@@ -2820,6 +2912,9 @@ export async function getAttentionInsights(options?: {
   const mergeDelayedPrs = mergeDelayed.items.map<PullRequestAttentionItem>(
     (item) => ({
       ...toPullRequestReference(item, userMap),
+      assignees: (item.assigneeIds ?? [])
+        .map((id) => userMap.get(id))
+        .filter((user): user is UserReference => Boolean(user)),
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
       ageDays: item.ageDays,

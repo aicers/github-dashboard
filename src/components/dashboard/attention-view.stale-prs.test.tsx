@@ -45,6 +45,7 @@ function buildPullRequestItem(params: {
   url: string;
   repository: RepositoryReference;
   author: UserReference;
+  assignees?: UserReference[];
   reviewers: UserReference[];
   createdAt: string;
   updatedAt: string | null;
@@ -59,6 +60,7 @@ function buildPullRequestItem(params: {
     url,
     repository,
     author,
+    assignees,
     reviewers,
     createdAt,
     updatedAt,
@@ -74,6 +76,7 @@ function buildPullRequestItem(params: {
     url,
     repository,
     author,
+    assignees: assignees ?? [],
     reviewers,
     linkedIssues: [],
     createdAt,
@@ -95,6 +98,18 @@ describe("AttentionView merge-delayed pull requests", () => {
     const alice = buildUser("user-alice", "Alice", "alice");
     const bob = buildUser("user-bob", "Bob", "bob");
     const carol = buildUser("user-carol", "Carol", "carol");
+    const dan = buildUser("user-dan", "Dan", "dan");
+    const erin = buildUser("user-erin", "Erin", "erin");
+    const maintainerOne = buildUser(
+      "user-maintainer-one",
+      "Maintainer One",
+      "maintainer-one",
+    );
+    const maintainerTwo = buildUser(
+      "user-maintainer-two",
+      "Maintainer Two",
+      "maintainer-two",
+    );
 
     const repoOne = buildRepository("repo-one", "repo-one", "acme/repo-one");
     const repoTwo = buildRepository("repo-two", "repo-two", "acme/repo-two");
@@ -107,6 +122,7 @@ describe("AttentionView merge-delayed pull requests", () => {
         url: "https://github.com/acme/repo-one/pull/101",
         repository: repoOne,
         author: alice,
+        assignees: [dan],
         reviewers: [bob],
         createdAt: "2023-12-01T00:00:00.000Z",
         updatedAt: "2024-01-15T10:00:00.000Z",
@@ -120,6 +136,7 @@ describe("AttentionView merge-delayed pull requests", () => {
         url: "https://github.com/acme/repo-two/pull/102",
         repository: repoTwo,
         author: bob,
+        assignees: [erin],
         reviewers: [carol],
         createdAt: "2023-12-15T00:00:00.000Z",
         updatedAt: "2024-02-10T08:00:00.000Z",
@@ -139,6 +156,10 @@ describe("AttentionView merge-delayed pull requests", () => {
       backlogIssues: [],
       stalledInProgressIssues: [],
       unansweredMentions: [],
+      repositoryMaintainersByRepository: {
+        [repoOne.id]: [maintainerOne],
+        [repoTwo.id]: [maintainerTwo],
+      },
     } satisfies AttentionInsights;
 
     render(<AttentionView insights={insights} />);
@@ -187,26 +208,26 @@ describe("AttentionView merge-delayed pull requests", () => {
     ).toBeInTheDocument();
 
     expect(
-      screen.getByText("작성자 기준 경과일수 합계 순위"),
+      screen.getByText("담당자 기준 경과일수 합계 순위"),
     ).toBeInTheDocument();
 
-    const authorFilter = screen.getByLabelText("작성자 필터");
-    await user.selectOptions(authorFilter, "user-bob");
+    const assigneeFilter = screen.getByLabelText("담당자 필터");
+    await user.selectOptions(assigneeFilter, "user-erin");
 
     expect(screen.getByText("Fix caching logic")).toBeInTheDocument();
     expect(
       screen.queryByText("Refine search experience"),
     ).not.toBeInTheDocument();
 
-    await user.selectOptions(authorFilter, "all");
+    await user.selectOptions(assigneeFilter, "all");
 
-    const reviewerFilter = screen.getByLabelText("리뷰어 필터");
-    await user.selectOptions(reviewerFilter, "user-bob");
+    const maintainerFilter = screen.getByLabelText("저장소 책임자 필터");
+    await user.selectOptions(maintainerFilter, "user-maintainer-one");
 
     expect(screen.getByText("Refine search experience")).toBeInTheDocument();
     expect(screen.queryByText("Fix caching logic")).not.toBeInTheDocument();
 
-    await user.selectOptions(reviewerFilter, "all");
+    await user.selectOptions(maintainerFilter, "all");
 
     const refreshButton = screen.getByRole("button", {
       name: "Follow-ups 통계 새로 고침",
@@ -231,6 +252,7 @@ describe("AttentionView merge-delayed pull requests", () => {
       backlogIssues: [],
       stalledInProgressIssues: [],
       unansweredMentions: [],
+      repositoryMaintainersByRepository: {},
     } satisfies AttentionInsights;
 
     render(<AttentionView insights={emptyInsights} />);
@@ -248,12 +270,13 @@ describe("AttentionView merge-delayed pull requests", () => {
       screen.getByText("현재 조건을 만족하는 PR이 없습니다."),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("작성자 기준 경과일수 합계 순위"),
+      screen.getByText("담당자 기준 경과일수 합계 순위"),
     ).toBeInTheDocument();
     expect(
-      screen.getAllByText("작성자 데이터가 없습니다.").length,
+      screen.getAllByText("담당자 데이터가 없습니다.").length,
     ).toBeGreaterThan(0);
-    expect(screen.getByLabelText("작성자 필터")).toBeInTheDocument();
+    expect(screen.getByLabelText("담당자 필터")).toBeInTheDocument();
+    expect(screen.getByLabelText("저장소 책임자 필터")).toBeInTheDocument();
     expect(screen.queryByLabelText("리뷰어 필터")).not.toBeInTheDocument();
   });
 });

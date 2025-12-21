@@ -1188,9 +1188,12 @@ function PullRequestList({
   metricKey = "ageDays",
   metricLabel = "경과일수",
   attentionOverride,
+  primaryUserRole = "author",
+  secondaryUserRole = "reviewer",
   reviewWaitMap,
   mentionWaitMap,
   attentionFlagMap,
+  repositoryMaintainersByRepository = {},
   timezone,
   dateTimeFormat,
   segmented = false,
@@ -1205,9 +1208,16 @@ function PullRequestList({
   metricKey?: "ageDays" | "inactivityDays" | "waitingDays";
   metricLabel?: string;
   attentionOverride?: Partial<ActivityItem["attention"]>;
+  primaryUserRole?: "author" | "reviewer" | "assignee" | "repositoryMaintainer";
+  secondaryUserRole?:
+    | "author"
+    | "reviewer"
+    | "assignee"
+    | "repositoryMaintainer";
   reviewWaitMap: Map<string, ReviewRequestAttentionItem[]>;
   mentionWaitMap: Map<string, MentionAttentionItem[]>;
   attentionFlagMap: Map<string, Partial<ActivityItem["attention"]>>;
+  repositoryMaintainersByRepository?: Record<string, UserReference[]>;
   timezone: string;
   dateTimeFormat: DateTimeDisplayFormat;
   segmented?: boolean;
@@ -1216,14 +1226,47 @@ function PullRequestList({
   resyncDisabled?: boolean;
   resyncDisabledReason?: string | null;
 }) {
-  const [authorFilter, setAuthorFilter] = useState("all");
-  const [reviewerFilter, setReviewerFilter] = useState("all");
+  const [primaryFilter, setPrimaryFilter] = useState("all");
+  const [secondaryFilter, setSecondaryFilter] = useState("all");
   const trimmedTimezone = timezone.trim();
   const timezoneTitle = trimmedTimezone.length ? trimmedTimezone : undefined;
 
+  const roleLabelMap: Record<
+    NonNullable<typeof primaryUserRole>,
+    "작성자" | "리뷰어" | "담당자" | "저장소 책임자"
+  > = {
+    author: "작성자",
+    reviewer: "리뷰어",
+    assignee: "담당자",
+    repositoryMaintainer: "저장소 책임자",
+  };
+
+  const resolveUsersForRole = useCallback(
+    (
+      item: PullRequestAttentionItem,
+      role: NonNullable<typeof primaryUserRole>,
+    ) => {
+      if (role === "author") {
+        return item.author ? [item.author] : [];
+      }
+      if (role === "reviewer") {
+        return item.reviewers ?? [];
+      }
+      if (role === "assignee") {
+        return item.assignees ?? [];
+      }
+      const repoId = item.repository?.id;
+      if (!repoId) {
+        return [];
+      }
+      return repositoryMaintainersByRepository[repoId] ?? [];
+    },
+    [repositoryMaintainersByRepository],
+  );
+
   const aggregation = useMemo(() => {
-    const authorMap = new Map<string, RankingEntry>();
-    const reviewerMap = new Map<string, RankingEntry>();
+    const primaryMap = new Map<string, RankingEntry>();
+    const secondaryMap = new Map<string, RankingEntry>();
 
     const getMetric = (item: PullRequestAttentionItem) =>
       metricKey === "inactivityDays"
@@ -1235,68 +1278,84 @@ function PullRequestList({
     items.forEach((item) => {
       const metricValue = getMetric(item);
 
-      if (item.author) {
-        const authorKey = item.author.id;
-        const authorEntry = authorMap.get(authorKey) ?? {
-          key: authorKey,
-          user: item.author,
+      resolveUsersForRole(item, primaryUserRole).forEach((user) => {
+        const entry = primaryMap.get(user.id) ?? {
+          key: user.id,
+          user,
           total: 0,
           count: 0,
         };
-        authorEntry.total += metricValue;
-        authorEntry.count += 1;
-        authorMap.set(authorKey, authorEntry);
-      }
+        entry.total += metricValue;
+        entry.count += 1;
+        primaryMap.set(user.id, entry);
+      });
 
-      item.reviewers.forEach((reviewer) => {
-        const reviewerEntry = reviewerMap.get(reviewer.id) ?? {
-          key: reviewer.id,
-          user: reviewer,
+      resolveUsersForRole(item, secondaryUserRole).forEach((user) => {
+        const entry = secondaryMap.get(user.id) ?? {
+          key: user.id,
+          user,
           total: 0,
           count: 0,
         };
-        reviewerEntry.total += metricValue;
-        reviewerEntry.count += 1;
-        reviewerMap.set(reviewer.id, reviewerEntry);
+        entry.total += metricValue;
+        entry.count += 1;
+        secondaryMap.set(user.id, entry);
       });
     });
 
     return {
-      authors: Array.from(authorMap.values()),
-      reviewers: Array.from(reviewerMap.values()),
+      primary: Array.from(primaryMap.values()),
+      secondary: Array.from(secondaryMap.values()),
     };
-  }, [items, metricKey]);
+  }, [
+    items,
+    metricKey,
+    primaryUserRole,
+    resolveUsersForRole,
+    secondaryUserRole,
+  ]);
 
-  const authorOptions = useMemo(() => {
-    return aggregation.authors
+  const primaryOptions = useMemo(() => {
+    return aggregation.primary
       .map((entry) => ({
         key: entry.key,
         label: formatUser(entry.user),
       }))
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [aggregation.authors]);
+  }, [aggregation.primary]);
 
-  const reviewerOptions = useMemo(() => {
-    return aggregation.reviewers
+  const secondaryOptions = useMemo(() => {
+    return aggregation.secondary
       .map((entry) => ({
         key: entry.key,
         label: formatUser(entry.user),
       }))
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [aggregation.reviewers]);
+  }, [aggregation.secondary]);
 
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
-      const authorMatch =
-        authorFilter === "all" || item.author?.id === authorFilter;
+      const primaryUsers = resolveUsersForRole(item, primaryUserRole);
+      const secondaryUsers = resolveUsersForRole(item, secondaryUserRole);
 
-      const reviewerMatch =
-        reviewerFilter === "all" ||
-        item.reviewers.some((reviewer) => reviewer.id === reviewerFilter);
+      const primaryMatch =
+        primaryFilter === "all" ||
+        primaryUsers.some((user) => user.id === primaryFilter);
 
-      return authorMatch && reviewerMatch;
+      const secondaryMatch =
+        secondaryFilter === "all" ||
+        secondaryUsers.some((user) => user.id === secondaryFilter);
+
+      return primaryMatch && secondaryMatch;
     });
-  }, [items, authorFilter, reviewerFilter]);
+  }, [
+    items,
+    primaryFilter,
+    primaryUserRole,
+    resolveUsersForRole,
+    secondaryFilter,
+    secondaryUserRole,
+  ]);
 
   const sortedItems = useMemo(() => {
     const getMetric = (item: PullRequestAttentionItem) =>
@@ -1309,23 +1368,24 @@ function PullRequestList({
     return filteredItems.slice().sort((a, b) => getMetric(b) - getMetric(a));
   }, [filteredItems, metricKey]);
 
-  const authorRankingByTotal = useMemo(() => {
-    return sortRankingByTotal(aggregation.authors);
-  }, [aggregation.authors]);
+  const primaryRankingByTotal = useMemo(() => {
+    return sortRankingByTotal(aggregation.primary);
+  }, [aggregation.primary]);
 
-  const authorRankingByCount = useMemo(() => {
-    return sortRankingByCount(aggregation.authors);
-  }, [aggregation.authors]);
+  const primaryRankingByCount = useMemo(() => {
+    return sortRankingByCount(aggregation.primary);
+  }, [aggregation.primary]);
 
-  const reviewerRankingByTotal = useMemo(() => {
-    return sortRankingByTotal(aggregation.reviewers);
-  }, [aggregation.reviewers]);
+  const secondaryRankingByTotal = useMemo(() => {
+    return sortRankingByTotal(aggregation.secondary);
+  }, [aggregation.secondary]);
 
-  const reviewerRankingByCount = useMemo(() => {
-    return sortRankingByCount(aggregation.reviewers);
-  }, [aggregation.reviewers]);
+  const secondaryRankingByCount = useMemo(() => {
+    return sortRankingByCount(aggregation.secondary);
+  }, [aggregation.secondary]);
 
-  const hasReviewerFilter = reviewerOptions.length > 0;
+  const primaryRoleLabel = roleLabelMap[primaryUserRole];
+  const secondaryRoleLabel = roleLabelMap[secondaryUserRole];
 
   const { openItemId, detailMap, loadingDetailIds, selectItem, closeItem } =
     useActivityDetailState();
@@ -1337,28 +1397,28 @@ function PullRequestList({
   const rankingGrid = (
     <div className="grid gap-4 md:grid-cols-2">
       <RankingCard
-        title={`작성자 ${metricLabel} 합계 순위`}
-        entries={authorRankingByTotal}
+        title={`${primaryRoleLabel} ${metricLabel} 합계 순위`}
+        entries={primaryRankingByTotal}
         valueFormatter={(entry) => formatDays(entry.total)}
-        emptyText="작성자 데이터가 없습니다."
+        emptyText={`${primaryRoleLabel} 데이터가 없습니다.`}
       />
       <RankingCard
-        title="작성자 건수 순위"
-        entries={authorRankingByCount}
+        title={`${primaryRoleLabel} 건수 순위`}
+        entries={primaryRankingByCount}
         valueFormatter={(entry) => formatCount(entry.count)}
-        emptyText="작성자 데이터가 없습니다."
+        emptyText={`${primaryRoleLabel} 데이터가 없습니다.`}
       />
       <RankingCard
-        title={`리뷰어 ${metricLabel} 합계 순위`}
-        entries={reviewerRankingByTotal}
+        title={`${secondaryRoleLabel} ${metricLabel} 합계 순위`}
+        entries={secondaryRankingByTotal}
         valueFormatter={(entry) => formatDays(entry.total)}
-        emptyText="리뷰어 데이터가 없습니다."
+        emptyText={`${secondaryRoleLabel} 데이터가 없습니다.`}
       />
       <RankingCard
-        title="리뷰어 건수 순위"
-        entries={reviewerRankingByCount}
+        title={`${secondaryRoleLabel} 건수 순위`}
+        entries={secondaryRankingByCount}
         valueFormatter={(entry) => formatCount(entry.count)}
-        emptyText="리뷰어 데이터가 없습니다."
+        emptyText={`${secondaryRoleLabel} 데이터가 없습니다.`}
       />
     </div>
   );
@@ -1366,37 +1426,35 @@ function PullRequestList({
   const filterControls = (
     <div className="flex flex-wrap gap-4">
       <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-        작성자 필터
+        {primaryRoleLabel} 필터
         <select
           className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          value={authorFilter}
-          onChange={(event) => setAuthorFilter(event.target.value)}
+          value={primaryFilter}
+          onChange={(event) => setPrimaryFilter(event.target.value)}
         >
           <option value="all">미적용</option>
-          {authorOptions.map((option) => (
+          {primaryOptions.map((option) => (
             <option key={option.key} value={option.key}>
               {option.label}
             </option>
           ))}
         </select>
       </label>
-      {hasReviewerFilter ? (
-        <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-          리뷰어 필터
-          <select
-            className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            value={reviewerFilter}
-            onChange={(event) => setReviewerFilter(event.target.value)}
-          >
-            <option value="all">미적용</option>
-            {reviewerOptions.map((option) => (
-              <option key={option.key} value={option.key}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : null}
+      <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+        {secondaryRoleLabel} 필터
+        <select
+          className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          value={secondaryFilter}
+          onChange={(event) => setSecondaryFilter(event.target.value)}
+        >
+          <option value="all">미적용</option>
+          {secondaryOptions.map((option) => (
+            <option key={option.key} value={option.key}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
     </div>
   );
 
@@ -4129,9 +4187,14 @@ export function AttentionView({
           metricKey="waitingDays"
           metricLabel="기준 경과일수"
           attentionOverride={{ reviewerUnassignedPr: true }}
+          primaryUserRole="repositoryMaintainer"
+          secondaryUserRole="author"
           reviewWaitMap={reviewWaitMap}
           mentionWaitMap={mentionWaitMap}
           attentionFlagMap={attentionFlagMap}
+          repositoryMaintainersByRepository={
+            insights.repositoryMaintainersByRepository ?? {}
+          }
           timezone={insights.timezone}
           dateTimeFormat={insights.dateTimeFormat}
           segmented
@@ -4158,9 +4221,14 @@ export function AttentionView({
           metricKey="waitingDays"
           metricLabel="기준 경과일수"
           attentionOverride={{ reviewStalledPr: true }}
+          primaryUserRole="reviewer"
+          secondaryUserRole="repositoryMaintainer"
           reviewWaitMap={reviewWaitMap}
           mentionWaitMap={mentionWaitMap}
           attentionFlagMap={attentionFlagMap}
+          repositoryMaintainersByRepository={
+            insights.repositoryMaintainersByRepository ?? {}
+          }
           timezone={insights.timezone}
           dateTimeFormat={insights.dateTimeFormat}
           segmented
@@ -4187,9 +4255,14 @@ export function AttentionView({
           metricKey="waitingDays"
           metricLabel="기준 경과일수"
           attentionOverride={{ mergeDelayedPr: true }}
+          primaryUserRole="assignee"
+          secondaryUserRole="repositoryMaintainer"
           reviewWaitMap={reviewWaitMap}
           mentionWaitMap={mentionWaitMap}
           attentionFlagMap={attentionFlagMap}
+          repositoryMaintainersByRepository={
+            insights.repositoryMaintainersByRepository ?? {}
+          }
           timezone={insights.timezone}
           dateTimeFormat={insights.dateTimeFormat}
           segmented
