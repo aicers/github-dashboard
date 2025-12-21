@@ -17,6 +17,9 @@ describe("activityFilterPayloadSchema", () => {
       thresholds: {
         backlogIssueDays: "10",
         reviewRequestDays: 5,
+        reviewerUnassignedPrDays: "2",
+        reviewStalledPrDays: "7",
+        mergeDelayedPrDays: "8",
         unansweredMentionDays: null,
       },
     }) satisfies ActivityFilterPayload;
@@ -29,6 +32,9 @@ describe("activityFilterPayloadSchema", () => {
     expect(result.thresholds).toEqual({
       backlogIssueDays: 10,
       reviewRequestDays: 5,
+      reviewerUnassignedPrDays: 2,
+      reviewStalledPrDays: 7,
+      mergeDelayedPrDays: 8,
     });
   });
 

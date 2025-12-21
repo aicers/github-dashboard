@@ -1232,6 +1232,7 @@ function normalizeTimeZone(value: unknown): string | null {
 async function fetchReviewUnassignedPullRequests(
   excludedRepositoryIds: readonly string[],
   excludedUserIds: readonly string[],
+  minimumDays: number,
   now: Date,
   organizationHolidayCodes: HolidayCalendarCode[],
   organizationHolidaySet: ReadonlySet<string>,
@@ -1251,7 +1252,7 @@ async function fetchReviewUnassignedPullRequests(
     FROM pull_requests pr
     JOIN repositories repo ON repo.id = pr.repository_id
     WHERE pr.github_closed_at IS NULL
-       AND pr.github_created_at <= NOW() - INTERVAL '2 days'
+       AND pr.github_created_at <= NOW() - make_interval(days => $3)
        AND NOT (pr.repository_id = ANY($1::text[]))
        AND (pr.author_id IS NULL OR NOT (pr.author_id = ANY($2::text[])))
        AND NOT EXISTS (
@@ -1271,7 +1272,7 @@ async function fetchReviewUnassignedPullRequests(
            AND NOT (rv.author_id = ANY($2::text[]))
        )
      ORDER BY pr.github_created_at ASC`,
-    [excludedRepositoryIds, excludedUserIds],
+    [excludedRepositoryIds, excludedUserIds, minimumDays],
   );
 
   const repositoryIds = Array.from(
@@ -1401,6 +1402,7 @@ type ReviewerLastActivityRow = {
 async function fetchReviewStalledPullRequests(
   excludedRepositoryIds: readonly string[],
   excludedUserIds: readonly string[],
+  minimumDays: number,
   now: Date,
   organizationHolidayCodes: HolidayCalendarCode[],
   organizationHolidaySet: ReadonlySet<string>,
@@ -1420,7 +1422,7 @@ async function fetchReviewStalledPullRequests(
     FROM pull_requests pr
     JOIN repositories repo ON repo.id = pr.repository_id
     WHERE pr.github_closed_at IS NULL
-       AND pr.github_created_at <= NOW() - INTERVAL '2 days'
+       AND pr.github_created_at <= NOW() - make_interval(days => $3)
        AND NOT (pr.repository_id = ANY($1::text[]))
        AND (pr.author_id IS NULL OR NOT (pr.author_id = ANY($2::text[])))
        AND EXISTS (
@@ -1432,7 +1434,7 @@ async function fetchReviewStalledPullRequests(
            AND NOT (rr.reviewer_id = ANY($2::text[]))
        )
      ORDER BY pr.github_updated_at ASC NULLS LAST`,
-    [excludedRepositoryIds, excludedUserIds],
+    [excludedRepositoryIds, excludedUserIds, minimumDays],
   );
 
   const prIds = result.rows.map((row) => row.id);
@@ -1619,6 +1621,7 @@ type MergeDelayedPullRequestRow = PullRequestRowWithRaw & {
 async function fetchMergeDelayedPullRequests(
   excludedRepositoryIds: readonly string[],
   excludedUserIds: readonly string[],
+  minimumDays: number,
   now: Date,
   organizationHolidayCodes: HolidayCalendarCode[],
   organizationHolidaySet: ReadonlySet<string>,
@@ -1649,11 +1652,11 @@ async function fetchMergeDelayedPullRequests(
     WHERE pr.github_closed_at IS NULL
       AND approval.approved_at IS NOT NULL
       AND pr.data->>'reviewDecision' = 'APPROVED'
-      AND approval.approved_at <= NOW() - INTERVAL '2 days'
+      AND approval.approved_at <= NOW() - make_interval(days => $3)
       AND NOT (pr.repository_id = ANY($1::text[]))
       AND (pr.author_id IS NULL OR NOT (pr.author_id = ANY($2::text[])))
     ORDER BY approval.approved_at ASC`,
-    [excludedRepositoryIds, excludedUserIds],
+    [excludedRepositoryIds, excludedUserIds, minimumDays],
   );
 
   const prIds = result.rows.map((row) => row.id);
@@ -2698,6 +2701,9 @@ function toIssueReference(
 export async function getAttentionInsights(options?: {
   userId?: string | null;
   useMentionClassifier?: boolean;
+  reviewerUnassignedPrDays?: number;
+  reviewStalledPrDays?: number;
+  mergeDelayedPrDays?: number;
 }): Promise<AttentionInsights> {
   await ensureSchema();
 
@@ -2729,6 +2735,12 @@ export async function getAttentionInsights(options?: {
   const excludedReposArray = Array.from(excludedRepositoryIds);
   const now = new Date();
   const targetProject = normalizeProjectTarget(env.TODO_PROJECT_NAME);
+  const reviewerUnassignedPrDays = Math.max(
+    1,
+    options?.reviewerUnassignedPrDays ?? 2,
+  );
+  const reviewStalledPrDays = Math.max(1, options?.reviewStalledPrDays ?? 2);
+  const mergeDelayedPrDays = Math.max(1, options?.mergeDelayedPrDays ?? 2);
 
   const [
     reviewerUnassigned,
@@ -2742,6 +2754,7 @@ export async function getAttentionInsights(options?: {
     fetchReviewUnassignedPullRequests(
       excludedReposArray,
       excludedUsersArray,
+      reviewerUnassignedPrDays,
       now,
       organizationHolidayCodes,
       organizationHolidaySet,
@@ -2749,6 +2762,7 @@ export async function getAttentionInsights(options?: {
     fetchReviewStalledPullRequests(
       excludedReposArray,
       excludedUsersArray,
+      reviewStalledPrDays,
       now,
       organizationHolidayCodes,
       organizationHolidaySet,
@@ -2756,6 +2770,7 @@ export async function getAttentionInsights(options?: {
     fetchMergeDelayedPullRequests(
       excludedReposArray,
       excludedUsersArray,
+      mergeDelayedPrDays,
       now,
       organizationHolidayCodes,
       organizationHolidaySet,

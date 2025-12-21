@@ -5449,133 +5449,211 @@ export function ActivityView({
                   );
                 })}
               </div>
-              <div className="flex flex-col gap-4 md:flex-row md:flex-nowrap md:gap-6 md:overflow-x-auto">
-                <div
-                  className={cn(
-                    "flex-1 min-w-[200px] space-y-2",
-                    issueFiltersDisabled && "opacity-60",
-                  )}
-                >
-                  <Label className="text-xs font-semibold text-foreground">
-                    정체 Backlog 이슈 기준일
-                  </Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={draft.thresholds.backlogIssueDays}
-                    disabled={issueFiltersDisabled}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        thresholds: {
-                          ...current.thresholds,
-                          backlogIssueDays: toPositiveInt(
-                            event.target.value,
-                            DEFAULT_THRESHOLD_VALUES.backlogIssueDays,
-                          ),
-                        },
-                      }))
-                    }
-                    placeholder="Backlog 정체"
-                  />
-                </div>
-                <div
-                  className={cn(
-                    "flex-1 min-w-[200px] space-y-2",
-                    issueFiltersDisabled && "opacity-60",
-                  )}
-                >
-                  <Label className="text-xs font-semibold text-foreground">
-                    정체 In Progress 이슈 기준일
-                  </Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={draft.thresholds.stalledIssueDays}
-                    disabled={issueFiltersDisabled}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        thresholds: {
-                          ...current.thresholds,
-                          stalledIssueDays: toPositiveInt(
-                            event.target.value,
-                            DEFAULT_THRESHOLD_VALUES.stalledIssueDays,
-                          ),
-                        },
-                      }))
-                    }
-                    placeholder="In Progress 정체"
-                  />
-                </div>
-                <div
-                  className={cn(
-                    "flex-1 min-w-[200px] space-y-2",
-                    prFiltersDisabled && "opacity-60",
-                  )}
-                >
-                  <Label className="text-xs font-semibold text-foreground">
-                    PR 주의 항목 기준일
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    리뷰어 미지정 · 리뷰 정체 · 머지 지연 PR은 2 업무일 기준으로
-                    계산합니다.
-                  </p>
-                </div>
-                <div
-                  className={cn(
-                    "flex-1 min-w-[200px] space-y-2",
-                    prFiltersDisabled && "opacity-60",
-                  )}
-                >
-                  <Label className="text-xs font-semibold text-foreground">
-                    응답 없는 리뷰 기준일
-                  </Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={draft.thresholds.reviewRequestDays}
-                    disabled={prFiltersDisabled}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        thresholds: {
-                          ...current.thresholds,
-                          reviewRequestDays: toPositiveInt(
-                            event.target.value,
-                            DEFAULT_THRESHOLD_VALUES.reviewRequestDays,
-                          ),
-                        },
-                      }))
-                    }
-                    placeholder="리뷰 무응답"
-                  />
-                </div>
-                <div className="flex-1 min-w-[200px] space-y-2">
-                  <Label className="text-xs font-semibold text-foreground">
-                    응답 없는 멘션 기준일
-                  </Label>
-                  <Input
-                    type="number"
-                    min={5}
-                    value={draft.thresholds.unansweredMentionDays}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        thresholds: {
-                          ...current.thresholds,
-                          unansweredMentionDays: Math.max(
-                            5,
-                            toPositiveInt(
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold text-foreground">
+                  기준일
+                </Label>
+                <div className="grid gap-4 md:grid-cols-4 md:gap-6 lg:grid-cols-7">
+                  <div
+                    className={cn(
+                      "min-w-0 space-y-2",
+                      issueFiltersDisabled && "opacity-60",
+                    )}
+                  >
+                    <Label className="text-xs font-semibold text-foreground">
+                      정체된 Backlog 이슈
+                    </Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={draft.thresholds.backlogIssueDays}
+                      disabled={issueFiltersDisabled}
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          thresholds: {
+                            ...current.thresholds,
+                            backlogIssueDays: toPositiveInt(
                               event.target.value,
-                              DEFAULT_THRESHOLD_VALUES.unansweredMentionDays,
+                              DEFAULT_THRESHOLD_VALUES.backlogIssueDays,
                             ),
-                          ),
-                        },
-                      }))
-                    }
-                    placeholder="멘션 무응답"
-                  />
+                          },
+                        }))
+                      }
+                      placeholder="Backlog 정체"
+                    />
+                  </div>
+                  <div
+                    className={cn(
+                      "min-w-0 space-y-2",
+                      issueFiltersDisabled && "opacity-60",
+                    )}
+                  >
+                    <Label className="text-xs font-semibold text-foreground">
+                      정체된 In Progress 이슈
+                    </Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={draft.thresholds.stalledIssueDays}
+                      disabled={issueFiltersDisabled}
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          thresholds: {
+                            ...current.thresholds,
+                            stalledIssueDays: toPositiveInt(
+                              event.target.value,
+                              DEFAULT_THRESHOLD_VALUES.stalledIssueDays,
+                            ),
+                          },
+                        }))
+                      }
+                      placeholder="In Progress 정체"
+                    />
+                  </div>
+                  <div
+                    className={cn(
+                      "min-w-0 space-y-2",
+                      prFiltersDisabled && "opacity-60",
+                    )}
+                  >
+                    <Label className="text-xs font-semibold text-foreground">
+                      리뷰어 미지정 PR
+                    </Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={draft.thresholds.reviewerUnassignedPrDays}
+                      disabled={prFiltersDisabled}
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          thresholds: {
+                            ...current.thresholds,
+                            reviewerUnassignedPrDays: toPositiveInt(
+                              event.target.value,
+                              DEFAULT_THRESHOLD_VALUES.reviewerUnassignedPrDays,
+                            ),
+                          },
+                        }))
+                      }
+                      placeholder="리뷰어 미지정"
+                    />
+                  </div>
+                  <div
+                    className={cn(
+                      "min-w-0 space-y-2",
+                      prFiltersDisabled && "opacity-60",
+                    )}
+                  >
+                    <Label className="text-xs font-semibold text-foreground">
+                      리뷰 정체 PR
+                    </Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={draft.thresholds.reviewStalledPrDays}
+                      disabled={prFiltersDisabled}
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          thresholds: {
+                            ...current.thresholds,
+                            reviewStalledPrDays: toPositiveInt(
+                              event.target.value,
+                              DEFAULT_THRESHOLD_VALUES.reviewStalledPrDays,
+                            ),
+                          },
+                        }))
+                      }
+                      placeholder="리뷰 정체"
+                    />
+                  </div>
+                  <div
+                    className={cn(
+                      "min-w-0 space-y-2",
+                      prFiltersDisabled && "opacity-60",
+                    )}
+                  >
+                    <Label className="text-xs font-semibold text-foreground">
+                      머지 지연 PR
+                    </Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={draft.thresholds.mergeDelayedPrDays}
+                      disabled={prFiltersDisabled}
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          thresholds: {
+                            ...current.thresholds,
+                            mergeDelayedPrDays: toPositiveInt(
+                              event.target.value,
+                              DEFAULT_THRESHOLD_VALUES.mergeDelayedPrDays,
+                            ),
+                          },
+                        }))
+                      }
+                      placeholder="머지 지연"
+                    />
+                  </div>
+                  <div
+                    className={cn(
+                      "min-w-0 space-y-2",
+                      prFiltersDisabled && "opacity-60",
+                    )}
+                  >
+                    <Label className="text-xs font-semibold text-foreground">
+                      응답 없는 리뷰 요청
+                    </Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={draft.thresholds.reviewRequestDays}
+                      disabled={prFiltersDisabled}
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          thresholds: {
+                            ...current.thresholds,
+                            reviewRequestDays: toPositiveInt(
+                              event.target.value,
+                              DEFAULT_THRESHOLD_VALUES.reviewRequestDays,
+                            ),
+                          },
+                        }))
+                      }
+                      placeholder="리뷰 무응답"
+                    />
+                  </div>
+                  <div className="min-w-0 space-y-2">
+                    <Label className="text-xs font-semibold text-foreground">
+                      응답 없는 멘션
+                    </Label>
+                    <Input
+                      type="number"
+                      min={5}
+                      value={draft.thresholds.unansweredMentionDays}
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          thresholds: {
+                            ...current.thresholds,
+                            unansweredMentionDays: Math.max(
+                              5,
+                              toPositiveInt(
+                                event.target.value,
+                                DEFAULT_THRESHOLD_VALUES.unansweredMentionDays,
+                              ),
+                            ),
+                          },
+                        }))
+                      }
+                      placeholder="멘션 무응답"
+                    />
+                  </div>
                 </div>
               </div>
             </div>

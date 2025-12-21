@@ -35,11 +35,16 @@ describe("parseActivityListParams", () => {
     const params = new URLSearchParams();
     params.set("backlogIssueDays", "30");
     params.set("reviewRequestDays", "0");
+    params.set("reviewerUnassignedPrDays", "3");
+    params.set("reviewStalledPrDays", "0");
+    params.set("mergeDelayedPrDays", "4");
 
     const result = parseActivityListParams(params);
 
     expect(result.thresholds).toEqual({
       backlogIssueDays: 30,
+      reviewerUnassignedPrDays: 3,
+      mergeDelayedPrDays: 4,
     });
   });
 

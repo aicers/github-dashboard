@@ -276,7 +276,7 @@ export function buildFollowUpSummaries(
     {
       id: "reviewer-unassigned-prs",
       title: "리뷰어 미지정 PR",
-      description: "2 업무일 이상 리뷰어 미지정 PR",
+      description: "기준일 이상 리뷰어 미지정 PR",
       count: reviewerUnassignedPrs.length,
       totalMetric: sumMetric(reviewerUnassignedPrs, reviewerUnassignedMetric),
       highlights: [
@@ -289,7 +289,7 @@ export function buildFollowUpSummaries(
     {
       id: "review-stalled-prs",
       title: "리뷰 정체 PR",
-      description: "2 업무일 이상 리뷰 정체 PR",
+      description: "기준일 이상 리뷰 정체 PR",
       count: reviewStalledPrs.length,
       totalMetric: sumMetric(reviewStalledPrs, reviewStalledMetric),
       highlights: [
@@ -300,7 +300,7 @@ export function buildFollowUpSummaries(
     {
       id: "merge-delayed-prs",
       title: "머지 지연 PR",
-      description: "2 업무일 이상 머지 지연 PR",
+      description: "기준일 이상 머지 지연 PR",
       count: mergeDelayedPrs.length,
       totalMetric: sumMetric(mergeDelayedPrs, mergeDelayedMetric),
       highlights: [

@@ -54,6 +54,9 @@ export const DEFAULT_THRESHOLD_VALUES: Required<ActivityThresholds> = {
   reviewRequestDays: 5,
   backlogIssueDays: 40,
   stalledIssueDays: 20,
+  reviewerUnassignedPrDays: 2,
+  reviewStalledPrDays: 2,
+  mergeDelayedPrDays: 2,
 };
 
 export function buildFilterState(
