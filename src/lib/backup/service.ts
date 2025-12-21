@@ -37,6 +37,7 @@ type BackupSchedulerState = {
   isScheduling: boolean;
   isWaiting: boolean;
   isRunning: boolean;
+  waitStartedAt: number | null;
 };
 
 type BackupScheduleConfig = {
@@ -161,6 +162,8 @@ type BackupMetadataFilePayload = {
 
 const DEFAULT_BACKUP_HOUR = 2;
 const BACKUP_METADATA_SUFFIX = ".meta.json";
+const BACKUP_WAIT_TIMEOUT_MS = 15 * 60 * 1000;
+const BACKUP_EXECUTION_TIMEOUT_MS = 30 * 60 * 1000;
 
 function getSchedulerState(): BackupSchedulerState {
   const globalWithScheduler = globalThis as SchedulerGlobal;
@@ -172,6 +175,7 @@ function getSchedulerState(): BackupSchedulerState {
       isScheduling: false,
       isWaiting: false,
       isRunning: false,
+      waitStartedAt: null,
     };
   }
 
@@ -517,29 +521,80 @@ async function discoverFilesystemBackups(options: {
 function runChildProcess(
   command: string,
   args: string[],
-  options: { cwd?: string } = {},
+  options: { cwd?: string; timeoutMs?: number } = {},
 ) {
   return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    let timeoutHandle: NodeJS.Timeout | null = null;
+    let killHandle: NodeJS.Timeout | null = null;
     const child = spawn(command, args, {
       stdio: "inherit",
       cwd: options.cwd ?? process.cwd(),
     });
 
+    function finalize(callback: () => void) {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+        timeoutHandle = null;
+      }
+      if (killHandle) {
+        clearTimeout(killHandle);
+        killHandle = null;
+      }
+      callback();
+    }
+
     child.on("error", (error) => {
-      reject(error);
+      finalize(() => reject(error));
     });
 
     child.on("close", (code) => {
       if (code === 0) {
-        resolve();
+        finalize(() => resolve());
       } else {
-        reject(new Error(`${command} exited with code ${code}`));
+        finalize(() =>
+          reject(new Error(`${command} exited with code ${code}`)),
+        );
       }
     });
+
+    const timeoutMs = Number(options.timeoutMs);
+    if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+      timeoutHandle = setTimeout(() => {
+        const timeoutLabel =
+          timeoutMs < 1000
+            ? `${Math.ceil(timeoutMs)}ms`
+            : `${Math.ceil(timeoutMs / 1000)}s`;
+        finalize(() =>
+          reject(new Error(`${command} timed out after ${timeoutLabel}`)),
+        );
+        try {
+          child.kill("SIGTERM");
+        } catch {
+          // ignore
+        }
+        killHandle = setTimeout(() => {
+          try {
+            child.kill("SIGKILL");
+          } catch {
+            // ignore
+          }
+        }, 100);
+        killHandle.unref?.();
+      }, timeoutMs);
+      timeoutHandle.unref?.();
+    }
   });
 }
 
-async function executeBackup(filePath: string) {
+async function executeBackup(
+  filePath: string,
+  options?: { timeoutMs?: number },
+) {
   if (!env.DATABASE_URL) {
     throw new Error(
       "DATABASE_URL is not configured. Cannot execute database backup.",
@@ -555,7 +610,7 @@ async function executeBackup(filePath: string) {
     env.DATABASE_URL,
   ];
 
-  await runChildProcess("pg_dump", args);
+  await runChildProcess("pg_dump", args, { timeoutMs: options?.timeoutMs });
 }
 
 async function executeRestore(filePath: string) {
@@ -732,7 +787,18 @@ async function updateLastStatus(params: {
 export async function runDatabaseBackup(options: {
   trigger: DbBackupTrigger;
   actorId?: string | null;
+  waitTimeoutMs?: number;
+  executionTimeoutMs?: number;
 }) {
+  const waitTimeoutMs =
+    typeof options.waitTimeoutMs === "number" && options.waitTimeoutMs > 0
+      ? options.waitTimeoutMs
+      : BACKUP_WAIT_TIMEOUT_MS;
+  const executionTimeoutMs =
+    typeof options.executionTimeoutMs === "number" &&
+    options.executionTimeoutMs > 0
+      ? options.executionTimeoutMs
+      : BACKUP_EXECUTION_TIMEOUT_MS;
   return withTrackedRun(async () => {
     await ensureSchema();
 
@@ -740,9 +806,33 @@ export async function runDatabaseBackup(options: {
     const retentionCount = env.DB_BACKUP_RETENTION;
 
     const scheduler = getSchedulerState();
+    scheduler.waitStartedAt = Date.now();
     const startedAt = new Date().toISOString();
     scheduler.isWaiting = true;
     scheduler.isRunning = false;
+    let timedOut = false;
+    let timeoutMessage = "";
+    const timeoutHandle = setTimeout(() => {
+      if (!scheduler.isWaiting) {
+        return;
+      }
+      timedOut = true;
+      scheduler.isWaiting = false;
+      scheduler.isRunning = false;
+      scheduler.waitStartedAt = null;
+      const completedAt = new Date().toISOString();
+      const timeoutLabel =
+        waitTimeoutMs < 60000
+          ? `${Math.ceil(waitTimeoutMs / 1000)} seconds`
+          : `${Math.round(waitTimeoutMs / 60000)} minutes`;
+      timeoutMessage = `Database backup timed out waiting ${timeoutLabel} for other jobs.`;
+      void updateLastStatus({
+        status: "failed",
+        completedAt,
+        error: timeoutMessage,
+      });
+    }, waitTimeoutMs);
+    timeoutHandle.unref?.();
     await updateLastStatus({
       status: "waiting",
       startedAt,
@@ -762,6 +852,7 @@ export async function runDatabaseBackup(options: {
         error,
       );
       scheduler.isWaiting = false;
+      scheduler.waitStartedAt = null;
       await updateLastStatus({
         status: "failed",
         completedAt: new Date().toISOString(),
@@ -788,14 +879,25 @@ export async function runDatabaseBackup(options: {
 
     try {
       await withJobLock("backup", async () => {
+        if (timeoutHandle) {
+          clearTimeout(timeoutHandle);
+        }
+        if (timedOut) {
+          throw new Error(
+            timeoutMessage ||
+              "Database backup timed out while waiting for other jobs.",
+          );
+        }
+
         scheduler.isWaiting = false;
         scheduler.isRunning = true;
+        scheduler.waitStartedAt = null;
         await updateLastStatus({
           status: "running",
           startedAt,
           error: null,
         });
-        await executeBackup(filePath);
+        await executeBackup(filePath, { timeoutMs: executionTimeoutMs });
       });
 
       const fileInfo = await stat(filePath).catch(() => null);
@@ -847,8 +949,12 @@ export async function runDatabaseBackup(options: {
 
       throw error;
     } finally {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
       scheduler.isWaiting = false;
       scheduler.isRunning = false;
+      scheduler.waitStartedAt = null;
       await refreshScheduler();
     }
   });
