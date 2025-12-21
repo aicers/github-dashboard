@@ -35,6 +35,8 @@ type BackupSchedulerState = {
   nextRunAt: string | null;
   currentRun: Promise<void> | null;
   isScheduling: boolean;
+  isWaiting: boolean;
+  isRunning: boolean;
 };
 
 type BackupScheduleConfig = {
@@ -168,6 +170,8 @@ function getSchedulerState(): BackupSchedulerState {
       nextRunAt: null,
       currentRun: null,
       isScheduling: false,
+      isWaiting: false,
+      isRunning: false,
     };
   }
 
@@ -710,11 +714,18 @@ async function updateLastStatus(params: {
   completedAt?: string | null;
   error?: string | null;
 }) {
-  await updateSyncConfig({
+  const updates: Parameters<typeof updateSyncConfig>[0] = {
     backupLastStatus: params.status,
-    backupLastStartedAt: params.startedAt ?? undefined,
-    backupLastCompletedAt: params.completedAt ?? undefined,
     backupLastError: params.error ?? null,
+  };
+  if (params.startedAt !== undefined) {
+    updates.backupLastStartedAt = params.startedAt;
+  }
+  if (params.completedAt !== undefined) {
+    updates.backupLastCompletedAt = params.completedAt;
+  }
+  await updateSyncConfig({
+    ...updates,
   });
 }
 
@@ -728,8 +739,16 @@ export async function runDatabaseBackup(options: {
     const directory = env.DB_BACKUP_DIRECTORY;
     const retentionCount = env.DB_BACKUP_RETENTION;
 
+    const scheduler = getSchedulerState();
     const startedAt = new Date().toISOString();
-    await updateLastStatus({ status: "running", startedAt, error: null });
+    scheduler.isWaiting = true;
+    scheduler.isRunning = false;
+    await updateLastStatus({
+      status: "waiting",
+      startedAt,
+      completedAt: null,
+      error: null,
+    });
 
     let backupRecord: DbBackupRecord | null = null;
     const filename = buildBackupFilename();
@@ -742,6 +761,7 @@ export async function runDatabaseBackup(options: {
         `[backup] Backup directory check failed (${directory})`,
         error,
       );
+      scheduler.isWaiting = false;
       await updateLastStatus({
         status: "failed",
         completedAt: new Date().toISOString(),
@@ -768,6 +788,13 @@ export async function runDatabaseBackup(options: {
 
     try {
       await withJobLock("backup", async () => {
+        scheduler.isWaiting = false;
+        scheduler.isRunning = true;
+        await updateLastStatus({
+          status: "running",
+          startedAt,
+          error: null,
+        });
         await executeBackup(filePath);
       });
 
@@ -820,6 +847,8 @@ export async function runDatabaseBackup(options: {
 
       throw error;
     } finally {
+      scheduler.isWaiting = false;
+      scheduler.isRunning = false;
       await refreshScheduler();
     }
   });
