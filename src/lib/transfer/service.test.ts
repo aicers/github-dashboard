@@ -9,6 +9,7 @@ import {
 import { realignRepositoryMismatches } from "@/lib/github/repository-realignment";
 import { withJobLock } from "@/lib/jobs/lock";
 import {
+  cleanupTransferSync,
   getTransferSyncRuntimeInfo,
   runTransferSync,
 } from "@/lib/transfer/service";
@@ -130,5 +131,44 @@ describe("runTransferSync", () => {
 
     const runtime = await getTransferSyncRuntimeInfo();
     expect(runtime.isWaiting).toBe(false);
+  });
+
+  it("cleans up stuck transfer sync and clears runtime flags", async () => {
+    vi.mocked(getSyncConfig).mockResolvedValueOnce({
+      transfer_sync_hour_local: 4,
+      transfer_sync_minute_local: 0,
+      transfer_sync_timezone: "UTC",
+      timezone: "UTC",
+      transfer_sync_last_started_at: "2024-04-01T00:00:00.000Z",
+      transfer_sync_last_completed_at: null,
+      transfer_sync_last_status: "running",
+      transfer_sync_last_error: null,
+    });
+
+    const scheduler = (
+      globalThis as {
+        __githubDashboardTransferScheduler?: {
+          isWaiting: boolean;
+          waitStartedAt: number | null;
+          currentRun: Promise<void> | null;
+        };
+      }
+    ).__githubDashboardTransferScheduler;
+    if (scheduler) {
+      scheduler.isWaiting = true;
+      scheduler.waitStartedAt = Date.now();
+      scheduler.currentRun = Promise.resolve();
+    }
+
+    await cleanupTransferSync({ actorId: "admin-user" });
+    const runtime = await getTransferSyncRuntimeInfo();
+    expect(runtime.isWaiting).toBe(false);
+    expect(runtime.isRunning).toBe(false);
+
+    const failedCall = vi
+      .mocked(updateSyncConfig)
+      .mock.calls.map(([payload]) => payload)
+      .find((call) => call.transferSyncLastStatus === "failed");
+    expect(failedCall?.transferSyncLastError).toContain("marked as failed");
   });
 });

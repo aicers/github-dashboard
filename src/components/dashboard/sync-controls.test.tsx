@@ -1413,6 +1413,49 @@ describe("SyncControls", () => {
     expect(runButton).toBeDisabled();
   });
 
+  it("allows admins to clean up stuck transfer sync", async () => {
+    const user = userEvent.setup();
+    mockFetchJsonOnce({ success: true, message: "Transfer sync reset." });
+    const confirmMock = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(
+      <SyncControls
+        status={buildStatus({
+          transferSync: {
+            schedule: {
+              hourLocal: 3,
+              minuteLocal: 0,
+              timezone: "UTC",
+              nextRunAt: null,
+              lastStartedAt: "2024-04-01T00:00:00.000Z",
+              lastCompletedAt: null,
+              lastStatus: "running",
+              lastError: null,
+            },
+            isRunning: false,
+            isWaiting: true,
+          },
+        })}
+        isAdmin
+        timeZone="UTC"
+        dateTimeFormat="iso-24h"
+        view="overview"
+        currentPathname="/dashboard/sync"
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Transfer 동기화 정리" }),
+    );
+
+    await waitFor(() =>
+      expect(hasRequest("/api/sync/transfer/cleanup", "POST")).toBe(true),
+    );
+
+    expect(routerRefreshMock).toHaveBeenCalled();
+    confirmMock.mockRestore();
+  });
+
   it("runs transfer sync immediately when admins trigger it manually", async () => {
     const user = userEvent.setup();
     const confirmMock = vi
