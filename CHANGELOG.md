@@ -13,6 +13,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- Changed the default thresholds for "응답 없는 리뷰 요청" and "응답 없는 멘션" from
+  5 days to 2 days in Activity/Follow-ups.
 - Replaced the Activity/Follow-ups PR "주의" grouping with three explicit
   follow-ups: "리뷰어 미지정 PR", "리뷰 정체 PR", and "머지 지연 PR".
 - Updated PR follow-up thresholds to use a configurable "업무일" calculation

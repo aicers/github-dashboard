@@ -345,6 +345,39 @@ describe("follow-up overview summaries (db)", () => {
       await upsertReviewRequest(request);
     }
 
+    // Ensure review-stalled PRs aren't also counted as stuck review requests:
+    // reviewers interacted after the request, but have been idle long enough since.
+    await upsertComment({
+      id: "comment-idle-erin",
+      issueId: null,
+      pullRequestId: idlePrOne.id,
+      reviewId: null,
+      authorId: erin.id,
+      createdAt: "2024-02-15T10:00:00.000Z",
+      updatedAt: "2024-02-15T10:00:00.000Z",
+      raw: {
+        id: "comment-idle-erin",
+        pullRequestId: idlePrOne.id,
+        url: "https://github.com/acme/main/pull/201#issuecomment-idle-1",
+        body: "I'll get back to this.",
+      },
+    });
+    await upsertComment({
+      id: "comment-idle-frank",
+      issueId: null,
+      pullRequestId: idlePrTwo.id,
+      reviewId: null,
+      authorId: frank.id,
+      createdAt: "2024-02-15T10:30:00.000Z",
+      updatedAt: "2024-02-15T10:30:00.000Z",
+      raw: {
+        id: "comment-idle-frank",
+        pullRequestId: idlePrTwo.id,
+        url: "https://github.com/acme/main/pull/202#issuecomment-idle-2",
+        body: "Reviewing shortly.",
+      },
+    });
+
     const approvalOne = buildReview({
       id: "review-approved-stale-1",
       pullRequestId: stalePrOne.id,

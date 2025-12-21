@@ -66,8 +66,8 @@ const DEFAULT_PER_PAGE = 25;
 const MAX_PER_PAGE = 100;
 
 const DEFAULT_THRESHOLDS: Required<ActivityThresholds> = {
-  unansweredMentionDays: 5,
-  reviewRequestDays: 5,
+  unansweredMentionDays: 2,
+  reviewRequestDays: 2,
   backlogIssueDays: 40,
   stalledIssueDays: 20,
   reviewerUnassignedPrDays: 2,
@@ -2109,9 +2109,10 @@ export async function getActivityItems(
     ...params.thresholds,
   };
   thresholds.unansweredMentionDays = Math.max(
-    DEFAULT_THRESHOLDS.unansweredMentionDays,
+    1,
     thresholds.unansweredMentionDays,
   );
+  thresholds.reviewRequestDays = Math.max(1, thresholds.reviewRequestDays);
   thresholds.reviewerUnassignedPrDays = Math.max(
     1,
     thresholds.reviewerUnassignedPrDays,

@@ -4295,10 +4295,10 @@ export function AttentionView({
       id: "stuck-review-requests",
       menuLabel: "응답 없는 리뷰 요청",
       menuDescription:
-        "5일 이상 (리뷰 제출·댓글·리액션 모두 없는) 응답 없는 리뷰 요청",
-      title: "5일 이상 (주말과 공휴일 제외) 응답이 없는 리뷰 요청",
+        "2일 이상 (리뷰 제출·댓글·리액션 모두 없는) 응답 없는 리뷰 요청",
+      title: "2일 이상 (주말과 공휴일 제외) 응답이 없는 리뷰 요청",
       description:
-        "주말과 공휴일을 제외하고 5일 이상 리뷰 제출, 댓글, 리액션 중 어떤 응답도 없었던 리뷰 요청을 모았습니다.",
+        "주말과 공휴일을 제외하고 2일 이상 리뷰 제출, 댓글, 리액션 중 어떤 응답도 없었던 리뷰 요청을 모았습니다.",
       content: (
         <ReviewRequestList
           items={insights.stuckReviewRequests}
@@ -4322,10 +4322,10 @@ export function AttentionView({
       id: "unanswered-mentions",
       menuLabel: "응답 없는 멘션",
       menuDescription:
-        "5일 이상 (리뷰 제출·댓글·리액션 모두 없는) 응답 없는 멘션",
-      title: "5일 이상 (주말과 공휴일 제외) 응답이 없는 멘션",
+        "2일 이상 (리뷰 제출·댓글·리액션 모두 없는) 응답 없는 멘션",
+      title: "2일 이상 (주말과 공휴일 제외) 응답이 없는 멘션",
       description:
-        "주말과 공휴일을 제외하고 5일 넘게 리뷰 제출, 댓글, 리액션 중 어떤 응답도 없었던 멘션을 모았습니다.",
+        "주말과 공휴일을 제외하고 2일 넘게 리뷰 제출, 댓글, 리액션 중 어떤 응답도 없었던 멘션을 모았습니다.",
       content: (
         <MentionList
           items={insights.unansweredMentions}

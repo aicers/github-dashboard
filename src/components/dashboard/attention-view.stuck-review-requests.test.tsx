@@ -185,7 +185,7 @@ describe("AttentionView stuck review requests", () => {
 
     expect(
       screen.getByText(
-        "5일 이상 (리뷰 제출·댓글·리액션 모두 없는) 응답 없는 리뷰 요청",
+        "2일 이상 (리뷰 제출·댓글·리액션 모두 없는) 응답 없는 리뷰 요청",
       ),
     ).toBeInTheDocument();
 
