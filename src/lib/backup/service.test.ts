@@ -384,6 +384,57 @@ describe("runDatabaseBackup", () => {
     expect(peakLocks).toBe(1);
     expect(withJobLockMock).toHaveBeenCalledTimes(2);
   });
+
+  it("fails when waiting too long for the backup job lock", async () => {
+    ensureSchemaMock.mockResolvedValue(undefined);
+    accessMock.mockResolvedValue(undefined);
+    createBackupRecordMock.mockResolvedValue({ id: 77 });
+    listBackupsMock.mockResolvedValue([]);
+
+    withJobLockMock.mockImplementation(async (_name: string, handler) => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 30);
+      });
+      return await handler();
+    });
+
+    const { runDatabaseBackup } = await loadService();
+    await expect(
+      runDatabaseBackup({ trigger: "manual", waitTimeoutMs: 10 }),
+    ).rejects.toThrow(/timed out/i);
+
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(updateSyncConfigMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        backupLastStatus: "failed",
+      }),
+    );
+  });
+
+  it("fails when pg_dump exceeds the execution timeout", async () => {
+    ensureSchemaMock.mockResolvedValue(undefined);
+    accessMock.mockResolvedValue(undefined);
+    createBackupRecordMock.mockResolvedValue({ id: 88 });
+    listBackupsMock.mockResolvedValue([]);
+
+    spawnMock.mockImplementationOnce(() => {
+      const stub = createChildProcessStub();
+      childProcessStubs.push(stub);
+      return stub as unknown as NodeJS.Process;
+    });
+
+    const { runDatabaseBackup } = await loadService();
+    await expect(
+      runDatabaseBackup({ trigger: "manual", executionTimeoutMs: 10 }),
+    ).rejects.toThrow(/pg_dump timed out/i);
+
+    expect(childProcessStubs[0]?.kill).toHaveBeenCalled();
+    expect(updateSyncConfigMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        backupLastStatus: "failed",
+      }),
+    );
+  });
 });
 
 describe("getBackupRuntimeInfo", () => {
