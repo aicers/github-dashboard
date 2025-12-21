@@ -94,6 +94,16 @@ describe("AttentionView reviewer-unassigned pull requests", () => {
 
     const alice = buildUser("user-alice", "Alice", "alice");
     const bob = buildUser("user-bob", "Bob", "bob");
+    const maintainerAlpha = buildUser(
+      "user-maintainer-alpha",
+      "Maintainer Alpha",
+      "maintainer-alpha",
+    );
+    const maintainerBeta = buildUser(
+      "user-maintainer-beta",
+      "Maintainer Beta",
+      "maintainer-beta",
+    );
 
     const repoAlpha = buildRepository(
       "repo-alpha",
@@ -148,6 +158,10 @@ describe("AttentionView reviewer-unassigned pull requests", () => {
       backlogIssues: [],
       stalledInProgressIssues: [],
       unansweredMentions: [],
+      repositoryMaintainersByRepository: {
+        [repoAlpha.id]: [maintainerAlpha],
+        [repoBeta.id]: [maintainerBeta],
+      },
     } satisfies AttentionInsights;
 
     render(<AttentionView insights={insights} />);
@@ -184,8 +198,23 @@ describe("AttentionView reviewer-unassigned pull requests", () => {
     expect(within(secondItem).getByText("Idle -")).toBeInTheDocument();
 
     expect(
+      screen.getByText("저장소 책임자 기준 경과일수 합계 순위"),
+    ).toBeInTheDocument();
+    expect(
       screen.getByText("작성자 기준 경과일수 합계 순위"),
     ).toBeInTheDocument();
+
+    const maintainerFilter = screen.getByLabelText("저장소 책임자 필터");
+    await user.selectOptions(maintainerFilter, "user-maintainer-alpha");
+
+    expect(
+      screen.queryByText("Refactor dashboard widgets"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Improve notification batching"),
+    ).toBeInTheDocument();
+
+    await user.selectOptions(maintainerFilter, "all");
 
     const authorFilter = screen.getByLabelText("작성자 필터");
     await user.selectOptions(authorFilter, "user-bob");
@@ -220,6 +249,7 @@ describe("AttentionView reviewer-unassigned pull requests", () => {
       backlogIssues: [],
       stalledInProgressIssues: [],
       unansweredMentions: [],
+      repositoryMaintainersByRepository: {},
     } satisfies AttentionInsights;
 
     render(<AttentionView insights={emptyInsights} />);
@@ -233,11 +263,18 @@ describe("AttentionView reviewer-unassigned pull requests", () => {
       screen.getByText("현재 조건을 만족하는 PR이 없습니다."),
     ).toBeInTheDocument();
     expect(
+      screen.getByText("저장소 책임자 기준 경과일수 합계 순위"),
+    ).toBeInTheDocument();
+    expect(
       screen.getByText("작성자 기준 경과일수 합계 순위"),
     ).toBeInTheDocument();
     expect(
+      screen.getAllByText("저장소 책임자 데이터가 없습니다.").length,
+    ).toBeGreaterThan(0);
+    expect(
       screen.getAllByText("작성자 데이터가 없습니다.").length,
     ).toBeGreaterThan(0);
+    expect(screen.getByLabelText("저장소 책임자 필터")).toBeInTheDocument();
     expect(screen.getByLabelText("작성자 필터")).toBeInTheDocument();
     expect(screen.queryByLabelText("리뷰어 필터")).not.toBeInTheDocument();
   });
