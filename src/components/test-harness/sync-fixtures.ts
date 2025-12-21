@@ -172,6 +172,7 @@ export function buildSyncStatusFixture(): SyncStatus {
         lastError: null,
       },
       isRunning: false,
+      isWaiting: false,
     },
   };
 }
