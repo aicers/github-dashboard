@@ -419,6 +419,35 @@ export async function runTransferSync(options?: {
   });
 }
 
+export async function cleanupTransferSync(options?: { actorId?: string }) {
+  await ensureSchema();
+  const scheduler = getSchedulerState();
+  scheduler.isWaiting = false;
+  scheduler.waitStartedAt = null;
+  scheduler.currentRun = null;
+
+  const config = await getSyncConfig();
+  const status = config?.transfer_sync_last_status ?? "idle";
+  const completedAt = new Date().toISOString();
+  const message =
+    options?.actorId === undefined
+      ? "Transfer sync marked as failed by cleanup."
+      : `Transfer sync marked as failed by ${options.actorId}.`;
+
+  await updateSyncConfig({
+    transferSyncLastCompletedAt: completedAt,
+    transferSyncLastStatus: "failed",
+    transferSyncLastError:
+      status === "failed"
+        ? (config?.transfer_sync_last_error ?? null)
+        : message,
+  });
+
+  await refreshScheduler();
+
+  return { status, completedAt, message };
+}
+
 export async function updateTransferSyncSchedule(params: {
   hourLocal: number;
   minuteLocal: number;
