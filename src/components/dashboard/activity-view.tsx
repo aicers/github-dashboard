@@ -2172,6 +2172,14 @@ export function ActivityView({
     [augmentedUsers],
   );
 
+  const userDirectory = useMemo(
+    () =>
+      Object.fromEntries(
+        augmentedUsers.map((user) => [user.id, user] as const),
+      ),
+    [augmentedUsers],
+  );
+
   const allowedUserIds = useMemo(
     () => new Set(augmentedUsers.map((user) => user.id)),
     [augmentedUsers],
@@ -6016,6 +6024,7 @@ export function ActivityView({
                           iconInfo={iconInfo}
                           badges={badges}
                           badgeExtras={badgeExtras}
+                          userDirectory={userDirectory}
                           timezone={activeTimezone}
                           dateTimeFormat={activeDateTimeFormat}
                           onClose={handleCloseItem}

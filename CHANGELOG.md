@@ -6,6 +6,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- Displayed author, reviewer, assignee, and repository maintainer in the
+  Activity/Follow-ups overlay panel header.
+
 ### Changed
 
 - Replaced the Activity/Follow-ups PR "주의" grouping with three explicit
@@ -18,14 +23,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- Prevented list misalignment for long titles.
 - Prevented Transfer sync and DB backup schedules from getting stuck showing
   "진행 중" while waiting for other jobs by tracking a distinct waiting state.
 - Added timeouts and admin cleanup actions for stuck Transfer sync and DB backup
   runs.
 - Fixed inverted "최근 실행" date ranges by clearing the last completed timestamp
   when a new run starts.
-- Fixed cases where a PR with historical reviewers could appear in "리뷰어 미지정
-  PR" when no pending review request was present.
 
 ## [0.1.0] - 2025-12-21
 
