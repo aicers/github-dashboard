@@ -437,6 +437,30 @@ describe("runDatabaseBackup", () => {
   });
 });
 
+describe("cleanupDatabaseBackup", () => {
+  it("marks the last backup as failed and clears scheduler runtime flags", async () => {
+    ensureSchemaMock.mockResolvedValue(undefined);
+    listBackupsMock.mockResolvedValue([]);
+    getSyncConfigMock.mockResolvedValue({
+      backup_enabled: true,
+      backup_hour_local: 2,
+      backup_timezone: "UTC",
+      timezone: "UTC",
+      backup_last_status: "running",
+      backup_last_error: null,
+    });
+
+    const { cleanupDatabaseBackup } = await loadService();
+    await cleanupDatabaseBackup({ actorId: "admin-user" });
+
+    expect(updateSyncConfigMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        backupLastStatus: "failed",
+      }),
+    );
+  });
+});
+
 describe("getBackupRuntimeInfo", () => {
   it("includes filesystem backups that are not recorded in the database", async () => {
     ensureSchemaMock.mockResolvedValue(undefined);
@@ -627,6 +651,29 @@ describe("restoreDatabaseBackup", () => {
 });
 
 describe("refreshScheduler", () => {
+  it("marks stale running backups as failed during initialization", async () => {
+    ensureSchemaMock.mockResolvedValue(undefined);
+    listBackupsMock.mockResolvedValue([]);
+    getSyncConfigMock.mockResolvedValue({
+      backup_enabled: true,
+      backup_hour_local: 2,
+      backup_timezone: "UTC",
+      timezone: "UTC",
+      backup_last_status: "running",
+      backup_last_started_at: "2024-01-04T00:00:00.000Z",
+      backup_last_error: null,
+    });
+
+    const { initializeBackupScheduler } = await loadService();
+    await initializeBackupScheduler();
+
+    expect(updateSyncConfigMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        backupLastStatus: "failed",
+      }),
+    );
+  });
+
   it("clears scheduled timer when backups disabled", async () => {
     ensureSchemaMock.mockResolvedValue(undefined);
     listBackupsMock.mockResolvedValue([]);

@@ -453,6 +453,7 @@ export function SyncControls({
     "standard" | "force"
   >("standard");
   const [isCleaningTransfer, setIsCleaningTransfer] = useState(false);
+  const [isCleaningBackup, setIsCleaningBackup] = useState(false);
   const activityCacheFilterCounts = activityCacheSummary
     ? parseFilterCounts(activityCacheSummary.filterOptions.metadata)
     : null;
@@ -1045,6 +1046,42 @@ export function SyncControls({
       );
     } finally {
       setIsCleaningTransfer(false);
+    }
+  }
+
+  async function handleBackupCleanup() {
+    if (!canManageSync) {
+      setFeedback(ADMIN_ONLY_MESSAGE);
+      return;
+    }
+
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm("멈춰 있는 DB 백업을 실패 처리하고 상태를 초기화할까요?")
+    ) {
+      return;
+    }
+
+    setIsCleaningBackup(true);
+    try {
+      const response = await fetch("/api/sync/backup/cleanup", {
+        method: "POST",
+      });
+      const data = await parseApiResponse<unknown>(response);
+      if (!data.success) {
+        throw new Error(data.message ?? "DB 백업 정리에 실패했습니다.");
+      }
+
+      setFeedback(data.message ?? "멈춰 있는 DB 백업을 실패 처리했습니다.");
+      router.refresh();
+    } catch (error) {
+      setFeedback(
+        error instanceof Error
+          ? error.message
+          : "DB 백업 정리 중 오류가 발생했습니다.",
+      );
+    } finally {
+      setIsCleaningBackup(false);
     }
   }
 
@@ -1758,8 +1795,8 @@ export function SyncControls({
               <CardTitle>멈춰 있는 동기화 정리</CardTitle>
               <CardDescription>
                 중단된 백필이나 자동 동기화가 계속 &ldquo;진행 중&rdquo;으로
-                보일 때 실패 처리하여 상태를 정리합니다. Transfer 동기화도 별도
-                버튼으로 정리할 수 있습니다.
+                보일 때 실패 처리하여 상태를 정리합니다. Transfer 동기화나 DB
+                백업도 별도 버튼으로 정리할 수 있습니다.
               </CardDescription>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
@@ -1784,6 +1821,14 @@ export function SyncControls({
                 title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
               >
                 {isCleaningTransfer ? "정리 중..." : "Transfer 동기화 정리"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleBackupCleanup}
+                disabled={isCleaningBackup || !canManageSync}
+                title={!canManageSync ? ADMIN_ONLY_MESSAGE : undefined}
+              >
+                {isCleaningBackup ? "정리 중..." : "DB 백업 정리"}
               </Button>
             </CardFooter>
           </Card>
