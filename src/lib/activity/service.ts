@@ -1328,6 +1328,19 @@ function buildQueryFilters(
         }
         case "review_requests_pending":
           ids = Array.from(attentionSets.reviewRequests);
+          if (selectionSet && selectionSet.size > 0) {
+            ids = ids.filter((pullRequestId) => {
+              const requests =
+                attentionSets.reviewRequestDetails.get(pullRequestId) ?? [];
+              return requests.some((request) => {
+                const reviewerId = request.reviewer?.id;
+                return reviewerId ? selectionSet.has(reviewerId) : false;
+              });
+            });
+            if (ids.length === 0) {
+              return null;
+            }
+          }
           constraints.push(`items.item_type = 'pull_request'`);
           break;
         case "pr_reviewer_unassigned": {
@@ -1366,13 +1379,8 @@ function buildQueryFilters(
 
       if (selectionSet && selectionSet.size > 0) {
         switch (filter) {
-          case "review_requests_pending": {
-            const reviewerExpr = withPeopleConstraint(buildReviewerExpr);
-            if (reviewerExpr) {
-              constraints.push(reviewerExpr);
-            }
+          case "review_requests_pending":
             break;
-          }
           case "pr_reviewer_unassigned": {
             const authorExpr = withPeopleConstraint(buildAuthorExpr);
             const maintainerExpr = withPeopleConstraint(buildMaintainerExpr);
