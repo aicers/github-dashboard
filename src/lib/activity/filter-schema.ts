@@ -48,19 +48,28 @@ const optionalPositiveIntegerField = z
     return value;
   });
 
-const unansweredMentionThresholdField =
-  optionalPositiveIntegerField.superRefine((value, ctx) => {
-    if (typeof value === "number" && value < 5) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Unanswered mention threshold must be at least 5 days.",
-      });
+function migrateAttention(values: string[] | undefined) {
+  if (!values?.length) {
+    return undefined;
+  }
+
+  const migrated = values.flatMap((value) => {
+    if (value === "pr_inactive") {
+      return ["pr_review_stalled"];
     }
+    if (value === "pr_open_too_long") {
+      return ["pr_review_stalled"];
+    }
+    return [value];
   });
+
+  const normalized = normalizeStringArray(migrated);
+  return normalized?.length ? normalized : undefined;
+}
 
 const thresholdsSchema = z
   .object({
-    unansweredMentionDays: unansweredMentionThresholdField,
+    unansweredMentionDays: optionalPositiveIntegerField,
     reviewRequestDays: optionalPositiveIntegerField,
     backlogIssueDays: optionalPositiveIntegerField,
     stalledIssueDays: optionalPositiveIntegerField,
@@ -168,7 +177,7 @@ export const activityFilterPayloadSchema: z.ZodType<ActivityFilterPayload> = z
     peopleSelection: stringArrayField,
     optionalPersonIds: optionalPeopleField,
     statuses: stringArrayField,
-    attention: stringArrayField,
+    attention: stringArrayField.transform(migrateAttention),
     linkedIssueStates: stringArrayField,
     search: optionalStringField,
     jumpToDate: optionalStringField,

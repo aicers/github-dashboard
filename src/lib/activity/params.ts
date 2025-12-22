@@ -193,12 +193,12 @@ export function parseActivityListParams(
             "pr_inactive",
           ]) ?? []
         ).flatMap((value) => {
-          if (value === "pr_open_too_long" || value === "pr_inactive") {
-            return [
-              "pr_reviewer_unassigned",
-              "pr_review_stalled",
-              "pr_merge_delayed",
-            ] satisfies ActivityAttentionFilter[];
+          if (value === "pr_open_too_long") {
+            return ["pr_review_stalled"] satisfies ActivityAttentionFilter[];
+          }
+
+          if (value === "pr_inactive") {
+            return ["pr_review_stalled"] satisfies ActivityAttentionFilter[];
           }
 
           return [value].filter(
