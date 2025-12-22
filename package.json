@@ -37,7 +37,7 @@
     "react-hook-form": "^7.68.0",
     "recharts": "^3.6.0",
     "tailwind-merge": "^3.4.0",
-    "zod": "^4.1.13"
+    "zod": "^4.2.1"
   },
   "devDependencies": {
     "@next/env": "^16.1.0",
