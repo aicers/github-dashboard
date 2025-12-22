@@ -4,6 +4,14 @@ This file documents recent notable changes to this project. The format of this
 file is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Fixed the Activity filter for "응답 없는 리뷰 요청" so person selection matches the
+  pending review request recipient (stuck reviewer), not anyone listed as a PR
+  reviewer.
+
 ## [0.2.0] - 2025-12-22
 
 ### Added
@@ -42,5 +50,6 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Initial public release of the GitHub Dashboard
 
+[Unreleased]: https://github.com/aicers/github-dashboard/compare/0.2.0...main
 [0.2.0]: https://github.com/aicers/github-dashboard/compare/0.1.0...0.2.0
 [0.1.0]: https://github.com/aicers/github-dashboard/tree/0.1.0

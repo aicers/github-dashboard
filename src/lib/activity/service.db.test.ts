@@ -16,6 +16,7 @@ import type {
   IssueAttentionItem,
   MentionAttentionItem,
   PullRequestAttentionItem,
+  ReviewRequestAttentionItem,
 } from "@/lib/dashboard/attention";
 import { query } from "@/lib/db/client";
 import type {
@@ -878,6 +879,148 @@ describe("activity service integration", () => {
 
     expect(result.items).toHaveLength(0);
     expect(result.pageInfo.totalCount).toBe(0);
+  });
+
+  it("filters pending review requests by the stuck reviewer, not the PR reviewer list", async () => {
+    const author: DbActor = {
+      id: "user-author",
+      login: "author",
+      name: "Author",
+      createdAt: BASE_TIME,
+      updatedAt: BASE_TIME,
+    };
+    const sehkone: DbActor = {
+      id: "user-sehkone",
+      login: "sehkone",
+      name: "Sehkone Kim",
+      createdAt: BASE_TIME,
+      updatedAt: BASE_TIME,
+    };
+    const syncpark: DbActor = {
+      id: "user-syncpark",
+      login: "syncpark",
+      name: "Sync Park",
+      createdAt: BASE_TIME,
+      updatedAt: BASE_TIME,
+    };
+
+    await seedActivityUsers([author, sehkone, syncpark]);
+
+    const repo: DbRepository = {
+      id: "repo-piglet",
+      name: "piglet",
+      nameWithOwner: "aicers/piglet",
+      ownerId: author.id,
+      raw: { id: "repo-piglet" },
+    };
+    await seedActivityRepositories([repo]);
+
+    const pullRequest: DbPullRequest = {
+      id: "pr-piglet-1522",
+      number: 1522,
+      repositoryId: repo.id,
+      authorId: author.id,
+      title: "Refactor: Use enums for categorical values",
+      state: "OPEN",
+      createdAt: BASE_TIME,
+      updatedAt: "2025-12-20T00:00:00.000Z",
+      closedAt: null,
+      mergedAt: null,
+      merged: false,
+      raw: {
+        id: "pr-piglet-1522",
+        number: 1522,
+        title: "Refactor: Use enums for categorical values",
+        url: `https://example.com/${repo.nameWithOwner}/pull/1522`,
+        repository: {
+          id: repo.id,
+          nameWithOwner: repo.nameWithOwner,
+        },
+      },
+    };
+
+    await seedActivityPullRequests([pullRequest]);
+
+    const reviewRequests: DbReviewRequest[] = [
+      {
+        id: "rr-sehkone",
+        pullRequestId: pullRequest.id,
+        reviewerId: sehkone.id,
+        requestedAt: "2025-12-16T00:00:00.000Z",
+        raw: { id: "rr-sehkone" },
+      },
+      {
+        id: "rr-syncpark",
+        pullRequestId: pullRequest.id,
+        reviewerId: syncpark.id,
+        requestedAt: "2025-12-16T00:00:00.000Z",
+        raw: { id: "rr-syncpark" },
+      },
+    ];
+    await seedActivityReviewRequests(reviewRequests);
+
+    await refreshActivityItemsSnapshot();
+
+    const insights: AttentionInsights = {
+      ...emptyInsights(),
+      stuckReviewRequests: [
+        {
+          id: "rr-syncpark",
+          requestedAt: "2025-12-16T00:00:00.000Z",
+          waitingDays: 10,
+          reviewer: {
+            id: syncpark.id,
+            login: syncpark.login ?? null,
+            name: syncpark.name ?? null,
+          },
+          pullRequest: {
+            id: pullRequest.id,
+            number: pullRequest.number,
+            title: pullRequest.title ?? null,
+            url: `https://example.com/${repo.nameWithOwner}/pull/${pullRequest.number}`,
+            repository: {
+              id: repo.id,
+              name: repo.name,
+              nameWithOwner: repo.nameWithOwner,
+            },
+            author: {
+              id: author.id,
+              login: author.login ?? null,
+              name: author.name ?? null,
+            },
+            reviewers: [
+              {
+                id: sehkone.id,
+                login: sehkone.login ?? null,
+                name: sehkone.name ?? null,
+              },
+              {
+                id: syncpark.id,
+                login: syncpark.login ?? null,
+                name: syncpark.name ?? null,
+              },
+            ],
+            linkedIssues: [],
+          },
+        } satisfies ReviewRequestAttentionItem,
+      ],
+    };
+    mockedAttentionInsights.mockResolvedValueOnce(insights);
+
+    const sehkoneResult = await getActivityItems({
+      attention: ["review_requests_pending"],
+      peopleSelection: [sehkone.id],
+    });
+    expect(sehkoneResult.items.map((item) => item.id)).toEqual([]);
+
+    mockedAttentionInsights.mockResolvedValueOnce(insights);
+    const syncparkResult = await getActivityItems({
+      attention: ["review_requests_pending"],
+      peopleSelection: [syncpark.id],
+    });
+    expect(syncparkResult.items.map((item) => item.id)).toEqual([
+      pullRequest.id,
+    ]);
   });
 
   it("limits unanswered mention attention results to unresolved targets", async () => {
