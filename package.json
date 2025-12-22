@@ -17,7 +17,8 @@
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit",
     "ci": "biome ci --error-on-warnings . && pnpm run typecheck && pnpm run test && pnpm run test:db",
-    "backfill:ownership": "tsx scripts/backfill-node-ownership.ts"
+    "backfill:ownership": "tsx scripts/backfill-node-ownership.ts",
+    "migrate:activity-saved-filter-attention": "tsx scripts/migrate-activity-saved-filter-attention.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

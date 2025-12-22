@@ -17,10 +17,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   5 days to 2 days in Activity/Follow-ups.
 - Replaced the Activity/Follow-ups PR "주의" grouping with three explicit
   follow-ups: "리뷰어 미지정 PR", "리뷰 정체 PR", and "머지 지연 PR".
-- Updated PR follow-up thresholds to use a configurable "업무일" calculation
-  (defaulting to 2 days) that respects per-person timezone + personal time off +
-  selected holiday calendars (falling back to `Asia/Seoul` when settings are
-  missing).
+  - Updated PR follow-up thresholds to use a configurable "업무일" calculation
+    (defaulting to 2 days) that respects per-person timezone, personal time off,
+    and selected holiday calendars (falling back to `Asia/Seoul` when settings
+    are missing).
+  - **Breaking:** Legacy "업데이트 없는 PR" / `pr_inactive` / `pr_open_too_long`
+    saved filters and URL params are migrated to `pr_review_stalled`
+    (리뷰 정체 PR) only. Review and adjust saved filters if you previously relied
+    on the older PR attention semantics.
 
 ### Fixed
 

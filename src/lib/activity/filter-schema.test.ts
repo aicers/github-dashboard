@@ -14,6 +14,7 @@ describe("activityFilterPayloadSchema", () => {
       types: [" issue ", "issue", "pull_request"],
       repositoryIds: ["repo-1", " repo-2 ", "repo-2"],
       search: "  needs triage  ",
+      attention: ["pr_inactive", "pr_open_too_long"],
       thresholds: {
         backlogIssueDays: "10",
         reviewRequestDays: 5,
@@ -29,6 +30,7 @@ describe("activityFilterPayloadSchema", () => {
     expect(result.types).toEqual(["issue", "pull_request"]);
     expect(result.repositoryIds).toEqual(["repo-1", "repo-2"]);
     expect(result.search).toBe("needs triage");
+    expect(result.attention).toEqual(["pr_review_stalled"]);
     expect(result.thresholds).toEqual({
       backlogIssueDays: 10,
       reviewRequestDays: 5,

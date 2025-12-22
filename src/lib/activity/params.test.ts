@@ -125,16 +125,11 @@ describe("parseActivityListParams", () => {
   it("migrates legacy PR attention values into the new follow-ups", () => {
     const params = new URLSearchParams();
     params.append("attention", "pr_inactive");
+    params.append("attention", "pr_open_too_long");
 
     const result = parseActivityListParams(params);
 
-    expect(result.attention?.sort()).toEqual(
-      [
-        "pr_reviewer_unassigned",
-        "pr_review_stalled",
-        "pr_merge_delayed",
-      ].sort(),
-    );
+    expect(result.attention).toEqual(["pr_review_stalled"]);
   });
 
   it("parses task mode values", () => {
