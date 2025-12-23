@@ -142,9 +142,51 @@ describe.sequential("attention insights for reviewer-unassigned pull requests", 
       updatedAt: createdAt,
     });
 
+    const closed = buildPullRequest({
+      id: "pr-unassigned-closed",
+      number: 104,
+      repository: repoSingle,
+      authorId: author.id,
+      title: "Closed PR should not appear",
+      url: "https://github.com/acme/single/pull/104",
+      state: "CLOSED",
+      createdAt,
+      updatedAt: createdAt,
+      closedAt: null,
+    });
+
+    const merged = buildPullRequest({
+      id: "pr-unassigned-merged",
+      number: 105,
+      repository: repoSingle,
+      authorId: author.id,
+      title: "Merged PR should not appear",
+      url: "https://github.com/acme/single/pull/105",
+      createdAt,
+      updatedAt: createdAt,
+      merged: true,
+      mergedAt: "2024-02-18T00:00:00.000Z",
+    });
+
+    const inconsistent = buildPullRequest({
+      id: "pr-unassigned-inconsistent",
+      number: 106,
+      repository: repoSingle,
+      authorId: author.id,
+      title: "Closed timestamp with open state should not appear",
+      url: "https://github.com/acme/single/pull/106",
+      state: "OPEN",
+      createdAt,
+      updatedAt: createdAt,
+      closedAt: "2024-02-19T00:00:00.000Z",
+    });
+
     await upsertPullRequest(eligible);
     await upsertPullRequest(blocked);
     await upsertPullRequest(reviewed);
+    await upsertPullRequest(closed);
+    await upsertPullRequest(merged);
+    await upsertPullRequest(inconsistent);
 
     const request = buildReviewRequest({
       id: "rr-removed",
