@@ -1252,6 +1252,9 @@ async function fetchReviewUnassignedPullRequests(
     FROM pull_requests pr
     JOIN repositories repo ON repo.id = pr.repository_id
     WHERE pr.github_closed_at IS NULL
+       AND pr.github_merged_at IS NULL
+       AND COALESCE(pr.merged, FALSE) = FALSE
+       AND (pr.state IS NULL OR pr.state = 'OPEN')
        AND pr.github_created_at <= $3::timestamptz - make_interval(days => $4)
        AND NOT (pr.repository_id = ANY($1::text[]))
        AND (pr.author_id IS NULL OR NOT (pr.author_id = ANY($2::text[])))

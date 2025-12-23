@@ -11,6 +11,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Fixed the Activity filter for "응답 없는 리뷰 요청" so person selection matches the
   pending review request recipient (stuck reviewer), not anyone listed as a PR
   reviewer.
+- Limited "리뷰어 미지정 PR" follow-ups to open pull requests only.
 
 ## [0.2.0] - 2025-12-22
 
