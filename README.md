@@ -13,14 +13,40 @@ configuration, sync controls, and analytics through a Next.js dashboard.
 
 ## Prerequisites
 
-- Node.js 22+
-- pnpm 10+
+- Node 22: Use Node.js 22.x. **Do not use Node 24.**
+  - nvm example: `nvm install 22 && nvm use 22`
+  - macOS (Homebrew):
+    - `brew update && brew install node@22`
+    - Unlink the previous version: `brew unlink node`
+    - Link 22: `brew link --overwrite --force node@22`
+    - Verify: `node -v` should print v22.x.y
+- pnpm: Use pnpm 10+.
+  - macOS (Homebrew):
+    - `brew install pnpm`
+  - Linux (Corepack with Node 22):
+    - `corepack enable`
+    - `corepack prepare pnpm@10 --activate`
+  - Windows (Corepack with Node 22):
+    - `corepack enable`
+    - `corepack prepare pnpm@10 --activate`
+- Next.js: Use 15 (latest patch) for Node 22 compatibility; **do not use 16.**
+  Installed via `pnpm install`.
+- Docker: Install Docker (Docker Desktop or Docker Engine).
+- Biome CLI 2.x (Rust binary) available on your `PATH` – download a release
+  build and place `biome` somewhere executable, or compile it yourself via Cargo
+  following the Biome documentation.
 - PostgreSQL 14+ running locally or reachable via connection string
 - A GitHub OAuth App configured for your environments (see [docs/github-oauth-app.md](docs/github-oauth-app.md))
 - (Optional) A GitHub personal access token with `read:user` and repository
   metadata scopes (`GITHUB_TOKEN`) for legacy data collection utilities
 
 ## Local Development
+
+1. Use a shared pnpm store across repos:
+
+   ```bash
+   pnpm config set store-dir ~/.pnpm-store --global
+   ```
 
 1. Install dependencies:
 
