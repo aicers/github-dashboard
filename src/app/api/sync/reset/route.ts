@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
+import { checkReauthRequired } from "@/lib/auth/reauth-guard";
 import { readActiveSession } from "@/lib/auth/session";
 import { resetData } from "@/lib/sync/service";
 
@@ -10,7 +11,7 @@ const requestSchema = z
   })
   .optional();
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const session = await readActiveSession();
     if (!session) {
@@ -28,6 +29,22 @@ export async function POST(request: Request) {
             "Administrator access is required to manage sync operations.",
         },
         { status: 403 },
+      );
+    }
+
+    const needsReauth = await checkReauthRequired(
+      request,
+      session,
+      "sync_reset",
+    );
+    if (needsReauth) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Reauthentication required.",
+          reauthRequired: true,
+        },
+        { status: 428 },
       );
     }
 

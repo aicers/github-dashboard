@@ -17,7 +17,7 @@ export type CookieDescriptor = {
 };
 
 export const SESSION_COOKIE_NAME = "gd_session";
-export const SESSION_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 12; // 12 hours
+export const SESSION_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 12; // fallback: 12 hours
 
 function requireSessionSecret(): string {
   const secret = env.SESSION_SECRET;
@@ -78,7 +78,10 @@ export function decodeSessionCookie(value: string | undefined): string | null {
   return sessionId;
 }
 
-export function buildSessionCookie(sessionId: string): CookieDescriptor {
+export function buildSessionCookie(
+  sessionId: string,
+  options?: { maxAgeSeconds?: number },
+): CookieDescriptor {
   return {
     name: SESSION_COOKIE_NAME,
     value: encodeSessionCookie(sessionId),
@@ -87,7 +90,7 @@ export function buildSessionCookie(sessionId: string): CookieDescriptor {
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
-      maxAge: SESSION_COOKIE_MAX_AGE_SECONDS,
+      maxAge: options?.maxAgeSeconds ?? SESSION_COOKIE_MAX_AGE_SECONDS,
     },
   };
 }

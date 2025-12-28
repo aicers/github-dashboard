@@ -12,7 +12,7 @@ import {
   useState,
   useTransition,
 } from "react";
-
+import { ReauthModal } from "@/components/dashboard/reauth-modal";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -24,6 +24,10 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PickerInput } from "@/components/ui/picker-input";
+import {
+  REAUTH_ACTION_DEFINITIONS,
+  type ReauthAction,
+} from "@/lib/auth/reauth";
 import {
   DATE_TIME_FORMAT_OPTIONS,
   type DateTimeDisplayFormat,
@@ -115,12 +119,21 @@ type SettingsViewProps = {
   currentUserOriginalAvatarUrl: string | null;
   currentUserCustomAvatarUrl: string | null;
   activityRowsPerPage: number;
+  authAccessTtlMinutes: number;
+  authIdleTtlMinutes: number;
+  authRefreshTtlDays: number;
+  authMaxLifetimeDays: number;
+  authReauthWindowHours: number;
+  authReauthActions: string[];
+  authReauthNewDevice: boolean;
+  authReauthCountryChange: boolean;
 };
 
 type ApiResponse<T> = {
   success: boolean;
   message?: string;
   result?: T;
+  reauthRequired?: boolean;
 };
 
 type HolidayFormState = {
@@ -166,6 +179,14 @@ export function SettingsView({
   currentUserOriginalAvatarUrl,
   currentUserCustomAvatarUrl,
   activityRowsPerPage: initialActivityRowsPerPage,
+  authAccessTtlMinutes,
+  authIdleTtlMinutes,
+  authRefreshTtlDays,
+  authMaxLifetimeDays,
+  authReauthWindowHours,
+  authReauthActions,
+  authReauthNewDevice,
+  authReauthCountryChange,
 }: SettingsViewProps) {
   const router = useRouter();
   const initialAdminCalendarCode =
@@ -200,6 +221,30 @@ export function SettingsView({
   );
   const [activityRowsPerPage, setActivityRowsPerPage] = useState(
     initialActivityRowsPerPage,
+  );
+  const [accessTtlMinutes, setAccessTtlMinutes] = useState(
+    authAccessTtlMinutes.toString(),
+  );
+  const [idleTtlMinutes, setIdleTtlMinutes] = useState(
+    authIdleTtlMinutes.toString(),
+  );
+  const [refreshTtlDays, setRefreshTtlDays] = useState(
+    authRefreshTtlDays.toString(),
+  );
+  const [maxLifetimeDays, setMaxLifetimeDays] = useState(
+    authMaxLifetimeDays.toString(),
+  );
+  const [reauthWindowHours, setReauthWindowHours] = useState(
+    authReauthWindowHours.toString(),
+  );
+  const [reauthActions, setReauthActions] = useState<ReauthAction[]>(
+    authReauthActions.filter((action): action is ReauthAction =>
+      REAUTH_ACTION_DEFINITIONS.some((entry) => entry.id === action),
+    ),
+  );
+  const [reauthNewDevice, setReauthNewDevice] = useState(authReauthNewDevice);
+  const [reauthCountryChange, setReauthCountryChange] = useState(
+    authReauthCountryChange,
   );
   const [personalHolidayForm, setPersonalHolidayForm] = useState({
     id: null as number | null,
@@ -331,6 +376,7 @@ export function SettingsView({
   });
   const [isSavingPersonal, startSavingPersonal] = useTransition();
   const [isSavingOrganization, startSavingOrganization] = useTransition();
+  const [reauthOpen, setReauthOpen] = useState(false);
   const [isUploadingAvatar, startUploadingAvatar] = useTransition();
   const [isRemovingAvatar, startRemovingAvatar] = useTransition();
   const [isMutatingHoliday, startMutatingHoliday] = useTransition();
@@ -340,6 +386,11 @@ export function SettingsView({
   const avatarInputId = useId();
   const orgInputId = useId();
   const intervalInputId = useId();
+  const accessTtlId = useId();
+  const idleTtlId = useId();
+  const refreshTtlId = useId();
+  const maxLifetimeId = useId();
+  const reauthWindowId = useId();
   const excludeSelectId = useId();
   const excludePeopleSelectId = useId();
   const allowedTeamsSelectId = useId();
@@ -1346,6 +1397,14 @@ export function SettingsView({
     setExcludedPeople([]);
   };
 
+  const handleToggleReauthAction = (action: ReauthAction) => {
+    setReauthActions((current) =>
+      current.includes(action)
+        ? current.filter((entry) => entry !== action)
+        : [...current, action],
+    );
+  };
+
   const handleSavePersonal = () => {
     setPersonalFeedback(null);
     startSavingPersonal(async () => {
@@ -1408,6 +1467,27 @@ export function SettingsView({
           ]),
         );
 
+        const parsedAccessTtl = Number.parseInt(accessTtlMinutes, 10);
+        const parsedIdleTtl = Number.parseInt(idleTtlMinutes, 10);
+        const parsedRefreshTtl = Number.parseInt(refreshTtlDays, 10);
+        const parsedMaxLifetime = Number.parseInt(maxLifetimeDays, 10);
+        const parsedReauthWindow = Number.parseInt(reauthWindowHours, 10);
+
+        if (
+          Number.isNaN(parsedAccessTtl) ||
+          parsedAccessTtl <= 0 ||
+          Number.isNaN(parsedIdleTtl) ||
+          parsedIdleTtl <= 0 ||
+          Number.isNaN(parsedRefreshTtl) ||
+          parsedRefreshTtl <= 0 ||
+          Number.isNaN(parsedMaxLifetime) ||
+          parsedMaxLifetime <= 0 ||
+          Number.isNaN(parsedReauthWindow) ||
+          parsedReauthWindow <= 0
+        ) {
+          throw new Error("세션 설정 값은 모두 양수여야 합니다.");
+        }
+
         const response = await fetch("/api/sync/config", {
           method: "PATCH",
           headers: {
@@ -1422,9 +1502,22 @@ export function SettingsView({
             allowedUsers,
             organizationHolidayCalendarCodes: organizationHolidayCodes,
             repositoryMaintainers: repositoryMaintainersPayload,
+            authAccessTtlMinutes: parsedAccessTtl,
+            authIdleTtlMinutes: parsedIdleTtl,
+            authRefreshTtlDays: parsedRefreshTtl,
+            authMaxLifetimeDays: parsedMaxLifetime,
+            authReauthWindowHours: parsedReauthWindow,
+            authReauthActions: reauthActions,
+            authReauthNewDevice: reauthNewDevice,
+            authReauthCountryChange: reauthCountryChange,
           }),
         });
         const data = (await response.json()) as ApiResponse<unknown>;
+
+        if (response.status === 428 || data.reauthRequired) {
+          setReauthOpen(true);
+          return;
+        }
 
         if (!data.success) {
           throw new Error(data.message ?? "설정을 저장하지 못했습니다.");
@@ -1442,8 +1535,18 @@ export function SettingsView({
     });
   };
 
+  const handleReauthConfirm = useCallback(() => {
+    const returnPath = `${window.location.pathname}${window.location.search}`;
+    window.location.href = `/auth/reauth?next=${encodeURIComponent(returnPath)}`;
+  }, []);
+
   return (
     <section className="flex flex-col gap-4">
+      <ReauthModal
+        open={reauthOpen}
+        onConfirm={handleReauthConfirm}
+        onCancel={() => setReauthOpen(false)}
+      />
       <header className="flex flex-col gap-2">
         <p className="text-sm text-muted-foreground">
           각 구성원과 전체 조직 관련 사항을 설정합니다.
@@ -2080,6 +2183,178 @@ export function SettingsView({
                     }
                   />
                 </label>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/70">
+              <CardHeader>
+                <CardTitle>Sign-in 세션 설정</CardTitle>
+                <CardDescription>
+                  기본값은 access 60m, idle 30m, refresh 14d, max 30d, reauth
+                  24h 입니다.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4 text-sm">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="flex flex-col gap-2" htmlFor={accessTtlId}>
+                    <span className="text-muted-foreground">
+                      Access TTL (분)
+                    </span>
+                    <Input
+                      id={accessTtlId}
+                      value={accessTtlMinutes}
+                      onChange={(event) =>
+                        setAccessTtlMinutes(event.target.value)
+                      }
+                      type="number"
+                      min={1}
+                      disabled={!canEditOrganization}
+                      title={
+                        !canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined
+                      }
+                    />
+                  </label>
+                  <label className="flex flex-col gap-2" htmlFor={idleTtlId}>
+                    <span className="text-muted-foreground">Idle TTL (분)</span>
+                    <Input
+                      id={idleTtlId}
+                      value={idleTtlMinutes}
+                      onChange={(event) =>
+                        setIdleTtlMinutes(event.target.value)
+                      }
+                      type="number"
+                      min={1}
+                      disabled={!canEditOrganization}
+                      title={
+                        !canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined
+                      }
+                    />
+                  </label>
+                  <label className="flex flex-col gap-2" htmlFor={refreshTtlId}>
+                    <span className="text-muted-foreground">
+                      Refresh TTL (일)
+                    </span>
+                    <Input
+                      id={refreshTtlId}
+                      value={refreshTtlDays}
+                      onChange={(event) =>
+                        setRefreshTtlDays(event.target.value)
+                      }
+                      type="number"
+                      min={1}
+                      disabled={!canEditOrganization}
+                      title={
+                        !canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined
+                      }
+                    />
+                  </label>
+                  <label
+                    className="flex flex-col gap-2"
+                    htmlFor={maxLifetimeId}
+                  >
+                    <span className="text-muted-foreground">
+                      Max lifetime (일)
+                    </span>
+                    <Input
+                      id={maxLifetimeId}
+                      value={maxLifetimeDays}
+                      onChange={(event) =>
+                        setMaxLifetimeDays(event.target.value)
+                      }
+                      type="number"
+                      min={1}
+                      disabled={!canEditOrganization}
+                      title={
+                        !canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined
+                      }
+                    />
+                  </label>
+                  <label
+                    className="flex flex-col gap-2"
+                    htmlFor={reauthWindowId}
+                  >
+                    <span className="text-muted-foreground">
+                      Reauth window (시간)
+                    </span>
+                    <Input
+                      id={reauthWindowId}
+                      value={reauthWindowHours}
+                      onChange={(event) =>
+                        setReauthWindowHours(event.target.value)
+                      }
+                      type="number"
+                      min={1}
+                      disabled={!canEditOrganization}
+                      title={
+                        !canEditOrganization ? ADMIN_ONLY_MESSAGE : undefined
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <span className="text-muted-foreground">
+                    재인증 필요 액션
+                  </span>
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {REAUTH_ACTION_DEFINITIONS.map((definition) => {
+                      const isChecked = reauthActions.includes(definition.id);
+                      return (
+                        <label
+                          key={definition.id}
+                          className={cn(
+                            "flex items-center gap-2 rounded-md border border-border/60 p-2",
+                            !canEditOrganization && "opacity-60",
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() =>
+                              handleToggleReauthAction(definition.id)
+                            }
+                            disabled={!canEditOrganization}
+                          />
+                          <span>{definition.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <span className="text-muted-foreground">재인증 조건</span>
+                  <label
+                    className={cn(
+                      "flex items-center gap-2",
+                      !canEditOrganization && "opacity-60",
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={reauthNewDevice}
+                      onChange={(event) =>
+                        setReauthNewDevice(event.target.checked)
+                      }
+                      disabled={!canEditOrganization}
+                    />
+                    <span>새 기기/브라우저 감지 시 재인증</span>
+                  </label>
+                  <label
+                    className={cn(
+                      "flex items-center gap-2",
+                      !canEditOrganization && "opacity-60",
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={reauthCountryChange}
+                      onChange={(event) =>
+                        setReauthCountryChange(event.target.checked)
+                      }
+                      disabled={!canEditOrganization}
+                    />
+                    <span>국가 변경 감지 시 재인증</span>
+                  </label>
+                </div>
               </CardContent>
             </Card>
 

@@ -191,11 +191,25 @@ function scheduleNextRun(delayMs: number) {
     () => {
       scheduler.timer = null;
       void runIncrementalSync().catch((error) => {
-        console.error("[github-dashboard] Automatic sync failed", error);
+        if (shouldLogSchedulerError(error)) {
+          console.error("[github-dashboard] Automatic sync failed", error);
+        }
       });
     },
     Math.max(0, delayMs),
   );
+}
+
+function shouldLogSchedulerError(error: unknown) {
+  if (
+    process.env.NODE_ENV === "test" &&
+    error instanceof Error &&
+    error.message.includes("GitHub token missing")
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 async function computeInitialDelay(intervalMs: number) {
@@ -1044,6 +1058,14 @@ export async function updateSyncSettings(params: {
   allowedTeams?: string[];
   allowedUsers?: string[];
   dateTimeFormat?: string;
+  authAccessTtlMinutes?: number;
+  authIdleTtlMinutes?: number;
+  authRefreshTtlDays?: number;
+  authMaxLifetimeDays?: number;
+  authReauthWindowHours?: number;
+  authReauthActions?: string[];
+  authReauthNewDevice?: boolean;
+  authReauthCountryChange?: boolean;
   orgHolidayCalendarCodes?: (HolidayCalendarCode | string)[];
   backupHourLocal?: number;
   backupTimezone?: string;
@@ -1103,6 +1125,76 @@ export async function updateSyncSettings(params: {
     }
 
     await updateSyncConfig({ weekStart: value });
+  }
+
+  if (params.authAccessTtlMinutes !== undefined) {
+    if (
+      !Number.isFinite(params.authAccessTtlMinutes) ||
+      params.authAccessTtlMinutes <= 0
+    ) {
+      throw new Error("Access TTL must be a positive number of minutes.");
+    }
+    await updateSyncConfig({
+      authAccessTtlMinutes: params.authAccessTtlMinutes,
+    });
+  }
+
+  if (params.authIdleTtlMinutes !== undefined) {
+    if (
+      !Number.isFinite(params.authIdleTtlMinutes) ||
+      params.authIdleTtlMinutes <= 0
+    ) {
+      throw new Error("Idle TTL must be a positive number of minutes.");
+    }
+    await updateSyncConfig({ authIdleTtlMinutes: params.authIdleTtlMinutes });
+  }
+
+  if (params.authRefreshTtlDays !== undefined) {
+    if (
+      !Number.isFinite(params.authRefreshTtlDays) ||
+      params.authRefreshTtlDays <= 0
+    ) {
+      throw new Error("Refresh TTL must be a positive number of days.");
+    }
+    await updateSyncConfig({ authRefreshTtlDays: params.authRefreshTtlDays });
+  }
+
+  if (params.authMaxLifetimeDays !== undefined) {
+    if (
+      !Number.isFinite(params.authMaxLifetimeDays) ||
+      params.authMaxLifetimeDays <= 0
+    ) {
+      throw new Error("Max lifetime must be a positive number of days.");
+    }
+    await updateSyncConfig({ authMaxLifetimeDays: params.authMaxLifetimeDays });
+  }
+
+  if (params.authReauthWindowHours !== undefined) {
+    if (
+      !Number.isFinite(params.authReauthWindowHours) ||
+      params.authReauthWindowHours <= 0
+    ) {
+      throw new Error("Reauth window must be a positive number of hours.");
+    }
+    await updateSyncConfig({
+      authReauthWindowHours: params.authReauthWindowHours,
+    });
+  }
+
+  if (params.authReauthActions !== undefined) {
+    await updateSyncConfig({
+      authReauthActions: params.authReauthActions,
+    });
+  }
+
+  if (params.authReauthNewDevice !== undefined) {
+    await updateSyncConfig({ authReauthNewDevice: params.authReauthNewDevice });
+  }
+
+  if (params.authReauthCountryChange !== undefined) {
+    await updateSyncConfig({
+      authReauthCountryChange: params.authReauthCountryChange,
+    });
   }
 
   if (params.excludedRepositories !== undefined) {

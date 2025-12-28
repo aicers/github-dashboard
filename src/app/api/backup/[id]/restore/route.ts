@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 
+import { checkReauthRequired } from "@/lib/auth/reauth-guard";
 import { readActiveSession } from "@/lib/auth/session";
 import {
   parseBackupRestoreKey,
@@ -23,6 +24,22 @@ export async function POST(
     return NextResponse.json(
       { success: false, message: "Administrator access required." },
       { status: 403 },
+    );
+  }
+
+  const needsReauth = await checkReauthRequired(
+    _request,
+    session,
+    "backup_restore",
+  );
+  if (needsReauth) {
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Reauthentication required.",
+        reauthRequired: true,
+      },
+      { status: 428 },
     );
   }
 

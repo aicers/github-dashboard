@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
+import { checkReauthRequired } from "@/lib/auth/reauth-guard";
 import { readActiveSession } from "@/lib/auth/session";
 import { DATE_TIME_FORMAT_VALUES } from "@/lib/date-time-format";
 import { isHolidayCalendarCode } from "@/lib/holidays/constants";
@@ -83,6 +84,14 @@ const patchSchema = z.object({
     .array(z.string().min(1))
     .optional()
     .transform((value) => (value ? Array.from(new Set(value)) : undefined)),
+  authAccessTtlMinutes: z.number().int().min(1).optional(),
+  authIdleTtlMinutes: z.number().int().min(1).optional(),
+  authRefreshTtlDays: z.number().int().min(1).optional(),
+  authMaxLifetimeDays: z.number().int().min(1).optional(),
+  authReauthWindowHours: z.number().int().min(1).optional(),
+  authReauthActions: z.array(z.string().min(1)).optional(),
+  authReauthNewDevice: z.boolean().optional(),
+  authReauthCountryChange: z.boolean().optional(),
   repositoryMaintainers: z
     .record(
       z.string().min(1),
@@ -132,7 +141,7 @@ export async function GET() {
   }
 }
 
-export async function PATCH(request: Request) {
+export async function PATCH(request: NextRequest) {
   const session = await readActiveSession();
   if (!session) {
     return NextResponse.json(
@@ -151,6 +160,14 @@ export async function PATCH(request: Request) {
       allowedTeams,
       allowedUsers,
       repositoryMaintainers,
+      authAccessTtlMinutes,
+      authIdleTtlMinutes,
+      authRefreshTtlDays,
+      authMaxLifetimeDays,
+      authReauthWindowHours,
+      authReauthActions,
+      authReauthNewDevice,
+      authReauthCountryChange,
       timezone,
       weekStart,
       dateTimeFormat,
@@ -179,6 +196,14 @@ export async function PATCH(request: Request) {
         excludedPeople !== undefined ||
         allowedTeams !== undefined ||
         allowedUsers !== undefined ||
+        authAccessTtlMinutes !== undefined ||
+        authIdleTtlMinutes !== undefined ||
+        authRefreshTtlDays !== undefined ||
+        authMaxLifetimeDays !== undefined ||
+        authReauthWindowHours !== undefined ||
+        authReauthActions !== undefined ||
+        authReauthNewDevice !== undefined ||
+        authReauthCountryChange !== undefined ||
         repositoryMaintainers !== undefined ||
         backupHour !== undefined ||
         transferSyncHour !== undefined ||
@@ -218,6 +243,42 @@ export async function PATCH(request: Request) {
         });
       }
     } else {
+      const attemptedOrgSettingsUpdate =
+        orgName !== undefined ||
+        syncIntervalMinutes !== undefined ||
+        excludedRepositories !== undefined ||
+        excludedPeople !== undefined ||
+        allowedTeams !== undefined ||
+        allowedUsers !== undefined ||
+        authAccessTtlMinutes !== undefined ||
+        authIdleTtlMinutes !== undefined ||
+        authRefreshTtlDays !== undefined ||
+        authMaxLifetimeDays !== undefined ||
+        authReauthWindowHours !== undefined ||
+        authReauthActions !== undefined ||
+        authReauthNewDevice !== undefined ||
+        authReauthCountryChange !== undefined ||
+        repositoryMaintainers !== undefined ||
+        organizationHolidayCalendarCodes !== undefined;
+
+      if (attemptedOrgSettingsUpdate) {
+        const needsReauth = await checkReauthRequired(
+          request,
+          session,
+          "org_settings",
+        );
+        if (needsReauth) {
+          return NextResponse.json(
+            {
+              success: false,
+              message: "Reauthentication required.",
+              reauthRequired: true,
+            },
+            { status: 428 },
+          );
+        }
+      }
+
       if (hasPersonalUpdate && session.userId) {
         await writeUserTimeSettings(session.userId, {
           timezone,
@@ -263,6 +324,14 @@ export async function PATCH(request: Request) {
         excludedPeople,
         allowedTeams,
         allowedUsers,
+        authAccessTtlMinutes,
+        authIdleTtlMinutes,
+        authRefreshTtlDays,
+        authMaxLifetimeDays,
+        authReauthWindowHours,
+        authReauthActions,
+        authReauthNewDevice,
+        authReauthCountryChange,
         orgHolidayCalendarCodes: organizationHolidayCalendarCodes,
         backupHourLocal: backupHour,
         backupTimezone: backupScheduleTimezone,

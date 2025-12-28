@@ -54,6 +54,8 @@ export async function GET(request: Request) {
     orgSlug,
     orgVerified: true,
     isAdmin,
+    deviceId: null,
+    ipCountry: null,
   });
 
   const response = NextResponse.json({

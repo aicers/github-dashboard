@@ -1,5 +1,6 @@
 import { unstable_noStore as noStore } from "next/cache";
 import { SettingsView } from "@/components/dashboard/settings-view";
+import { DEFAULT_AUTH_CONFIG } from "@/lib/auth/config";
 import { readActiveSession } from "@/lib/auth/session";
 import {
   getUserAvatarState,
@@ -61,6 +62,25 @@ export default async function SettingsPage() {
   const allowedUserIds = Array.isArray(config?.allowed_user_ids)
     ? (config?.allowed_user_ids as string[])
     : [];
+  const authAccessTtlMinutes =
+    config?.auth_access_ttl_minutes ?? DEFAULT_AUTH_CONFIG.accessTtlMinutes;
+  const authIdleTtlMinutes =
+    config?.auth_idle_ttl_minutes ?? DEFAULT_AUTH_CONFIG.idleTtlMinutes;
+  const authRefreshTtlDays =
+    config?.auth_refresh_ttl_days ?? DEFAULT_AUTH_CONFIG.refreshTtlDays;
+  const authMaxLifetimeDays =
+    config?.auth_max_lifetime_days ?? DEFAULT_AUTH_CONFIG.maxLifetimeDays;
+  const authReauthWindowHours =
+    config?.auth_reauth_window_hours ?? DEFAULT_AUTH_CONFIG.reauthWindowHours;
+  const authReauthActions = Array.isArray(config?.auth_reauth_actions)
+    ? (config?.auth_reauth_actions as string[])
+    : DEFAULT_AUTH_CONFIG.reauthActions;
+  const authReauthNewDevice =
+    config?.auth_reauth_new_device ??
+    DEFAULT_AUTH_CONFIG.reauthRequireNewDevice;
+  const authReauthCountryChange =
+    config?.auth_reauth_country_change ??
+    DEFAULT_AUTH_CONFIG.reauthRequireCountryChange;
   const currentUserProfile = session?.userId
     ? (members.find((member) => member.id === session.userId) ?? null)
     : null;
@@ -121,6 +141,14 @@ export default async function SettingsPage() {
       currentUserOriginalAvatarUrl={avatarState.originalAvatarUrl}
       currentUserCustomAvatarUrl={avatarState.customAvatarUrl}
       activityRowsPerPage={timeSettings.activityRowsPerPage}
+      authAccessTtlMinutes={authAccessTtlMinutes}
+      authIdleTtlMinutes={authIdleTtlMinutes}
+      authRefreshTtlDays={authRefreshTtlDays}
+      authMaxLifetimeDays={authMaxLifetimeDays}
+      authReauthWindowHours={authReauthWindowHours}
+      authReauthActions={authReauthActions}
+      authReauthNewDevice={authReauthNewDevice}
+      authReauthCountryChange={authReauthCountryChange}
     />
   );
 }

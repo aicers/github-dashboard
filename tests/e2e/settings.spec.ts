@@ -140,6 +140,42 @@ test.describe("SettingsView (Playwright)", () => {
     expect(called).toBe(false);
   });
 
+  test("prompts for reauth when the API requires it", async ({ page }) => {
+    await page.goto(SETTINGS_PATH);
+
+    await page.route("**/api/sync/config", async (route) => {
+      if (route.request().method() !== "PATCH") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ success: true }),
+        });
+        return;
+      }
+
+      await route.fulfill({
+        status: 428,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: false,
+          message: "Reauthentication required.",
+          reauthRequired: true,
+        }),
+      });
+    });
+
+    await page.getByRole("button", { name: "Organization" }).click();
+    await page.getByRole("button", { name: "조직 설정 저장" }).click();
+
+    await expect(page.getByText("재인증 필요", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("보안을 위해 다시 sign in 해주세요."),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "취소" }).click();
+    await expect(page.getByText("재인증 필요", { exact: true })).toBeHidden();
+  });
+
   test("clears excluded selections and updates the counters", async ({
     page,
   }) => {

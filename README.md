@@ -81,6 +81,11 @@ session cookie; non-members are redirected to `/auth/denied` with instructions
 on granting access under **Settings → Applications → Authorized OAuth Apps**.
 Full OAuth setup instructions live in [docs/github-oauth-app.md](docs/github-oauth-app.md).
 
+Long-lived sign-in uses access/idle/refresh/max session TTLs, and sensitive
+actions (for example, organization settings changes and cleanup endpoints)
+trigger a reauthentication prompt. These defaults can be adjusted in
+**Settings → Organization**.
+
 Administrators are identified through `DASHBOARD_ADMIN_IDS`, a comma-separated
 list of GitHub logins or node IDs. Admin users can modify organization-wide
 settings (org name, sync cadence, excluded repositories/members), while all

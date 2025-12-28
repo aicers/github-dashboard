@@ -191,6 +191,43 @@ test.describe("SyncControls (Playwright)", () => {
     ).toBeVisible();
   });
 
+  test("prompts for reauth when cleanup endpoints require it", async ({
+    page,
+  }) => {
+    await page.goto(SYNC_PATH);
+
+    await page.route("**/api/sync/backup/cleanup", async (route) => {
+      await route.fulfill({
+        status: 428,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: false,
+          message: "Reauthentication required.",
+          reauthRequired: true,
+        }),
+      });
+    });
+
+    await page.route("**/auth/reauth**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/html",
+        body: "<html><body>reauth</body></html>",
+      });
+    });
+
+    page.once("dialog", async (dialog) => {
+      await dialog.accept();
+    });
+
+    await page.getByRole("button", { name: "DB 백업 정리" }).click();
+
+    await expect(page.getByText("재인증 필요", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "다시 sign in" }).click();
+
+    await expect(page).toHaveURL(/\/auth\/reauth\?next=/);
+  });
+
   test("cleans up stuck transfer sync runs", async ({ page }) => {
     await page.goto(SYNC_PATH);
 

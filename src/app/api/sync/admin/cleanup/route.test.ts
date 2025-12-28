@@ -1,3 +1,4 @@
+import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { POST } from "@/app/api/sync/admin/cleanup/route";
@@ -10,9 +11,12 @@ vi.mock("@/lib/sync/service", () => ({
 vi.mock("@/lib/auth/session", () => ({
   readActiveSession: vi.fn(),
 }));
+vi.mock("@/lib/auth/reauth-guard", () => ({
+  checkReauthRequired: vi.fn(async () => false),
+}));
 
 const buildRequest = () =>
-  new Request("http://localhost/api/sync/admin/cleanup", {
+  new NextRequest("http://localhost/api/sync/admin/cleanup", {
     method: "POST",
   });
 
@@ -27,6 +31,11 @@ beforeEach(() => {
     createdAt: new Date(),
     lastSeenAt: new Date(),
     expiresAt: new Date(Date.now() + 60_000),
+    refreshExpiresAt: new Date(Date.now() + 60_000),
+    maxExpiresAt: new Date(Date.now() + 7 * 24 * 3600_000),
+    lastReauthAt: new Date(),
+    deviceId: "device-1",
+    ipCountry: "KR",
   });
 });
 
@@ -72,6 +81,11 @@ describe("POST /api/sync/admin/cleanup", () => {
       createdAt: new Date(),
       lastSeenAt: new Date(),
       expiresAt: new Date(Date.now() + 60_000),
+      refreshExpiresAt: new Date(Date.now() + 60_000),
+      maxExpiresAt: new Date(Date.now() + 7 * 24 * 3600_000),
+      lastReauthAt: new Date(),
+      deviceId: "device-1",
+      ipCountry: "KR",
     });
 
     const response = await POST(buildRequest());

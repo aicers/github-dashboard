@@ -241,7 +241,12 @@ const SCHEMA_STATEMENTS = [
     is_admin BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    expires_at TIMESTAMPTZ NOT NULL
+    expires_at TIMESTAMPTZ NOT NULL,
+    refresh_expires_at TIMESTAMPTZ,
+    max_expires_at TIMESTAMPTZ,
+    last_reauth_at TIMESTAMPTZ,
+    device_id TEXT,
+    ip_country TEXT
   )`,
   `CREATE INDEX IF NOT EXISTS auth_sessions_user_idx ON auth_sessions(user_id)`,
   `CREATE INDEX IF NOT EXISTS auth_sessions_expires_idx ON auth_sessions(expires_at)`,
@@ -578,6 +583,21 @@ const SCHEMA_STATEMENTS = [
     allowed_team_slugs TEXT[] NOT NULL DEFAULT '{}',
     allowed_user_ids TEXT[] NOT NULL DEFAULT '{}',
     date_time_format TEXT NOT NULL DEFAULT 'auto',
+    auth_access_ttl_minutes INTEGER NOT NULL DEFAULT 60,
+    auth_idle_ttl_minutes INTEGER NOT NULL DEFAULT 30,
+    auth_refresh_ttl_days INTEGER NOT NULL DEFAULT 14,
+    auth_max_lifetime_days INTEGER NOT NULL DEFAULT 30,
+    auth_reauth_window_hours INTEGER NOT NULL DEFAULT 24,
+    auth_reauth_actions TEXT[] NOT NULL DEFAULT ARRAY[
+      'org_settings',
+      'backup_run',
+      'backup_restore',
+      'sync_reset',
+      'backup_cleanup',
+      'sync_cleanup'
+    ],
+    auth_reauth_new_device BOOLEAN NOT NULL DEFAULT TRUE,
+    auth_reauth_country_change BOOLEAN NOT NULL DEFAULT TRUE,
     last_sync_started_at TIMESTAMPTZ,
     last_sync_completed_at TIMESTAMPTZ,
     last_successful_sync_at TIMESTAMPTZ,
@@ -610,6 +630,21 @@ const SCHEMA_STATEMENTS = [
   `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS allowed_team_slugs TEXT[] NOT NULL DEFAULT '{}'`,
   `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS allowed_user_ids TEXT[] NOT NULL DEFAULT '{}'`,
   `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS date_time_format TEXT NOT NULL DEFAULT 'auto'`,
+  `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS auth_access_ttl_minutes INTEGER NOT NULL DEFAULT 60`,
+  `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS auth_idle_ttl_minutes INTEGER NOT NULL DEFAULT 30`,
+  `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS auth_refresh_ttl_days INTEGER NOT NULL DEFAULT 14`,
+  `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS auth_max_lifetime_days INTEGER NOT NULL DEFAULT 30`,
+  `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS auth_reauth_window_hours INTEGER NOT NULL DEFAULT 24`,
+  `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS auth_reauth_actions TEXT[] NOT NULL DEFAULT ARRAY[
+    'org_settings',
+    'backup_run',
+    'backup_restore',
+    'sync_reset',
+    'backup_cleanup',
+    'sync_cleanup'
+  ]`,
+  `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS auth_reauth_new_device BOOLEAN NOT NULL DEFAULT TRUE`,
+  `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS auth_reauth_country_change BOOLEAN NOT NULL DEFAULT TRUE`,
   `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS backup_enabled BOOLEAN NOT NULL DEFAULT TRUE`,
   `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS backup_hour_local INTEGER NOT NULL DEFAULT 2`,
   `ALTER TABLE sync_config ADD COLUMN IF NOT EXISTS backup_timezone TEXT NOT NULL DEFAULT 'UTC'`,
@@ -636,6 +671,17 @@ const SCHEMA_STATEMENTS = [
      SET org_holiday_calendar_codes = ARRAY['${DEFAULT_HOLIDAY_CALENDAR}']
      WHERE COALESCE(array_length(org_holiday_calendar_codes, 1), 0) = 0`,
   `ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE`,
+  `ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS refresh_expires_at TIMESTAMPTZ`,
+  `ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS max_expires_at TIMESTAMPTZ`,
+  `ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS last_reauth_at TIMESTAMPTZ`,
+  `ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS device_id TEXT`,
+  `ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS ip_country TEXT`,
+  `UPDATE auth_sessions
+     SET refresh_expires_at = expires_at
+     WHERE refresh_expires_at IS NULL`,
+  `UPDATE auth_sessions
+     SET max_expires_at = expires_at
+     WHERE max_expires_at IS NULL`,
   `CREATE TABLE IF NOT EXISTS db_backups (
     id SERIAL PRIMARY KEY,
     filename TEXT NOT NULL,

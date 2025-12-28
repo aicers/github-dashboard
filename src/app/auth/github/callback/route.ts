@@ -3,6 +3,11 @@ import { NextResponse } from "next/server";
 
 import { isAdminUser } from "@/lib/auth/admin";
 import {
+  buildDeviceCookie,
+  generateDeviceId,
+  readDeviceIdFromRequest,
+} from "@/lib/auth/device-cookie";
+import {
   buildReturnCookie,
   buildStateCookie,
   exchangeCodeForToken,
@@ -12,8 +17,14 @@ import {
   persistGithubProfile,
   verifyOrganizationMembership,
 } from "@/lib/auth/github";
+import { readIpCountryFromRequest } from "@/lib/auth/ip-country";
 import { establishSession } from "@/lib/auth/session";
-import { buildClearedSessionCookie } from "@/lib/auth/session-cookie";
+import {
+  buildClearedSessionCookie,
+  decodeSessionCookie,
+  SESSION_COOKIE_NAME,
+} from "@/lib/auth/session-cookie";
+import { deleteSessionRecord } from "@/lib/auth/session-store";
 import { env } from "@/lib/env";
 
 function resolveBaseUrl(request: NextRequest) {
@@ -125,11 +136,22 @@ export async function GET(request: NextRequest) {
       login: profile.actor.login ?? null,
     });
 
+    const existingSessionId = decodeSessionCookie(
+      request.cookies.get(SESSION_COOKIE_NAME)?.value,
+    );
+    if (existingSessionId) {
+      await deleteSessionRecord(existingSessionId);
+    }
+
+    const deviceId = readDeviceIdFromRequest(request) ?? generateDeviceId();
+    const ipCountry = readIpCountryFromRequest(request);
     const { cookie: sessionCookie } = await establishSession({
       userId: profile.actor.id,
       orgSlug: membership.orgSlug,
       orgVerified: true,
       isAdmin,
+      deviceId,
+      ipCountry,
     });
 
     const targetPath = resolveReturnPath(request);
@@ -139,6 +161,12 @@ export async function GET(request: NextRequest) {
       sessionCookie.name,
       sessionCookie.value,
       sessionCookie.options,
+    );
+    const deviceCookie = buildDeviceCookie(deviceId);
+    response.cookies.set(
+      deviceCookie.name,
+      deviceCookie.value,
+      deviceCookie.options,
     );
     clearTransientOAuthCookies(response);
     return response;

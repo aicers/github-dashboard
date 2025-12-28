@@ -2,6 +2,7 @@
 
 import "../../../../../tests/helpers/postgres-container";
 
+import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { readActiveSession } from "@/lib/auth/session";
@@ -20,6 +21,9 @@ import {
 
 vi.mock("@/lib/auth/session", () => ({
   readActiveSession: vi.fn(),
+}));
+vi.mock("@/lib/auth/reauth-guard", () => ({
+  checkReauthRequired: vi.fn(async () => false),
 }));
 
 type RouteHandlers = typeof import("./route");
@@ -107,6 +111,11 @@ describe("sync config API routes", () => {
       createdAt: new Date(),
       lastSeenAt: new Date(),
       expiresAt: new Date(),
+      refreshExpiresAt: new Date(Date.now() + 60_000),
+      maxExpiresAt: new Date(Date.now() + 7 * 24 * 3600_000),
+      lastReauthAt: new Date(),
+      deviceId: "device-1",
+      ipCountry: "KR",
     });
     handlers = await import("./route");
   });
@@ -131,7 +140,7 @@ describe("sync config API routes", () => {
     const setTimeoutSpy = vi.spyOn(global, "setTimeout");
 
     const response = await handlers.PATCH(
-      new Request("http://localhost/api/sync/config", {
+      new NextRequest("http://localhost/api/sync/config", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -223,7 +232,7 @@ describe("sync config API routes", () => {
     await seedUser("maintainer-2");
 
     const response = await handlers.PATCH(
-      new Request("http://localhost/api/sync/config", {
+      new NextRequest("http://localhost/api/sync/config", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -256,7 +265,7 @@ describe("sync config API routes", () => {
     await seedUser("maintainer-2");
 
     await handlers.PATCH(
-      new Request("http://localhost/api/sync/config", {
+      new NextRequest("http://localhost/api/sync/config", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -273,7 +282,7 @@ describe("sync config API routes", () => {
     ).toEqual(["maintainer-1", "maintainer-2"]);
 
     await handlers.PATCH(
-      new Request("http://localhost/api/sync/config", {
+      new NextRequest("http://localhost/api/sync/config", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -300,10 +309,15 @@ describe("sync config API routes", () => {
       createdAt: new Date(),
       lastSeenAt: new Date(),
       expiresAt: new Date(),
+      refreshExpiresAt: new Date(Date.now() + 60_000),
+      maxExpiresAt: new Date(Date.now() + 7 * 24 * 3600_000),
+      lastReauthAt: new Date(),
+      deviceId: "device-1",
+      ipCountry: "KR",
     });
 
     const response = await handlers.PATCH(
-      new Request("http://localhost/api/sync/config", {
+      new NextRequest("http://localhost/api/sync/config", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -336,10 +350,15 @@ describe("sync config API routes", () => {
       createdAt: new Date(),
       lastSeenAt: new Date(),
       expiresAt: new Date(),
+      refreshExpiresAt: new Date(Date.now() + 60_000),
+      maxExpiresAt: new Date(Date.now() + 7 * 24 * 3600_000),
+      lastReauthAt: new Date(),
+      deviceId: "device-1",
+      ipCountry: "KR",
     });
 
     const response = await handlers.PATCH(
-      new Request("http://localhost/api/sync/config", {
+      new NextRequest("http://localhost/api/sync/config", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -377,7 +396,7 @@ describe("sync config API routes", () => {
     const setIntervalSpy = vi.spyOn(global, "setInterval");
 
     const response = await handlers.PATCH(
-      new Request("http://localhost/api/sync/config", {
+      new NextRequest("http://localhost/api/sync/config", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -398,7 +417,7 @@ describe("sync config API routes", () => {
 
   it("rejects invalid timezone identifiers", async () => {
     const response = await handlers.PATCH(
-      new Request("http://localhost/api/sync/config", {
+      new NextRequest("http://localhost/api/sync/config", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -418,7 +437,7 @@ describe("sync config API routes", () => {
 
   it("rejects empty organization names", async () => {
     const response = await handlers.PATCH(
-      new Request("http://localhost/api/sync/config", {
+      new NextRequest("http://localhost/api/sync/config", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -441,7 +460,7 @@ describe("sync config API routes", () => {
     const setIntervalSpy = vi.spyOn(global, "setInterval");
 
     const response = await handlers.PATCH(
-      new Request("http://localhost/api/sync/config", {
+      new NextRequest("http://localhost/api/sync/config", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

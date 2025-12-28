@@ -6,6 +6,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed
+
+- Improved long-lived sign-in handling with reauthentication prompts for
+  sensitive settings and cleanup actions, plus device/IP heuristics for
+  higher-risk flows.
+  - Added configurable session TTL defaults (access, idle, refresh, max
+    lifetime) and surfaced them in organization settings.
+
 ### Fixed
 
 - Fixed the Activity filter for "응답 없는 리뷰 요청" so person selection matches the
