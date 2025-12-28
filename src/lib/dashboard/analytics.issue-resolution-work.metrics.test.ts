@@ -114,6 +114,31 @@ describe("analytics duration metrics", () => {
     expect(summary.overallWork).toBeCloseTo(48, 5);
   });
 
+  it("uses created timestamp when done without in-progress", () => {
+    const targetProject = "main";
+
+    const issue = createIssueRow({
+      github_created_at: "2024-02-01T00:00:00Z",
+      github_closed_at: "2024-02-05T00:00:00Z",
+      data: {
+        trackedIssues: { totalCount: 0 },
+        trackedInIssues: { totalCount: 1 },
+        projectStatusHistory: [
+          {
+            projectTitle: "Main",
+            status: "Done",
+            occurredAt: "2024-02-03T00:00:00Z",
+          },
+        ],
+      },
+    });
+
+    const summary = summarizeIssueDurations([issue], targetProject, new Set());
+
+    expect(summary.childWork).toBeCloseTo(48, 5);
+    expect(summary.overallWork).toBeCloseTo(48, 5);
+  });
+
   it("defers to to-do project statuses when locked", () => {
     const targetProject = "main";
 
