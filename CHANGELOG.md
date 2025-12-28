@@ -13,6 +13,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   higher-risk flows.
   - Added configurable session TTL defaults (access, idle, refresh, max
     lifetime) and surfaced them in organization settings.
+- Included Done issues without an In Progress event in average work-time
+  calculations by falling back to the issue creation timestamp.
 
 ### Fixed
 

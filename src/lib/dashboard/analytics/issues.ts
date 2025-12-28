@@ -223,6 +223,19 @@ function parseTimestamp(value: unknown): number | null {
   return Number.isNaN(time) ? null : time;
 }
 
+function toIsoString(value: string | Date | null | undefined): string | null {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (value instanceof Date) {
+    const time = value.getTime();
+    return Number.isNaN(time) ? null : value.toISOString();
+  }
+
+  return null;
+}
+
 type WorkTimestamps = {
   startedAt: string | null;
   completedAt: string | null;
@@ -646,7 +659,7 @@ function resolveWorkTimestamps(info: IssueStatusInfo | null): WorkTimestamps {
           break;
         case "done":
         case "canceled":
-          if (startedAt && !completedAt) {
+          if (!completedAt) {
             completedAt = event.occurredAt;
           }
           break;
@@ -673,7 +686,7 @@ function resolveWorkTimestamps(info: IssueStatusInfo | null): WorkTimestamps {
         return;
       }
       if (mapped === "done" || mapped === "canceled") {
-        if (startedAt && !completedAt) {
+        if (!completedAt) {
           completedAt = event.occurredAt;
         }
         return;
@@ -729,7 +742,10 @@ export function summarizeIssueDurations(
         targetProject,
         row.activityStatusHistory,
       );
-      const { startedAt, completedAt } = resolveWorkTimestamps(statusInfo);
+      let { startedAt, completedAt } = resolveWorkTimestamps(statusInfo);
+      if (!startedAt) {
+        startedAt = toIsoString(row.github_created_at);
+      }
       const workHours = calculateBusinessHoursBetween(
         startedAt,
         completedAt,
@@ -812,7 +828,10 @@ export function buildMonthlyDurationTrend(
           targetProject,
           row.activityStatusHistory,
         );
-        const { startedAt, completedAt } = resolveWorkTimestamps(statusInfo);
+        let { startedAt, completedAt } = resolveWorkTimestamps(statusInfo);
+        if (!startedAt) {
+          startedAt = toIsoString(row.github_created_at);
+        }
         const workHours = calculateBusinessHoursBetween(
           startedAt,
           completedAt,
