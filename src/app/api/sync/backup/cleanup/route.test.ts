@@ -1,9 +1,14 @@
 // @vitest-environment node
 
+import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/auth/session", () => ({
   readActiveSession: vi.fn(),
+}));
+
+vi.mock("@/lib/auth/reauth-guard", () => ({
+  checkReauthRequired: vi.fn(async () => false),
 }));
 
 vi.mock("@/lib/backup/service", () => ({
@@ -31,8 +36,19 @@ function createSession(
     createdAt: new Date(),
     lastSeenAt: new Date(),
     expiresAt: new Date(Date.now() + 3600_000),
+    refreshExpiresAt: new Date(Date.now() + 3600_000),
+    maxExpiresAt: new Date(Date.now() + 7 * 24 * 3600_000),
+    lastReauthAt: new Date(),
+    deviceId: "device-1",
+    ipCountry: "KR",
     ...overrides,
   };
+}
+
+function buildRequest() {
+  return new NextRequest("http://localhost/api/sync/backup/cleanup", {
+    method: "POST",
+  });
 }
 
 describe("POST /api/sync/backup/cleanup", () => {
@@ -44,7 +60,7 @@ describe("POST /api/sync/backup/cleanup", () => {
     readActiveSession.mockResolvedValue(null);
     const { POST } = await loadHandler();
 
-    const response = await POST();
+    const response = await POST(buildRequest());
 
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({
@@ -58,7 +74,7 @@ describe("POST /api/sync/backup/cleanup", () => {
     readActiveSession.mockResolvedValue(createSession({ isAdmin: false }));
     const { POST } = await loadHandler();
 
-    const response = await POST();
+    const response = await POST(buildRequest());
 
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({
@@ -77,7 +93,7 @@ describe("POST /api/sync/backup/cleanup", () => {
     });
     const { POST } = await loadHandler();
 
-    const response = await POST();
+    const response = await POST(buildRequest());
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
@@ -99,7 +115,7 @@ describe("POST /api/sync/backup/cleanup", () => {
     cleanupDatabaseBackup.mockRejectedValue(new Error("cleanup failed"));
     const { POST } = await loadHandler();
 
-    const response = await POST();
+    const response = await POST(buildRequest());
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
@@ -113,7 +129,7 @@ describe("POST /api/sync/backup/cleanup", () => {
     cleanupDatabaseBackup.mockRejectedValue("fatal");
     const { POST } = await loadHandler();
 
-    const response = await POST();
+    const response = await POST(buildRequest());
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({

@@ -26,6 +26,11 @@ function buildSession(overrides: Partial<SessionRecord> = {}): SessionRecord {
     createdAt: new Date("2024-01-01T00:00:00.000Z"),
     lastSeenAt: new Date("2024-01-01T01:00:00.000Z"),
     expiresAt: new Date("2024-01-01T12:00:00.000Z"),
+    refreshExpiresAt: new Date("2024-01-02T00:00:00.000Z"),
+    maxExpiresAt: new Date("2024-02-01T00:00:00.000Z"),
+    lastReauthAt: new Date("2024-01-01T00:00:00.000Z"),
+    deviceId: "device-1",
+    ipCountry: "KR",
   };
   return { ...base, ...overrides };
 }

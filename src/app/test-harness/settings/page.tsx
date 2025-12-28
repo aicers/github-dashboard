@@ -1,4 +1,5 @@
 import { SettingsView } from "@/components/dashboard/settings-view";
+import { DEFAULT_AUTH_CONFIG } from "@/lib/auth/config";
 import type { RepositoryProfile, UserProfile } from "@/lib/db/operations";
 
 const repositories: RepositoryProfile[] = [
@@ -170,6 +171,14 @@ export default async function SettingsHarnessPage({
         currentUserOriginalAvatarUrl={"https://github.com/images/octocat.png"}
         currentUserCustomAvatarUrl={null}
         activityRowsPerPage={25}
+        authAccessTtlMinutes={DEFAULT_AUTH_CONFIG.accessTtlMinutes}
+        authIdleTtlMinutes={DEFAULT_AUTH_CONFIG.idleTtlMinutes}
+        authRefreshTtlDays={DEFAULT_AUTH_CONFIG.refreshTtlDays}
+        authMaxLifetimeDays={DEFAULT_AUTH_CONFIG.maxLifetimeDays}
+        authReauthWindowHours={DEFAULT_AUTH_CONFIG.reauthWindowHours}
+        authReauthActions={DEFAULT_AUTH_CONFIG.reauthActions}
+        authReauthNewDevice={DEFAULT_AUTH_CONFIG.reauthRequireNewDevice}
+        authReauthCountryChange={DEFAULT_AUTH_CONFIG.reauthRequireCountryChange}
       />
       <p className="text-sm text-muted-foreground">
         Query with <code>?admin=false</code> to preview the non-admin read-only

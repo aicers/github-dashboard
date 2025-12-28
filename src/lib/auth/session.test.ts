@@ -5,6 +5,7 @@ const decodeSessionCookieMock = vi.fn();
 const refreshSessionRecordMock = vi.fn();
 const deleteSessionRecordMock = vi.fn();
 const pruneExpiredSessionsMock = vi.fn();
+const updateSessionMetadataMock = vi.fn();
 
 vi.mock("next/headers", () => ({
   cookies: cookiesMock,
@@ -25,7 +26,29 @@ vi.mock("@/lib/auth/session-store", () => ({
   createSessionRecord: vi.fn(),
   refreshSessionRecord: refreshSessionRecordMock,
   deleteSessionRecord: deleteSessionRecordMock,
+  updateSessionMetadata: updateSessionMetadataMock,
   pruneExpiredSessions: pruneExpiredSessionsMock,
+}));
+
+vi.mock("@/lib/auth/config", () => ({
+  getAuthConfig: vi.fn(async () => ({
+    accessTtlMinutes: 60,
+    idleTtlMinutes: 30,
+    refreshTtlDays: 14,
+    maxLifetimeDays: 30,
+    reauthWindowHours: 24,
+    reauthActions: [],
+    reauthRequireNewDevice: true,
+    reauthRequireCountryChange: true,
+  })),
+}));
+
+vi.mock("@/lib/auth/device-cookie", () => ({
+  readDeviceIdFromHeaders: vi.fn(async () => null),
+}));
+
+vi.mock("@/lib/auth/ip-country", () => ({
+  readIpCountryFromHeaders: vi.fn(async () => null),
 }));
 
 function stubCookieValue(value: string | null) {
@@ -46,6 +69,11 @@ function buildSessionRecord(
     createdAt: new Date(),
     lastSeenAt: new Date(),
     expiresAt: new Date(Date.now() + 1000),
+    refreshExpiresAt: new Date(Date.now() + 1000),
+    maxExpiresAt: new Date(Date.now() + 1000),
+    lastReauthAt: new Date(),
+    deviceId: "device-1",
+    ipCountry: "KR",
   };
 }
 
@@ -57,6 +85,7 @@ describe("readActiveSession", () => {
     decodeSessionCookieMock.mockReset();
     refreshSessionRecordMock.mockReset();
     deleteSessionRecordMock.mockReset();
+    updateSessionMetadataMock.mockReset();
     pruneExpiredSessionsMock.mockReset();
     pruneExpiredSessionsMock.mockResolvedValue(undefined);
   });

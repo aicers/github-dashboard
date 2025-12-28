@@ -1,9 +1,10 @@
-import { NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 
+import { checkReauthRequired } from "@/lib/auth/reauth-guard";
 import { readActiveSession } from "@/lib/auth/session";
 import { cleanupDatabaseBackup } from "@/lib/backup/service";
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   const session = await readActiveSession();
   if (!session) {
     return NextResponse.json(
@@ -16,6 +17,22 @@ export async function POST() {
     return NextResponse.json(
       { success: false, message: "Administrator access required." },
       { status: 403 },
+    );
+  }
+
+  const needsReauth = await checkReauthRequired(
+    request,
+    session,
+    "backup_cleanup",
+  );
+  if (needsReauth) {
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Reauthentication required.",
+        reauthRequired: true,
+      },
+      { status: 428 },
     );
   }
 

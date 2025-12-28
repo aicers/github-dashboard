@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState } from "react";
-
+import { ReauthModal } from "@/components/dashboard/reauth-modal";
 import { SyncSubTabs } from "@/components/dashboard/sync-subtabs";
 import { Button } from "@/components/ui/button";
 import {
@@ -43,6 +43,7 @@ type ApiResponse<T> = {
   success: boolean;
   message?: string;
   result?: T;
+  reauthRequired?: boolean;
 };
 
 type IssueStatusAutomationPostResult = {
@@ -403,6 +404,7 @@ export function SyncControls({
   const [backfillDate, setBackfillDate] = useState("");
   const [backfillEndDate, setBackfillEndDate] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [reauthOpen, setReauthOpen] = useState(false);
   const [backfillHistory, setBackfillHistory] = useState<BackfillResult[]>([]);
   const [activityCacheSummary, setActivityCacheSummary] =
     useState<ActivityCacheRefreshResult | null>(null);
@@ -465,6 +467,22 @@ export function SyncControls({
     : null;
 
   const canManageSync = isAdmin;
+
+  const handleReauthConfirm = () => {
+    const returnPath = `${window.location.pathname}${window.location.search}`;
+    window.location.href = `/auth/reauth?next=${encodeURIComponent(returnPath)}`;
+  };
+
+  const parseApiResponseWithReauth = async <T,>(
+    response: Response,
+  ): Promise<ApiResponse<T> | null> => {
+    const data = await parseApiResponse<T>(response);
+    if (response.status === 428 || data.reauthRequired) {
+      setReauthOpen(true);
+      return null;
+    }
+    return data;
+  };
 
   useEffect(() => {
     setAutoEnabled(config?.auto_sync_enabled ?? false);
@@ -977,10 +995,13 @@ export function SyncControls({
       const response = await fetch("/api/sync/admin/cleanup", {
         method: "POST",
       });
-      const data = await parseApiResponse<{
+      const data = await parseApiResponseWithReauth<{
         runCount: number;
         logCount: number;
       }>(response);
+      if (!data) {
+        return;
+      }
 
       if (!data.success) {
         throw new Error(
@@ -1067,7 +1088,10 @@ export function SyncControls({
       const response = await fetch("/api/sync/backup/cleanup", {
         method: "POST",
       });
-      const data = await parseApiResponse<unknown>(response);
+      const data = await parseApiResponseWithReauth<unknown>(response);
+      if (!data) {
+        return;
+      }
       if (!data.success) {
         throw new Error(data.message ?? "DB 백업 정리에 실패했습니다.");
       }
@@ -1105,7 +1129,10 @@ export function SyncControls({
       const response = await fetch("/api/backup/run", {
         method: "POST",
       });
-      const data = await parseApiResponse<unknown>(response);
+      const data = await parseApiResponseWithReauth<unknown>(response);
+      if (!data) {
+        return;
+      }
       if (!data.success) {
         throw new Error(data.message ?? "백업 실행에 실패했습니다.");
       }
@@ -1288,7 +1315,10 @@ export function SyncControls({
       const response = await fetch(`/api/backup/${restoreKey}/restore`, {
         method: "POST",
       });
-      const data = await parseApiResponse<unknown>(response);
+      const data = await parseApiResponseWithReauth<unknown>(response);
+      if (!data) {
+        return;
+      }
       if (!data.success) {
         throw new Error(data.message ?? "백업 복구에 실패했습니다.");
       }
@@ -1546,6 +1576,11 @@ export function SyncControls({
 
   return (
     <section id={sectionId} className="flex flex-col gap-4">
+      <ReauthModal
+        open={reauthOpen}
+        onConfirm={handleReauthConfirm}
+        onCancel={() => setReauthOpen(false)}
+      />
       <header className="flex flex-col gap-3">
         <h2 className="sr-only">데이터 동기화 제어</h2>
         <p className="text-sm text-muted-foreground">

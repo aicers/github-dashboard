@@ -166,6 +166,14 @@ function renderSettings(
       currentUserOriginalAvatarUrl="https://example.com/original.png"
       currentUserCustomAvatarUrl={null}
       activityRowsPerPage={25}
+      authAccessTtlMinutes={60}
+      authIdleTtlMinutes={30}
+      authRefreshTtlDays={14}
+      authMaxLifetimeDays={30}
+      authReauthWindowHours={24}
+      authReauthActions={["org_settings"]}
+      authReauthNewDevice
+      authReauthCountryChange
       {...overrides}
     />,
   );

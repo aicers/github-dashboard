@@ -1086,6 +1086,14 @@ export async function getSyncConfig() {
             allowed_team_slugs,
             allowed_user_ids,
             date_time_format,
+            auth_access_ttl_minutes,
+            auth_idle_ttl_minutes,
+            auth_refresh_ttl_days,
+            auth_max_lifetime_days,
+            auth_reauth_window_hours,
+            auth_reauth_actions,
+            auth_reauth_new_device,
+            auth_reauth_country_change,
             last_sync_started_at,
             last_sync_completed_at,
             last_successful_sync_at,
@@ -1127,6 +1135,14 @@ export async function updateSyncConfig(params: {
   allowedTeams?: string[];
   allowedUsers?: string[];
   dateTimeFormat?: string;
+  authAccessTtlMinutes?: number;
+  authIdleTtlMinutes?: number;
+  authRefreshTtlDays?: number;
+  authMaxLifetimeDays?: number;
+  authReauthWindowHours?: number;
+  authReauthActions?: string[];
+  authReauthNewDevice?: boolean;
+  authReauthCountryChange?: boolean;
   orgHolidayCalendarCodes?: HolidayCalendarCode[];
   lastSyncStartedAt?: string | null;
   lastSyncCompletedAt?: string | null;
@@ -1202,6 +1218,46 @@ export async function updateSyncConfig(params: {
   if (typeof params.dateTimeFormat === "string") {
     fields.push(`date_time_format = $${fields.length + 1}`);
     values.push(params.dateTimeFormat);
+  }
+
+  if (typeof params.authAccessTtlMinutes === "number") {
+    fields.push(`auth_access_ttl_minutes = $${fields.length + 1}`);
+    values.push(params.authAccessTtlMinutes);
+  }
+
+  if (typeof params.authIdleTtlMinutes === "number") {
+    fields.push(`auth_idle_ttl_minutes = $${fields.length + 1}`);
+    values.push(params.authIdleTtlMinutes);
+  }
+
+  if (typeof params.authRefreshTtlDays === "number") {
+    fields.push(`auth_refresh_ttl_days = $${fields.length + 1}`);
+    values.push(params.authRefreshTtlDays);
+  }
+
+  if (typeof params.authMaxLifetimeDays === "number") {
+    fields.push(`auth_max_lifetime_days = $${fields.length + 1}`);
+    values.push(params.authMaxLifetimeDays);
+  }
+
+  if (typeof params.authReauthWindowHours === "number") {
+    fields.push(`auth_reauth_window_hours = $${fields.length + 1}`);
+    values.push(params.authReauthWindowHours);
+  }
+
+  if (Array.isArray(params.authReauthActions)) {
+    fields.push(`auth_reauth_actions = $${fields.length + 1}`);
+    values.push(params.authReauthActions);
+  }
+
+  if (typeof params.authReauthNewDevice === "boolean") {
+    fields.push(`auth_reauth_new_device = $${fields.length + 1}`);
+    values.push(params.authReauthNewDevice);
+  }
+
+  if (typeof params.authReauthCountryChange === "boolean") {
+    fields.push(`auth_reauth_country_change = $${fields.length + 1}`);
+    values.push(params.authReauthCountryChange);
   }
 
   if (Array.isArray(params.orgHolidayCalendarCodes)) {

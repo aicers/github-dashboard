@@ -1,3 +1,4 @@
+import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { POST } from "@/app/api/sync/reset/route";
@@ -9,6 +10,9 @@ vi.mock("@/lib/sync/service", () => ({
 }));
 vi.mock("@/lib/auth/session", () => ({
   readActiveSession: vi.fn(),
+}));
+vi.mock("@/lib/auth/reauth-guard", () => ({
+  checkReauthRequired: vi.fn(async () => false),
 }));
 
 beforeEach(() => {
@@ -22,13 +26,18 @@ beforeEach(() => {
     createdAt: new Date(),
     lastSeenAt: new Date(),
     expiresAt: new Date(Date.now() + 60_000),
+    refreshExpiresAt: new Date(Date.now() + 60_000),
+    maxExpiresAt: new Date(Date.now() + 7 * 24 * 3600_000),
+    lastReauthAt: new Date(),
+    deviceId: "device-1",
+    ipCountry: "KR",
   });
 });
 
 describe("POST /api/sync/reset", () => {
   it("resets data with default preserveLogs value", async () => {
     const response = await POST(
-      new Request("http://localhost/api/sync/reset", {
+      new NextRequest("http://localhost/api/sync/reset", {
         method: "POST",
         body: JSON.stringify({}),
         headers: { "Content-Type": "application/json" },
@@ -42,7 +51,7 @@ describe("POST /api/sync/reset", () => {
 
   it("resets data with provided preserveLogs flag", async () => {
     const response = await POST(
-      new Request("http://localhost/api/sync/reset", {
+      new NextRequest("http://localhost/api/sync/reset", {
         method: "POST",
         body: JSON.stringify({ preserveLogs: false }),
         headers: { "Content-Type": "application/json" },
@@ -56,7 +65,7 @@ describe("POST /api/sync/reset", () => {
 
   it("returns a validation error response when payload is invalid", async () => {
     const response = await POST(
-      new Request("http://localhost/api/sync/reset", {
+      new NextRequest("http://localhost/api/sync/reset", {
         method: "POST",
         body: JSON.stringify({ preserveLogs: "nope" }),
         headers: { "Content-Type": "application/json" },
@@ -73,7 +82,7 @@ describe("POST /api/sync/reset", () => {
     vi.mocked(resetData).mockRejectedValueOnce(new Error("cannot truncate"));
 
     const response = await POST(
-      new Request("http://localhost/api/sync/reset", {
+      new NextRequest("http://localhost/api/sync/reset", {
         method: "POST",
         body: JSON.stringify({}),
         headers: { "Content-Type": "application/json" },
@@ -91,7 +100,7 @@ describe("POST /api/sync/reset", () => {
     vi.mocked(resetData).mockRejectedValueOnce("boom");
 
     const response = await POST(
-      new Request("http://localhost/api/sync/reset", {
+      new NextRequest("http://localhost/api/sync/reset", {
         method: "POST",
         body: JSON.stringify({}),
         headers: { "Content-Type": "application/json" },
@@ -109,7 +118,7 @@ describe("POST /api/sync/reset", () => {
     vi.mocked(readActiveSession).mockResolvedValueOnce(null);
 
     const response = await POST(
-      new Request("http://localhost/api/sync/reset", {
+      new NextRequest("http://localhost/api/sync/reset", {
         method: "POST",
         body: JSON.stringify({}),
         headers: { "Content-Type": "application/json" },
@@ -134,10 +143,15 @@ describe("POST /api/sync/reset", () => {
       createdAt: new Date(),
       lastSeenAt: new Date(),
       expiresAt: new Date(Date.now() + 60_000),
+      refreshExpiresAt: new Date(Date.now() + 60_000),
+      maxExpiresAt: new Date(Date.now() + 7 * 24 * 3600_000),
+      lastReauthAt: new Date(),
+      deviceId: "device-1",
+      ipCountry: "KR",
     });
 
     const response = await POST(
-      new Request("http://localhost/api/sync/reset", {
+      new NextRequest("http://localhost/api/sync/reset", {
         method: "POST",
         body: JSON.stringify({}),
         headers: { "Content-Type": "application/json" },

@@ -27,6 +27,11 @@ const ADMIN_SESSION = {
   createdAt: new Date(),
   lastSeenAt: new Date(),
   expiresAt: new Date(Date.now() + 60_000),
+  refreshExpiresAt: new Date(Date.now() + 60_000),
+  maxExpiresAt: new Date(Date.now() + 7 * 24 * 3600_000),
+  lastReauthAt: new Date(),
+  deviceId: "device-1",
+  ipCountry: "KR",
 };
 
 beforeEach(() => {
