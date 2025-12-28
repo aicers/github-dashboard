@@ -427,7 +427,8 @@ flow. Update them per environment as needed.
 
 ## Docker
 
-Builds use the standalone Next.js output for small production images.
+Builds use the standalone Next.js output for small production images. The base
+Node.js image in `Dockerfile` is pinned by digest to ensure reproducible builds.
 
 ```bash
 cp .env.example .env          # if you need a starting point
