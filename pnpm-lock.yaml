@@ -12,8 +12,8 @@ importers:
         specifier: ^5.2.2
         version: 5.2.2(react-hook-form@7.71.1(react@19.2.3))
       '@primer/octicons-react':
-        specifier: ^19.21.1
-        version: 19.21.1(react@19.2.3)
+        specifier: ^19.21.2
+        version: 19.21.2(react@19.2.3)
       '@radix-ui/react-label':
         specifier: ^2.1.8
         version: 2.1.8(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
@@ -708,8 +708,8 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
-  '@primer/octicons-react@19.21.1':
-    resolution: {integrity: sha512-DHaErpn2ZLMOJRxTdLf73eCDRvvil3xRmsOvKzg+I5KY0PsclYvEs/OX/Xb6fTK+PTteehidFvHBxrLYyEQ9Mg==}
+  '@primer/octicons-react@19.21.2':
+    resolution: {integrity: sha512-Bk+S08EpeeWLFscUxwEY8t5z14KxByhIbPG6OiYXSNrkbzN4fmRetnB/C+K1srn4BWuRSwwFxUwvDI2ytgNrFw==}
     engines: {node: '>=8'}
     peerDependencies:
       react: '>=16.3'
@@ -3074,7 +3074,7 @@ snapshots:
     dependencies:
       playwright: 1.57.0
 
-  '@primer/octicons-react@19.21.1(react@19.2.3)':
+  '@primer/octicons-react@19.21.2(react@19.2.3)':
     dependencies:
       react: 19.2.3
 
