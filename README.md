@@ -450,10 +450,10 @@ proxy, and ship it as a tarball.
 1. Build for the target platform and tag the image:
 
    ```bash
-   docker buildx build --platform linux/amd64 -t github-dashboard:0.2.0 --load .
+   docker buildx build --platform linux/amd64 -t github-dashboard:0.3.0 --load .
    ```
 
-   > Replace `github-dashboard:0.2.0` with the tag you plan to deploy. The
+   > Replace `github-dashboard:0.3.0` with the tag you plan to deploy. The
    > command automatically uses your default builder (create one with
    > `docker buildx create --use` if missing). `--load` pulls the built image
    > into the local Docker daemon so the tar export in the next step works.
@@ -474,8 +474,8 @@ proxy, and ship it as a tarball.
    generation script there with the appropriate host names):
 
    ```bash
-   docker save github-dashboard:0.2.0 -o github-dashboard-0.2.0.tar
-   scp github-dashboard-0.2.0.tar user@server:/path/to/github-dashboard/
+   docker save github-dashboard:0.3.0 -o github-dashboard-0.3.0.tar
+   scp github-dashboard-0.3.0.tar user@server:/path/to/github-dashboard/
    ```
 
    > The bundled script issues certificates for `localhost`; replace
@@ -487,7 +487,7 @@ proxy, and ship it as a tarball.
 
    ```bash
    docker compose down
-   docker load -i /path/to/github-dashboard/github-dashboard-0.2.0.tar
+   docker load -i /path/to/github-dashboard/github-dashboard-0.3.0.tar
    docker compose up -d --force-recreate
    ```
 
@@ -499,7 +499,7 @@ proxy, and ship it as a tarball.
    loaded image is used.
 
    > If you manage the container manually, use `docker stop <container>` followed
-   > by `docker run ... github-dashboard:0.2.0` instead of the Compose commands.
+   > by `docker run ... github-dashboard:0.3.0` instead of the Compose commands.
 
 The nginx proxy listens only on HTTPS (`https://localhost`) and redirects any
 HTTP attempts to the secure endpoint.
@@ -556,7 +556,7 @@ starting the app and proxy containers yourself:
 1. Load the image and create a shared network:
 
    ```bash
-   docker load -i github-dashboard-0.2.0.tar
+   docker load -i github-dashboard-0.3.0.tar
    docker network create github-dashboard-net || true
    ```
 
@@ -569,7 +569,7 @@ starting the app and proxy containers yourself:
      --name github-dashboard-app \
      --env-file .env \
      --network github-dashboard-net \
-     github-dashboard:0.2.0
+     github-dashboard:0.3.0
    ```
 
 3. Start the nginx proxy container and expose HTTPS:
