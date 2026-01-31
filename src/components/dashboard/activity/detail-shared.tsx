@@ -15,6 +15,7 @@ import {
   useRef,
   useState,
 } from "react";
+import sanitizeHtml from "sanitize-html";
 import { Button } from "@/components/ui/button";
 import { PickerInput } from "@/components/ui/picker-input";
 import type {
@@ -250,14 +251,24 @@ function escapeHtml(value: string) {
 }
 
 function sanitizeMarkdownHtml(value: string) {
-  return value
-    .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "")
-    .replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
-    .replace(
-      /\s+(href|src)\s*=\s*(?:"\s*javascript:[^"]*"|'\s*javascript:[^']*'|\s*javascript:[^\s>]*)/gi,
-      "",
-    )
-    .replace(/<(iframe|object|embed|form)[^>]*>[\s\S]*?<\/\1>/gi, "");
+  if (!value.trim()) {
+    return value;
+  }
+
+  return sanitizeHtml(value, {
+    allowedTags: Array.from(ALLOWED_HTML_TAGS),
+    allowedAttributes: {
+      "*": ["title", "class"],
+      a: Array.from(ALLOWED_HTML_ATTRS.get("a") ?? []),
+      img: Array.from(ALLOWED_HTML_ATTRS.get("img") ?? []),
+    },
+    allowedSchemes: ["http", "https", "mailto", "tel"],
+    allowedSchemesByTag: {
+      img: ["http", "https", "data"],
+    },
+    allowProtocolRelative: false,
+    nonTextTags: ["script", "style", "iframe", "object", "embed", "form"],
+  });
 }
 
 function sanitizeLanguageTag(value: string) {
