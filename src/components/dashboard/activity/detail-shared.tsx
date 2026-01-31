@@ -250,14 +250,20 @@ function escapeHtml(value: string) {
 }
 
 function sanitizeMarkdownHtml(value: string) {
-  return value
-    .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "")
-    .replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
-    .replace(
-      /\s+(href|src)\s*=\s*(?:"\s*javascript:[^"]*"|'\s*javascript:[^']*'|\s*javascript:[^\s>]*)/gi,
-      "",
-    )
-    .replace(/<(iframe|object|embed|form)[^>]*>[\s\S]*?<\/\1>/gi, "");
+  let sanitized = value;
+  let previous = "";
+  while (sanitized !== previous) {
+    previous = sanitized;
+    sanitized = sanitized
+      .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "")
+      .replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+      .replace(
+        /\s+(href|src)\s*=\s*(?:"\s*javascript:[^"]*"|'\s*javascript:[^']*'|\s*javascript:[^\s>]*)/gi,
+        "",
+      )
+      .replace(/<(iframe|object|embed|form)[^>]*>[\s\S]*?<\/\1>/gi, "");
+  }
+  return sanitized;
 }
 
 function sanitizeLanguageTag(value: string) {
