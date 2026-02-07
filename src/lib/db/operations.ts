@@ -700,6 +700,23 @@ export async function listPendingReviewRequestsByPullRequestIds(
   return map;
 }
 
+export async function listExistingPullRequestIds(
+  pullRequestIds: readonly string[],
+): Promise<Set<string>> {
+  if (!pullRequestIds.length) {
+    return new Set<string>();
+  }
+
+  const result = await query<{ id: string }>(
+    `SELECT id
+       FROM pull_requests
+      WHERE id = ANY($1::text[])`,
+    [pullRequestIds],
+  );
+
+  return new Set(result.rows.map((row) => row.id));
+}
+
 export async function markReviewRequestRemoved(params: {
   pullRequestId: string;
   reviewerId: string | null;

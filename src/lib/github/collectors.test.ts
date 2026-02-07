@@ -13,6 +13,7 @@ import {
   openPullRequestMetadataQuery,
   organizationRepositoriesQuery,
   pullRequestCommentsQuery,
+  pullRequestMetadataByNumberQuery,
   pullRequestReviewCommentsQuery,
   pullRequestReviewsQuery,
   repositoryDiscussionsQuery,
@@ -38,6 +39,7 @@ const {
   reviewExistsMock,
   updateIssueAssigneesMock,
   updatePullRequestAssigneesMock,
+  listExistingPullRequestIdsMock,
   listPendingReviewRequestsMock,
   deleteReactionsForSubjectMock,
   deleteMissingCommentsForTargetMock,
@@ -66,6 +68,9 @@ const {
     reviewExistsMock: vi.fn(async () => false),
     updateIssueAssigneesMock: vi.fn(async () => {}),
     updatePullRequestAssigneesMock: vi.fn(async () => {}),
+    listExistingPullRequestIdsMock: vi.fn(
+      async (ids: readonly string[]) => new Set(ids),
+    ),
     listPendingReviewRequestsMock: vi.fn(async () => new Map()),
     deleteReactionsForSubjectMock: vi.fn(async () => {}),
     deleteMissingCommentsForTargetMock: vi.fn(async () => 0),
@@ -118,6 +123,9 @@ vi.mock("@/lib/db/operations", () => ({
   updatePullRequestAssignees: (
     ...args: Parameters<typeof updatePullRequestAssigneesMock>
   ) => updatePullRequestAssigneesMock(...args),
+  listExistingPullRequestIds: (
+    ...args: Parameters<typeof listExistingPullRequestIdsMock>
+  ) => listExistingPullRequestIdsMock(...args),
   listPendingReviewRequestsByPullRequestIds: (
     ...args: Parameters<typeof listPendingReviewRequestsMock>
   ) => listPendingReviewRequestsMock(...args),
@@ -142,6 +150,119 @@ const emptyConnection = {
   pageInfo: { hasNextPage: false, endCursor: null },
 } as const;
 
+type TestQueryVariables = {
+  cursor?: string | null;
+  number?: number;
+  [key: string]: unknown;
+};
+
+function createRequestMockForOpenPullRequestMetadata(params: {
+  openPullRequests: unknown;
+  pullRequestMetadataByNumber?:
+    | ((variables: TestQueryVariables) => unknown | Promise<unknown>)
+    | null;
+}) {
+  const { openPullRequests, pullRequestMetadataByNumber = null } = params;
+
+  return vi.fn(
+    async (document: unknown, variables: TestQueryVariables = {}) => {
+      if (document === organizationRepositoriesQuery) {
+        return {
+          organization: {
+            repositories: {
+              nodes: [
+                {
+                  id: "repo-1",
+                  name: "repo",
+                  nameWithOwner: "acme/repo",
+                  url: "https://github.com/acme/repo",
+                  isPrivate: false,
+                  createdAt: "2024-01-01T00:00:00.000Z",
+                  updatedAt: "2024-04-02T12:00:00.000Z",
+                  owner: {
+                    id: "owner-1",
+                    login: "owner",
+                    name: "Owner",
+                    avatarUrl: null,
+                    createdAt: "2024-01-01T00:00:00.000Z",
+                    updatedAt: "2024-01-01T00:00:00.000Z",
+                    __typename: "User",
+                  },
+                },
+              ],
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+        };
+      }
+
+      if (document === repositoryIssuesQuery) {
+        return { repository: { issues: emptyConnection } };
+      }
+
+      if (document === repositoryDiscussionsQuery) {
+        return { repository: { discussions: emptyConnection } };
+      }
+
+      if (document === repositoryPullRequestsQuery) {
+        return { repository: { pullRequests: emptyConnection } };
+      }
+
+      if (document === issueCommentsQuery) {
+        return { repository: { issue: { comments: emptyConnection } } };
+      }
+
+      if (document === discussionCommentsQuery) {
+        return {
+          repository: { discussion: { comments: emptyConnection } },
+        };
+      }
+
+      if (document === pullRequestCommentsQuery) {
+        return { repository: { pullRequest: { comments: emptyConnection } } };
+      }
+
+      if (document === pullRequestReviewsQuery) {
+        return { repository: { pullRequest: { reviews: emptyConnection } } };
+      }
+
+      if (document === pullRequestReviewCommentsQuery) {
+        return {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                nodes: [],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            },
+          },
+        };
+      }
+
+      if (document === openIssueMetadataQuery) {
+        return { repository: { issues: emptyConnection } };
+      }
+
+      if (document === openPullRequestMetadataQuery) {
+        return {
+          repository: {
+            pullRequests: openPullRequests,
+          },
+        };
+      }
+
+      if (document === pullRequestMetadataByNumberQuery) {
+        if (!pullRequestMetadataByNumber) {
+          throw new Error("Unexpected pullRequestMetadataByNumberQuery");
+        }
+        return pullRequestMetadataByNumber(variables);
+      }
+
+      throw new Error("Unexpected query");
+    },
+  );
+}
+
 describe("runCollection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -149,6 +270,9 @@ describe("runCollection", () => {
     recordSyncLogMock.mockImplementation(async () => nextLogId());
     fetchIssueRawMapMock.mockImplementation(async () => new Map());
     reviewExistsMock.mockResolvedValue(false);
+    listExistingPullRequestIdsMock.mockImplementation(
+      async (ids: readonly string[]) => new Set(ids),
+    );
   });
 
   it("uses an injected GraphQL client and completes when no data is returned", async () => {
@@ -1373,6 +1497,839 @@ describe("runCollection", () => {
     );
 
     vi.useRealTimers();
+  });
+
+  it("retries review request sync in the same run when pull request rows are missing", async () => {
+    listExistingPullRequestIdsMock.mockResolvedValue(new Set());
+
+    const requestMock = vi.fn(async (document: unknown) => {
+      if (document === organizationRepositoriesQuery) {
+        return {
+          organization: {
+            repositories: {
+              nodes: [
+                {
+                  id: "repo-1",
+                  name: "repo",
+                  nameWithOwner: "acme/repo",
+                  url: "https://github.com/acme/repo",
+                  isPrivate: false,
+                  createdAt: "2024-01-01T00:00:00.000Z",
+                  updatedAt: "2024-04-02T12:00:00.000Z",
+                  owner: {
+                    id: "owner-1",
+                    login: "owner",
+                    name: "Owner",
+                    avatarUrl: null,
+                    createdAt: "2024-01-01T00:00:00.000Z",
+                    updatedAt: "2024-01-01T00:00:00.000Z",
+                    __typename: "User",
+                  },
+                },
+              ],
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+        };
+      }
+
+      if (document === repositoryIssuesQuery) {
+        return { repository: { issues: emptyConnection } };
+      }
+
+      if (document === repositoryDiscussionsQuery) {
+        return { repository: { discussions: emptyConnection } };
+      }
+
+      if (document === repositoryPullRequestsQuery) {
+        return { repository: { pullRequests: emptyConnection } };
+      }
+
+      if (document === issueCommentsQuery) {
+        return { repository: { issue: { comments: emptyConnection } } };
+      }
+
+      if (document === discussionCommentsQuery) {
+        return {
+          repository: { discussion: { comments: emptyConnection } },
+        };
+      }
+
+      if (document === pullRequestCommentsQuery) {
+        return { repository: { pullRequest: { comments: emptyConnection } } };
+      }
+
+      if (document === pullRequestReviewsQuery) {
+        return { repository: { pullRequest: { reviews: emptyConnection } } };
+      }
+
+      if (document === pullRequestReviewCommentsQuery) {
+        return {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                nodes: [],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            },
+          },
+        };
+      }
+
+      if (document === openIssueMetadataQuery) {
+        return { repository: { issues: emptyConnection } };
+      }
+
+      if (document === openPullRequestMetadataQuery) {
+        return {
+          repository: {
+            pullRequests: {
+              nodes: [
+                {
+                  id: "pr-1",
+                  number: 42,
+                  assignees: { nodes: [] },
+                  reviewRequests: {
+                    nodes: [
+                      {
+                        id: "rr-1",
+                        requestedReviewer: {
+                          __typename: "User",
+                          id: "reviewer-1",
+                          login: "reviewer",
+                          name: "Reviewer",
+                          avatarUrl: null,
+                          createdAt: "2024-01-01T00:00:00.000Z",
+                          updatedAt: "2024-01-01T00:00:00.000Z",
+                        },
+                      },
+                    ],
+                  },
+                  timelineItems: {
+                    nodes: [
+                      {
+                        __typename: "ReviewRequestedEvent",
+                        createdAt: "2024-04-02T10:00:00.000Z",
+                        requestedReviewer: {
+                          __typename: "User",
+                          id: "reviewer-1",
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+        };
+      }
+
+      if (document === pullRequestMetadataByNumberQuery) {
+        return {
+          repository: {
+            pullRequest: {
+              id: "pr-1",
+              number: 42,
+              title: "PR title",
+              state: "OPEN",
+              createdAt: "2024-04-01T10:00:00.000Z",
+              updatedAt: "2024-04-02T10:00:00.000Z",
+              closedAt: null,
+              merged: false,
+              mergedAt: null,
+              author: {
+                __typename: "User",
+                id: "author-1",
+                login: "author",
+                name: "Author",
+                avatarUrl: null,
+                createdAt: "2024-01-01T00:00:00.000Z",
+                updatedAt: "2024-01-01T00:00:00.000Z",
+              },
+              assignees: { nodes: [] },
+              reviewRequests: {
+                nodes: [
+                  {
+                    id: "rr-1",
+                    requestedReviewer: {
+                      __typename: "User",
+                      id: "reviewer-1",
+                      login: "reviewer",
+                      name: "Reviewer",
+                      avatarUrl: null,
+                      createdAt: "2024-01-01T00:00:00.000Z",
+                      updatedAt: "2024-01-01T00:00:00.000Z",
+                    },
+                  },
+                ],
+              },
+              timelineItems: {
+                nodes: [
+                  {
+                    __typename: "ReviewRequestedEvent",
+                    createdAt: "2024-04-02T10:00:00.000Z",
+                    requestedReviewer: {
+                      __typename: "User",
+                      id: "reviewer-1",
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        };
+      }
+
+      throw new Error("Unexpected query");
+    });
+
+    await runCollection({
+      org: "acme",
+      client: { request: requestMock } as unknown as GraphQLClient,
+    });
+
+    expect(requestMock).toHaveBeenCalledWith(
+      pullRequestMetadataByNumberQuery,
+      expect.objectContaining({ owner: "acme", name: "repo", number: 42 }),
+    );
+    expect(upsertPullRequestMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "pr-1",
+        number: 42,
+        repositoryId: "repo-1",
+      }),
+    );
+    expect(upsertReviewRequestMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "rr-1",
+        pullRequestId: "pr-1",
+        reviewerId: "reviewer-1",
+      }),
+    );
+  });
+
+  it("continues sync when pull request retry returns null", async () => {
+    listExistingPullRequestIdsMock.mockResolvedValue(new Set());
+
+    const requestMock = createRequestMockForOpenPullRequestMetadata({
+      openPullRequests: {
+        nodes: [
+          {
+            id: "pr-1",
+            number: 42,
+            assignees: { nodes: [] },
+            reviewRequests: { nodes: [] },
+            timelineItems: { nodes: [] },
+          },
+        ],
+        pageInfo: { hasNextPage: false, endCursor: null },
+      },
+      pullRequestMetadataByNumber: async () => ({
+        repository: { pullRequest: null },
+      }),
+    });
+
+    await expect(
+      runCollection({
+        org: "acme",
+        client: { request: requestMock } as unknown as GraphQLClient,
+      }),
+    ).resolves.toBeDefined();
+
+    expect(upsertPullRequestMock).not.toHaveBeenCalled();
+    expect(upsertReviewRequestMock).not.toHaveBeenCalled();
+  });
+
+  it("skips retry when pull request id mismatches the expected id", async () => {
+    listExistingPullRequestIdsMock.mockResolvedValue(new Set());
+    const logger = vi.fn();
+    const requestMock = createRequestMockForOpenPullRequestMetadata({
+      openPullRequests: {
+        nodes: [
+          {
+            id: "pr-1",
+            number: 42,
+            assignees: { nodes: [] },
+            reviewRequests: { nodes: [] },
+            timelineItems: { nodes: [] },
+          },
+        ],
+        pageInfo: { hasNextPage: false, endCursor: null },
+      },
+      pullRequestMetadataByNumber: async () => ({
+        repository: {
+          pullRequest: {
+            id: "pr-2",
+            number: 42,
+            title: "Mismatched PR",
+            state: "OPEN",
+            createdAt: "2024-04-01T10:00:00.000Z",
+            updatedAt: "2024-04-02T10:00:00.000Z",
+            closedAt: null,
+            merged: false,
+            mergedAt: null,
+            author: null,
+            assignees: { nodes: [] },
+            reviewRequests: { nodes: [] },
+            timelineItems: { nodes: [] },
+          },
+        },
+      }),
+    });
+
+    await runCollection({
+      org: "acme",
+      logger,
+      client: { request: requestMock } as unknown as GraphQLClient,
+    });
+
+    expect(upsertPullRequestMock).not.toHaveBeenCalled();
+    expect(upsertReviewRequestMock).not.toHaveBeenCalled();
+    expect(logger).toHaveBeenCalledWith(
+      expect.stringContaining("Skipping retry for acme/repo#42"),
+    );
+  });
+
+  it("logs retry failures and keeps the sync run successful", async () => {
+    listExistingPullRequestIdsMock.mockResolvedValue(new Set());
+    const logger = vi.fn();
+    const requestMock = createRequestMockForOpenPullRequestMetadata({
+      openPullRequests: {
+        nodes: [
+          {
+            id: "pr-1",
+            number: 42,
+            assignees: { nodes: [] },
+            reviewRequests: { nodes: [] },
+            timelineItems: { nodes: [] },
+          },
+        ],
+        pageInfo: { hasNextPage: false, endCursor: null },
+      },
+      pullRequestMetadataByNumber: async () => {
+        throw new Error("network boom");
+      },
+    });
+
+    await runCollection({
+      org: "acme",
+      logger,
+      client: { request: requestMock } as unknown as GraphQLClient,
+    });
+
+    expect(logger).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Failed retrying review request sync for acme/repo#42: network boom",
+      ),
+    );
+  });
+
+  it("retries multiple missing pull requests in one run", async () => {
+    listExistingPullRequestIdsMock.mockResolvedValue(new Set());
+
+    const requestMock = createRequestMockForOpenPullRequestMetadata({
+      openPullRequests: {
+        nodes: [
+          {
+            id: "pr-1",
+            number: 41,
+            assignees: { nodes: [] },
+            reviewRequests: {
+              nodes: [
+                {
+                  id: "rr-1",
+                  requestedReviewer: {
+                    __typename: "User",
+                    id: "reviewer-1",
+                    login: "reviewer-1",
+                    name: "Reviewer 1",
+                    avatarUrl: null,
+                    createdAt: "2024-01-01T00:00:00.000Z",
+                    updatedAt: "2024-01-01T00:00:00.000Z",
+                  },
+                },
+              ],
+            },
+            timelineItems: {
+              nodes: [
+                {
+                  __typename: "ReviewRequestedEvent",
+                  createdAt: "2024-04-02T10:00:00.000Z",
+                  requestedReviewer: {
+                    __typename: "User",
+                    id: "reviewer-1",
+                  },
+                },
+              ],
+            },
+          },
+          {
+            id: "pr-2",
+            number: 42,
+            assignees: { nodes: [] },
+            reviewRequests: {
+              nodes: [
+                {
+                  id: "rr-2",
+                  requestedReviewer: {
+                    __typename: "User",
+                    id: "reviewer-2",
+                    login: "reviewer-2",
+                    name: "Reviewer 2",
+                    avatarUrl: null,
+                    createdAt: "2024-01-01T00:00:00.000Z",
+                    updatedAt: "2024-01-01T00:00:00.000Z",
+                  },
+                },
+              ],
+            },
+            timelineItems: {
+              nodes: [
+                {
+                  __typename: "ReviewRequestedEvent",
+                  createdAt: "2024-04-02T11:00:00.000Z",
+                  requestedReviewer: {
+                    __typename: "User",
+                    id: "reviewer-2",
+                  },
+                },
+              ],
+            },
+          },
+        ],
+        pageInfo: { hasNextPage: false, endCursor: null },
+      },
+      pullRequestMetadataByNumber: async (variables) => {
+        if (variables.number === 41) {
+          return {
+            repository: {
+              pullRequest: {
+                id: "pr-1",
+                number: 41,
+                title: "PR 41",
+                state: "OPEN",
+                createdAt: "2024-04-01T10:00:00.000Z",
+                updatedAt: "2024-04-02T10:00:00.000Z",
+                closedAt: null,
+                merged: false,
+                mergedAt: null,
+                author: null,
+                assignees: { nodes: [] },
+                reviewRequests: {
+                  nodes: [
+                    {
+                      id: "rr-1",
+                      requestedReviewer: {
+                        __typename: "User",
+                        id: "reviewer-1",
+                        login: "reviewer-1",
+                        name: "Reviewer 1",
+                        avatarUrl: null,
+                        createdAt: "2024-01-01T00:00:00.000Z",
+                        updatedAt: "2024-01-01T00:00:00.000Z",
+                      },
+                    },
+                  ],
+                },
+                timelineItems: {
+                  nodes: [
+                    {
+                      __typename: "ReviewRequestedEvent",
+                      createdAt: "2024-04-02T10:00:00.000Z",
+                      requestedReviewer: {
+                        __typename: "User",
+                        id: "reviewer-1",
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          };
+        }
+
+        if (variables.number === 42) {
+          return {
+            repository: {
+              pullRequest: {
+                id: "pr-2",
+                number: 42,
+                title: "PR 42",
+                state: "OPEN",
+                createdAt: "2024-04-01T11:00:00.000Z",
+                updatedAt: "2024-04-02T11:00:00.000Z",
+                closedAt: null,
+                merged: false,
+                mergedAt: null,
+                author: null,
+                assignees: { nodes: [] },
+                reviewRequests: {
+                  nodes: [
+                    {
+                      id: "rr-2",
+                      requestedReviewer: {
+                        __typename: "User",
+                        id: "reviewer-2",
+                        login: "reviewer-2",
+                        name: "Reviewer 2",
+                        avatarUrl: null,
+                        createdAt: "2024-01-01T00:00:00.000Z",
+                        updatedAt: "2024-01-01T00:00:00.000Z",
+                      },
+                    },
+                  ],
+                },
+                timelineItems: {
+                  nodes: [
+                    {
+                      __typename: "ReviewRequestedEvent",
+                      createdAt: "2024-04-02T11:00:00.000Z",
+                      requestedReviewer: {
+                        __typename: "User",
+                        id: "reviewer-2",
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          };
+        }
+
+        throw new Error("Unexpected pull request number");
+      },
+    });
+
+    await runCollection({
+      org: "acme",
+      client: { request: requestMock } as unknown as GraphQLClient,
+    });
+
+    expect(upsertPullRequestMock).toHaveBeenCalledTimes(2);
+    expect(upsertReviewRequestMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "rr-1", pullRequestId: "pr-1" }),
+    );
+    expect(upsertReviewRequestMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "rr-2", pullRequestId: "pr-2" }),
+    );
+  });
+
+  it("handles mixed existing and missing pull requests across metadata pages", async () => {
+    listExistingPullRequestIdsMock.mockImplementation(
+      async (ids: readonly string[]) =>
+        new Set(ids.filter((id) => id !== "pr-missing")),
+    );
+
+    const requestMock = vi.fn(
+      async (document: unknown, variables: TestQueryVariables = {}) => {
+        if (document === organizationRepositoriesQuery) {
+          return {
+            organization: {
+              repositories: {
+                nodes: [
+                  {
+                    id: "repo-1",
+                    name: "repo",
+                    nameWithOwner: "acme/repo",
+                    url: "https://github.com/acme/repo",
+                    isPrivate: false,
+                    createdAt: "2024-01-01T00:00:00.000Z",
+                    updatedAt: "2024-04-02T12:00:00.000Z",
+                    owner: {
+                      id: "owner-1",
+                      login: "owner",
+                      name: "Owner",
+                      avatarUrl: null,
+                      createdAt: "2024-01-01T00:00:00.000Z",
+                      updatedAt: "2024-01-01T00:00:00.000Z",
+                      __typename: "User",
+                    },
+                  },
+                ],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            },
+          };
+        }
+        if (document === repositoryIssuesQuery) {
+          return { repository: { issues: emptyConnection } };
+        }
+        if (document === repositoryDiscussionsQuery) {
+          return { repository: { discussions: emptyConnection } };
+        }
+        if (document === repositoryPullRequestsQuery) {
+          return { repository: { pullRequests: emptyConnection } };
+        }
+        if (document === issueCommentsQuery) {
+          return { repository: { issue: { comments: emptyConnection } } };
+        }
+        if (document === discussionCommentsQuery) {
+          return {
+            repository: { discussion: { comments: emptyConnection } },
+          };
+        }
+        if (document === pullRequestCommentsQuery) {
+          return { repository: { pullRequest: { comments: emptyConnection } } };
+        }
+        if (document === pullRequestReviewsQuery) {
+          return { repository: { pullRequest: { reviews: emptyConnection } } };
+        }
+        if (document === pullRequestReviewCommentsQuery) {
+          return {
+            repository: {
+              pullRequest: {
+                reviewThreads: {
+                  nodes: [],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+            },
+          };
+        }
+        if (document === openIssueMetadataQuery) {
+          return { repository: { issues: emptyConnection } };
+        }
+        if (document === openPullRequestMetadataQuery) {
+          if (!variables.cursor) {
+            return {
+              repository: {
+                pullRequests: {
+                  nodes: [
+                    {
+                      id: "pr-existing",
+                      number: 41,
+                      assignees: { nodes: [] },
+                      reviewRequests: {
+                        nodes: [
+                          {
+                            id: "rr-existing",
+                            requestedReviewer: {
+                              __typename: "User",
+                              id: "reviewer-existing",
+                              login: "reviewer-existing",
+                              name: "Reviewer Existing",
+                              avatarUrl: null,
+                              createdAt: "2024-01-01T00:00:00.000Z",
+                              updatedAt: "2024-01-01T00:00:00.000Z",
+                            },
+                          },
+                        ],
+                      },
+                      timelineItems: {
+                        nodes: [
+                          {
+                            __typename: "ReviewRequestedEvent",
+                            createdAt: "2024-04-02T10:00:00.000Z",
+                            requestedReviewer: {
+                              __typename: "User",
+                              id: "reviewer-existing",
+                            },
+                          },
+                        ],
+                      },
+                    },
+                    {
+                      id: "pr-missing",
+                      number: 42,
+                      assignees: { nodes: [] },
+                      reviewRequests: {
+                        nodes: [
+                          {
+                            id: "rr-missing",
+                            requestedReviewer: {
+                              __typename: "User",
+                              id: "reviewer-missing",
+                              login: "reviewer-missing",
+                              name: "Reviewer Missing",
+                              avatarUrl: null,
+                              createdAt: "2024-01-01T00:00:00.000Z",
+                              updatedAt: "2024-01-01T00:00:00.000Z",
+                            },
+                          },
+                        ],
+                      },
+                      timelineItems: {
+                        nodes: [
+                          {
+                            __typename: "ReviewRequestedEvent",
+                            createdAt: "2024-04-02T10:05:00.000Z",
+                            requestedReviewer: {
+                              __typename: "User",
+                              id: "reviewer-missing",
+                            },
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                  pageInfo: { hasNextPage: true, endCursor: "cursor-2" },
+                },
+              },
+            };
+          }
+          return {
+            repository: {
+              pullRequests: {
+                nodes: [
+                  {
+                    id: "pr-page2",
+                    number: 43,
+                    assignees: { nodes: [] },
+                    reviewRequests: { nodes: [] },
+                    timelineItems: { nodes: [] },
+                  },
+                ],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            },
+          };
+        }
+        if (document === pullRequestMetadataByNumberQuery) {
+          return {
+            repository: {
+              pullRequest: {
+                id: "pr-missing",
+                number: 42,
+                title: "Recovered PR",
+                state: "OPEN",
+                createdAt: "2024-04-01T10:00:00.000Z",
+                updatedAt: "2024-04-02T10:05:00.000Z",
+                closedAt: null,
+                merged: false,
+                mergedAt: null,
+                author: null,
+                assignees: { nodes: [] },
+                reviewRequests: {
+                  nodes: [
+                    {
+                      id: "rr-missing",
+                      requestedReviewer: {
+                        __typename: "User",
+                        id: "reviewer-missing",
+                        login: "reviewer-missing",
+                        name: "Reviewer Missing",
+                        avatarUrl: null,
+                        createdAt: "2024-01-01T00:00:00.000Z",
+                        updatedAt: "2024-01-01T00:00:00.000Z",
+                      },
+                    },
+                  ],
+                },
+                timelineItems: {
+                  nodes: [
+                    {
+                      __typename: "ReviewRequestedEvent",
+                      createdAt: "2024-04-02T10:05:00.000Z",
+                      requestedReviewer: {
+                        __typename: "User",
+                        id: "reviewer-missing",
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          };
+        }
+        throw new Error("Unexpected query");
+      },
+    );
+
+    await runCollection({
+      org: "acme",
+      client: { request: requestMock } as unknown as GraphQLClient,
+    });
+
+    expect(requestMock).toHaveBeenCalledWith(
+      openPullRequestMetadataQuery,
+      expect.objectContaining({ cursor: null }),
+    );
+    expect(requestMock).toHaveBeenCalledWith(
+      openPullRequestMetadataQuery,
+      expect.objectContaining({ cursor: "cursor-2" }),
+    );
+    expect(requestMock).toHaveBeenCalledWith(
+      pullRequestMetadataByNumberQuery,
+      expect.objectContaining({ number: 42 }),
+    );
+    expect(upsertReviewRequestMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "rr-existing",
+        pullRequestId: "pr-existing",
+      }),
+    );
+    expect(upsertReviewRequestMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "rr-missing",
+        pullRequestId: "pr-missing",
+      }),
+    );
+  });
+
+  it("applies pending review request removals during retry sync", async () => {
+    listExistingPullRequestIdsMock.mockResolvedValue(new Set());
+    listPendingReviewRequestsMock.mockResolvedValue(
+      new Map([
+        [
+          "pr-1",
+          [
+            {
+              id: "pending-1",
+              pullRequestId: "pr-1",
+              reviewerId: "reviewer-1",
+              requestedAt: "2024-04-01T00:00:00.000Z",
+            },
+          ],
+        ],
+      ]),
+    );
+
+    const requestMock = createRequestMockForOpenPullRequestMetadata({
+      openPullRequests: {
+        nodes: [
+          {
+            id: "pr-1",
+            number: 42,
+            assignees: { nodes: [] },
+            reviewRequests: { nodes: [] },
+            timelineItems: { nodes: [] },
+          },
+        ],
+        pageInfo: { hasNextPage: false, endCursor: null },
+      },
+      pullRequestMetadataByNumber: async () => ({
+        repository: {
+          pullRequest: {
+            id: "pr-1",
+            number: 42,
+            title: "PR title",
+            state: "OPEN",
+            createdAt: "2024-04-01T10:00:00.000Z",
+            updatedAt: "2024-04-02T10:00:00.000Z",
+            closedAt: null,
+            merged: false,
+            mergedAt: null,
+            author: null,
+            assignees: { nodes: [] },
+            reviewRequests: { nodes: [] },
+            timelineItems: { nodes: [] },
+          },
+        },
+      }),
+    });
+
+    await runCollection({
+      org: "acme",
+      client: { request: requestMock } as unknown as GraphQLClient,
+    });
+
+    expect(markReviewRequestRemovedMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pullRequestId: "pr-1",
+        reviewerId: "reviewer-1",
+      }),
+    );
   });
 
   it("propagates recordSyncLog failures", async () => {
