@@ -7,6 +7,7 @@ import {
   deleteMissingCommentsForTarget,
   deleteReactionsForSubject,
   fetchIssueRawMap,
+  listExistingPullRequestIds,
   listPendingReviewRequestsByPullRequestIds,
   markReviewRequestRemoved,
   type PendingReviewRequest,
@@ -37,6 +38,7 @@ import {
   openPullRequestMetadataQuery,
   organizationRepositoriesQuery,
   pullRequestCommentsQuery,
+  pullRequestMetadataByNumberQuery,
   pullRequestReviewCommentsQuery,
   pullRequestReviewsQuery,
   repositoryDiscussionsQuery,
@@ -491,6 +493,23 @@ type PullRequestMetadataNode = {
 type OpenPullRequestMetadataQueryResponse = {
   repository: {
     pullRequests: GraphQLConnection<PullRequestMetadataNode> | null;
+  } | null;
+};
+
+type PullRequestMetadataByNumberNode = PullRequestMetadataNode & {
+  title: string;
+  state: string;
+  createdAt: string;
+  updatedAt: string;
+  closedAt?: string | null;
+  mergedAt?: string | null;
+  merged?: boolean | null;
+  author?: GithubActor | null;
+};
+
+type PullRequestMetadataByNumberQueryResponse = {
+  repository: {
+    pullRequest: PullRequestMetadataByNumberNode | null;
   } | null;
 };
 
@@ -2583,6 +2602,7 @@ async function refreshOpenPullRequestMetadataForRepository(
   let pullRequestCount = 0;
   let reviewRequestsAdded = 0;
   let reviewRequestsRemoved = 0;
+  const missingPullRequestNumbers = new Map<string, number>();
 
   while (hasNextPage) {
     const data: OpenPullRequestMetadataQueryResponse = await requestWithRetry(
@@ -2601,6 +2621,9 @@ async function refreshOpenPullRequestMetadataForRepository(
 
     const connection = data.repository?.pullRequests;
     const nodes = connection?.nodes ?? [];
+    const existingPullRequestIds = nodes.length
+      ? await listExistingPullRequestIds(nodes.map((node) => node.id))
+      : new Set<string>();
     const pendingRequests = nodes.length
       ? await listPendingReviewRequestsByPullRequestIds(
           nodes.map((node) => node.id),
@@ -2613,6 +2636,11 @@ async function refreshOpenPullRequestMetadataForRepository(
         pullRequest.id,
         buildAssigneesPayload(pullRequest.assignees ?? null),
       );
+      if (!existingPullRequestIds.has(pullRequest.id)) {
+        missingPullRequestNumbers.set(pullRequest.id, pullRequest.number);
+        pullRequestCount += 1;
+        continue;
+      }
       const reviewCounts = await syncReviewRequestsSnapshot(
         pullRequest,
         pendingRequests.get(pullRequest.id),
@@ -2626,8 +2654,109 @@ async function refreshOpenPullRequestMetadataForRepository(
     cursor = connection?.pageInfo?.endCursor ?? null;
   }
 
+  if (missingPullRequestNumbers.size) {
+    const retryResult = await retryMissingPullRequestsForReviewRequestSync({
+      client,
+      repository,
+      options,
+      missingPullRequestNumbers,
+    });
+    reviewRequestsAdded += retryResult.reviewRequestsAdded;
+    reviewRequestsRemoved += retryResult.reviewRequestsRemoved;
+  }
+
   return {
     pullRequests: pullRequestCount,
+    reviewRequestsAdded,
+    reviewRequestsRemoved,
+  };
+}
+
+async function retryMissingPullRequestsForReviewRequestSync(params: {
+  client: GraphQLClient;
+  repository: RepositoryNode;
+  options: SyncOptions;
+  missingPullRequestNumbers: Map<string, number>;
+}) {
+  const { client, repository, options, missingPullRequestNumbers } = params;
+  const [owner, name] = repository.nameWithOwner.split("/");
+  const { logger } = options;
+  let reviewRequestsAdded = 0;
+  let reviewRequestsRemoved = 0;
+
+  for (const [
+    expectedPullRequestId,
+    pullRequestNumber,
+  ] of missingPullRequestNumbers.entries()) {
+    try {
+      const data =
+        await requestWithRetry<PullRequestMetadataByNumberQueryResponse>(
+          client,
+          pullRequestMetadataByNumberQuery,
+          {
+            owner,
+            name,
+            number: pullRequestNumber,
+          },
+          {
+            logger,
+            context: `pull request metadata ${repository.nameWithOwner}#${pullRequestNumber}`,
+          },
+        );
+
+      const pullRequest = data.repository?.pullRequest;
+      if (!pullRequest) {
+        logger?.(
+          `[open-items] Could not retry review request sync for ${repository.nameWithOwner}#${pullRequestNumber}: pull request not found.`,
+        );
+        continue;
+      }
+
+      if (pullRequest.id !== expectedPullRequestId) {
+        logger?.(
+          `[open-items] Skipping retry for ${repository.nameWithOwner}#${pullRequestNumber}: expected ${expectedPullRequestId}, got ${pullRequest.id}.`,
+        );
+        continue;
+      }
+
+      const authorId = await processActor(pullRequest.author);
+      await processActorNodes(pullRequest.assignees?.nodes);
+      await upsertPullRequest({
+        id: pullRequest.id,
+        number: pullRequest.number,
+        repositoryId: repository.id,
+        authorId: authorId ?? null,
+        title: pullRequest.title,
+        state: pullRequest.state,
+        createdAt: pullRequest.createdAt,
+        updatedAt: pullRequest.updatedAt,
+        closedAt: pullRequest.closedAt ?? null,
+        mergedAt: pullRequest.mergedAt ?? null,
+        merged: pullRequest.merged ?? null,
+        raw: pullRequest,
+      });
+      await updatePullRequestAssignees(
+        pullRequest.id,
+        buildAssigneesPayload(pullRequest.assignees ?? null),
+      );
+
+      const pendingRequests = await listPendingReviewRequestsByPullRequestIds([
+        pullRequest.id,
+      ]);
+      const reviewCounts = await syncReviewRequestsSnapshot(
+        pullRequest,
+        pendingRequests.get(pullRequest.id),
+      );
+      reviewRequestsAdded += reviewCounts.added;
+      reviewRequestsRemoved += reviewCounts.removed;
+    } catch (error) {
+      logger?.(
+        `[open-items] Failed retrying review request sync for ${repository.nameWithOwner}#${pullRequestNumber}: ${describeError(error)}`,
+      );
+    }
+  }
+
+  return {
     reviewRequestsAdded,
     reviewRequestsRemoved,
   };

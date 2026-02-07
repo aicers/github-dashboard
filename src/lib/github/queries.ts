@@ -716,6 +716,107 @@ export const openPullRequestMetadataQuery = gql`
   }
 `;
 
+export const pullRequestMetadataByNumberQuery = gql`
+  query PullRequestMetadataByNumber($owner: String!, $name: String!, $number: Int!) {
+    repository(owner: $owner, name: $name) {
+      pullRequest(number: $number) {
+        id
+        number
+        title
+        state
+        createdAt
+        updatedAt
+        closedAt
+        merged
+        mergedAt
+        author {
+          __typename
+          ... on User {
+            id
+            login
+            name
+            avatarUrl(size: 200)
+            createdAt
+            updatedAt
+          }
+          ... on Organization {
+            id
+            login
+            name
+            avatarUrl(size: 200)
+            createdAt
+            updatedAt
+          }
+          ... on Bot {
+            id
+            login
+            avatarUrl(size: 200)
+          }
+          ... on Mannequin {
+            id
+            login
+            avatarUrl(size: 200)
+          }
+        }
+        assignees(first: 25) {
+          nodes {
+            __typename
+            ... on User {
+              id
+              login
+              name
+              avatarUrl(size: 200)
+              createdAt
+              updatedAt
+            }
+          }
+        }
+        reviewRequests(first: 50) {
+          nodes {
+            id
+            requestedReviewer {
+              __typename
+              ... on User {
+                id
+                login
+                name
+                avatarUrl(size: 200)
+                createdAt
+                updatedAt
+              }
+              ... on Team {
+                id
+                slug
+                name
+              }
+            }
+          }
+        }
+        timelineItems(
+          itemTypes: [REVIEW_REQUESTED_EVENT],
+          first: ${REVIEW_REQUEST_TIMELINE_PAGE_SIZE}
+        ) {
+          nodes {
+            __typename
+            ... on ReviewRequestedEvent {
+              createdAt
+              requestedReviewer {
+                __typename
+                ... on User {
+                  id
+                }
+                ... on Team {
+                  id
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
 export const repositoryPullRequestLinksQuery = gql`
   query RepositoryPullRequestLinks($owner: String!, $name: String!, $cursor: String) {
     repository(owner: $owner, name: $name) {
