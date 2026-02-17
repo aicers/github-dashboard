@@ -6,6 +6,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed
+
+- Switched the unanswered-mention classification model default/config examples
+  from `gpt-4` to `gpt-5-mini`.
+
 ### Fixed
 
 - Kept the Sync tab's "Sync in progress" banner visible until all post-sync
