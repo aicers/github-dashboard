@@ -4,6 +4,15 @@ This file documents recent notable changes to this project. The format of this
 file is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Kept the Sync tab's "Sync in progress" banner visible until all post-sync
+  steps complete (`reaction-refresh`, `status-automation`,
+  `activity-snapshot`, `activity-cache`, and `unanswered-mentions`) instead of
+  hiding immediately after GitHub collection.
+
 ## [0.3.0] - 2026-02-01
 
 ### Changed
@@ -61,6 +70,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Initial public release of the GitHub Dashboard
 
+[Unreleased]: https://github.com/aicers/github-dashboard/compare/0.3.0...main
 [0.3.0]: https://github.com/aicers/github-dashboard/compare/0.2.0...0.3.0
 [0.2.0]: https://github.com/aicers/github-dashboard/compare/0.1.0...0.2.0
 [0.1.0]: https://github.com/aicers/github-dashboard/tree/0.1.0
