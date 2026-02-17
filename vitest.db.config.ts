@@ -14,6 +14,9 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
+    // DB integration tests share a single Postgres instance and reset tables.
+    // Run files serially to avoid TRUNCATE lock-order deadlocks in CI.
+    fileParallelism: false,
     include: [
       "**/*.db.test.ts",
       "**/analytics.issue-creation-closure.metrics.test.ts",
