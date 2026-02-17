@@ -628,6 +628,40 @@ describe("sync service (unit)", () => {
     expect(refreshAttentionReactionsMock).toHaveBeenCalledTimes(1);
   });
 
+  it("emits run completion only after post-sync steps finish", async () => {
+    vi.resetModules();
+    const { runIncrementalSync } = await importService();
+
+    await runIncrementalSync();
+
+    const runCompletedIndex = emitSyncEventMock.mock.calls.findIndex(
+      (call) => call[0]?.type === "run-completed",
+    );
+    expect(runCompletedIndex).toBeGreaterThanOrEqual(0);
+
+    const runCompletedOrder =
+      emitSyncEventMock.mock.invocationCallOrder[runCompletedIndex];
+    expect(runCompletedOrder).toBeDefined();
+
+    expect(refreshAttentionReactionsMock).toHaveBeenCalledTimes(1);
+    expect(ensureIssueStatusAutomationMock).toHaveBeenCalledTimes(1);
+    expect(refreshActivityItemsSnapshotMock).toHaveBeenCalledTimes(1);
+    expect(refreshActivityCachesMock).toHaveBeenCalledTimes(1);
+
+    expect(runCompletedOrder).toBeGreaterThan(
+      refreshAttentionReactionsMock.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(runCompletedOrder).toBeGreaterThan(
+      ensureIssueStatusAutomationMock.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(runCompletedOrder).toBeGreaterThan(
+      refreshActivityItemsSnapshotMock.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(runCompletedOrder).toBeGreaterThan(
+      refreshActivityCachesMock.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
   it("emits failure events when cleanup marks running syncs as failed", async () => {
     vi.resetModules();
     const completedAt = "2024-05-01T00:05:00.000Z";

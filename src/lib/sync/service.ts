@@ -418,7 +418,7 @@ async function executeSync(params: {
         runId,
       });
 
-      const completedAt = new Date().toISOString();
+      const collectionCompletedAt = new Date().toISOString();
       const latestResourceTimestamp = Object.values(
         summary.timestamps ?? {},
       ).reduce<string | null>(
@@ -426,32 +426,8 @@ async function executeSync(params: {
         null,
       );
       await updateSyncConfig({
-        lastSyncCompletedAt: completedAt,
-        lastSuccessfulSyncAt: latestResourceTimestamp ?? completedAt,
+        lastSuccessfulSyncAt: latestResourceTimestamp ?? collectionCompletedAt,
       });
-      await updateSyncRunStatus(runId, "success", completedAt);
-      emitSyncEvent({
-        type: "run-status",
-        runId,
-        status: "success",
-        completedAt,
-      });
-      emitSyncEvent({
-        type: "run-completed",
-        runId,
-        status: "success",
-        completedAt,
-        summary: toRunSummaryEvent(summary),
-      });
-
-      if (actualRunType === "automatic") {
-        emitSyncEvent({
-          type: "attention-refresh",
-          scope: "all",
-          trigger: "automatic-sync",
-          timestamp: completedAt,
-        });
-      }
 
       await logSyncStep({
         runId,
@@ -558,6 +534,32 @@ async function executeSync(params: {
           });
         },
       });
+
+      const completedAt = new Date().toISOString();
+      await updateSyncConfig({ lastSyncCompletedAt: completedAt });
+      await updateSyncRunStatus(runId, "success", completedAt);
+      emitSyncEvent({
+        type: "run-status",
+        runId,
+        status: "success",
+        completedAt,
+      });
+      emitSyncEvent({
+        type: "run-completed",
+        runId,
+        status: "success",
+        completedAt,
+        summary: toRunSummaryEvent(summary),
+      });
+
+      if (actualRunType === "automatic") {
+        emitSyncEvent({
+          type: "attention-refresh",
+          scope: "all",
+          trigger: "automatic-sync",
+          timestamp: completedAt,
+        });
+      }
 
       return {
         since,
