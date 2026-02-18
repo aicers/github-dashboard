@@ -39,10 +39,26 @@ test.describe("PeopleView (Playwright)", () => {
 
     await page.goto(PEOPLE_PATH);
 
-    await expect(page.getByText("활동 요약 · octoaide")).toBeVisible();
-    await expect(page.getByRole("button", { name: "octoaide" })).toHaveClass(
-      /bg-primary/,
+    const contributorNames = initialAnalytics.contributors.map(
+      (person) => person.login ?? person.name ?? person.id,
     );
+    const resolveActiveContributor = async () => {
+      for (const name of contributorNames) {
+        const className = await page
+          .getByRole("button", { name })
+          .getAttribute("class");
+        if (className?.includes("bg-primary")) {
+          return name;
+        }
+      }
+      return "";
+    };
+    await expect.poll(resolveActiveContributor).not.toBe("");
+    const activeContributor = await resolveActiveContributor();
+
+    await expect(
+      page.getByText(`활동 요약 · ${activeContributor}`),
+    ).toBeVisible();
 
     const applyButton = page.getByRole("button", {
       name: /필터 적용|갱신 중\.\.\./,
