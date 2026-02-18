@@ -127,12 +127,9 @@ test.describe("ActivityView (Playwright)", () => {
     });
 
     await page.goto(ACTIVITY_PATH);
-
-    await page.waitForResponse(
-      (response) =>
-        response.url().includes("/api/activity/filters") &&
-        response.request().method() === "GET",
-    );
+    await expect(
+      page.getByRole("button", { name: "Discussion" }),
+    ).toBeVisible();
 
     await page.getByRole("button", { name: "Discussion" }).click();
 
@@ -285,12 +282,9 @@ test.describe("ActivityView (Playwright)", () => {
     });
 
     await page.goto(ACTIVITY_PATH);
-
-    await page.waitForResponse(
-      (response) =>
-        response.url().includes("/api/activity/filters") &&
-        response.request().method() === "GET",
-    );
+    await expect(
+      page.getByRole("button", { name: "고급 필터 보기" }),
+    ).toBeVisible();
 
     await page.getByRole("button", { name: "고급 필터 보기" }).click();
 
