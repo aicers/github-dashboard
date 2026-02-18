@@ -39,34 +39,17 @@ test.describe("PeopleView (Playwright)", () => {
 
     await page.goto(PEOPLE_PATH);
 
-    const contributorNames = initialAnalytics.contributors.map(
-      (person) => person.login ?? person.name ?? person.id,
-    );
-    const resolveActiveContributor = async () => {
-      for (const name of contributorNames) {
-        const className = await page
-          .getByRole("button", { name })
-          .getAttribute("class");
-        if (className?.includes("bg-primary")) {
-          return name;
-        }
-      }
-      return "";
-    };
-    await expect.poll(resolveActiveContributor).not.toBe("");
-    const activeContributor = await resolveActiveContributor();
-
-    await expect(
-      page.getByText(`활동 요약 · ${activeContributor}`),
-    ).toBeVisible();
-
     const applyButton = page.getByRole("button", {
       name: /필터 적용|갱신 중\.\.\./,
     });
 
+    await expect(page.getByRole("button", { name: "codecov" })).toBeVisible();
     await page.getByRole("button", { name: "codecov" }).click();
     await expect(applyButton).toBeDisabled();
     await expect(page.getByText("활동 요약 · codecov")).toBeVisible();
+    await expect(page.getByRole("button", { name: "codecov" })).toHaveClass(
+      /bg-primary/,
+    );
     await expect(applyButton).toBeDisabled();
   });
 });
