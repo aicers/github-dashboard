@@ -37,14 +37,7 @@ test.describe("PeopleView (Playwright)", () => {
       });
     });
 
-    await Promise.all([
-      page.waitForResponse(
-        (response) =>
-          response.url().includes("/api/dashboard/analytics") &&
-          response.request().method() === "GET",
-      ),
-      page.goto(PEOPLE_PATH),
-    ]);
+    await page.goto(PEOPLE_PATH);
 
     await expect(page.getByText("활동 요약 · octoaide")).toBeVisible();
     await expect(page.getByRole("button", { name: "octoaide" })).toHaveClass(
