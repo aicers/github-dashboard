@@ -137,14 +137,13 @@ test.describe("ActivityView (Playwright)", () => {
     const nameInput = page.getByPlaceholder("필터 이름");
     await nameInput.fill("My focus");
     const saveForm = page.locator("form").filter({ has: nameInput });
-    await Promise.all([
-      saveForm.getByRole("button", { name: "저장" }).click(),
-      page.waitForResponse(
-        (response) =>
-          response.url().includes("/api/activity/filters") &&
-          response.request().method() === "POST",
-      ),
-    ]);
+    const saveResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/activity/filters") &&
+        response.request().method() === "POST",
+    );
+    await saveForm.getByRole("button", { name: "저장" }).click();
+    await saveResponse;
 
     await page.waitForTimeout(100);
 
