@@ -9,7 +9,7 @@
 
 - Install: `pnpm install` → `pnpm approve-builds`
 - Browsers (one-time): `pnpm exec playwright install --with-deps`
-- Run dev: `pnpm dev` (Next.js 15 + Turbopack)
+- Run dev: `pnpm dev` (Next.js 16; Turbopack is the default dev bundler)
 
 ## Quality gates (run after every code change)
 

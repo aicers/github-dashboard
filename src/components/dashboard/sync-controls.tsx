@@ -64,6 +64,11 @@ type MentionClassificationSummary = {
   message?: string;
 };
 
+type BackfillHistoryEntry = {
+  id: string;
+  report: BackfillResult;
+};
+
 async function parseApiResponse<T>(
   response: Response,
 ): Promise<ApiResponse<T>> {
@@ -96,6 +101,18 @@ async function parseApiResponse<T>(
 
 function capitalize(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function createBackfillHistoryEntry(
+  report: BackfillResult,
+): BackfillHistoryEntry {
+  const id =
+    globalThis.crypto?.randomUUID?.() ??
+    `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return {
+    id: `backfill-${id}`,
+    report,
+  };
 }
 
 const statusColors: Record<string, string> = {
@@ -405,7 +422,9 @@ export function SyncControls({
   const [backfillEndDate, setBackfillEndDate] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [reauthOpen, setReauthOpen] = useState(false);
-  const [backfillHistory, setBackfillHistory] = useState<BackfillResult[]>([]);
+  const [backfillHistory, setBackfillHistory] = useState<
+    BackfillHistoryEntry[]
+  >([]);
   const [activityCacheSummary, setActivityCacheSummary] =
     useState<ActivityCacheRefreshResult | null>(null);
   const [activitySnapshotSummary, setActivitySnapshotSummary] =
@@ -887,7 +906,6 @@ export function SyncControls({
 
     setIsRunningBackfill(true);
     try {
-      setBackfillHistory((previous) => previous);
       const response = await fetch("/api/sync/backfill", {
         method: "POST",
         headers: {
@@ -906,7 +924,9 @@ export function SyncControls({
 
       const report = data.result ?? null;
       if (report) {
-        setBackfillHistory((previous) => [report, ...previous].slice(0, 5));
+        setBackfillHistory((previous) =>
+          [createBackfillHistoryEntry(report), ...previous].slice(0, 5),
+        );
         const failedChunk = report.chunks.find(
           (chunk) => chunk.status === "failed",
         );
@@ -2396,59 +2416,68 @@ export function SyncControls({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6 text-sm">
-            {backfillHistory.map((report, index) => (
-              <div
-                key={`history-${report.startDate}-${report.endDate}-${index}`}
-                className="space-y-3 border-b border-border/40 pb-4 last:border-b-0 last:pb-0"
-              >
-                <div className="flex flex-wrap gap-4 text-muted-foreground">
-                  <span className="font-medium text-foreground">
-                    실행 #{backfillHistory.length - index} •{" "}
-                    {formatRange(report.startDate, report.endDate)}
-                  </span>
-                  <span>일수 {report.chunkCount}</span>
-                  <span>이슈 {report.totals.issues.toLocaleString()}</span>
-                  <span>토론 {report.totals.discussions.toLocaleString()}</span>
-                  <span>PR {report.totals.pullRequests.toLocaleString()}</span>
-                  <span>리뷰 {report.totals.reviews.toLocaleString()}</span>
-                  <span>댓글 {report.totals.comments.toLocaleString()}</span>
-                </div>
+            {backfillHistory.map((entry, index) => {
+              const report = entry.report;
+              return (
+                <div
+                  key={entry.id}
+                  className="space-y-3 border-b border-border/40 pb-4 last:border-b-0 last:pb-0"
+                >
+                  <div className="flex flex-wrap gap-4 text-muted-foreground">
+                    <span className="font-medium text-foreground">
+                      실행 #{backfillHistory.length - index} •{" "}
+                      {formatRange(report.startDate, report.endDate)}
+                    </span>
+                    <span>일수 {report.chunkCount}</span>
+                    <span>이슈 {report.totals.issues.toLocaleString()}</span>
+                    <span>
+                      토론 {report.totals.discussions.toLocaleString()}
+                    </span>
+                    <span>
+                      PR {report.totals.pullRequests.toLocaleString()}
+                    </span>
+                    <span>리뷰 {report.totals.reviews.toLocaleString()}</span>
+                    <span>댓글 {report.totals.comments.toLocaleString()}</span>
+                  </div>
 
-                <ul className="space-y-2">
-                  {report.chunks.map((chunk) =>
-                    chunk.status === "success" ? (
-                      <li
-                        key={`success-${chunk.since}-${chunk.until}`}
-                        className="flex flex-col gap-1 rounded-md border border-border/50 bg-background/80 px-4 py-3"
-                      >
-                        <span className="font-medium text-emerald-500">
-                          ✅ {formatRange(chunk.since, chunk.until)}
-                        </span>
-                        <span className="text-muted-foreground">
-                          이슈 {chunk.summary.counts.issues.toLocaleString()} /
-                          토론{" "}
-                          {chunk.summary.counts.discussions.toLocaleString()} /
-                          PR{" "}
-                          {chunk.summary.counts.pullRequests.toLocaleString()} /
-                          리뷰 {chunk.summary.counts.reviews.toLocaleString()} /
-                          댓글 {chunk.summary.counts.comments.toLocaleString()}
-                        </span>
-                      </li>
-                    ) : (
-                      <li
-                        key={`failed-${chunk.since}-${chunk.until}`}
-                        className="flex flex-col gap-1 rounded-md border border-destructive/60 bg-destructive/10 px-4 py-3"
-                      >
-                        <span className="font-medium text-destructive">
-                          ⚠️ {formatRange(chunk.since, chunk.until)} 구간 실패
-                        </span>
-                        <span>{chunk.error}</span>
-                      </li>
-                    ),
-                  )}
-                </ul>
-              </div>
-            ))}
+                  <ul className="space-y-2">
+                    {report.chunks.map((chunk) =>
+                      chunk.status === "success" ? (
+                        <li
+                          key={`success-${chunk.since}-${chunk.until}`}
+                          className="flex flex-col gap-1 rounded-md border border-border/50 bg-background/80 px-4 py-3"
+                        >
+                          <span className="font-medium text-emerald-500">
+                            ✅ {formatRange(chunk.since, chunk.until)}
+                          </span>
+                          <span className="text-muted-foreground">
+                            이슈 {chunk.summary.counts.issues.toLocaleString()}{" "}
+                            / 토론{" "}
+                            {chunk.summary.counts.discussions.toLocaleString()}{" "}
+                            / PR{" "}
+                            {chunk.summary.counts.pullRequests.toLocaleString()}{" "}
+                            / 리뷰{" "}
+                            {chunk.summary.counts.reviews.toLocaleString()} /
+                            댓글{" "}
+                            {chunk.summary.counts.comments.toLocaleString()}
+                          </span>
+                        </li>
+                      ) : (
+                        <li
+                          key={`failed-${chunk.since}-${chunk.until}`}
+                          className="flex flex-col gap-1 rounded-md border border-destructive/60 bg-destructive/10 px-4 py-3"
+                        >
+                          <span className="font-medium text-destructive">
+                            ⚠️ {formatRange(chunk.since, chunk.until)} 구간 실패
+                          </span>
+                          <span>{chunk.error}</span>
+                        </li>
+                      ),
+                    )}
+                  </ul>
+                </div>
+              );
+            })}
           </CardContent>
         </Card>
       )}
