@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
-  noStoreMock,
   readActiveSessionMock,
   fetchSyncStatusMock,
   readUserTimeSettingsMock,
@@ -14,7 +13,6 @@ const {
   listHolidayCalendarsMock,
   getCalendarHolidaysMock,
 } = vi.hoisted(() => ({
-  noStoreMock: vi.fn(),
   readActiveSessionMock: vi.fn(),
   fetchSyncStatusMock: vi.fn(),
   readUserTimeSettingsMock: vi.fn(),
@@ -26,10 +24,6 @@ const {
   fetchOrganizationTeamsMock: vi.fn(),
   listHolidayCalendarsMock: vi.fn(),
   getCalendarHolidaysMock: vi.fn(),
-}));
-
-vi.mock("next/cache", () => ({
-  unstable_noStore: noStoreMock,
 }));
 
 vi.mock("@/components/dashboard/sync-controls", () => ({
@@ -72,7 +66,7 @@ vi.mock("@/lib/holidays/service", () => ({
 import SettingsPage from "@/app/dashboard/(tabs)/settings/page";
 import SyncPage from "@/app/dashboard/(tabs)/sync/page";
 
-describe("dashboard tab caching", () => {
+describe("dashboard tab pages", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     readActiveSessionMock.mockResolvedValue({
@@ -117,13 +111,12 @@ describe("dashboard tab caching", () => {
     getCalendarHolidaysMock.mockResolvedValue([]);
   });
 
-  it("disables router cache on Sync page", async () => {
+  it("loads Sync page data", async () => {
     const status = { runs: [] } as unknown;
     fetchSyncStatusMock.mockResolvedValue(status);
 
     const element = (await SyncPage()) as { props: Record<string, unknown> };
 
-    expect(noStoreMock).toHaveBeenCalledTimes(1);
     expect(fetchSyncStatusMock).toHaveBeenCalledTimes(1);
     expect(element.props).toEqual(
       expect.objectContaining({
@@ -133,7 +126,7 @@ describe("dashboard tab caching", () => {
     );
   });
 
-  it("disables router cache on Settings page", async () => {
+  it("loads Settings page data", async () => {
     const config = {
       org_name: "Octo Org",
       excluded_repository_ids: [],
@@ -148,7 +141,6 @@ describe("dashboard tab caching", () => {
       props: Record<string, unknown>;
     };
 
-    expect(noStoreMock).toHaveBeenCalledTimes(1);
     expect(fetchSyncConfigMock).toHaveBeenCalledTimes(1);
     expect(element.props).toEqual(
       expect.objectContaining({

@@ -21,7 +21,7 @@ export default defineConfig({
       "**/*.db.test.ts",
       "**/analytics.issue-creation-closure.metrics.test.ts",
     ],
-    exclude: configDefaults.exclude,
+    exclude: [...configDefaults.exclude, ".next/**", ".claude/**"],
     testTimeout: 10_000,
     hookTimeout: 10_000,
   },

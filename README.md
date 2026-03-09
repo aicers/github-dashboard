@@ -13,23 +13,23 @@ configuration, sync controls, and analytics through a Next.js dashboard.
 
 ## Prerequisites
 
-- Node 22: Use Node.js 22.x. **Do not use Node 24.**
-  - nvm example: `nvm install 22 && nvm use 22`
+- Node 24: Use Node.js 24.x.
+  - nvm example: `nvm install 24 && nvm use 24`
   - macOS (Homebrew):
-    - `brew update && brew install node@22`
+    - `brew update && brew install node@24`
     - Unlink the previous version: `brew unlink node`
-    - Link 22: `brew link --overwrite --force node@22`
-    - Verify: `node -v` should print v22.x.y
+    - Link 24: `brew link --overwrite --force node@24`
+    - Verify: `node -v` should print v24.x.y
 - pnpm: Use pnpm 10+.
   - macOS (Homebrew):
     - `brew install pnpm`
-  - Linux (Corepack with Node 22):
+  - Linux (Corepack with Node 24):
     - `corepack enable`
     - `corepack prepare pnpm@10 --activate`
-  - Windows (Corepack with Node 22):
+  - Windows (Corepack with Node 24):
     - `corepack enable`
     - `corepack prepare pnpm@10 --activate`
-- Next.js: Use 15 (latest patch) for Node 22 compatibility; **do not use 16.**
+- Next.js: Use 16 (latest patch).
   Installed via `pnpm install`.
 - Docker: Install Docker (Docker Desktop or Docker Engine).
 - Biome CLI 2.x (Rust binary) available on your `PATH` – download a release

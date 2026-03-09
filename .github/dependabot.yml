@@ -22,10 +22,16 @@ updates:
     ignore:
       - dependency-name: "next"
         versions:
-          - ">=16"
+          - ">=17"
+      - dependency-name: "react"
+        versions:
+          - ">=20"
+      - dependency-name: "react-dom"
+        versions:
+          - ">=20"
       - dependency-name: "@types/node"
         versions:
-          - ">=23"
+          - ">=25"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -37,4 +43,4 @@ updates:
     ignore:
       - dependency-name: "node"
         versions:
-          - ">=23"
+          - ">=25"

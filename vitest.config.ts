@@ -19,6 +19,8 @@ export default defineConfig({
     hookTimeout: 10_000,
     exclude: [
       ...configDefaults.exclude,
+      ".next/**",
+      ".claude/**",
       "**/*.db.test.ts",
       "**/analytics.issue-creation-closure.metrics.test.ts",
       "tests/e2e/**",
