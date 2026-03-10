@@ -4,6 +4,23 @@ This file documents recent notable changes to this project. The format of this
 file is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Upgraded the runtime baseline to Next.js 16, React 19, and Node 24, and
+  aligned the related CI, Docker, dependency, and documentation settings with
+  that stack.
+
+### Fixed
+
+- Improved first-run database bootstrap diagnostics so missing `public` schema
+  privileges are reported clearly and schema initialization can be retried after
+  fixing the role grants.
+- Prevented recoverable hydration mismatches in dashboard timestamp badges by
+  normalizing locale-specific spacing differences and suppressing expected
+  client-only text variance for auto-formatted timestamps.
+
 ## [0.3.1] - 2026-02-18
 
 ### Changed
@@ -75,6 +92,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Initial public release of the GitHub Dashboard
 
+[Unreleased]: https://github.com/aicers/github-dashboard/compare/0.3.1...HEAD
 [0.3.1]: https://github.com/aicers/github-dashboard/compare/0.3.0...0.3.1
 [0.3.0]: https://github.com/aicers/github-dashboard/compare/0.2.0...0.3.0
 [0.2.0]: https://github.com/aicers/github-dashboard/compare/0.1.0...0.2.0
