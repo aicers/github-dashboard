@@ -1,3 +1,4 @@
+import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -68,7 +69,7 @@ describe("POST /api/activity/status-automation", () => {
     vi.mocked(getIssueStatusAutomationSummary).mockResolvedValueOnce(summary);
 
     const response = await POST(
-      new Request("http://localhost/api/activity/status-automation", {
+      new NextRequest("http://localhost/api/activity/status-automation", {
         method: "POST",
         body: JSON.stringify({ trigger: "sync-controls" }),
         headers: { "Content-Type": "application/json" },
@@ -118,7 +119,7 @@ describe("POST /api/activity/status-automation", () => {
     vi.mocked(getIssueStatusAutomationSummary).mockResolvedValueOnce(summary);
 
     const response = await POST(
-      new Request("http://localhost/api/activity/status-automation", {
+      new NextRequest("http://localhost/api/activity/status-automation", {
         method: "POST",
         body: JSON.stringify({
           trigger: "sync-controls",
@@ -139,7 +140,7 @@ describe("POST /api/activity/status-automation", () => {
 
   it("returns 400 when payload validation fails", async () => {
     const response = await POST(
-      new Request("http://localhost/api/activity/status-automation", {
+      new NextRequest("http://localhost/api/activity/status-automation", {
         method: "POST",
         body: JSON.stringify({ force: "yes" }),
         headers: { "Content-Type": "application/json" },
@@ -156,7 +157,7 @@ describe("POST /api/activity/status-automation", () => {
     vi.mocked(readActiveSession).mockResolvedValueOnce(null);
 
     const response = await POST(
-      new Request("http://localhost/api/activity/status-automation", {
+      new NextRequest("http://localhost/api/activity/status-automation", {
         method: "POST",
       }),
     );
@@ -176,7 +177,7 @@ describe("POST /api/activity/status-automation", () => {
     });
 
     const response = await POST(
-      new Request("http://localhost/api/activity/status-automation", {
+      new NextRequest("http://localhost/api/activity/status-automation", {
         method: "POST",
       }),
     );
@@ -184,8 +185,7 @@ describe("POST /api/activity/status-automation", () => {
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({
       success: false,
-      message:
-        "Administrator access is required to run issue status automation.",
+      message: "Administrator access is required.",
     });
     expect(ensureIssueStatusAutomation).not.toHaveBeenCalled();
   });
@@ -212,7 +212,9 @@ describe("GET /api/activity/status-automation", () => {
     } satisfies IssueStatusAutomationSummary;
     vi.mocked(getIssueStatusAutomationSummary).mockResolvedValueOnce(summary);
 
-    const response = await GET();
+    const response = await GET(
+      new NextRequest("http://localhost/api/activity/status-automation"),
+    );
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
@@ -226,7 +228,9 @@ describe("GET /api/activity/status-automation", () => {
   it("returns 401 when not authenticated", async () => {
     vi.mocked(readActiveSession).mockResolvedValueOnce(null);
 
-    const response = await GET();
+    const response = await GET(
+      new NextRequest("http://localhost/api/activity/status-automation"),
+    );
 
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({
@@ -241,13 +245,14 @@ describe("GET /api/activity/status-automation", () => {
       isAdmin: false,
     });
 
-    const response = await GET();
+    const response = await GET(
+      new NextRequest("http://localhost/api/activity/status-automation"),
+    );
 
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({
       success: false,
-      message:
-        "Administrator access is required to view issue status automation.",
+      message: "Administrator access is required.",
     });
   });
 
@@ -256,7 +261,9 @@ describe("GET /api/activity/status-automation", () => {
       new Error("database offline"),
     );
 
-    const response = await GET();
+    const response = await GET(
+      new NextRequest("http://localhost/api/activity/status-automation"),
+    );
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({

@@ -1,17 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { readActiveSession } from "@/lib/auth/session";
+import { authenticatedRoute } from "@/lib/api/route-handler";
 import { fetchSyncStatus } from "@/lib/sync/service";
 
-export async function GET() {
-  const session = await readActiveSession();
-  if (!session) {
-    return NextResponse.json(
-      { success: false, message: "Authentication required." },
-      { status: 401 },
-    );
-  }
-
+export const GET = authenticatedRoute(async () => {
   try {
     const status = await fetchSyncStatus();
     return NextResponse.json({ success: true, status });
@@ -31,4 +23,4 @@ export async function GET() {
       { status: 500 },
     );
   }
-}
+});

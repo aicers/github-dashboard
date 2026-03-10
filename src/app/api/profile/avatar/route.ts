@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
 
-import { readActiveSession } from "@/lib/auth/session";
+import { authenticatedRoute } from "@/lib/api/route-handler";
 import { getUserProfiles, updateUserAvatarUrl } from "@/lib/db/operations";
 
 const MAX_AVATAR_FILE_SIZE = 4 * 1024 * 1024; // 4MB
@@ -56,15 +56,7 @@ async function getCurrentUserProfile(userId: string) {
   return profiles.find((profile) => profile.id === userId) ?? null;
 }
 
-export async function POST(request: Request) {
-  const session = await readActiveSession();
-  if (!session) {
-    return NextResponse.json(
-      { success: false, message: "Authentication required." },
-      { status: 401 },
-    );
-  }
-
+export const POST = authenticatedRoute(async (request, session) => {
   let uploadedFilePath: string | null = null;
 
   try {
@@ -158,17 +150,9 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
-}
+});
 
-export async function DELETE() {
-  const session = await readActiveSession();
-  if (!session) {
-    return NextResponse.json(
-      { success: false, message: "Authentication required." },
-      { status: 401 },
-    );
-  }
-
+export const DELETE = authenticatedRoute(async (_request, session) => {
   try {
     const profile = await getCurrentUserProfile(session.userId);
 
@@ -190,4 +174,4 @@ export async function DELETE() {
       { status: 500 },
     );
   }
-}
+});

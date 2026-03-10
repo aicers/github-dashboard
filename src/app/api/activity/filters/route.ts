@@ -8,7 +8,7 @@ import {
   listSavedFilters,
   SAVED_FILTER_LIMIT,
 } from "@/lib/activity/filter-store";
-import { readActiveSession } from "@/lib/auth/session";
+import { authenticatedRoute } from "@/lib/api/route-handler";
 import { ensureSchema } from "@/lib/db";
 
 const createSchema = z.object({
@@ -20,15 +20,7 @@ const createSchema = z.object({
   payload: activityFilterPayloadSchema,
 });
 
-export async function GET() {
-  const session = await readActiveSession();
-  if (!session) {
-    return NextResponse.json(
-      { success: false, message: "Authentication required." },
-      { status: 401 },
-    );
-  }
-
+export const GET = authenticatedRoute(async (_request, session) => {
   await ensureSchema();
 
   try {
@@ -48,17 +40,9 @@ export async function GET() {
       { status: 500 },
     );
   }
-}
+});
 
-export async function POST(request: Request) {
-  const session = await readActiveSession();
-  if (!session) {
-    return NextResponse.json(
-      { success: false, message: "Authentication required." },
-      { status: 401 },
-    );
-  }
-
+export const POST = authenticatedRoute(async (request, session) => {
   await ensureSchema();
 
   let payload: unknown;
@@ -109,4 +93,4 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
-}
+});

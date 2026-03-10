@@ -161,7 +161,7 @@ describe("POST /api/sync/reset", () => {
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({
       success: false,
-      message: "Administrator access is required to manage sync operations.",
+      message: "Administrator access is required.",
     });
     expect(resetData).not.toHaveBeenCalled();
   });

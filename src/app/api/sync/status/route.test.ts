@@ -36,7 +36,7 @@ describe("GET /api/sync/status", () => {
     const status = { config: { org_name: "acme" }, runs: [], logs: [] };
     vi.mocked(fetchSyncStatus).mockResolvedValueOnce(status as never);
 
-    const response = await GET();
+    const response = await GET(new Request("http://localhost/api/sync/status"));
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ success: true, status });
@@ -48,7 +48,7 @@ describe("GET /api/sync/status", () => {
       new Error("Status failure"),
     );
 
-    const response = await GET();
+    const response = await GET(new Request("http://localhost/api/sync/status"));
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
@@ -60,7 +60,7 @@ describe("GET /api/sync/status", () => {
   it("returns 500 when an unknown value is thrown", async () => {
     vi.mocked(fetchSyncStatus).mockRejectedValueOnce("bad");
 
-    const response = await GET();
+    const response = await GET(new Request("http://localhost/api/sync/status"));
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({
@@ -72,7 +72,7 @@ describe("GET /api/sync/status", () => {
   it("returns 401 when session is missing", async () => {
     vi.mocked(readActiveSession).mockResolvedValueOnce(null);
 
-    const response = await GET();
+    const response = await GET(new Request("http://localhost/api/sync/status"));
 
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({

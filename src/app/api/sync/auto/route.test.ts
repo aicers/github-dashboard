@@ -1,3 +1,4 @@
+import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { POST } from "@/app/api/sync/auto/route";
@@ -60,7 +61,7 @@ describe("POST /api/sync/auto", () => {
     vi.mocked(enableAutomaticSync).mockResolvedValueOnce(result);
 
     const response = await POST(
-      new Request("http://localhost/api/sync/auto", {
+      new NextRequest("http://localhost/api/sync/auto", {
         method: "POST",
         body: JSON.stringify({ enabled: true, intervalMinutes: 45 }),
         headers: { "Content-Type": "application/json" },
@@ -83,7 +84,7 @@ describe("POST /api/sync/auto", () => {
 
   it("disables automatic sync when enabled is false", async () => {
     const response = await POST(
-      new Request("http://localhost/api/sync/auto", {
+      new NextRequest("http://localhost/api/sync/auto", {
         method: "POST",
         body: JSON.stringify({ enabled: false }),
         headers: { "Content-Type": "application/json" },
@@ -99,7 +100,7 @@ describe("POST /api/sync/auto", () => {
 
   it("returns 400 when payload is invalid", async () => {
     const response = await POST(
-      new Request("http://localhost/api/sync/auto", {
+      new NextRequest("http://localhost/api/sync/auto", {
         method: "POST",
         body: JSON.stringify({ enabled: true, intervalMinutes: 0 }),
         headers: { "Content-Type": "application/json" },
@@ -119,7 +120,7 @@ describe("POST /api/sync/auto", () => {
     );
 
     const response = await POST(
-      new Request("http://localhost/api/sync/auto", {
+      new NextRequest("http://localhost/api/sync/auto", {
         method: "POST",
         body: JSON.stringify({ enabled: true, intervalMinutes: 30 }),
         headers: { "Content-Type": "application/json" },
@@ -137,7 +138,7 @@ describe("POST /api/sync/auto", () => {
     vi.mocked(enableAutomaticSync).mockRejectedValueOnce("boom");
 
     const response = await POST(
-      new Request("http://localhost/api/sync/auto", {
+      new NextRequest("http://localhost/api/sync/auto", {
         method: "POST",
         body: JSON.stringify({ enabled: true, intervalMinutes: 30 }),
         headers: { "Content-Type": "application/json" },
@@ -155,7 +156,7 @@ describe("POST /api/sync/auto", () => {
     vi.mocked(readActiveSession).mockResolvedValueOnce(null);
 
     const response = await POST(
-      new Request("http://localhost/api/sync/auto", {
+      new NextRequest("http://localhost/api/sync/auto", {
         method: "POST",
         body: JSON.stringify({ enabled: true, intervalMinutes: 30 }),
         headers: { "Content-Type": "application/json" },
@@ -189,7 +190,7 @@ describe("POST /api/sync/auto", () => {
     });
 
     const response = await POST(
-      new Request("http://localhost/api/sync/auto", {
+      new NextRequest("http://localhost/api/sync/auto", {
         method: "POST",
         body: JSON.stringify({ enabled: true, intervalMinutes: 30 }),
         headers: { "Content-Type": "application/json" },
@@ -199,7 +200,7 @@ describe("POST /api/sync/auto", () => {
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({
       success: false,
-      message: "Administrator access is required to manage sync operations.",
+      message: "Administrator access is required.",
     });
     expect(enableAutomaticSync).not.toHaveBeenCalled();
     expect(disableAutomaticSync).not.toHaveBeenCalled();

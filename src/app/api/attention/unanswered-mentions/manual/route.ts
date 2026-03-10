@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { readActiveSession } from "@/lib/auth/session";
+import { adminRoute } from "@/lib/api/route-handler";
 import {
   buildMentionClassificationKey,
   fetchMentionClassifications,
@@ -30,25 +30,8 @@ function computeCommentBodyHash(body: string | null): string {
     .digest("hex");
 }
 
-export async function POST(request: Request) {
+export const POST = adminRoute(async (request, _session) => {
   try {
-    const session = await readActiveSession();
-    if (!session) {
-      return NextResponse.json(
-        { success: false, message: "Authentication required." },
-        { status: 401 },
-      );
-    }
-    if (!session.isAdmin) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Administrator access is required for this operation.",
-        },
-        { status: 403 },
-      );
-    }
-
     let parsedBody: unknown;
     try {
       parsedBody = await request.json();
@@ -168,4 +151,4 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
-}
+});

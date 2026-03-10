@@ -7,7 +7,7 @@ import {
   type IssueStatusAutomationRunResult,
   type IssueStatusAutomationSummary,
 } from "@/lib/activity/status-automation";
-import { readActiveSession } from "@/lib/auth/session";
+import { adminRoute } from "@/lib/api/route-handler";
 
 const requestSchema = z
   .object({
@@ -33,27 +33,8 @@ type AutomationResponse = {
   summary: IssueStatusAutomationSummary | null;
 };
 
-export async function POST(request: Request) {
+export const POST = adminRoute(async (request, _session) => {
   try {
-    const session = await readActiveSession();
-    if (!session) {
-      return NextResponse.json(
-        { success: false, message: "Authentication required." },
-        { status: 401 },
-      );
-    }
-
-    if (!session.isAdmin) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Administrator access is required to run issue status automation.",
-        },
-        { status: 403 },
-      );
-    }
-
     const payload = requestSchema.parse(
       await request.json().catch(() => undefined),
     );
@@ -108,29 +89,10 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
-}
+});
 
-export async function GET() {
+export const GET = adminRoute(async () => {
   try {
-    const session = await readActiveSession();
-    if (!session) {
-      return NextResponse.json(
-        { success: false, message: "Authentication required." },
-        { status: 401 },
-      );
-    }
-
-    if (!session.isAdmin) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Administrator access is required to view issue status automation.",
-        },
-        { status: 403 },
-      );
-    }
-
     const summary = await getIssueStatusAutomationSummary();
     return NextResponse.json({
       success: true,
@@ -161,4 +123,4 @@ export async function GET() {
       { status: 500 },
     );
   }
-}
+});

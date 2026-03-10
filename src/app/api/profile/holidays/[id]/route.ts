@@ -1,7 +1,7 @@
-import { type NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { readActiveSession } from "@/lib/auth/session";
+import { authenticatedRoute } from "@/lib/api/route-handler";
 import {
   removePersonalHoliday,
   updatePersonalHoliday,
@@ -18,95 +18,77 @@ const paramsSchema = z.object({
     }),
 });
 
-export async function PATCH(
-  request: NextRequest,
-  context: { params: Promise<{ id: string }> },
-) {
-  const session = await readActiveSession();
-  if (!session) {
-    return NextResponse.json(
-      { success: false, message: "Authentication required." },
-      { status: 401 },
-    );
-  }
+export const PATCH = authenticatedRoute<{ id: string }>(
+  async (request, session, context) => {
+    try {
+      const { id } = paramsSchema.parse(await context.params);
+      const payload = personalHolidaySchema.parse(await request.json());
+      const updated = await updatePersonalHoliday(session.userId, id, payload);
+      return NextResponse.json({ success: true, result: updated });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: error.issues[0]?.message ?? "잘못된 요청입니다.",
+            issues: error.issues,
+          },
+          { status: 400 },
+        );
+      }
 
-  try {
-    const { id } = paramsSchema.parse(await context.params);
-    const payload = personalHolidaySchema.parse(await request.json());
-    const updated = await updatePersonalHoliday(session.userId, id, payload);
-    return NextResponse.json({ success: true, result: updated });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
+      if (error instanceof Error) {
+        return NextResponse.json(
+          { success: false, message: error.message },
+          { status: 400 },
+        );
+      }
+
+      console.error("Failed to update personal holiday", error);
       return NextResponse.json(
         {
           success: false,
-          message: error.issues[0]?.message ?? "잘못된 요청입니다.",
-          issues: error.issues,
+          message: "개인 휴일을 수정하지 못했습니다.",
         },
-        { status: 400 },
+        { status: 500 },
       );
     }
+  },
+);
 
-    if (error instanceof Error) {
-      return NextResponse.json(
-        { success: false, message: error.message },
-        { status: 400 },
-      );
-    }
+export const DELETE = authenticatedRoute<{ id: string }>(
+  async (_request, session, context) => {
+    try {
+      const { id } = paramsSchema.parse(await context.params);
+      await removePersonalHoliday(session.userId, id);
+      return NextResponse.json({ success: true });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: error.issues[0]?.message ?? "잘못된 요청입니다.",
+            issues: error.issues,
+          },
+          { status: 400 },
+        );
+      }
 
-    console.error("Failed to update personal holiday", error);
-    return NextResponse.json(
-      {
-        success: false,
-        message: "개인 휴일을 수정하지 못했습니다.",
-      },
-      { status: 500 },
-    );
-  }
-}
+      if (error instanceof Error) {
+        return NextResponse.json(
+          { success: false, message: error.message },
+          { status: 400 },
+        );
+      }
 
-export async function DELETE(
-  _request: NextRequest,
-  context: { params: Promise<{ id: string }> },
-) {
-  const session = await readActiveSession();
-  if (!session) {
-    return NextResponse.json(
-      { success: false, message: "Authentication required." },
-      { status: 401 },
-    );
-  }
-
-  try {
-    const { id } = paramsSchema.parse(await context.params);
-    await removePersonalHoliday(session.userId, id);
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
+      console.error("Failed to delete personal holiday", error);
       return NextResponse.json(
         {
           success: false,
-          message: error.issues[0]?.message ?? "잘못된 요청입니다.",
-          issues: error.issues,
+          message: "개인 휴일을 삭제하지 못했습니다.",
         },
-        { status: 400 },
+        { status: 500 },
       );
     }
-
-    if (error instanceof Error) {
-      return NextResponse.json(
-        { success: false, message: error.message },
-        { status: 400 },
-      );
-    }
-
-    console.error("Failed to delete personal holiday", error);
-    return NextResponse.json(
-      {
-        success: false,
-        message: "개인 휴일을 삭제하지 못했습니다.",
-      },
-      { status: 500 },
-    );
-  }
-}
+  },
+);

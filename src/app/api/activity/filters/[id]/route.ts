@@ -7,12 +7,8 @@ import {
   updateSavedFilter,
 } from "@/lib/activity/filter-store";
 import type { ActivitySavedFilter } from "@/lib/activity/types";
-import { readActiveSession } from "@/lib/auth/session";
+import { authenticatedRoute } from "@/lib/api/route-handler";
 import { ensureSchema } from "@/lib/db";
-
-type RouteParams = {
-  params: Promise<{ id: string }>;
-};
 
 const expectedSchema = z
   .object({
@@ -67,152 +63,140 @@ function formatConflictResponse(filter: ActivitySavedFilter) {
   );
 }
 
-export async function PATCH(request: Request, context: RouteParams) {
-  const session = await readActiveSession();
-  if (!session) {
-    return NextResponse.json(
-      { success: false, message: "Authentication required." },
-      { status: 401 },
-    );
-  }
+export const PATCH = authenticatedRoute<{ id: string }>(
+  async (request, session, context) => {
+    await ensureSchema();
 
-  await ensureSchema();
-
-  const resolvedParams = await context.params;
-  const rawId = resolvedParams?.id ?? "";
-  const id = decodeURIComponent(rawId.trim());
-  if (!id) {
-    return NextResponse.json(
-      { success: false, message: "Invalid filter id." },
-      { status: 400 },
-    );
-  }
-
-  let payload: unknown;
-  try {
-    payload = await request.json();
-  } catch {
-    return NextResponse.json(
-      { success: false, message: "Invalid request body." },
-      { status: 400 },
-    );
-  }
-
-  try {
-    const parsed = patchSchema.parse(payload);
-    const result = await updateSavedFilter(session.userId, id, {
-      name: parsed.name,
-      payload: parsed.payload,
-      expectedUpdatedAt: parsed.expected?.updatedAt ?? null,
-    });
-
-    if (result.status === "not_found") {
-      return formatNotFoundResponse();
-    }
-
-    if (result.status === "conflict") {
-      return formatConflictResponse(result.filter);
-    }
-
-    return NextResponse.json({ success: true, filter: result.filter });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
+    const resolvedParams = await context.params;
+    const rawId = resolvedParams?.id ?? "";
+    const id = decodeURIComponent(rawId.trim());
+    if (!id) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "입력한 필터 정보를 확인해 주세요.",
-          issues: error.issues,
-        },
+        { success: false, message: "Invalid filter id." },
         { status: 400 },
       );
     }
 
-    console.error("Failed to update saved activity filter:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Unexpected error while updating filter.",
-      },
-      { status: 500 },
-    );
-  }
-}
-
-export async function DELETE(request: Request, context: RouteParams) {
-  const session = await readActiveSession();
-  if (!session) {
-    return NextResponse.json(
-      { success: false, message: "Authentication required." },
-      { status: 401 },
-    );
-  }
-
-  await ensureSchema();
-
-  const resolvedParams = await context.params;
-  const rawId = resolvedParams?.id ?? "";
-  const id = decodeURIComponent(rawId.trim());
-  if (!id) {
-    return NextResponse.json(
-      { success: false, message: "Invalid filter id." },
-      { status: 400 },
-    );
-  }
-
-  let rawBody = "";
-  try {
-    rawBody = await request.text();
-  } catch {
-    // Ignore body parsing errors; treat as empty payload.
-    rawBody = "";
-  }
-
-  let payload: unknown = {};
-  if (rawBody.trim().length) {
+    let payload: unknown;
     try {
-      payload = JSON.parse(rawBody);
+      payload = await request.json();
     } catch {
       return NextResponse.json(
         { success: false, message: "Invalid request body." },
         { status: 400 },
       );
     }
-  }
 
-  try {
-    const parsed = deleteSchema.parse(payload ?? {});
-    const result = await deleteSavedFilter(session.userId, id, {
-      expectedUpdatedAt: parsed?.expected?.updatedAt ?? null,
-    });
+    try {
+      const parsed = patchSchema.parse(payload);
+      const result = await updateSavedFilter(session.userId, id, {
+        name: parsed.name,
+        payload: parsed.payload,
+        expectedUpdatedAt: parsed.expected?.updatedAt ?? null,
+      });
 
-    if (result.status === "not_found") {
-      return formatNotFoundResponse();
-    }
+      if (result.status === "not_found") {
+        return formatNotFoundResponse();
+      }
 
-    if (result.status === "conflict") {
-      return formatConflictResponse(result.filter);
-    }
+      if (result.status === "conflict") {
+        return formatConflictResponse(result.filter);
+      }
 
-    return NextResponse.json({ success: true, filter: result.filter });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
+      return NextResponse.json({ success: true, filter: result.filter });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "입력한 필터 정보를 확인해 주세요.",
+            issues: error.issues,
+          },
+          { status: 400 },
+        );
+      }
+
+      console.error("Failed to update saved activity filter:", error);
       return NextResponse.json(
         {
           success: false,
-          message: "입력한 필터 정보를 확인해 주세요.",
-          issues: error.issues,
+          message: "Unexpected error while updating filter.",
         },
+        { status: 500 },
+      );
+    }
+  },
+);
+
+export const DELETE = authenticatedRoute<{ id: string }>(
+  async (request, session, context) => {
+    await ensureSchema();
+
+    const resolvedParams = await context.params;
+    const rawId = resolvedParams?.id ?? "";
+    const id = decodeURIComponent(rawId.trim());
+    if (!id) {
+      return NextResponse.json(
+        { success: false, message: "Invalid filter id." },
         { status: 400 },
       );
     }
 
-    console.error("Failed to delete saved activity filter:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Unexpected error while deleting filter.",
-      },
-      { status: 500 },
-    );
-  }
-}
+    let rawBody = "";
+    try {
+      rawBody = await request.text();
+    } catch {
+      // Ignore body parsing errors; treat as empty payload.
+      rawBody = "";
+    }
+
+    let payload: unknown = {};
+    if (rawBody.trim().length) {
+      try {
+        payload = JSON.parse(rawBody);
+      } catch {
+        return NextResponse.json(
+          { success: false, message: "Invalid request body." },
+          { status: 400 },
+        );
+      }
+    }
+
+    try {
+      const parsed = deleteSchema.parse(payload ?? {});
+      const result = await deleteSavedFilter(session.userId, id, {
+        expectedUpdatedAt: parsed?.expected?.updatedAt ?? null,
+      });
+
+      if (result.status === "not_found") {
+        return formatNotFoundResponse();
+      }
+
+      if (result.status === "conflict") {
+        return formatConflictResponse(result.filter);
+      }
+
+      return NextResponse.json({ success: true, filter: result.filter });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "입력한 필터 정보를 확인해 주세요.",
+            issues: error.issues,
+          },
+          { status: 400 },
+        );
+      }
+
+      console.error("Failed to delete saved activity filter:", error);
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Unexpected error while deleting filter.",
+        },
+        { status: 500 },
+      );
+    }
+  },
+);

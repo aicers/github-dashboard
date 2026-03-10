@@ -1,3 +1,4 @@
+import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { POST } from "@/app/api/sync/pr-link-backfill/route";
@@ -44,7 +45,7 @@ describe("POST /api/sync/pr-link-backfill", () => {
     vi.mocked(runPrLinkBackfill).mockResolvedValueOnce(report as never);
 
     const response = await POST(
-      new Request("http://localhost/api/sync/pr-link-backfill", {
+      new NextRequest("http://localhost/api/sync/pr-link-backfill", {
         method: "POST",
         body: JSON.stringify({ startDate: "2024-04-01" }),
         headers: { "Content-Type": "application/json" },
@@ -65,7 +66,7 @@ describe("POST /api/sync/pr-link-backfill", () => {
     vi.mocked(runPrLinkBackfill).mockResolvedValueOnce({} as never);
 
     await POST(
-      new Request("http://localhost/api/sync/pr-link-backfill", {
+      new NextRequest("http://localhost/api/sync/pr-link-backfill", {
         method: "POST",
         body: JSON.stringify({
           startDate: "2024-04-01",
@@ -84,7 +85,7 @@ describe("POST /api/sync/pr-link-backfill", () => {
 
   it("returns validation errors for invalid payload", async () => {
     const response = await POST(
-      new Request("http://localhost/api/sync/pr-link-backfill", {
+      new NextRequest("http://localhost/api/sync/pr-link-backfill", {
         method: "POST",
         body: JSON.stringify({}),
         headers: { "Content-Type": "application/json" },
@@ -103,7 +104,7 @@ describe("POST /api/sync/pr-link-backfill", () => {
     );
 
     const response = await POST(
-      new Request("http://localhost/api/sync/pr-link-backfill", {
+      new NextRequest("http://localhost/api/sync/pr-link-backfill", {
         method: "POST",
         body: JSON.stringify({ startDate: "2024-04-01" }),
         headers: { "Content-Type": "application/json" },
@@ -119,7 +120,7 @@ describe("POST /api/sync/pr-link-backfill", () => {
     vi.mocked(runPrLinkBackfill).mockRejectedValueOnce("boom");
 
     const response = await POST(
-      new Request("http://localhost/api/sync/pr-link-backfill", {
+      new NextRequest("http://localhost/api/sync/pr-link-backfill", {
         method: "POST",
         body: JSON.stringify({ startDate: "2024-04-01" }),
         headers: { "Content-Type": "application/json" },
@@ -138,7 +139,7 @@ describe("POST /api/sync/pr-link-backfill", () => {
     vi.mocked(readActiveSession).mockResolvedValueOnce(null);
 
     const response = await POST(
-      new Request("http://localhost/api/sync/pr-link-backfill", {
+      new NextRequest("http://localhost/api/sync/pr-link-backfill", {
         method: "POST",
         body: JSON.stringify({ startDate: "2024-04-01" }),
         headers: { "Content-Type": "application/json" },
@@ -171,7 +172,7 @@ describe("POST /api/sync/pr-link-backfill", () => {
     });
 
     const response = await POST(
-      new Request("http://localhost/api/sync/pr-link-backfill", {
+      new NextRequest("http://localhost/api/sync/pr-link-backfill", {
         method: "POST",
         body: JSON.stringify({ startDate: "2024-04-01" }),
         headers: { "Content-Type": "application/json" },
@@ -181,7 +182,7 @@ describe("POST /api/sync/pr-link-backfill", () => {
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({
       success: false,
-      message: "Administrator access is required to manage sync operations.",
+      message: "Administrator access is required.",
     });
     expect(runPrLinkBackfill).not.toHaveBeenCalled();
   });

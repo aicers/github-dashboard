@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
+import { authenticatedRoute } from "@/lib/api/route-handler";
 import { checkReauthRequired } from "@/lib/auth/reauth-guard";
 import { readActiveSession } from "@/lib/auth/session";
 import { DATE_TIME_FORMAT_VALUES } from "@/lib/date-time-format";
@@ -111,15 +112,7 @@ const patchSchema = z.object({
   activityRowsPerPage: z.number().int().min(1).max(100).optional(),
 });
 
-export async function GET() {
-  const session = await readActiveSession();
-  if (!session) {
-    return NextResponse.json(
-      { success: false, message: "Authentication required." },
-      { status: 401 },
-    );
-  }
-
+export const GET = authenticatedRoute(async () => {
   try {
     const status = await fetchSyncStatus();
     return NextResponse.json({ success: true, status });
@@ -139,7 +132,7 @@ export async function GET() {
       { status: 500 },
     );
   }
-}
+});
 
 export async function PATCH(request: NextRequest) {
   const session = await readActiveSession();
