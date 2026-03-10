@@ -12,6 +12,11 @@ import {
 
 const SCHEMA_LOCK_ID = BigInt("8764321987654321");
 
+type DatabaseError = {
+  code?: string;
+  message?: string;
+};
+
 type ParsedHolidayRow = {
   country: string;
   year: number;
@@ -814,6 +819,26 @@ const SCHEMA_STATEMENTS = [
 
 let ensurePromise: Promise<void> | null = null;
 
+function isPublicSchemaPermissionError(error: unknown) {
+  const dbError = error as DatabaseError | null;
+  if (!dbError || dbError.code !== "42501") {
+    return false;
+  }
+
+  return Boolean(dbError.message?.includes("schema public"));
+}
+
+function buildPublicSchemaPermissionGuidance() {
+  return [
+    "Database bootstrap failed because the application role cannot create objects in schema public.",
+    "Grant permissions using a privileged role:",
+    "GRANT USAGE, CREATE ON SCHEMA public TO <app_user>;",
+    "GRANT CONNECT, TEMP ON DATABASE <db_name> TO <app_user>;",
+    "If pg_trgm extension creation fails, install it once as database owner:",
+    "CREATE EXTENSION IF NOT EXISTS pg_trgm;",
+  ].join("\n");
+}
+
 async function applySchema() {
   const pool = getPool();
   await pool.query("SELECT pg_advisory_lock($1)", [SCHEMA_LOCK_ID]);
@@ -838,6 +863,15 @@ async function applySchema() {
         updated_at = NOW()`,
       [orgName, env.SYNC_INTERVAL_MINUTES],
     );
+  } catch (error) {
+    if (isPublicSchemaPermissionError(error)) {
+      const originalMessage =
+        error instanceof Error ? error.message : "Unknown database error";
+      const guidance = buildPublicSchemaPermissionGuidance();
+      throw new Error(`${originalMessage}\n${guidance}`);
+    }
+
+    throw error;
   } finally {
     await pool.query("SELECT pg_advisory_unlock($1)", [SCHEMA_LOCK_ID]);
   }
@@ -845,7 +879,11 @@ async function applySchema() {
 
 export async function ensureSchema() {
   if (!ensurePromise) {
-    ensurePromise = applySchema();
+    ensurePromise = applySchema().catch((error) => {
+      // Allow retries after transient/bootstrap failures (e.g., permission fix).
+      ensurePromise = null;
+      throw error;
+    });
   }
 
   return ensurePromise;

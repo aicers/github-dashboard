@@ -124,6 +124,20 @@ The first API call or dashboard render triggers schema creation (tables for
 users, repositories, issues, pull requests, reviews, comments, and sync
 metadata). Ensure `DATABASE_URL` points to a database the app can manage.
 
+If bootstrap fails with `permission denied for schema public` (`SQLSTATE 42501`)
+on a fresh database, grant schema/database permissions to the application role:
+
+```sql
+GRANT USAGE, CREATE ON SCHEMA public TO <app_user>;
+GRANT CONNECT, TEMP ON DATABASE <db_name> TO <app_user>;
+```
+
+If extension creation fails, install `pg_trgm` once using a database owner role:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+```
+
 To reset the data store manually:
 
 ```bash
