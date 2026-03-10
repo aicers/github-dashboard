@@ -2,6 +2,10 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState } from "react";
+import {
+  isUnauthorizedResponse,
+  retryOnceAfterUnauthorized,
+} from "@/components/dashboard/post-login-auth-recovery";
 import { ReauthModal } from "@/components/dashboard/reauth-modal";
 import { SyncSubTabs } from "@/components/dashboard/sync-subtabs";
 import { Button } from "@/components/ui/button";
@@ -536,9 +540,17 @@ export function SyncControls({
 
     const loadSummary = async () => {
       try {
-        const response = await fetch("/api/activity/cache/refresh", {
-          method: "GET",
-          signal: controller.signal,
+        const response = await retryOnceAfterUnauthorized({
+          execute: () =>
+            fetch("/api/activity/cache/refresh", {
+              method: "GET",
+              signal: controller.signal,
+              cache: "no-store",
+            }),
+          refresh: () => {
+            router.refresh();
+          },
+          shouldRetry: isUnauthorizedResponse,
         });
         if (!response.ok) {
           return;
@@ -559,13 +571,18 @@ export function SyncControls({
         }
 
         try {
-          const snapshotResponse = await fetch(
-            "/api/activity/snapshot/refresh",
-            {
-              method: "GET",
-              signal: controller.signal,
+          const snapshotResponse = await retryOnceAfterUnauthorized({
+            execute: () =>
+              fetch("/api/activity/snapshot/refresh", {
+                method: "GET",
+                signal: controller.signal,
+                cache: "no-store",
+              }),
+            refresh: () => {
+              router.refresh();
             },
-          );
+            shouldRetry: isUnauthorizedResponse,
+          });
 
           if (snapshotResponse.ok) {
             const snapshotData =
@@ -610,7 +627,7 @@ export function SyncControls({
       cancelled = true;
       controller.abort();
     };
-  }, [canManageSync]);
+  }, [canManageSync, router]);
 
   useEffect(() => {
     if (!canManageSync) {
@@ -623,9 +640,17 @@ export function SyncControls({
 
     const loadAutomationSummary = async () => {
       try {
-        const response = await fetch("/api/activity/status-automation", {
-          method: "GET",
-          signal: controller.signal,
+        const response = await retryOnceAfterUnauthorized({
+          execute: () =>
+            fetch("/api/activity/status-automation", {
+              method: "GET",
+              signal: controller.signal,
+              cache: "no-store",
+            }),
+          refresh: () => {
+            router.refresh();
+          },
+          shouldRetry: isUnauthorizedResponse,
         });
         if (!response.ok) {
           return;
@@ -665,7 +690,7 @@ export function SyncControls({
       cancelled = true;
       controller.abort();
     };
-  }, [canManageSync]);
+  }, [canManageSync, router]);
 
   const runGroups = useMemo(() => buildRunGroups(status), [status]);
   const primaryLatestRun = useMemo(

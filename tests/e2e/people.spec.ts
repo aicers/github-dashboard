@@ -52,4 +52,47 @@ test.describe("PeopleView (Playwright)", () => {
     );
     await expect(applyButton).toBeDisabled();
   });
+
+  test("recovers from a transient unauthorized response during person auto-selection", async ({
+    page,
+  }) => {
+    const initialAnalytics = buildDashboardAnalyticsFixture();
+    const fallbackPersonId = initialAnalytics.contributors[0]?.id ?? "user-1";
+    let analyticsRequestCount = 0;
+
+    await page.route("**/api/dashboard/analytics**", async (route) => {
+      analyticsRequestCount += 1;
+      const requestUrl = new URL(route.request().url());
+      const personId =
+        requestUrl.searchParams.get("person") ?? fallbackPersonId;
+
+      if (analyticsRequestCount === 1) {
+        await route.fulfill({
+          status: 401,
+          contentType: "application/json",
+          body: JSON.stringify({
+            success: false,
+            message: "Authentication required.",
+          }),
+        });
+        return;
+      }
+
+      const analytics = buildDashboardAnalyticsForPerson(personId);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ success: true, analytics }),
+      });
+    });
+
+    await page.goto(PEOPLE_PATH);
+
+    await expect.poll(() => analyticsRequestCount).toBe(2);
+    await expect(page.getByText("활동 요약 · octoaide")).toBeVisible();
+    await expect(page.getByRole("button", { name: "octoaide" })).toHaveClass(
+      /bg-primary/,
+    );
+    await expect(page.getByText("Authentication required.")).toHaveCount(0);
+  });
 });

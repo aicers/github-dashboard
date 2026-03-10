@@ -8,6 +8,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { __resetPostLoginAuthRecoveryForTests } from "@/components/dashboard/post-login-auth-recovery";
 import {
   __syncControlsTestHelpers,
   SyncControls,
@@ -25,6 +26,9 @@ import {
 } from "../../../tests/setup/mock-fetch";
 
 const routerRefreshMock = vi.fn();
+const mockRouter = {
+  refresh: routerRefreshMock,
+};
 const mockActivityCacheSummary: ActivityCacheRefreshResult = {
   filterOptions: {
     cacheKey: "activity-filter-options",
@@ -98,9 +102,7 @@ function setBackfillRange(start: string, end: string) {
 }
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({
-    refresh: routerRefreshMock,
-  }),
+  useRouter: () => mockRouter,
   usePathname: () => "/dashboard/sync",
 }));
 
@@ -244,6 +246,7 @@ describe("sync controls helpers", () => {
 
 describe("SyncControls", () => {
   beforeEach(() => {
+    __resetPostLoginAuthRecoveryForTests();
     routerRefreshMock.mockReset();
     fetchMock.mockReset();
     setDefaultFetchHandler((request) => {

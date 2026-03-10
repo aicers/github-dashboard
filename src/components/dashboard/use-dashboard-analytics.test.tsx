@@ -1,6 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { __resetPostLoginAuthRecoveryForTests } from "@/components/dashboard/post-login-auth-recovery";
 import { useDashboardAnalytics } from "@/components/dashboard/use-dashboard-analytics";
 import {
   buildDashboardAnalyticsFixture,
@@ -12,6 +13,14 @@ import {
   mockFetchJsonOnce,
   mockFetchOnce,
 } from "../../../tests/setup/mock-fetch";
+
+const routerRefreshMock = vi.fn();
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    refresh: routerRefreshMock,
+  }),
+}));
 
 function createDeferredResponse(body: unknown) {
   let resolveResponse: ((value: Response) => void) | null = null;
@@ -30,6 +39,8 @@ function createDeferredResponse(body: unknown) {
 describe("useDashboardAnalytics", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    __resetPostLoginAuthRecoveryForTests();
+    routerRefreshMock.mockReset();
   });
 
   it("loads analytics successfully and normalizes filters", async () => {
@@ -112,6 +123,56 @@ describe("useDashboardAnalytics", () => {
     expect(result.current.isLoading).toBe(false);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(result.current.hasPendingChanges).toBe(true);
+  });
+
+  it("retries once after a transient unauthorized response", async () => {
+    vi.useFakeTimers();
+    try {
+      const initialAnalytics = buildDashboardAnalyticsFixture();
+      const defaultRange = {
+        start: initialAnalytics.range.start,
+        end: initialAnalytics.range.end,
+      };
+      const nextAnalytics = structuredClone(initialAnalytics);
+      nextAnalytics.range = {
+        ...nextAnalytics.range,
+        start: "2024-02-01T00:00:00.000Z",
+        end: "2024-02-07T23:59:59.999Z",
+      };
+
+      mockFetchJsonOnce(
+        { success: false, message: "Authentication required." },
+        { status: 401 },
+      );
+      mockFetchJsonOnce({ success: true, analytics: nextAnalytics });
+
+      const { result } = renderHook(() =>
+        useDashboardAnalytics({ initialAnalytics, defaultRange }),
+      );
+
+      let applyPromise: Promise<void> = Promise.resolve();
+      await act(async () => {
+        applyPromise = result.current.applyFilters({
+          ...result.current.filters,
+          start: nextAnalytics.range.start,
+          end: nextAnalytics.range.end,
+        });
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(100);
+        await applyPromise;
+      });
+
+      expect(routerRefreshMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(result.current.analytics).toEqual(nextAnalytics);
+      expect(result.current.error).toBeNull();
+    } finally {
+      await vi.runOnlyPendingTimersAsync();
+      vi.useRealTimers();
+      __resetPostLoginAuthRecoveryForTests();
+    }
   });
 
   it("keeps the latest filters when requests overlap and sanitizes missing data", async () => {

@@ -327,6 +327,64 @@ test.describe("ActivityView (Playwright)", () => {
     await expect(page.getByText("페이지 2 / 2 (총 2건)")).toBeVisible();
     await expect(page.getByRole("button", { name: "다음" })).toBeDisabled();
   });
+
+  test("recovers saved filters after a transient unauthorized bootstrap response", async ({
+    page,
+  }) => {
+    await page.goto("/test-harness/auth/session?userId=activity-user");
+
+    let savedFilterRequestCount = 0;
+    const savedFilters: ActivitySavedFilter[] = [
+      {
+        id: "saved-1",
+        name: "My focus",
+        payload: {},
+        createdAt: new Date("2024-04-01T00:00:00.000Z").toISOString(),
+        updatedAt: new Date("2024-04-01T00:00:00.000Z").toISOString(),
+      },
+    ];
+
+    await page.route("**/api/activity/filters**", async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fulfill({
+          status: 405,
+          contentType: "application/json",
+          body: JSON.stringify({ message: "Method not allowed" }),
+        });
+        return;
+      }
+
+      savedFilterRequestCount += 1;
+      if (savedFilterRequestCount === 1) {
+        await route.fulfill({
+          status: 401,
+          contentType: "application/json",
+          body: JSON.stringify({
+            success: false,
+            message: "Authentication required.",
+          }),
+        });
+        return;
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ filters: savedFilters, limit: 5 }),
+      });
+    });
+
+    await page.goto(ACTIVITY_PATH);
+
+    await expect.poll(() => savedFilterRequestCount).toBe(2);
+    await expect(page.getByLabel("저장된 필터 선택")).toBeEnabled();
+    await expect(page.locator('option[value="saved-1"]')).toHaveText(
+      "My focus",
+    );
+    await expect(
+      page.getByText("저장된 필터를 불러오지 못했어요."),
+    ).toHaveCount(0);
+  });
 });
 
 test.describe("ActivityView badges & overlay presentation", () => {
