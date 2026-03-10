@@ -1,24 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { readActiveSession } from "@/lib/auth/session";
+import { adminRoute } from "@/lib/api/route-handler";
 import { runTransferSync } from "@/lib/transfer/service";
 
-export async function POST() {
-  const session = await readActiveSession();
-  if (!session) {
-    return NextResponse.json(
-      { success: false, message: "Authentication required." },
-      { status: 401 },
-    );
-  }
-
-  if (!session.isAdmin) {
-    return NextResponse.json(
-      { success: false, message: "Administrator access required." },
-      { status: 403 },
-    );
-  }
-
+export const POST = adminRoute(async (_request, session) => {
   try {
     const result = await runTransferSync({
       trigger: "manual",
@@ -46,4 +31,4 @@ export async function POST() {
       { status: 500 },
     );
   }
-}
+});

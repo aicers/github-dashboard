@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { readActiveSession } from "@/lib/auth/session";
+import { authenticatedRoute } from "@/lib/api/route-handler";
 import {
   addPersonalHoliday,
   readUserTimeSettings,
@@ -24,15 +24,7 @@ export const personalHolidaySchema = z.object({
     .transform((value) => (value === "" ? undefined : value)),
 });
 
-export async function GET() {
-  const session = await readActiveSession();
-  if (!session) {
-    return NextResponse.json(
-      { success: false, message: "Authentication required." },
-      { status: 401 },
-    );
-  }
-
+export const GET = authenticatedRoute(async (_request, session) => {
   try {
     const settings = await readUserTimeSettings(session.userId);
     return NextResponse.json({
@@ -49,17 +41,9 @@ export async function GET() {
       { status: 500 },
     );
   }
-}
+});
 
-export async function POST(request: Request) {
-  const session = await readActiveSession();
-  if (!session) {
-    return NextResponse.json(
-      { success: false, message: "Authentication required." },
-      { status: 401 },
-    );
-  }
-
+export const POST = authenticatedRoute(async (request, session) => {
   try {
     const payload = personalHolidaySchema.parse(await request.json());
     const created = await addPersonalHoliday(session.userId, payload);
@@ -92,6 +76,6 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
-}
+});
 
 export type PersonalHolidayPayload = z.infer<typeof personalHolidaySchema>;

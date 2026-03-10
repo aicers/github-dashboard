@@ -79,7 +79,7 @@ describe("POST /api/sync/backup/cleanup", () => {
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({
       success: false,
-      message: "Administrator access required.",
+      message: "Administrator access is required.",
     });
     expect(cleanupDatabaseBackup).not.toHaveBeenCalled();
   });

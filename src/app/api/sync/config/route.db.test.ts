@@ -490,7 +490,9 @@ describe("sync config API routes", () => {
       dateTimeFormat: "en-us-12h",
     });
 
-    const response = await handlers.GET();
+    const response = await handlers.GET(
+      new Request("http://localhost/api/sync/config"),
+    );
 
     expect(response.status).toBe(200);
     const body = await response.json();

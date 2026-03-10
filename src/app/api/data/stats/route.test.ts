@@ -36,7 +36,7 @@ describe("GET /api/data/stats", () => {
       ipCountry: "KR",
     });
 
-    const response = await GET();
+    const response = await GET(new Request("http://localhost/api/data/stats"));
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ success: true, stats });
@@ -63,7 +63,7 @@ describe("GET /api/data/stats", () => {
       ipCountry: "KR",
     });
 
-    const response = await GET();
+    const response = await GET(new Request("http://localhost/api/data/stats"));
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
@@ -75,7 +75,7 @@ describe("GET /api/data/stats", () => {
   it("returns 401 when no active session exists", async () => {
     vi.mocked(readActiveSession).mockResolvedValueOnce(null);
 
-    const response = await GET();
+    const response = await GET(new Request("http://localhost/api/data/stats"));
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({
       success: false,

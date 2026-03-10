@@ -1,3 +1,4 @@
+import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { POST } from "@/app/api/sync/backfill/route";
@@ -36,7 +37,7 @@ describe("POST /api/sync/backfill", () => {
     vi.mocked(runBackfill).mockResolvedValueOnce(report as never);
 
     const response = await POST(
-      new Request("http://localhost/api/sync/backfill", {
+      new NextRequest("http://localhost/api/sync/backfill", {
         method: "POST",
         body: JSON.stringify({ startDate: "2024-04-01" }),
         headers: { "Content-Type": "application/json" },
@@ -58,7 +59,7 @@ describe("POST /api/sync/backfill", () => {
     vi.mocked(runBackfill).mockResolvedValueOnce(report as never);
 
     const response = await POST(
-      new Request("http://localhost/api/sync/backfill", {
+      new NextRequest("http://localhost/api/sync/backfill", {
         method: "POST",
         body: JSON.stringify({
           startDate: "2024-04-01",
@@ -81,7 +82,7 @@ describe("POST /api/sync/backfill", () => {
     vi.mocked(runBackfill).mockResolvedValueOnce(report as never);
 
     const response = await POST(
-      new Request("http://localhost/api/sync/backfill", {
+      new NextRequest("http://localhost/api/sync/backfill", {
         method: "POST",
         body: JSON.stringify({}),
         headers: { "Content-Type": "application/json" },
@@ -100,7 +101,7 @@ describe("POST /api/sync/backfill", () => {
     vi.mocked(runBackfill).mockRejectedValueOnce(new Error("Backfill failure"));
 
     const response = await POST(
-      new Request("http://localhost/api/sync/backfill", {
+      new NextRequest("http://localhost/api/sync/backfill", {
         method: "POST",
         body: JSON.stringify({ startDate: "2024-04-01" }),
         headers: { "Content-Type": "application/json" },
@@ -119,7 +120,7 @@ describe("POST /api/sync/backfill", () => {
     vi.mocked(runBackfill).mockRejectedValueOnce("boom");
 
     const response = await POST(
-      new Request("http://localhost/api/sync/backfill", {
+      new NextRequest("http://localhost/api/sync/backfill", {
         method: "POST",
         body: JSON.stringify({ startDate: "2024-04-01" }),
         headers: { "Content-Type": "application/json" },
@@ -138,7 +139,7 @@ describe("POST /api/sync/backfill", () => {
     vi.mocked(readActiveSession).mockResolvedValueOnce(null);
 
     const response = await POST(
-      new Request("http://localhost/api/sync/backfill", {
+      new NextRequest("http://localhost/api/sync/backfill", {
         method: "POST",
         body: JSON.stringify({ startDate: "2024-04-01" }),
         headers: { "Content-Type": "application/json" },
@@ -171,7 +172,7 @@ describe("POST /api/sync/backfill", () => {
     });
 
     const response = await POST(
-      new Request("http://localhost/api/sync/backfill", {
+      new NextRequest("http://localhost/api/sync/backfill", {
         method: "POST",
         body: JSON.stringify({ startDate: "2024-04-01" }),
         headers: { "Content-Type": "application/json" },
@@ -181,7 +182,7 @@ describe("POST /api/sync/backfill", () => {
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({
       success: false,
-      message: "Administrator access is required to manage sync operations.",
+      message: "Administrator access is required.",
     });
     expect(runBackfill).not.toHaveBeenCalled();
   });

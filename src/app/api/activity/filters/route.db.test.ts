@@ -74,7 +74,9 @@ describe("activity saved filters routes (collection)", () => {
   });
 
   it("returns empty list when no filters are saved", async () => {
-    const response = await handlers.GET();
+    const response = await handlers.GET(
+      new Request("http://localhost/api/activity/filters"),
+    );
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
       success: boolean;
@@ -141,7 +143,9 @@ describe("activity saved filters routes (collection)", () => {
     });
     expect(createBody.limit).toBe(SAVED_FILTER_LIMIT);
 
-    const listResponse = await handlers.GET();
+    const listResponse = await handlers.GET(
+      new Request("http://localhost/api/activity/filters"),
+    );
     const listBody = (await listResponse.json()) as {
       success: boolean;
       filters: Array<{ id: string; name: string }>;
@@ -192,7 +196,9 @@ describe("activity saved filters routes (collection)", () => {
   it("returns 401 when session is missing", async () => {
     vi.mocked(readActiveSession).mockResolvedValueOnce(null);
 
-    const response = await handlers.GET();
+    const response = await handlers.GET(
+      new Request("http://localhost/api/activity/filters"),
+    );
     expect(response.status).toBe(401);
     const body = await response.json();
     expect(body.success).toBe(false);

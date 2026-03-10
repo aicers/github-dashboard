@@ -1,8 +1,7 @@
-import { type NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { checkReauthRequired } from "@/lib/auth/reauth-guard";
-import { readActiveSession } from "@/lib/auth/session";
+import { adminRoute } from "@/lib/api/route-handler";
 import { resetData } from "@/lib/sync/service";
 
 const requestSchema = z
@@ -11,43 +10,8 @@ const requestSchema = z
   })
   .optional();
 
-export async function POST(request: NextRequest) {
+export const POST = adminRoute("sync_reset", async (request, _session) => {
   try {
-    const session = await readActiveSession();
-    if (!session) {
-      return NextResponse.json(
-        { success: false, message: "Authentication required." },
-        { status: 401 },
-      );
-    }
-
-    if (!session.isAdmin) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Administrator access is required to manage sync operations.",
-        },
-        { status: 403 },
-      );
-    }
-
-    const needsReauth = await checkReauthRequired(
-      request,
-      session,
-      "sync_reset",
-    );
-    if (needsReauth) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Reauthentication required.",
-          reauthRequired: true,
-        },
-        { status: 428 },
-      );
-    }
-
     const payload = requestSchema.parse(
       await request.json().catch(() => undefined),
     );
@@ -78,4 +42,4 @@ export async function POST(request: NextRequest) {
       { status: 500 },
     );
   }
-}
+});

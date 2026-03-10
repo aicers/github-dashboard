@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { readActiveSession } from "@/lib/auth/session";
+import { authenticatedRoute } from "@/lib/api/route-handler";
 import { getDashboardAnalytics } from "@/lib/dashboard/analytics";
 
 const querySchema = z.object({
@@ -21,15 +21,7 @@ const querySchema = z.object({
   person: z.string().optional().nullable(),
 });
 
-export async function GET(request: Request) {
-  const session = await readActiveSession();
-  if (!session) {
-    return NextResponse.json(
-      { success: false, message: "Authentication required." },
-      { status: 401 },
-    );
-  }
-
+export const GET = authenticatedRoute(async (request, session) => {
   try {
     const { searchParams } = new URL(request.url);
     const parsed = querySchema.parse({
@@ -73,4 +65,4 @@ export async function GET(request: Request) {
       { status: 500 },
     );
   }
-}
+});

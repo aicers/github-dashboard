@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { readActiveSession } from "@/lib/auth/session";
+import { adminRoute } from "@/lib/api/route-handler";
 import { runPrLinkBackfill } from "@/lib/sync/service";
 
 const schema = z.object({
@@ -15,27 +15,8 @@ function buildLogger(prefix: string) {
   };
 }
 
-export async function POST(request: Request) {
+export const POST = adminRoute(async (request, _session) => {
   try {
-    const session = await readActiveSession();
-    if (!session) {
-      return NextResponse.json(
-        { success: false, message: "Authentication required." },
-        { status: 401 },
-      );
-    }
-
-    if (!session.isAdmin) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Administrator access is required to manage sync operations.",
-        },
-        { status: 403 },
-      );
-    }
-
     const payload = schema.parse(await request.json());
     const result = await runPrLinkBackfill(
       payload.startDate,
@@ -77,4 +58,4 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
-}
+});

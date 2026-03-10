@@ -1,44 +1,9 @@
-import { type NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
-import { checkReauthRequired } from "@/lib/auth/reauth-guard";
-import { readActiveSession } from "@/lib/auth/session";
+import { adminRoute } from "@/lib/api/route-handler";
 import { runDatabaseBackup } from "@/lib/backup/service";
 
-export async function POST(_request: NextRequest) {
-  const session = await readActiveSession();
-  if (!session) {
-    return NextResponse.json(
-      { success: false, message: "Authentication required." },
-      { status: 401 },
-    );
-  }
-
-  if (!session.isAdmin) {
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Administrator access required.",
-      },
-      { status: 403 },
-    );
-  }
-
-  const needsReauth = await checkReauthRequired(
-    _request,
-    session,
-    "backup_run",
-  );
-  if (needsReauth) {
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Reauthentication required.",
-        reauthRequired: true,
-      },
-      { status: 428 },
-    );
-  }
-
+export const POST = adminRoute("backup_run", async (_request, session) => {
   try {
     await runDatabaseBackup({
       trigger: "manual",
@@ -62,4 +27,4 @@ export async function POST(_request: NextRequest) {
       { status: 500 },
     );
   }
-}
+});
