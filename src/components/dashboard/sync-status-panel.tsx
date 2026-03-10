@@ -1,9 +1,14 @@
 "use client";
 
 import { AlertCircle, CheckCircle2, Loader2, RefreshCcw } from "lucide-react";
+import { useRouter } from "next/navigation";
 import type { JSX } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import {
+  isUnauthorizedResponse,
+  retryOnceAfterUnauthorized,
+} from "@/components/dashboard/post-login-auth-recovery";
 import {
   getCurrentSyncConnectionState,
   type SyncConnectionState,
@@ -275,6 +280,7 @@ function mergeResource(
 }
 
 export function SyncStatusPanel() {
+  const router = useRouter();
   const [connectionState, setConnectionState] = useState<SyncConnectionState>(
     () => getCurrentSyncConnectionState(),
   );
@@ -329,12 +335,19 @@ export function SyncStatusPanel() {
     setError(null);
 
     try {
-      const response = await fetch("/api/sync/status", {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
+      const response = await retryOnceAfterUnauthorized({
+        execute: () =>
+          fetch("/api/sync/status", {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            cache: "no-store",
+          }),
+        refresh: () => {
+          router.refresh();
         },
-        cache: "no-store",
+        shouldRetry: isUnauthorizedResponse,
       });
 
       if (!response.ok) {
@@ -412,7 +425,7 @@ export function SyncStatusPanel() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [router]);
 
   const handleStreamEvent = useCallback(
     (event: SyncStreamEvent) => {

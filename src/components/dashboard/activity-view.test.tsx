@@ -14,6 +14,7 @@ import {
   PROJECT_FIELD_BADGE_CLASS,
 } from "@/components/dashboard/activity/detail-shared";
 import { ActivityView } from "@/components/dashboard/activity-view";
+import { __resetPostLoginAuthRecoveryForTests } from "@/components/dashboard/post-login-auth-recovery";
 import {
   buildActivityFilterOptionsFixture,
   buildActivityItemDetailFixture,
@@ -108,6 +109,7 @@ describe("ActivityView", () => {
   beforeEach(() => {
     resetActivityHelperCounters();
     resetMockFetch();
+    __resetPostLoginAuthRecoveryForTests();
     setDefaultFetchHandler((request) => {
       if (request.url.includes("/api/activity/filters")) {
         return createJsonResponse({ filters: [], limit: 5 });
@@ -123,6 +125,7 @@ describe("ActivityView", () => {
       );
     });
     mockRouter.replace.mockReset();
+    mockRouter.refresh.mockReset();
     fetchActivityDetailMock.mockReset();
     fetchActivityDetailMock.mockResolvedValue(buildActivityItemDetailFixture());
   });
@@ -134,6 +137,65 @@ describe("ActivityView", () => {
 
     expect(screen.getByText("첫번째 이슈")).toBeVisible();
     expect(screen.getByText(/페이지 1 \/ 1 \(총 1건\)/)).toBeVisible();
+  });
+
+  it("retries saved-filter bootstrap once after a transient unauthorized response", async () => {
+    vi.useFakeTimers();
+    try {
+      const savedFiltersHandler = vi
+        .fn()
+        .mockResolvedValueOnce(
+          createJsonResponse(
+            { success: false, message: "Authentication required." },
+            { status: 401 },
+          ),
+        )
+        .mockResolvedValueOnce(
+          createJsonResponse({
+            filters: [
+              buildActivitySavedFilterFixture({
+                id: "saved-1",
+                name: "재현 필터",
+              }),
+            ],
+            limit: 5,
+          }),
+        );
+
+      setDefaultFetchHandler((request) => {
+        if (request.url.includes("/api/activity/filters")) {
+          return savedFiltersHandler();
+        }
+        if (request.url.includes("/api/sync/status")) {
+          return createJsonResponse({
+            success: true,
+            status: { runs: [], logs: [], config: null },
+          });
+        }
+        throw new Error(
+          `No fetch mock registered for ${request.method ?? "GET"} ${request.url}`,
+        );
+      });
+
+      render(<ActivityView {...createDefaultProps()} />);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(100);
+      });
+      vi.useRealTimers();
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("option", { name: "재현 필터" }),
+        ).toBeInTheDocument();
+      });
+
+      expect(mockRouter.refresh).toHaveBeenCalledTimes(1);
+      expect(savedFiltersHandler).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+      __resetPostLoginAuthRecoveryForTests();
+    }
   });
 
   it("applies quick filter and fetches updated results", async () => {

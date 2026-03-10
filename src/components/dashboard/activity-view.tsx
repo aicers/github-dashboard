@@ -29,6 +29,10 @@ import {
   isPageDataStale,
   PageGenerationNotice,
 } from "@/components/dashboard/page-generation-notice";
+import {
+  isUnauthorizedResponse,
+  retryOnceAfterUnauthorized,
+} from "@/components/dashboard/post-login-auth-recovery";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -2007,6 +2011,17 @@ export function ActivityView({
 }: ActivityViewProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const retryAfterUnauthorized = useCallback(
+    (execute: () => Promise<Response>) =>
+      retryOnceAfterUnauthorized({
+        execute,
+        refresh: () => {
+          router.refresh();
+        },
+        shouldRetry: isUnauthorizedResponse,
+      }),
+    [router],
+  );
   const perPageDefault =
     initialData.pageInfo.perPage ?? PER_PAGE_CHOICES[1] ?? 25;
   const labelMetadata = useMemo(() => {
@@ -2324,7 +2339,11 @@ export function ActivityView({
     let canceled = false;
     const loadInitialSyncStatus = async () => {
       try {
-        const response = await fetch("/api/sync/status");
+        const response = await retryAfterUnauthorized(() =>
+          fetch("/api/sync/status", {
+            cache: "no-store",
+          }),
+        );
         if (!response.ok) {
           return;
         }
@@ -2362,7 +2381,7 @@ export function ActivityView({
     return () => {
       canceled = true;
     };
-  }, []);
+  }, [retryAfterUnauthorized]);
 
   useEffect(() => {
     setDraft(initialState);
@@ -3126,7 +3145,11 @@ export function ActivityView({
     setSavedFiltersLoading(true);
     setSavedFiltersError(null);
     try {
-      const response = await fetch("/api/activity/filters");
+      const response = await retryAfterUnauthorized(() =>
+        fetch("/api/activity/filters", {
+          cache: "no-store",
+        }),
+      );
       let payload: {
         filters?: ActivitySavedFilter[];
         limit?: number;
@@ -3173,7 +3196,7 @@ export function ActivityView({
     } finally {
       setSavedFiltersLoading(false);
     }
-  }, [initialSavedFiltersLimit]);
+  }, [initialSavedFiltersLimit, retryAfterUnauthorized]);
 
   useEffect(() => {
     void loadSavedFilters();

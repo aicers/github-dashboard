@@ -1,14 +1,27 @@
 import { act, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { __resetPostLoginAuthRecoveryForTests } from "@/components/dashboard/post-login-auth-recovery";
 import { SyncStatusPanel } from "@/components/dashboard/sync-status-panel";
 import type { SyncConnectionState } from "@/lib/sync/client-stream";
 import type { SyncStreamEvent } from "@/lib/sync/events";
-import { setDefaultFetchHandler } from "../../../tests/setup/mock-fetch";
+import {
+  createJsonResponse,
+  fetchMock,
+  setDefaultFetchHandler,
+} from "../../../tests/setup/mock-fetch";
 
 const syncListeners = new Set<(event: SyncStreamEvent) => void>();
 const connectionListeners = new Set<(state: SyncConnectionState) => void>();
 let currentConnectionState: SyncConnectionState = "connecting";
+const routerRefreshMock = vi.fn();
+const mockRouter = {
+  refresh: routerRefreshMock,
+};
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => mockRouter,
+}));
 
 vi.mock("@/lib/sync/client-stream", () => ({
   subscribeToSyncStream: (listener: (event: SyncStreamEvent) => void) => {
@@ -47,6 +60,9 @@ describe("SyncStatusPanel", () => {
     syncListeners.clear();
     connectionListeners.clear();
     currentConnectionState = "connecting";
+    __resetPostLoginAuthRecoveryForTests();
+    fetchMock.mockReset();
+    routerRefreshMock.mockReset();
     setDefaultFetchHandler({
       json: {
         success: true,
@@ -117,5 +133,46 @@ describe("SyncStatusPanel", () => {
     });
 
     expect(screen.queryByText("Sync in progress")).not.toBeInTheDocument();
+  });
+
+  it("retries the initial status request once after a transient unauthorized response", async () => {
+    vi.useFakeTimers();
+    try {
+      setDefaultFetchHandler(
+        vi
+          .fn()
+          .mockResolvedValueOnce(
+            createJsonResponse(
+              { success: false, message: "Authentication required." },
+              { status: 401 },
+            ),
+          )
+          .mockResolvedValueOnce(
+            createJsonResponse({
+              success: true,
+              status: {
+                runs: [],
+                logs: [],
+              },
+            }),
+          ),
+      );
+
+      render(<SyncStatusPanel />);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(100);
+      });
+
+      expect(routerRefreshMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(
+        screen.queryByText(/Failed to fetch sync status \(401\)/),
+      ).not.toBeInTheDocument();
+    } finally {
+      await vi.runOnlyPendingTimersAsync();
+      vi.useRealTimers();
+      __resetPostLoginAuthRecoveryForTests();
+    }
   });
 });

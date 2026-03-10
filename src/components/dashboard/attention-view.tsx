@@ -21,7 +21,10 @@ import {
   useState,
   useTransition,
 } from "react";
-
+import {
+  isUnauthorizedResponse,
+  retryOnceAfterUnauthorized,
+} from "@/components/dashboard/post-login-auth-recovery";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -3754,6 +3757,17 @@ export function AttentionView({
     insights.dateTimeFormat,
   );
   const router = useRouter();
+  const retryAfterUnauthorized = useCallback(
+    (execute: () => Promise<Response>) =>
+      retryOnceAfterUnauthorized({
+        execute,
+        refresh: () => {
+          router.refresh();
+        },
+        shouldRetry: isUnauthorizedResponse,
+      }),
+    [router],
+  );
   const [isRefreshing, startTransition] = useTransition();
   const [pendingMentionOverrideKey, setPendingMentionOverrideKey] = useState<
     string | null
@@ -3825,7 +3839,11 @@ export function AttentionView({
     let canceled = false;
     const loadInitialSyncState = async () => {
       try {
-        const response = await fetch("/api/sync/status");
+        const response = await retryAfterUnauthorized(() =>
+          fetch("/api/sync/status", {
+            cache: "no-store",
+          }),
+        );
         if (!response.ok) {
           return;
         }
@@ -3863,7 +3881,7 @@ export function AttentionView({
     return () => {
       canceled = true;
     };
-  }, []);
+  }, [retryAfterUnauthorized]);
 
   const handleMentionOverrideSuccess = useCallback(
     (params: {

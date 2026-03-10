@@ -47,6 +47,53 @@ test.describe("AnalyticsView (Playwright)", () => {
     expect(url.searchParams.get("end")).toContain("2024-02-10");
   });
 
+  test("recovers from a transient unauthorized response when applying filters", async ({
+    page,
+  }) => {
+    let analyticsRequestCount = 0;
+
+    await page.route("**/api/dashboard/analytics**", async (route) => {
+      analyticsRequestCount += 1;
+
+      if (analyticsRequestCount === 1) {
+        await route.fulfill({
+          status: 401,
+          contentType: "application/json",
+          body: JSON.stringify({
+            success: false,
+            message: "Authentication required.",
+          }),
+        });
+        return;
+      }
+
+      const analytics = buildDashboardAnalyticsFixture();
+      const prsCreated = analytics.organization.metrics.prsCreated;
+      prsCreated.previous = 1200;
+      prsCreated.current = 98765;
+      prsCreated.absoluteChange = prsCreated.current - prsCreated.previous;
+      prsCreated.percentChange =
+        prsCreated.previous === 0
+          ? null
+          : prsCreated.absoluteChange / prsCreated.previous;
+
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ success: true, analytics }),
+      });
+    });
+
+    await page.goto(ANALYTICS_PATH);
+
+    await page.getByRole("button", { name: "최근 30일" }).click();
+    await page.getByRole("button", { name: "필터 적용" }).click();
+
+    await expect.poll(() => analyticsRequestCount).toBe(2);
+    await expect(page.getByText("98,765")).toBeVisible();
+    await expect(page.getByText("Authentication required.")).toHaveCount(0);
+  });
+
   test("switches average PR size mode and sorts repository metrics", async ({
     page,
   }) => {

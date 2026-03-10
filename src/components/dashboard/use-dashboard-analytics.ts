@@ -1,6 +1,11 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  isUnauthorizedResponse,
+  retryOnceAfterUnauthorized,
+} from "@/components/dashboard/post-login-auth-recovery";
 import { PRESETS, type TimePresetKey } from "@/lib/dashboard/date-range";
 import type { DashboardAnalytics, WeekStart } from "@/lib/dashboard/types";
 
@@ -52,6 +57,7 @@ export function useDashboardAnalytics({
   initialAnalytics: DashboardAnalytics;
   defaultRange: { start: string; end: string };
 }): DashboardAnalyticsState {
+  const router = useRouter();
   const [analytics, setAnalytics] = useState(initialAnalytics);
   const [timeZone, setTimeZone] = useState(initialAnalytics.timeZone);
   const [weekStart, setWeekStart] = useState<WeekStart>(
@@ -76,140 +82,150 @@ export function useDashboardAnalytics({
     };
   }, []);
 
-  const load = useCallback(async (targetFilters: FilterState) => {
-    setIsLoading(true);
-    setError(null);
-    requestCounterRef.current += 1;
-    const requestId = requestCounterRef.current;
-    latestStartedRequestRef.current = requestId;
-    activeControllerRef.current?.abort();
-    const controller = new AbortController();
-    activeControllerRef.current = controller;
-    const isLatestRequest = (id: number) =>
-      latestStartedRequestRef.current === id;
+  const load = useCallback(
+    async (targetFilters: FilterState) => {
+      setIsLoading(true);
+      setError(null);
+      requestCounterRef.current += 1;
+      const requestId = requestCounterRef.current;
+      latestStartedRequestRef.current = requestId;
+      activeControllerRef.current?.abort();
+      const controller = new AbortController();
+      activeControllerRef.current = controller;
+      const isLatestRequest = (id: number) =>
+        latestStartedRequestRef.current === id;
 
-    try {
-      const params = new URLSearchParams({
-        start: targetFilters.start,
-        end: targetFilters.end,
-      });
-      if (targetFilters.repositoryIds.length) {
-        params.set("repos", targetFilters.repositoryIds.join(","));
-      }
-      if (targetFilters.personId) {
-        params.set("person", targetFilters.personId);
-      }
-
-      const response = await fetch(
-        `/api/dashboard/analytics?${params.toString()}`,
-        { signal: controller.signal },
-      );
-      const data = await response.json();
-      if (!data.success) {
-        throw new Error(
-          data.message ?? "대시보드 데이터를 불러오지 못했습니다.",
-        );
-      }
-
-      const nextAnalytics = data.analytics as DashboardAnalytics;
-      if (!isLatestRequest(requestId)) {
-        return;
-      }
-
-      setAnalytics(nextAnalytics);
-      if (nextAnalytics.timeZone) {
-        setTimeZone(nextAnalytics.timeZone);
-      }
-      if (nextAnalytics.weekStart) {
-        setWeekStart(nextAnalytics.weekStart);
-      }
-      const availableRepoIds = new Set(
-        nextAnalytics.repositories.map((repo) => repo.id),
-      );
-      const availableContributorIds = new Set(
-        nextAnalytics.contributors.map((contributor) => contributor.id),
-      );
-      const sanitizedRepoIds = targetFilters.repositoryIds.filter((id) =>
-        availableRepoIds.has(id),
-      );
-      const nextRepoIds =
-        sanitizedRepoIds.length === targetFilters.repositoryIds.length
-          ? [...targetFilters.repositoryIds]
-          : sanitizedRepoIds;
-      const nextPersonId =
-        targetFilters.personId &&
-        availableContributorIds.has(targetFilters.personId)
-          ? targetFilters.personId
-          : null;
-      const sanitizedTarget: FilterState = {
-        start: nextAnalytics.range.start,
-        end: nextAnalytics.range.end,
-        preset: targetFilters.preset,
-        repositoryIds: nextRepoIds,
-        personId: nextPersonId,
-      };
-
-      setFilters((current) => {
-        if (!isLatestRequest(requestId)) {
-          return current;
+      try {
+        const params = new URLSearchParams({
+          start: targetFilters.start,
+          end: targetFilters.end,
+        });
+        if (targetFilters.repositoryIds.length) {
+          params.set("repos", targetFilters.repositoryIds.join(","));
         }
-        // Keep any newer in-flight edits if the user changed filters while this request was running.
-        if (current !== targetFilters) {
-          const filteredRepoIds = current.repositoryIds.filter((id) =>
-            availableRepoIds.has(id),
-          );
-          const repoChanged =
-            filteredRepoIds.length !== current.repositoryIds.length;
-          const personFromCurrent =
-            current.personId && availableContributorIds.has(current.personId)
-              ? current.personId
-              : null;
+        if (targetFilters.personId) {
+          params.set("person", targetFilters.personId);
+        }
 
-          if (!repoChanged && personFromCurrent === current.personId) {
+        const response = await retryOnceAfterUnauthorized({
+          execute: () =>
+            fetch(`/api/dashboard/analytics?${params.toString()}`, {
+              signal: controller.signal,
+              cache: "no-store",
+            }),
+          refresh: () => {
+            router.refresh();
+          },
+          shouldRetry: isUnauthorizedResponse,
+        });
+        const data = await response.json();
+        if (!data.success) {
+          throw new Error(
+            data.message ?? "대시보드 데이터를 불러오지 못했습니다.",
+          );
+        }
+
+        const nextAnalytics = data.analytics as DashboardAnalytics;
+        if (!isLatestRequest(requestId)) {
+          return;
+        }
+
+        setAnalytics(nextAnalytics);
+        if (nextAnalytics.timeZone) {
+          setTimeZone(nextAnalytics.timeZone);
+        }
+        if (nextAnalytics.weekStart) {
+          setWeekStart(nextAnalytics.weekStart);
+        }
+        const availableRepoIds = new Set(
+          nextAnalytics.repositories.map((repo) => repo.id),
+        );
+        const availableContributorIds = new Set(
+          nextAnalytics.contributors.map((contributor) => contributor.id),
+        );
+        const sanitizedRepoIds = targetFilters.repositoryIds.filter((id) =>
+          availableRepoIds.has(id),
+        );
+        const nextRepoIds =
+          sanitizedRepoIds.length === targetFilters.repositoryIds.length
+            ? [...targetFilters.repositoryIds]
+            : sanitizedRepoIds;
+        const nextPersonId =
+          targetFilters.personId &&
+          availableContributorIds.has(targetFilters.personId)
+            ? targetFilters.personId
+            : null;
+        const sanitizedTarget: FilterState = {
+          start: nextAnalytics.range.start,
+          end: nextAnalytics.range.end,
+          preset: targetFilters.preset,
+          repositoryIds: nextRepoIds,
+          personId: nextPersonId,
+        };
+
+        setFilters((current) => {
+          if (!isLatestRequest(requestId)) {
             return current;
           }
+          // Keep any newer in-flight edits if the user changed filters while this request was running.
+          if (current !== targetFilters) {
+            const filteredRepoIds = current.repositoryIds.filter((id) =>
+              availableRepoIds.has(id),
+            );
+            const repoChanged =
+              filteredRepoIds.length !== current.repositoryIds.length;
+            const personFromCurrent =
+              current.personId && availableContributorIds.has(current.personId)
+                ? current.personId
+                : null;
 
-          return {
-            ...current,
-            repositoryIds: repoChanged
-              ? filteredRepoIds
-              : current.repositoryIds,
-            personId: personFromCurrent,
-          };
-        }
+            if (!repoChanged && personFromCurrent === current.personId) {
+              return current;
+            }
 
-        return sanitizedTarget;
-      });
-      setAppliedFilters((current) => {
+            return {
+              ...current,
+              repositoryIds: repoChanged
+                ? filteredRepoIds
+                : current.repositoryIds,
+              personId: personFromCurrent,
+            };
+          }
+
+          return sanitizedTarget;
+        });
+        setAppliedFilters((current) => {
+          if (!isLatestRequest(requestId)) {
+            return current;
+          }
+          return sanitizedTarget;
+        });
+      } catch (fetchError) {
         if (!isLatestRequest(requestId)) {
-          return current;
+          return;
         }
-        return sanitizedTarget;
-      });
-    } catch (fetchError) {
-      if (!isLatestRequest(requestId)) {
-        return;
+        if (
+          fetchError instanceof DOMException &&
+          fetchError.name === "AbortError"
+        ) {
+          return;
+        }
+        setError(
+          fetchError instanceof Error
+            ? fetchError.message
+            : "대시보드 데이터를 불러오지 못했습니다.",
+        );
+      } finally {
+        if (isLatestRequest(requestId)) {
+          setIsLoading(false);
+        }
+        if (activeControllerRef.current === controller) {
+          activeControllerRef.current = null;
+        }
       }
-      if (
-        fetchError instanceof DOMException &&
-        fetchError.name === "AbortError"
-      ) {
-        return;
-      }
-      setError(
-        fetchError instanceof Error
-          ? fetchError.message
-          : "대시보드 데이터를 불러오지 못했습니다.",
-      );
-    } finally {
-      if (isLatestRequest(requestId)) {
-        setIsLoading(false);
-      }
-      if (activeControllerRef.current === controller) {
-        activeControllerRef.current = null;
-      }
-    }
-  }, []);
+    },
+    [router],
+  );
 
   const applyFilters = useCallback(
     async (nextFilters?: FilterState) => {

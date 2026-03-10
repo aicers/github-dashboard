@@ -20,6 +20,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Prevented recoverable hydration mismatches in dashboard timestamp badges by
   normalizing locale-specific spacing differences and suppressing expected
   client-only text variance for auto-formatted timestamps.
+- Recovered transient post-login dashboard fetch failures by refreshing and
+  retrying the first unauthorized client-side requests for Analytics, People,
+  Activity saved filters, and the shared sync status panel.
 
 ## [0.3.1] - 2026-02-18
 
