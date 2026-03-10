@@ -1,5 +1,10 @@
 {
   "gitignore": ".gitignore",
   "globs": ["**/*.md", "**/*.markdown"],
-  "ignores": ["**/node_modules/**", ".next/**", "build/**"]
+  "ignores": ["**/node_modules/**", ".next/**", "build/**"],
+  "config": {
+    "MD024": {
+      "siblings_only": true
+    }
+  }
 }
