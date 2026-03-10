@@ -42,6 +42,10 @@ export const DATE_TIME_FORMAT_VALUES = DATE_TIME_FORMAT_OPTIONS.map(
 
 export const DEFAULT_DATE_TIME_FORMAT: DateTimeDisplayFormat = "auto";
 
+function normalizeDisplayWhitespace(value: string) {
+  return value.replace(/[\u00A0\u202F]/g, " ");
+}
+
 export function isValidDateTimeDisplayFormat(
   value: string,
 ): value is DateTimeDisplayFormat {
@@ -140,26 +144,34 @@ export function formatDateTimeDisplay(
 
   switch (format) {
     case "iso-24h":
-      return date.toFormat("yyyy-LL-dd HH:mm");
+      return normalizeDisplayWhitespace(date.toFormat("yyyy-LL-dd HH:mm"));
     case "dot-24h":
-      return date.toFormat("yyyy.MM.dd HH:mm");
+      return normalizeDisplayWhitespace(date.toFormat("yyyy.MM.dd HH:mm"));
     case "ko-12h": {
       const hour24 = date.hour;
       const meridiem = hour24 >= 12 ? "오후" : "오전";
       const hour12 = hour24 % 12 || 12;
       const paddedMinute = String(date.minute).padStart(2, "0");
-      return `${date.year}년 ${date.month}월 ${date.day}일 ${meridiem} ${hour12}:${paddedMinute}`;
+      return normalizeDisplayWhitespace(
+        `${date.year}년 ${date.month}월 ${date.day}일 ${meridiem} ${hour12}:${paddedMinute}`,
+      );
     }
     case "en-us-12h":
-      return date.setLocale("en-US").toFormat("MMM d, yyyy h:mm a");
+      return normalizeDisplayWhitespace(
+        date.setLocale("en-US").toFormat("MMM d, yyyy h:mm a"),
+      );
     case "en-gb-24h":
-      return date.setLocale("en-GB").toFormat("d MMM yyyy, HH:mm");
+      return normalizeDisplayWhitespace(
+        date.setLocale("en-GB").toFormat("d MMM yyyy, HH:mm"),
+      );
     default: {
       const locale =
         options.locale ??
         (typeof navigator !== "undefined" ? navigator.language : undefined);
       const localized = locale ? date.setLocale(locale) : date;
-      return localized.toLocaleString(DateTime.DATETIME_MED);
+      return normalizeDisplayWhitespace(
+        localized.toLocaleString(DateTime.DATETIME_MED),
+      );
     }
   }
 }

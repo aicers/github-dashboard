@@ -27,6 +27,7 @@ export function TimestampBadge({
       })
     : null;
   const displayValue = formatted ?? "Not available";
+  const suppressHydrationWarning = !dateTimeFormat || dateTimeFormat === "auto";
   const badgeClass =
     emphasis === "warning"
       ? "bg-amber-100 text-amber-900"
@@ -43,6 +44,7 @@ export function TimestampBadge({
       {label}
       <span
         className="font-semibold text-foreground/80"
+        suppressHydrationWarning={suppressHydrationWarning}
         title={trimmedTimezone || undefined}
       >
         {displayValue}
