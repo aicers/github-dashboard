@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import type { ReauthAction } from "@/lib/auth/reauth";
+import { isReauthAction } from "@/lib/auth/reauth";
 import { checkReauthRequired } from "@/lib/auth/reauth-guard";
 import type { ActiveSession } from "@/lib/auth/session";
 import { readActiveSession } from "@/lib/auth/session";
@@ -92,13 +93,13 @@ export function adminRoute<P extends Record<string, string>>(
 
 // With reauth, no context
 export function adminRoute(
-  reauthAction: string,
+  reauthAction: ReauthAction,
   handler: (request: NextRequest, session: ActiveSession) => Promise<Response>,
 ): (request: NextRequest) => Promise<Response>;
 
 // With reauth, with context
 export function adminRoute<P extends Record<string, string>>(
-  reauthAction: string,
+  reauthAction: ReauthAction,
   handler: (
     request: NextRequest,
     session: ActiveSession,
@@ -111,8 +112,11 @@ export function adminRoute<P extends Record<string, string>>(
 export function adminRoute(reauthActionOrHandler: any, handlerArg?: any): any {
   const reauthAction =
     typeof reauthActionOrHandler === "string"
-      ? (reauthActionOrHandler as ReauthAction)
+      ? reauthActionOrHandler
       : undefined;
+  if (reauthAction !== undefined && !isReauthAction(reauthAction)) {
+    throw new Error(`Invalid reauthAction: "${reauthAction}"`);
+  }
   const handler = (
     typeof reauthActionOrHandler === "function"
       ? reauthActionOrHandler

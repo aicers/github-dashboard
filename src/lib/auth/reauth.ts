@@ -1,25 +1,29 @@
 import type { AuthConfig } from "@/lib/auth/config";
 import type { SessionRecord } from "@/lib/auth/session-store";
 
-export type ReauthAction =
-  | "org_settings"
-  | "backup_run"
-  | "backup_restore"
-  | "sync_reset"
-  | "backup_cleanup"
-  | "sync_cleanup";
+const REAUTH_ACTION_TUPLES = [
+  ["org_settings", "Organization 설정 저장"],
+  ["backup_run", "백업 실행"],
+  ["backup_restore", "백업 복원"],
+  ["sync_reset", "데이터 리셋"],
+  ["backup_cleanup", "백업 정리"],
+  ["sync_cleanup", "동기화 정리"],
+] as const;
+
+export type ReauthAction = (typeof REAUTH_ACTION_TUPLES)[number][0];
+
+const REAUTH_ACTIONS: ReadonlySet<string> = new Set<string>(
+  REAUTH_ACTION_TUPLES.map(([id]) => id),
+);
+
+export function isReauthAction(value: string): value is ReauthAction {
+  return REAUTH_ACTIONS.has(value);
+}
 
 export const REAUTH_ACTION_DEFINITIONS: Array<{
   id: ReauthAction;
   label: string;
-}> = [
-  { id: "org_settings", label: "Organization 설정 저장" },
-  { id: "backup_run", label: "백업 실행" },
-  { id: "backup_restore", label: "백업 복원" },
-  { id: "sync_reset", label: "데이터 리셋" },
-  { id: "backup_cleanup", label: "백업 정리" },
-  { id: "sync_cleanup", label: "동기화 정리" },
-];
+}> = REAUTH_ACTION_TUPLES.map(([id, label]) => ({ id, label }));
 
 type ReauthCheckOptions = {
   session: SessionRecord;

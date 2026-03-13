@@ -180,7 +180,7 @@ describe("adminRoute with reauthAction", () => {
     vi.mocked(readActiveSession).mockResolvedValue(adminSession);
     vi.mocked(checkReauthRequired).mockResolvedValue(true);
     const handler = vi.fn(async () => new Response("ok", { status: 200 }));
-    const route = adminRoute("some_action", handler);
+    const route = adminRoute("backup_run", handler);
 
     const response = await route(
       new NextRequest("http://localhost/test", { method: "POST" }),
@@ -199,7 +199,7 @@ describe("adminRoute with reauthAction", () => {
     vi.mocked(readActiveSession).mockResolvedValue(adminSession);
     vi.mocked(checkReauthRequired).mockResolvedValue(false);
     const handler = vi.fn(async () => new Response("ok", { status: 200 }));
-    const route = adminRoute("some_action", handler);
+    const route = adminRoute("backup_run", handler);
 
     const request = new NextRequest("http://localhost/test", {
       method: "POST",
@@ -210,7 +210,7 @@ describe("adminRoute with reauthAction", () => {
     expect(checkReauthRequired).toHaveBeenCalledWith(
       request,
       adminSession,
-      "some_action",
+      "backup_run",
     );
     expect(handler).toHaveBeenCalledWith(request, adminSession, undefined);
   });
@@ -219,7 +219,7 @@ describe("adminRoute with reauthAction", () => {
     vi.mocked(readActiveSession).mockResolvedValue(adminSession);
     vi.mocked(checkReauthRequired).mockResolvedValue(false);
     const handler = vi.fn(async () => new Response("ok", { status: 200 }));
-    const route = adminRoute<{ id: string }>("restore_action", handler);
+    const route = adminRoute<{ id: string }>("backup_restore", handler);
 
     const request = new NextRequest("http://localhost/test/42", {
       method: "POST",
@@ -234,7 +234,7 @@ describe("adminRoute with reauthAction", () => {
   it("still returns 401 when no session even with reauthAction", async () => {
     vi.mocked(readActiveSession).mockResolvedValue(null);
     const handler = vi.fn(async () => new Response("ok", { status: 200 }));
-    const route = adminRoute("some_action", handler);
+    const route = adminRoute("backup_run", handler);
 
     const response = await route(
       new NextRequest("http://localhost/test", { method: "POST" }),
@@ -246,7 +246,7 @@ describe("adminRoute with reauthAction", () => {
   it("still returns 403 when non-admin even with reauthAction", async () => {
     vi.mocked(readActiveSession).mockResolvedValue(mockSession);
     const handler = vi.fn(async () => new Response("ok", { status: 200 }));
-    const route = adminRoute("some_action", handler);
+    const route = adminRoute("backup_run", handler);
 
     const response = await route(
       new NextRequest("http://localhost/test", { method: "POST" }),
