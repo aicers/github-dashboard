@@ -5,9 +5,24 @@ import {
   getLinkedPullRequestsMap,
 } from "@/lib/activity/cache";
 import {
+  extractAssigneeIds,
+  extractPullRequestAssigneeIds,
+  type IssueRaw,
+  parseIssueRaw,
+  toIsoDate,
+} from "@/lib/activity/data-utils";
+import {
   getProjectFieldOverrides,
   type ProjectFieldOverrides,
 } from "@/lib/activity/project-field-store";
+import {
+  applyProjectFieldCandidate,
+  createProjectFieldAggregate,
+  extractProjectFieldValueInfo,
+  normalizePriorityText as normalizePriorityOverride,
+  normalizeWeightText as normalizeWeightOverride,
+  type TodoProjectFieldValues,
+} from "@/lib/activity/project-field-utils";
 import { getActivityStatusHistory } from "@/lib/activity/status-store";
 import {
   extractProjectStatusEntries,
@@ -31,6 +46,7 @@ import {
   loadCombinedHolidaySet,
 } from "@/lib/dashboard/business-days";
 import { differenceInBusinessDaysInTimeZone } from "@/lib/dashboard/business-days-timezone";
+import { normalizeOrganizationHolidayCodes } from "@/lib/dashboard/holiday-utils";
 import { createPersonalHolidaySetLoader } from "@/lib/dashboard/personal-holidays";
 import {
   buildMentionClassificationKey,
@@ -49,12 +65,10 @@ import {
   type UserProfile,
 } from "@/lib/db/operations";
 import { env } from "@/lib/env";
-import {
-  DEFAULT_HOLIDAY_CALENDAR,
-  type HolidayCalendarCode,
-  isHolidayCalendarCode,
-} from "@/lib/holidays/constants";
+import type { HolidayCalendarCode } from "@/lib/holidays/constants";
 import { readUserTimeSettings } from "@/lib/user/time-settings";
+
+export { normalizeOrganizationHolidayCodes } from "@/lib/dashboard/holiday-utils";
 
 export type UserReference = {
   id: string;
@@ -130,35 +144,6 @@ export type IssueAttentionItem = IssueReference & {
   issueTodoProjectInitiationOptions?: string | null;
   issueTodoProjectStartDate?: string | null;
 };
-
-export function normalizeOrganizationHolidayCodes(
-  config: unknown,
-): HolidayCalendarCode[] {
-  if (
-    !config ||
-    !(config as { org_holiday_calendar_codes?: unknown })
-      .org_holiday_calendar_codes
-  ) {
-    return [DEFAULT_HOLIDAY_CALENDAR];
-  }
-
-  const raw = (config as { org_holiday_calendar_codes?: unknown })
-    .org_holiday_calendar_codes;
-  if (!Array.isArray(raw)) {
-    return [DEFAULT_HOLIDAY_CALENDAR];
-  }
-
-  const codes = raw
-    .filter((value): value is string => typeof value === "string")
-    .map((value) => value.trim())
-    .filter((value) => value.length > 0 && isHolidayCalendarCode(value));
-
-  if (!codes.length) {
-    return [DEFAULT_HOLIDAY_CALENDAR];
-  }
-
-  return Array.from(new Set(codes)) as HolidayCalendarCode[];
-}
 
 export type MentionAttentionItem = {
   commentId: string;
@@ -483,35 +468,6 @@ type MentionRow = {
   issue_data: unknown;
 };
 
-type IssueRaw = {
-  projectStatusHistory?: unknown;
-  projectItems?: unknown;
-  assignees?: { nodes?: unknown[] } | null;
-};
-
-type ProjectFieldAggregate = {
-  value: string | null;
-  updatedAt: string | null;
-  dateValue: string | null;
-};
-
-type ProjectFieldValueInfo = {
-  value: string | null;
-  updatedAt: string | null;
-  dateValue: string | null;
-};
-
-type TodoProjectFieldValues = {
-  priority: string | null;
-  priorityUpdatedAt: string | null;
-  weight: string | null;
-  weightUpdatedAt: string | null;
-  initiationOptions: string | null;
-  initiationOptionsUpdatedAt: string | null;
-  startDate: string | null;
-  startDateUpdatedAt: string | null;
-};
-
 type IssueProjectSnapshot = {
   projectStatus: IssueProjectStatus | null;
   projectStatusSource: "todo_project" | "activity" | "none";
@@ -640,162 +596,6 @@ function buildIssueLabels({
     repositoryId: repoId,
     repositoryNameWithOwner: repositoryNameWithOwner ?? null,
   }));
-}
-
-function toIsoDate(value: string | Date | null | undefined) {
-  if (!value) {
-    return null;
-  }
-
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
-
-  const trimmed = typeof value === "string" ? value.trim() : "";
-  if (!trimmed.length) {
-    return null;
-  }
-
-  const date = new Date(trimmed);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-  return date.toISOString();
-}
-
-function parseIssueRaw(data: unknown): IssueRaw | null {
-  if (!data) {
-    return null;
-  }
-
-  if (typeof data === "string") {
-    try {
-      const parsed = JSON.parse(data);
-      if (parsed && typeof parsed === "object") {
-        return parsed as IssueRaw;
-      }
-    } catch {
-      return null;
-    }
-  }
-
-  if (typeof data === "object") {
-    return data as IssueRaw;
-  }
-
-  return null;
-}
-
-function createProjectFieldAggregate(): ProjectFieldAggregate {
-  return { value: null, updatedAt: null, dateValue: null };
-}
-
-function compareTimestamps(left: string, right: string) {
-  const leftTime = Date.parse(left);
-  const rightTime = Date.parse(right);
-
-  if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) {
-    if (leftTime === rightTime) {
-      return 0;
-    }
-    return leftTime > rightTime ? 1 : -1;
-  }
-
-  return left.localeCompare(right);
-}
-
-function pickFirstTimestamp(candidates: string[]): string | null {
-  for (const candidate of candidates) {
-    const trimmed = candidate.trim();
-    if (trimmed.length > 0) {
-      return trimmed;
-    }
-  }
-  return null;
-}
-
-function extractProjectFieldValueInfo(
-  value: unknown,
-  fallbackTimestamps: string[],
-): ProjectFieldValueInfo {
-  if (!value || typeof value !== "object") {
-    return {
-      value: null,
-      updatedAt: pickFirstTimestamp(fallbackTimestamps),
-      dateValue: null,
-    };
-  }
-
-  const record = value as Record<string, unknown>;
-
-  let resolvedValue: string | null = null;
-  if (typeof record.name === "string" && record.name.trim().length) {
-    resolvedValue = record.name.trim();
-  } else if (typeof record.title === "string" && record.title.trim().length) {
-    resolvedValue = record.title.trim();
-  } else if (typeof record.text === "string" && record.text.trim().length) {
-    resolvedValue = record.text.trim();
-  } else if (
-    typeof record.number === "number" &&
-    Number.isFinite(record.number)
-  ) {
-    resolvedValue = String(record.number);
-  }
-
-  let dateValue: string | null = null;
-  if (typeof record.date === "string" && record.date.trim().length) {
-    dateValue = record.date.trim();
-    if (!resolvedValue) {
-      resolvedValue = dateValue;
-    }
-  }
-
-  let updatedAt: string | null = null;
-  if (typeof record.updatedAt === "string" && record.updatedAt.trim().length) {
-    updatedAt = record.updatedAt.trim();
-  } else {
-    updatedAt = pickFirstTimestamp(fallbackTimestamps);
-  }
-
-  return {
-    value: resolvedValue,
-    updatedAt,
-    dateValue,
-  };
-}
-
-function applyProjectFieldCandidate(
-  aggregate: ProjectFieldAggregate,
-  candidate: ProjectFieldValueInfo,
-) {
-  const candidateValue = candidate.value ?? candidate.dateValue ?? null;
-  if (!candidateValue) {
-    return;
-  }
-
-  if (!aggregate.value && !aggregate.dateValue) {
-    aggregate.value = candidateValue;
-    aggregate.dateValue = candidate.dateValue ?? null;
-    aggregate.updatedAt = candidate.updatedAt ?? aggregate.updatedAt;
-    return;
-  }
-
-  if (!candidate.updatedAt) {
-    return;
-  }
-
-  if (!aggregate.updatedAt) {
-    aggregate.value = candidateValue;
-    aggregate.dateValue = candidate.dateValue ?? null;
-    aggregate.updatedAt = candidate.updatedAt;
-    return;
-  }
-
-  if (compareTimestamps(candidate.updatedAt, aggregate.updatedAt) >= 0) {
-    aggregate.value = candidateValue;
-    aggregate.dateValue = candidate.dateValue ?? null;
-    aggregate.updatedAt = candidate.updatedAt;
-  }
 }
 
 function extractTodoProjectFieldValues(
@@ -931,48 +731,6 @@ function extractTodoProjectFieldValues(
   return result;
 }
 
-function normalizePriorityOverride(value: string | null | undefined) {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const trimmed = value.trim();
-  if (!trimmed.length) {
-    return null;
-  }
-  const lowered = trimmed.toLowerCase();
-  if (lowered.startsWith("p0")) {
-    return "P0";
-  }
-  if (lowered.startsWith("p1")) {
-    return "P1";
-  }
-  if (lowered.startsWith("p2")) {
-    return "P2";
-  }
-  return trimmed;
-}
-
-function normalizeWeightOverride(value: string | null | undefined) {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const trimmed = value.trim();
-  if (!trimmed.length) {
-    return null;
-  }
-  const lowered = trimmed.toLowerCase();
-  if (lowered.startsWith("heavy")) {
-    return "Heavy";
-  }
-  if (lowered.startsWith("medium")) {
-    return "Medium";
-  }
-  if (lowered.startsWith("light")) {
-    return "Light";
-  }
-  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
-}
-
 type ProjectFieldOverrideTarget = {
   issueProjectStatusLocked?: boolean | null;
   issueTodoProjectPriority?: string | null;
@@ -1036,83 +794,6 @@ function resolveIssueProjectSnapshot(
     initiationOptions: fields.initiationOptions,
     startDate: fields.startDate,
   };
-}
-
-function extractAssigneeIds(raw: IssueRaw | null) {
-  if (!raw) {
-    return [] as string[];
-  }
-
-  const assigneeNodes = Array.isArray(raw.assignees?.nodes)
-    ? (raw.assignees?.nodes as unknown[])
-    : [];
-
-  const ids = new Set<string>();
-  assigneeNodes.forEach((node) => {
-    if (!node || typeof node !== "object") {
-      return;
-    }
-
-    const record = node as Record<string, unknown>;
-    const id = typeof record.id === "string" ? record.id : null;
-    if (id) {
-      ids.add(id);
-    }
-  });
-
-  return Array.from(ids);
-}
-
-function parseRawRecord(data: unknown): Record<string, unknown> | null {
-  if (!data) {
-    return null;
-  }
-
-  if (typeof data === "string") {
-    try {
-      const parsed = JSON.parse(data);
-      if (parsed && typeof parsed === "object") {
-        return parsed as Record<string, unknown>;
-      }
-    } catch {
-      return null;
-    }
-  }
-
-  if (typeof data === "object") {
-    return data as Record<string, unknown>;
-  }
-
-  return null;
-}
-
-function extractPullRequestAssigneeIds(raw: unknown) {
-  const record = parseRawRecord(raw);
-  if (!record) {
-    return [] as string[];
-  }
-
-  const assignees = record.assignees;
-  if (!assignees || typeof assignees !== "object") {
-    return [] as string[];
-  }
-
-  const nodes = Array.isArray((assignees as { nodes?: unknown }).nodes)
-    ? ((assignees as { nodes?: unknown[] }).nodes ?? [])
-    : [];
-
-  const ids = new Set<string>();
-  nodes.forEach((node) => {
-    if (!node || typeof node !== "object") {
-      return;
-    }
-    const id = (node as { id?: unknown }).id;
-    if (typeof id === "string" && id.trim().length) {
-      ids.add(id);
-    }
-  });
-
-  return Array.from(ids);
 }
 
 function extractCommentExcerpt(body: string | null) {
