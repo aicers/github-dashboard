@@ -3,27 +3,13 @@ import { z } from "zod";
 import { refreshActivityCaches } from "@/lib/activity/cache";
 import { refreshActivityItemsSnapshot } from "@/lib/activity/snapshot";
 import { ensureIssueStatusAutomation } from "@/lib/activity/status-automation";
-import {
-  updateBackupSchedule as applyBackupSchedule,
-  type BackupRuntimeInfo,
-  getBackupRuntimeInfo,
-} from "@/lib/backup/service";
 import { runUnansweredMentionClassification } from "@/lib/dashboard/unanswered-mention-classifier";
-import { isValidDateTimeDisplayFormat } from "@/lib/date-time-format";
 import { ensureSchema } from "@/lib/db";
 import {
-  cleanupRunningSyncRuns,
   createSyncRun,
-  getDashboardStats,
-  getDataFreshness,
-  getLatestSyncLogs,
-  getLatestSyncRuns,
   getSyncConfig,
   getSyncState,
   recordSyncLog,
-  replaceRepositoryMaintainers,
-  resetData as resetDatabase,
-  type SyncRunSummary,
   type SyncRunType,
   updateSyncConfig,
   updateSyncLog,
@@ -36,20 +22,19 @@ import {
   RESOURCE_KEYS,
   runCollection,
 } from "@/lib/github/collectors";
-import {
-  DEFAULT_HOLIDAY_CALENDAR,
-  type HolidayCalendarCode,
-  isHolidayCalendarCode,
-} from "@/lib/holidays/constants";
 import { withJobLock } from "@/lib/jobs/lock";
 import { emitSyncEvent } from "@/lib/sync/event-bus";
 import type { SyncRunSummaryEvent } from "@/lib/sync/events";
+import { coerceIso } from "@/lib/sync/internal";
 import { refreshAttentionReactions } from "@/lib/sync/reaction-refresh";
-import type { TransferSyncRuntimeInfo } from "@/lib/transfer/service";
 import {
-  getTransferSyncRuntimeInfo,
-  updateTransferSyncSchedule,
-} from "@/lib/transfer/service";
+  getSchedulerState,
+  initializeScheduler,
+  registerSyncRunner,
+  scheduleNextSyncRun,
+  startScheduler,
+  stopScheduler,
+} from "@/lib/sync/scheduler";
 
 const dateSchema = z.string().transform((value, ctx) => {
   const date = new Date(value);
@@ -63,13 +48,6 @@ const dateSchema = z.string().transform((value, ctx) => {
 
   return date.toISOString();
 });
-
-type SchedulerState = {
-  timer: NodeJS.Timeout | null;
-  currentRun: Promise<void> | null;
-  intervalMs: number | null;
-  isEnabled: boolean;
-};
 
 type SyncRunResult = {
   since: string | null;
@@ -146,139 +124,7 @@ export type PrLinkBackfillResult = {
   latestPullRequestUpdated: string | null;
 };
 
-export type SyncStatus = {
-  config: Awaited<ReturnType<typeof getSyncConfig>>;
-  runs: SyncRunSummary[];
-  logs: Awaited<ReturnType<typeof getLatestSyncLogs>>;
-  dataFreshness: Awaited<ReturnType<typeof getDataFreshness>>;
-  backup: BackupRuntimeInfo;
-  transferSync: TransferSyncRuntimeInfo;
-};
-
-export type DashboardStats = Awaited<ReturnType<typeof getDashboardStats>>;
-
-type SchedulerGlobal = typeof globalThis & {
-  __githubDashboardScheduler?: SchedulerState;
-};
-
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-function getSchedulerState() {
-  const globalWithScheduler = globalThis as SchedulerGlobal;
-  if (!globalWithScheduler.__githubDashboardScheduler) {
-    globalWithScheduler.__githubDashboardScheduler = {
-      timer: null,
-      currentRun: null,
-      intervalMs: null,
-      isEnabled: false,
-    };
-  }
-
-  return globalWithScheduler.__githubDashboardScheduler;
-}
-
-function scheduleNextRun(delayMs: number) {
-  const scheduler = getSchedulerState();
-  if (!scheduler.isEnabled || scheduler.intervalMs === null) {
-    return;
-  }
-
-  if (scheduler.timer) {
-    clearTimeout(scheduler.timer);
-  }
-
-  scheduler.timer = setTimeout(
-    () => {
-      scheduler.timer = null;
-      void runIncrementalSync().catch((error) => {
-        if (shouldLogSchedulerError(error)) {
-          console.error("[github-dashboard] Automatic sync failed", error);
-        }
-      });
-    },
-    Math.max(0, delayMs),
-  );
-}
-
-function shouldLogSchedulerError(error: unknown) {
-  if (
-    process.env.NODE_ENV === "test" &&
-    error instanceof Error &&
-    error.message.includes("GitHub token missing")
-  ) {
-    return false;
-  }
-
-  return true;
-}
-
-async function computeInitialDelay(intervalMs: number) {
-  try {
-    const config = await getSyncConfig();
-    const lastCompletedIso = coerceIso(config?.last_sync_completed_at ?? null);
-    if (!lastCompletedIso) {
-      return 0;
-    }
-
-    const completedMs = new Date(lastCompletedIso).getTime();
-    if (Number.isNaN(completedMs)) {
-      return intervalMs;
-    }
-
-    const elapsed = Date.now() - completedMs;
-    if (elapsed >= intervalMs) {
-      return 0;
-    }
-
-    return intervalMs - elapsed;
-  } catch (_error) {
-    return intervalMs;
-  }
-}
-
-async function withSyncLock<T>(handler: () => Promise<T>) {
-  const scheduler = getSchedulerState();
-  if (scheduler.currentRun) {
-    await scheduler.currentRun.catch(() => undefined);
-  }
-
-  const runPromise = withJobLock("sync", handler);
-  scheduler.currentRun = runPromise
-    .then(() => undefined)
-    .catch(() => undefined);
-
-  try {
-    return await runPromise;
-  } finally {
-    scheduler.currentRun = null;
-  }
-}
-
-async function resolveOrgName() {
-  await ensureSchema();
-  const config = await getSyncConfig();
-  const org = config?.org_name ?? env.GITHUB_ORG ?? "";
-  if (!org) {
-    throw new Error(
-      "GitHub organization is not configured. Set GITHUB_ORG or update the sync configuration.",
-    );
-  }
-
-  return org;
-}
-
-function coerceIso(value: unknown) {
-  if (!value) {
-    return null;
-  }
-
-  const date = new Date(value as string);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-
-  return date.toISOString();
-}
 
 function pickLatest(start: string | null, candidate: string | null) {
   if (!start) {
@@ -359,6 +205,37 @@ function buildConsoleSyncLogger(context: {
   return (message: string) => {
     console.info(`${prefix} ${message}`);
   };
+}
+
+async function resolveOrgName() {
+  await ensureSchema();
+  const config = await getSyncConfig();
+  const org = config?.org_name ?? env.GITHUB_ORG ?? "";
+  if (!org) {
+    throw new Error(
+      "GitHub organization is not configured. Set GITHUB_ORG or update the sync configuration.",
+    );
+  }
+
+  return org;
+}
+
+async function withSyncLock<T>(handler: () => Promise<T>) {
+  const scheduler = getSchedulerState();
+  if (scheduler.currentRun) {
+    await scheduler.currentRun.catch(() => undefined);
+  }
+
+  const runPromise = withJobLock("sync", handler);
+  scheduler.currentRun = runPromise
+    .then(() => undefined)
+    .catch(() => undefined);
+
+  try {
+    return await runPromise;
+  } finally {
+    scheduler.currentRun = null;
+  }
 }
 
 async function executeSync(params: {
@@ -592,50 +469,6 @@ async function executeSync(params: {
   });
 }
 
-function startScheduler(
-  intervalMinutes: number,
-  options?: { initialDelayMs?: number },
-) {
-  const scheduler = getSchedulerState();
-  const intervalMs = intervalMinutes * 60 * 1000;
-
-  if (scheduler.timer) {
-    clearTimeout(scheduler.timer);
-    scheduler.timer = null;
-  }
-
-  scheduler.intervalMs = intervalMs;
-  scheduler.isEnabled = true;
-
-  const scheduleInitial = async () => {
-    const delay =
-      options?.initialDelayMs ?? (await computeInitialDelay(intervalMs));
-    scheduleNextRun(delay);
-  };
-
-  void scheduleInitial();
-}
-
-function stopScheduler() {
-  const scheduler = getSchedulerState();
-  if (scheduler.timer) {
-    clearTimeout(scheduler.timer);
-    scheduler.timer = null;
-  }
-  scheduler.intervalMs = null;
-  scheduler.isEnabled = false;
-}
-
-export async function initializeScheduler() {
-  await ensureSchema();
-  const config = await getSyncConfig();
-  if (config?.auto_sync_enabled) {
-    startScheduler(
-      config.sync_interval_minutes ?? env.SYNC_INTERVAL_MINUTES ?? 60,
-    );
-  }
-}
-
 export async function runBackfill(
   startDateOrLogger?: string | null | SyncLogger,
   endDateOrLogger?: string | null | SyncLogger,
@@ -778,10 +611,7 @@ export async function runIncrementalSync(logger?: SyncLogger) {
   try {
     return await executeSync({ since, logger, strategy: "incremental" });
   } finally {
-    const scheduler = getSchedulerState();
-    if (scheduler.isEnabled && scheduler.intervalMs !== null) {
-      scheduleNextRun(scheduler.intervalMs);
-    }
+    scheduleNextSyncRun();
   }
 }
 
@@ -1040,383 +870,25 @@ export async function disableAutomaticSync() {
   await updateSyncConfig({ autoSyncEnabled: false });
 }
 
-export async function updateOrganization(org: string) {
-  const trimmed = org.trim();
-  if (!trimmed) {
-    throw new Error("Organization name cannot be empty.");
-  }
-
-  await ensureSchema();
-  await updateSyncConfig({ orgName: trimmed });
-}
-
-export async function updateSyncSettings(params: {
-  orgName?: string;
-  syncIntervalMinutes?: number;
-  timezone?: string;
-  weekStart?: "sunday" | "monday";
-  excludedRepositories?: string[];
-  excludedPeople?: string[];
-  allowedTeams?: string[];
-  allowedUsers?: string[];
-  dateTimeFormat?: string;
-  authAccessTtlMinutes?: number;
-  authIdleTtlMinutes?: number;
-  authRefreshTtlDays?: number;
-  authMaxLifetimeDays?: number;
-  authReauthWindowHours?: number;
-  authReauthActions?: string[];
-  authReauthNewDevice?: boolean;
-  authReauthCountryChange?: boolean;
-  orgHolidayCalendarCodes?: (HolidayCalendarCode | string)[];
-  backupHourLocal?: number;
-  backupTimezone?: string;
-  transferSyncHourLocal?: number;
-  transferSyncMinuteLocal?: number;
-  transferSyncTimezone?: string;
-  repositoryMaintainers?: Record<string, string[]>;
-}) {
-  await ensureSchema();
-
-  if (params.orgName !== undefined) {
-    await updateOrganization(params.orgName);
-  }
-
-  if (params.syncIntervalMinutes !== undefined) {
-    const interval = params.syncIntervalMinutes;
-    if (!Number.isFinite(interval) || interval <= 0) {
-      throw new Error("Sync interval must be a positive number of minutes.");
-    }
-
-    await updateSyncConfig({ syncIntervalMinutes: interval });
-    const config = await getSyncConfig();
-    if (config?.auto_sync_enabled) {
-      startScheduler(interval);
-    }
-  }
-
-  if (params.timezone !== undefined) {
-    const tz = params.timezone.trim();
-    if (!tz) {
-      throw new Error("Timezone cannot be empty.");
-    }
-
-    try {
-      new Intl.DateTimeFormat("en-US", { timeZone: tz }).format();
-    } catch (_error) {
-      throw new Error("Invalid timezone identifier.");
-    }
-
-    await updateSyncConfig({ timezone: tz });
-  }
-
-  if (params.repositoryMaintainers !== undefined) {
-    const assignments = Object.entries(params.repositoryMaintainers).map(
-      ([repositoryId, maintainerIds]) => ({
-        repositoryId,
-        maintainerIds: Array.isArray(maintainerIds) ? maintainerIds : [],
-      }),
-    );
-    await replaceRepositoryMaintainers(assignments);
-  }
-
-  if (params.weekStart !== undefined) {
-    const value = params.weekStart;
-    if (value !== "sunday" && value !== "monday") {
-      throw new Error("Week start must be either 'sunday' or 'monday'.");
-    }
-
-    await updateSyncConfig({ weekStart: value });
-  }
-
-  if (params.authAccessTtlMinutes !== undefined) {
-    if (
-      !Number.isFinite(params.authAccessTtlMinutes) ||
-      params.authAccessTtlMinutes <= 0
-    ) {
-      throw new Error("Access TTL must be a positive number of minutes.");
-    }
-    await updateSyncConfig({
-      authAccessTtlMinutes: params.authAccessTtlMinutes,
-    });
-  }
-
-  if (params.authIdleTtlMinutes !== undefined) {
-    if (
-      !Number.isFinite(params.authIdleTtlMinutes) ||
-      params.authIdleTtlMinutes <= 0
-    ) {
-      throw new Error("Idle TTL must be a positive number of minutes.");
-    }
-    await updateSyncConfig({ authIdleTtlMinutes: params.authIdleTtlMinutes });
-  }
-
-  if (params.authRefreshTtlDays !== undefined) {
-    if (
-      !Number.isFinite(params.authRefreshTtlDays) ||
-      params.authRefreshTtlDays <= 0
-    ) {
-      throw new Error("Refresh TTL must be a positive number of days.");
-    }
-    await updateSyncConfig({ authRefreshTtlDays: params.authRefreshTtlDays });
-  }
-
-  if (params.authMaxLifetimeDays !== undefined) {
-    if (
-      !Number.isFinite(params.authMaxLifetimeDays) ||
-      params.authMaxLifetimeDays <= 0
-    ) {
-      throw new Error("Max lifetime must be a positive number of days.");
-    }
-    await updateSyncConfig({ authMaxLifetimeDays: params.authMaxLifetimeDays });
-  }
-
-  if (params.authReauthWindowHours !== undefined) {
-    if (
-      !Number.isFinite(params.authReauthWindowHours) ||
-      params.authReauthWindowHours <= 0
-    ) {
-      throw new Error("Reauth window must be a positive number of hours.");
-    }
-    await updateSyncConfig({
-      authReauthWindowHours: params.authReauthWindowHours,
-    });
-  }
-
-  if (params.authReauthActions !== undefined) {
-    await updateSyncConfig({
-      authReauthActions: params.authReauthActions,
-    });
-  }
-
-  if (params.authReauthNewDevice !== undefined) {
-    await updateSyncConfig({ authReauthNewDevice: params.authReauthNewDevice });
-  }
-
-  if (params.authReauthCountryChange !== undefined) {
-    await updateSyncConfig({
-      authReauthCountryChange: params.authReauthCountryChange,
-    });
-  }
-
-  if (params.excludedRepositories !== undefined) {
-    const normalized = Array.from(
-      new Set(
-        params.excludedRepositories
-          .map((id) => id.trim())
-          .filter((id) => id.length > 0),
-      ),
-    );
-
-    await updateSyncConfig({ excludedRepositories: normalized });
-  }
-
-  if (params.excludedPeople !== undefined) {
-    const normalized = Array.from(
-      new Set(
-        params.excludedPeople
-          .map((id) => id.trim())
-          .filter((id) => id.length > 0),
-      ),
-    );
-
-    await updateSyncConfig({ excludedUsers: normalized });
-  }
-
-  if (params.allowedTeams !== undefined) {
-    const normalized = Array.from(
-      new Set(
-        params.allowedTeams
-          .map((slug) => slug.trim())
-          .filter((slug) => slug.length > 0),
-      ),
-    );
-
-    await updateSyncConfig({ allowedTeams: normalized });
-  }
-
-  if (params.allowedUsers !== undefined) {
-    const normalized = Array.from(
-      new Set(
-        params.allowedUsers
-          .map((id) => id.trim())
-          .filter((id) => id.length > 0),
-      ),
-    );
-
-    await updateSyncConfig({ allowedUsers: normalized });
-  }
-
-  if (params.orgHolidayCalendarCodes !== undefined) {
-    if (!Array.isArray(params.orgHolidayCalendarCodes)) {
-      throw new Error("Organization holiday calendars must be an array.");
-    }
-
-    const selected: HolidayCalendarCode[] = [];
-    const seen = new Set<string>();
-    for (const value of params.orgHolidayCalendarCodes) {
-      if (typeof value !== "string") {
-        throw new Error("Unsupported holiday calendar.");
-      }
-      const trimmed = value.trim();
-      if (!trimmed) {
-        continue;
-      }
-      if (!isHolidayCalendarCode(trimmed)) {
-        throw new Error("Unsupported holiday calendar.");
-      }
-      if (!seen.has(trimmed)) {
-        seen.add(trimmed);
-        selected.push(trimmed);
-      }
-    }
-
-    if (selected.length === 0) {
-      selected.push(DEFAULT_HOLIDAY_CALENDAR);
-    }
-
-    await updateSyncConfig({ orgHolidayCalendarCodes: selected });
-  }
-
-  if (params.dateTimeFormat !== undefined) {
-    const format = params.dateTimeFormat.trim();
-    if (!isValidDateTimeDisplayFormat(format)) {
-      throw new Error("Unsupported date-time display format.");
-    }
-
-    await updateSyncConfig({ dateTimeFormat: format });
-  }
-
-  if (
-    params.backupHourLocal !== undefined ||
-    params.backupTimezone !== undefined
-  ) {
-    const config = await getSyncConfig();
-    const hour = params.backupHourLocal ?? config?.backup_hour_local ?? 2;
-    const timezone =
-      params.backupTimezone ??
-      config?.backup_timezone ??
-      config?.timezone ??
-      "UTC";
-
-    await applyBackupSchedule({
-      hourLocal: hour,
-      timezone,
-    });
-  }
-
-  if (
-    params.transferSyncHourLocal !== undefined ||
-    params.transferSyncMinuteLocal !== undefined ||
-    params.transferSyncTimezone !== undefined
-  ) {
-    const config = await getSyncConfig();
-    const hour =
-      params.transferSyncHourLocal ?? config?.transfer_sync_hour_local ?? 4;
-    const minute =
-      params.transferSyncMinuteLocal ?? config?.transfer_sync_minute_local ?? 0;
-    const timezone =
-      params.transferSyncTimezone ??
-      config?.transfer_sync_timezone ??
-      config?.timezone ??
-      "UTC";
-
-    await updateTransferSyncSchedule({
-      hourLocal: hour,
-      minuteLocal: minute,
-      timezone,
-    });
-  }
-}
-
-export async function resetData({
-  preserveLogs = true,
-}: {
-  preserveLogs?: boolean;
-}) {
-  await ensureSchema();
-  await resetDatabase({ preserveLogs });
-  await updateSyncConfig({
-    lastSyncStartedAt: null,
-    lastSyncCompletedAt: null,
-    lastSuccessfulSyncAt: null,
-  });
-}
-
-export async function fetchSyncStatus(): Promise<SyncStatus> {
-  await ensureSchema();
-  const [config, runs, logs, dataFreshness, backup, transferSync] =
-    await Promise.all([
-      getSyncConfig(),
-      getLatestSyncRuns(36),
-      getLatestSyncLogs(36),
-      getDataFreshness(),
-      getBackupRuntimeInfo(),
-      getTransferSyncRuntimeInfo(),
-    ]);
-
-  return { config, runs, logs, dataFreshness, backup, transferSync };
-}
-
-export async function fetchSyncConfig() {
-  await ensureSchema();
-  return getSyncConfig();
-}
-
-export async function fetchDashboardStats() {
-  await ensureSchema();
-  return getDashboardStats();
-}
-
-export async function cleanupStuckSyncRuns(options?: { actorId?: string }) {
-  await ensureSchema();
-  const result = await cleanupRunningSyncRuns();
-  const runCount = result.runs.length;
-  const logCount = result.logs.length;
-  const nowIso = new Date().toISOString();
-
-  console.log(
-    `[github-dashboard] Cleanup of running syncs requested by ${
-      options?.actorId ?? "unknown"
-    } (runs=${runCount}, logs=${logCount})`,
-  );
-
-  for (const run of result.runs) {
-    const completedAt = coerceIso(run.completed_at) ?? nowIso;
-    emitSyncEvent({
-      type: "run-status",
-      runId: Number(run.id),
-      status: "failed",
-      completedAt,
-    });
-    emitSyncEvent({
-      type: "run-failed",
-      runId: Number(run.id),
-      status: "failed",
-      finishedAt: completedAt,
-      error: "Marked as failed by admin cleanup.",
-    });
-  }
-
-  for (const log of result.logs) {
-    const runId = Number(log.run_id);
-    if (!Number.isFinite(runId)) {
-      continue;
-    }
-    emitSyncEvent({
-      type: "log-updated",
-      logId: log.id,
-      runId,
-      resource: log.resource,
-      status: "failed",
-      message: log.message ?? null,
-      finishedAt: coerceIso(log.finished_at) ?? nowIso,
-    });
-  }
-
-  return { runCount, logCount };
-}
+// Register the sync runner so the scheduler can trigger incremental syncs
+// without a circular dependency.
+registerSyncRunner(() => runIncrementalSync());
 
 void initializeScheduler().catch((error) => {
   console.error("[github-dashboard] Failed to initialize scheduler", error);
 });
+
+// ---- Barrel re-exports ----
+// Preserve existing import paths for consumers using @/lib/sync/service.
+
+export {
+  type DashboardStats,
+  fetchDashboardStats,
+  fetchSyncConfig,
+  fetchSyncStatus,
+  type SyncStatus,
+  updateOrganization,
+  updateSyncSettings,
+} from "@/lib/sync/config";
+export { cleanupStuckSyncRuns, resetData } from "@/lib/sync/reset";
+export { initializeScheduler } from "@/lib/sync/scheduler";
