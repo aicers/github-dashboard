@@ -342,7 +342,6 @@ export function buildActivityItem(
       }
     }
   } else {
-    issueProjectStatusSource = "none";
     issueProjectStatusLocked = false;
   }
 
