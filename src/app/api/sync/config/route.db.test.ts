@@ -195,7 +195,7 @@ describe("sync config API routes", () => {
       setTimeoutSpy.mock.calls.filter(
         (call) =>
           typeof call?.[0] === "function" &&
-          call[0]?.toString().includes("runIncrementalSync"),
+          call[0]?.toString().includes("runSync"),
       ) as Array<[TimerHandler, number?, ...unknown[]]>;
 
     const initialSchedulerCalls = getSchedulerCalls();
