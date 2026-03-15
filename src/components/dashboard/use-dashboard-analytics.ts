@@ -1,11 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  isUnauthorizedResponse,
-  retryOnceAfterUnauthorized,
-} from "@/components/dashboard/post-login-auth-recovery";
+import { useAuthorizedFetch } from "@/components/dashboard/hooks/use-authorized-fetch";
 import { PRESETS, type TimePresetKey } from "@/lib/dashboard/date-range";
 import type { DashboardAnalytics, WeekStart } from "@/lib/dashboard/types";
 
@@ -57,7 +53,7 @@ export function useDashboardAnalytics({
   initialAnalytics: DashboardAnalytics;
   defaultRange: { start: string; end: string };
 }): DashboardAnalyticsState {
-  const router = useRouter();
+  const authorizedFetch = useAuthorizedFetch();
   const [analytics, setAnalytics] = useState(initialAnalytics);
   const [timeZone, setTimeZone] = useState(initialAnalytics.timeZone);
   const [weekStart, setWeekStart] = useState<WeekStart>(
@@ -107,17 +103,12 @@ export function useDashboardAnalytics({
           params.set("person", targetFilters.personId);
         }
 
-        const response = await retryOnceAfterUnauthorized({
-          execute: () =>
-            fetch(`/api/dashboard/analytics?${params.toString()}`, {
-              signal: controller.signal,
-              cache: "no-store",
-            }),
-          refresh: () => {
-            router.refresh();
-          },
-          shouldRetry: isUnauthorizedResponse,
-        });
+        const response = await authorizedFetch(() =>
+          fetch(`/api/dashboard/analytics?${params.toString()}`, {
+            signal: controller.signal,
+            cache: "no-store",
+          }),
+        );
         const data = await response.json();
         if (!data.success) {
           throw new Error(
@@ -224,7 +215,7 @@ export function useDashboardAnalytics({
         }
       }
     },
-    [router],
+    [authorizedFetch],
   );
 
   const applyFilters = useCallback(

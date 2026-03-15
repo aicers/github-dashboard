@@ -24,7 +24,8 @@ import {
   useRef,
   useState,
 } from "react";
-
+import { useActivityDetailState } from "@/components/dashboard/hooks/use-activity-detail";
+import { useSyncStream } from "@/components/dashboard/hooks/use-sync-stream";
 import {
   isPageDataStale,
   PageGenerationNotice,
@@ -42,7 +43,6 @@ import {
   ATTENTION_OPTIONS,
   ATTENTION_REQUIRED_VALUES,
 } from "@/lib/activity/attention-options";
-import { fetchActivityDetail } from "@/lib/activity/client";
 import type { ActivityFilterState as FilterState } from "@/lib/activity/filter-state";
 import {
   buildFilterState,
@@ -59,7 +59,6 @@ import type {
   ActivityIssueWeightFilter,
   ActivityItem,
   ActivityItemType as ActivityItemCategory,
-  ActivityItemDetail,
   ActivityLinkedIssueFilter,
   ActivityListParams,
   ActivityListResult,
@@ -70,7 +69,6 @@ import type {
   IssueProjectStatus,
 } from "@/lib/activity/types";
 import type { DateTimeDisplayFormat } from "@/lib/date-time-format";
-import { subscribeToSyncStream } from "@/lib/sync/client-stream";
 import { cn } from "@/lib/utils";
 import { ActivityDetailOverlay } from "./activity/activity-detail-overlay";
 import { ActivityListItemSummary } from "./activity/activity-list-item-summary";
@@ -2235,13 +2233,16 @@ export function ActivityView({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
-  const [openItemId, setOpenItemId] = useState<string | null>(null);
-  const [detailMap, setDetailMap] = useState<
-    Record<string, ActivityItemDetail | null>
-  >({});
-  const [loadingDetailIds, setLoadingDetailIds] = useState<Set<string>>(
-    () => new Set<string>(),
-  );
+  const {
+    openItemId,
+    detailMap,
+    loadingDetailIds,
+    selectItem: handleSelectItem,
+    closeItem: handleCloseItem,
+    updateDetailItem,
+    loadDetail,
+    pruneStaleItems,
+  } = useActivityDetailState({ useMentionAi: applied.useMentionAi });
   const [updatingStatusIds, setUpdatingStatusIds] = useState<Set<string>>(
     () => new Set<string>(),
   );
@@ -2297,17 +2298,17 @@ export function ActivityView({
     setApplied((current) => normalizeFilterState(current));
   }, [normalizeFilterState]);
 
-  useEffect(() => {
-    const updateAutoSyncState = () => {
-      setAutomaticSyncActive(autoSyncRunIdsRef.current.size > 0);
-    };
-    const unsubscribe = subscribeToSyncStream((event) => {
+  useSyncStream(
+    useCallback((event) => {
       if (event.type === "run-completed" && event.status === "success") {
         setListData((current) => ({
           ...current,
           lastSyncCompletedAt: event.completedAt,
         }));
       }
+      const updateAutoSyncState = () => {
+        setAutomaticSyncActive(autoSyncRunIdsRef.current.size > 0);
+      };
       if (event.type === "run-started" && event.runType === "automatic") {
         if (!autoSyncRunIdsRef.current.has(event.runId)) {
           autoSyncRunIdsRef.current.add(event.runId);
@@ -2329,9 +2330,8 @@ export function ActivityView({
           updateAutoSyncState();
         }
       }
-    });
-    return unsubscribe;
-  }, []);
+    }, []),
+  );
 
   useEffect(() => {
     let canceled = false;
@@ -2422,7 +2422,6 @@ export function ActivityView({
     "자동 동기화 중이므로 완료 후 실행할 수 있어요.";
 
   const fetchControllerRef = useRef<AbortController | null>(null);
-  const detailControllersRef = useRef(new Map<string, AbortController>());
   const requestCounterRef = useRef(0);
   const notificationTimerRef = useRef<NodeJS.Timeout | null>(null);
   const appliedQuickParamRef = useRef<string | null>(null);
@@ -2431,10 +2430,6 @@ export function ActivityView({
   useEffect(() => {
     return () => {
       fetchControllerRef.current?.abort();
-      detailControllersRef.current.forEach((controller) => {
-        controller.abort();
-      });
-      detailControllersRef.current.clear();
       if (notificationTimerRef.current) {
         clearTimeout(notificationTimerRef.current);
       }
@@ -2454,53 +2449,8 @@ export function ActivityView({
 
   useEffect(() => {
     const validIds = new Set(listData.items.map((item) => item.id));
-
-    if (openItemId && !validIds.has(openItemId)) {
-      const controller = detailControllersRef.current.get(openItemId);
-      if (controller) {
-        controller.abort();
-        detailControllersRef.current.delete(openItemId);
-      }
-      setOpenItemId(null);
-    }
-
-    setDetailMap((current) => {
-      const entries = Object.entries(current);
-      if (!entries.length) {
-        return current;
-      }
-
-      let changed = false;
-      const next: Record<string, ActivityItemDetail | null> = {};
-      entries.forEach(([id, detail]) => {
-        if (validIds.has(id)) {
-          next[id] = detail;
-        } else {
-          changed = true;
-        }
-      });
-
-      return changed ? next : current;
-    });
-
-    setLoadingDetailIds((current) => {
-      if (!current.size) {
-        return current;
-      }
-
-      let changed = false;
-      const next = new Set<string>();
-      current.forEach((id) => {
-        if (validIds.has(id)) {
-          next.add(id);
-        } else {
-          changed = true;
-        }
-      });
-
-      return changed ? next : current;
-    });
-  }, [openItemId, listData.items]);
+    pruneStaleItems(validIds);
+  }, [listData.items, pruneStaleItems]);
 
   const repositoryOptions = useMemo<MultiSelectOption[]>(
     () =>
@@ -3360,31 +3310,20 @@ export function ActivityView({
           } satisfies ActivityMentionWait;
         };
 
-        setDetailMap((current) => {
-          const existing = current[itemId];
-          if (!existing || !existing.item) {
-            return current;
-          }
-          const nextItem: ActivityItem = {
-            ...existing.item,
+        updateDetailItem({
+          id: itemId,
+          updater: (prev) => ({
+            ...prev,
             attention: {
-              ...existing.item.attention,
+              ...prev.attention,
               unansweredMention: computeNextAttention(
-                existing.item.attention.unansweredMention,
+                prev.attention.unansweredMention,
               ),
             },
-            mentionWaits: existing.item.mentionWaits?.map((wait) =>
+            mentionWaits: prev.mentionWaits?.map((wait) =>
               updateMentionWait(wait),
             ),
-          };
-
-          return {
-            ...current,
-            [itemId]: {
-              ...existing,
-              item: nextItem,
-            },
-          };
+          }),
         });
 
         setListData((current) => ({
@@ -3427,7 +3366,7 @@ export function ActivityView({
         setPendingMentionOverrideKey(null);
       }
     },
-    [applied, fetchActivity, showNotification],
+    [applied, fetchActivity, showNotification, updateDetailItem],
   );
 
   const handleApplyQuickFilter = useCallback(
@@ -3953,59 +3892,6 @@ export function ActivityView({
     fetchActivity({ ...applied }, { jumpToDate: effectiveJump });
   }, [activeTimezone, applied, fetchActivity, jumpDate]);
 
-  const loadDetail = useCallback(
-    async (id: string) => {
-      if (!id) {
-        return;
-      }
-
-      setLoadingDetailIds((current) => {
-        if (current.has(id)) {
-          return current;
-        }
-        const next = new Set(current);
-        next.add(id);
-        return next;
-      });
-
-      const existing = detailControllersRef.current.get(id);
-      existing?.abort();
-
-      const controller = new AbortController();
-      detailControllersRef.current.set(id, controller);
-
-      try {
-        const detail = await fetchActivityDetail(id, {
-          signal: controller.signal,
-          useMentionAi: applied.useMentionAi,
-        });
-        setDetailMap((current) => ({
-          ...current,
-          [id]: detail,
-        }));
-      } catch (detailError) {
-        if ((detailError as Error).name === "AbortError") {
-          return;
-        }
-        console.error(detailError);
-        setDetailMap((current) => ({
-          ...current,
-          [id]: null,
-        }));
-      } finally {
-        detailControllersRef.current.delete(id);
-        setLoadingDetailIds((current) => {
-          if (!current.has(id)) {
-            return current;
-          }
-          const next = new Set(current);
-          next.delete(id);
-          return next;
-        });
-      }
-    },
-    [applied.useMentionAi],
-  );
   const handleResyncItem = useCallback(
     async (item: ActivityItem) => {
       const targetId = item.id;
@@ -4109,16 +3995,7 @@ export function ActivityView({
                 existing.id === conflictItem.id ? conflictItem : existing,
               ),
             }));
-            setDetailMap((current) => {
-              const existing = current[conflictItem.id];
-              if (!existing) {
-                return current;
-              }
-              return {
-                ...current,
-                [conflictItem.id]: { ...existing, item: conflictItem },
-              };
-            });
+            updateDetailItem(conflictItem);
           }
 
           let message = "상태를 변경하지 못했어요.";
@@ -4145,16 +4022,7 @@ export function ActivityView({
             existing.id === updatedItem.id ? updatedItem : existing,
           ),
         }));
-        setDetailMap((current) => {
-          const existing = current[updatedItem.id];
-          if (!existing) {
-            return current;
-          }
-          return {
-            ...current,
-            [updatedItem.id]: { ...existing, item: updatedItem },
-          };
-        });
+        updateDetailItem(updatedItem);
 
         const label =
           ISSUE_STATUS_LABEL_MAP.get(
@@ -4175,7 +4043,7 @@ export function ActivityView({
         });
       }
     },
-    [showNotification],
+    [showNotification, updateDetailItem],
   );
 
   const handleUpdateProjectField = useCallback(
@@ -4275,16 +4143,7 @@ export function ActivityView({
                 existing.id === conflictItem.id ? conflictItem : existing,
               ),
             }));
-            setDetailMap((current) => {
-              const existing = current[conflictItem.id];
-              if (!existing) {
-                return current;
-              }
-              return {
-                ...current,
-                [conflictItem.id]: { ...existing, item: conflictItem },
-              };
-            });
+            updateDetailItem(conflictItem);
           }
 
           let message = "값을 업데이트하지 못했어요.";
@@ -4311,16 +4170,7 @@ export function ActivityView({
             existing.id === updatedItem.id ? updatedItem : existing,
           ),
         }));
-        setDetailMap((current) => {
-          const existing = current[updatedItem.id];
-          if (!existing) {
-            return current;
-          }
-          return {
-            ...current,
-            [updatedItem.id]: { ...existing, item: updatedItem },
-          };
-        });
+        updateDetailItem(updatedItem);
 
         const label = PROJECT_FIELD_LABELS[field];
         showNotification(`${label} 값을 업데이트했어요.`);
@@ -4340,53 +4190,7 @@ export function ActivityView({
         });
       }
     },
-    [showNotification],
-  );
-
-  const handleSelectItem = useCallback(
-    (id: string) => {
-      setOpenItemId((current) => {
-        if (current === id) {
-          const controller = detailControllersRef.current.get(id);
-          if (controller) {
-            controller.abort();
-            detailControllersRef.current.delete(id);
-          }
-          setLoadingDetailIds((loadings) => {
-            if (!loadings.has(id)) {
-              return loadings;
-            }
-            const updated = new Set(loadings);
-            updated.delete(id);
-            return updated;
-          });
-          return null;
-        }
-
-        if (current) {
-          const controller = detailControllersRef.current.get(current);
-          if (controller) {
-            controller.abort();
-            detailControllersRef.current.delete(current);
-          }
-          setLoadingDetailIds((loadings) => {
-            if (!loadings.has(current)) {
-              return loadings;
-            }
-            const updated = new Set(loadings);
-            updated.delete(current);
-            return updated;
-          });
-        }
-
-        if (!detailMap[id] && !loadingDetailIds.has(id)) {
-          void loadDetail(id);
-        }
-
-        return id;
-      });
-    },
-    [detailMap, loadDetail, loadingDetailIds],
+    [showNotification, updateDetailItem],
   );
 
   const handleItemKeyDown = useCallback(
@@ -4398,38 +4202,6 @@ export function ActivityView({
     },
     [handleSelectItem],
   );
-
-  const handleCloseItem = useCallback(() => {
-    setOpenItemId((current) => {
-      if (!current) {
-        return current;
-      }
-      const controller = detailControllersRef.current.get(current);
-      if (controller) {
-        controller.abort();
-        detailControllersRef.current.delete(current);
-      }
-      setLoadingDetailIds((loadings) => {
-        if (!loadings.has(current)) {
-          return loadings;
-        }
-        const updated = new Set(loadings);
-        updated.delete(current);
-        return updated;
-      });
-      return null;
-    });
-  }, []);
-
-  useEffect(() => {
-    if (
-      openItemId &&
-      !detailMap[openItemId] &&
-      !loadingDetailIds.has(openItemId)
-    ) {
-      void loadDetail(openItemId);
-    }
-  }, [detailMap, loadDetail, loadingDetailIds, openItemId]);
 
   const canSaveMoreFilters = savedFilters.length < savedFiltersLimit;
 

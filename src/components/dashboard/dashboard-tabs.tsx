@@ -11,11 +11,10 @@ import {
 import type { Route } from "next";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
-
+import { useCallback, useEffect, useState } from "react";
+import { useSyncStream } from "@/components/dashboard/hooks/use-sync-stream";
 import { TimestampBadge } from "@/components/dashboard/timestamp-badge";
 import type { DateTimeDisplayFormat } from "@/lib/date-time-format";
-import { subscribeToSyncStream } from "@/lib/sync/client-stream";
 import { cn } from "@/lib/utils";
 
 const tabs = [
@@ -50,14 +49,13 @@ export function DashboardTabs({
     setLatestSyncCompletedAt(initialLastSyncCompletedAt ?? null);
   }, [initialLastSyncCompletedAt]);
 
-  useEffect(() => {
-    const unsubscribe = subscribeToSyncStream((event) => {
+  useSyncStream(
+    useCallback((event) => {
       if (event.type === "run-completed" && event.status === "success") {
         setLatestSyncCompletedAt(event.completedAt);
       }
-    });
-    return unsubscribe;
-  }, []);
+    }, []),
+  );
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 pb-0">

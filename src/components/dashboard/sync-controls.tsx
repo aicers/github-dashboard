@@ -2,10 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState } from "react";
-import {
-  isUnauthorizedResponse,
-  retryOnceAfterUnauthorized,
-} from "@/components/dashboard/post-login-auth-recovery";
+import { useAuthorizedFetch } from "@/components/dashboard/hooks/use-authorized-fetch";
 import { ReauthModal } from "@/components/dashboard/reauth-modal";
 import { SyncSubTabs } from "@/components/dashboard/sync-subtabs";
 import { Button } from "@/components/ui/button";
@@ -388,6 +385,7 @@ export function SyncControls({
   currentPathname,
 }: SyncControlsProps) {
   const router = useRouter();
+  const authorizedFetch = useAuthorizedFetch();
   const config = status.config;
   const backupInfo = status.backup;
   const backupSchedule = backupInfo.schedule;
@@ -540,18 +538,13 @@ export function SyncControls({
 
     const loadSummary = async () => {
       try {
-        const response = await retryOnceAfterUnauthorized({
-          execute: () =>
-            fetch("/api/activity/cache/refresh", {
-              method: "GET",
-              signal: controller.signal,
-              cache: "no-store",
-            }),
-          refresh: () => {
-            router.refresh();
-          },
-          shouldRetry: isUnauthorizedResponse,
-        });
+        const response = await authorizedFetch(() =>
+          fetch("/api/activity/cache/refresh", {
+            method: "GET",
+            signal: controller.signal,
+            cache: "no-store",
+          }),
+        );
         if (!response.ok) {
           return;
         }
@@ -571,18 +564,13 @@ export function SyncControls({
         }
 
         try {
-          const snapshotResponse = await retryOnceAfterUnauthorized({
-            execute: () =>
-              fetch("/api/activity/snapshot/refresh", {
-                method: "GET",
-                signal: controller.signal,
-                cache: "no-store",
-              }),
-            refresh: () => {
-              router.refresh();
-            },
-            shouldRetry: isUnauthorizedResponse,
-          });
+          const snapshotResponse = await authorizedFetch(() =>
+            fetch("/api/activity/snapshot/refresh", {
+              method: "GET",
+              signal: controller.signal,
+              cache: "no-store",
+            }),
+          );
 
           if (snapshotResponse.ok) {
             const snapshotData =
@@ -627,7 +615,7 @@ export function SyncControls({
       cancelled = true;
       controller.abort();
     };
-  }, [canManageSync, router]);
+  }, [canManageSync, authorizedFetch]);
 
   useEffect(() => {
     if (!canManageSync) {
@@ -640,18 +628,13 @@ export function SyncControls({
 
     const loadAutomationSummary = async () => {
       try {
-        const response = await retryOnceAfterUnauthorized({
-          execute: () =>
-            fetch("/api/activity/status-automation", {
-              method: "GET",
-              signal: controller.signal,
-              cache: "no-store",
-            }),
-          refresh: () => {
-            router.refresh();
-          },
-          shouldRetry: isUnauthorizedResponse,
-        });
+        const response = await authorizedFetch(() =>
+          fetch("/api/activity/status-automation", {
+            method: "GET",
+            signal: controller.signal,
+            cache: "no-store",
+          }),
+        );
         if (!response.ok) {
           return;
         }
@@ -690,7 +673,7 @@ export function SyncControls({
       cancelled = true;
       controller.abort();
     };
-  }, [canManageSync, router]);
+  }, [canManageSync, authorizedFetch]);
 
   const runGroups = useMemo(() => buildRunGroups(status), [status]);
   const primaryLatestRun = useMemo(
