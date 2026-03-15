@@ -6,7 +6,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { subscribeToSyncStream } from "@/lib/sync/client-stream";
+import { useSyncStream } from "@/components/dashboard/hooks/use-sync-stream";
 import { buildUserInitials } from "@/lib/user/initials";
 import { cn } from "@/lib/utils";
 
@@ -108,23 +108,25 @@ export function DashboardHeader({
     };
   }, [fetchNotificationCount]);
 
-  useEffect(() => {
-    if (!userId) {
-      return;
-    }
-    const unsubscribe = subscribeToSyncStream((event) => {
-      if (event.type !== "attention-refresh") {
-        return;
-      }
-      if (
-        event.scope === "all" ||
-        (event.scope === "users" && event.userIds?.includes(userId))
-      ) {
-        void fetchNotificationCount();
-      }
-    });
-    return unsubscribe;
-  }, [fetchNotificationCount, userId]);
+  useSyncStream(
+    useCallback(
+      (event) => {
+        if (!userId) {
+          return;
+        }
+        if (event.type !== "attention-refresh") {
+          return;
+        }
+        if (
+          event.scope === "all" ||
+          (event.scope === "users" && event.userIds?.includes(userId))
+        ) {
+          void fetchNotificationCount();
+        }
+      },
+      [fetchNotificationCount, userId],
+    ),
+  );
 
   const notificationsHref = useMemo(() => {
     if (!userId) {

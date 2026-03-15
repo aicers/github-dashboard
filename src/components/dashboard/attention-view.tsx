@@ -21,6 +21,8 @@ import {
   useState,
   useTransition,
 } from "react";
+import { useActivityDetailState } from "@/components/dashboard/hooks/use-activity-detail";
+import { useSyncStream } from "@/components/dashboard/hooks/use-sync-stream";
 import {
   isUnauthorizedResponse,
   retryOnceAfterUnauthorized,
@@ -33,7 +35,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { fetchActivityDetail } from "@/lib/activity/client";
 import type {
   ActivityItem,
   ActivityItemDetail,
@@ -60,7 +61,6 @@ import {
   sortRankingByTotal,
 } from "@/lib/dashboard/attention-summaries";
 import type { DateTimeDisplayFormat } from "@/lib/date-time-format";
-import { subscribeToSyncStream } from "@/lib/sync/client-stream";
 import { cn } from "@/lib/utils";
 import { ActivityDetailOverlay } from "./activity/activity-detail-overlay";
 import { ActivityListItemSummary } from "./activity/activity-list-item-summary";
@@ -378,160 +378,6 @@ function buildReferenceLabel(
     return repoLabel;
   }
   return `${repoLabel}#${number.toString()}`;
-}
-
-function useActivityDetailState() {
-  const [openItemId, setOpenItemId] = useState<string | null>(null);
-  const [detailMap, setDetailMap] = useState<
-    Record<string, ActivityItemDetail | null>
-  >({});
-  const [loadingDetailIds, setLoadingDetailIds] = useState<Set<string>>(
-    () => new Set<string>(),
-  );
-  const controllersRef = useRef<Map<string, AbortController>>(new Map());
-
-  useEffect(() => {
-    return () => {
-      controllersRef.current.forEach((controller) => {
-        controller.abort();
-      });
-      controllersRef.current.clear();
-    };
-  }, []);
-
-  const loadDetail = useCallback(async (id: string) => {
-    if (!id.trim()) {
-      return;
-    }
-
-    setLoadingDetailIds((current) => {
-      if (current.has(id)) {
-        return current;
-      }
-      const next = new Set(current);
-      next.add(id);
-      return next;
-    });
-
-    const existing = controllersRef.current.get(id);
-    existing?.abort();
-
-    const controller = new AbortController();
-    controllersRef.current.set(id, controller);
-
-    try {
-      const detail = await fetchActivityDetail(id, {
-        signal: controller.signal,
-      });
-      setDetailMap((current) => ({
-        ...current,
-        [id]: detail,
-      }));
-    } catch (error) {
-      if ((error as Error).name !== "AbortError") {
-        console.error(error);
-        setDetailMap((current) => ({
-          ...current,
-          [id]: null,
-        }));
-      }
-    } finally {
-      controllersRef.current.delete(id);
-      setLoadingDetailIds((current) => {
-        if (!current.has(id)) {
-          return current;
-        }
-        const next = new Set(current);
-        next.delete(id);
-        return next;
-      });
-    }
-  }, []);
-
-  const selectItem = useCallback(
-    (id: string) => {
-      setOpenItemId((current) => {
-        if (current === id) {
-          const controller = controllersRef.current.get(id);
-          controller?.abort();
-          controllersRef.current.delete(id);
-          setLoadingDetailIds((loadings) => {
-            if (!loadings.has(id)) {
-              return loadings;
-            }
-            const next = new Set(loadings);
-            next.delete(id);
-            return next;
-          });
-          return null;
-        }
-
-        if (current) {
-          const controller = controllersRef.current.get(current);
-          controller?.abort();
-          controllersRef.current.delete(current);
-          setLoadingDetailIds((loadings) => {
-            if (!loadings.has(current)) {
-              return loadings;
-            }
-            const next = new Set(loadings);
-            next.delete(current);
-            return next;
-          });
-        }
-
-        if (!detailMap[id] && !loadingDetailIds.has(id)) {
-          void loadDetail(id);
-        }
-
-        return id;
-      });
-    },
-    [detailMap, loadDetail, loadingDetailIds],
-  );
-
-  const closeItem = useCallback(() => {
-    setOpenItemId((current) => {
-      if (!current) {
-        return current;
-      }
-      const controller = controllersRef.current.get(current);
-      controller?.abort();
-      controllersRef.current.delete(current);
-      setLoadingDetailIds((loadings) => {
-        if (!loadings.has(current)) {
-          return loadings;
-        }
-        const next = new Set(loadings);
-        next.delete(current);
-        return next;
-      });
-      return null;
-    });
-  }, []);
-
-  const updateDetailItem = useCallback((nextItem: ActivityItem) => {
-    setDetailMap((current) => {
-      const existing = current[nextItem.id];
-      if (!existing) {
-        return current;
-      }
-      return {
-        ...current,
-        [nextItem.id]: { ...existing, item: nextItem },
-      };
-    });
-  }, []);
-
-  return {
-    openItemId,
-    detailMap,
-    loadingDetailIds,
-    selectItem,
-    closeItem,
-    updateDetailItem,
-    loadDetail,
-  };
 }
 
 export function FollowUpDetailContent({
@@ -3805,11 +3651,11 @@ export function AttentionView({
     }, 4000);
   }, []);
 
-  useEffect(() => {
-    const updateAutoSyncState = () => {
-      setAutomaticSyncActive(autoSyncRunIdsRef.current.size > 0);
-    };
-    const unsubscribe = subscribeToSyncStream((event) => {
+  useSyncStream(
+    useCallback((event) => {
+      const updateAutoSyncState = () => {
+        setAutomaticSyncActive(autoSyncRunIdsRef.current.size > 0);
+      };
       if (event.type === "run-started" && event.runType === "automatic") {
         if (!autoSyncRunIdsRef.current.has(event.runId)) {
           autoSyncRunIdsRef.current.add(event.runId);
@@ -3831,9 +3677,8 @@ export function AttentionView({
           updateAutoSyncState();
         }
       }
-    });
-    return unsubscribe;
-  }, []);
+    }, []),
+  );
 
   useEffect(() => {
     let canceled = false;

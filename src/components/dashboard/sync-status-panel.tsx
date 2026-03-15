@@ -1,20 +1,16 @@
 "use client";
 
 import { AlertCircle, CheckCircle2, Loader2, RefreshCcw } from "lucide-react";
-import { useRouter } from "next/navigation";
 import type { JSX } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import {
-  isUnauthorizedResponse,
-  retryOnceAfterUnauthorized,
-} from "@/components/dashboard/post-login-auth-recovery";
+import { useAuthorizedFetch } from "@/components/dashboard/hooks/use-authorized-fetch";
+import { useSyncStream } from "@/components/dashboard/hooks/use-sync-stream";
 import {
   getCurrentSyncConnectionState,
   type SyncConnectionState,
   subscribeToSyncConnectionState,
   subscribeToSyncHeartbeat,
-  subscribeToSyncStream,
 } from "@/lib/sync/client-stream";
 import type {
   SyncLogStatus,
@@ -280,7 +276,7 @@ function mergeResource(
 }
 
 export function SyncStatusPanel() {
-  const router = useRouter();
+  const authorizedFetch = useAuthorizedFetch();
   const [connectionState, setConnectionState] = useState<SyncConnectionState>(
     () => getCurrentSyncConnectionState(),
   );
@@ -335,20 +331,15 @@ export function SyncStatusPanel() {
     setError(null);
 
     try {
-      const response = await retryOnceAfterUnauthorized({
-        execute: () =>
-          fetch("/api/sync/status", {
-            method: "GET",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            cache: "no-store",
-          }),
-        refresh: () => {
-          router.refresh();
-        },
-        shouldRetry: isUnauthorizedResponse,
-      });
+      const response = await authorizedFetch(() =>
+        fetch("/api/sync/status", {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          cache: "no-store",
+        }),
+      );
 
       if (!response.ok) {
         throw new Error(`Failed to fetch sync status (${response.status})`);
@@ -425,7 +416,7 @@ export function SyncStatusPanel() {
     } finally {
       setIsLoading(false);
     }
-  }, [router]);
+  }, [authorizedFetch]);
 
   const handleStreamEvent = useCallback(
     (event: SyncStreamEvent) => {
@@ -631,10 +622,7 @@ export function SyncStatusPanel() {
     void fetchInitialStatus();
   }, [fetchInitialStatus]);
 
-  useEffect(() => {
-    const unsubscribe = subscribeToSyncStream(handleStreamEvent);
-    return unsubscribe;
-  }, [handleStreamEvent]);
+  useSyncStream(handleStreamEvent);
 
   useEffect(() => {
     const unsubscribe = subscribeToSyncHeartbeat((payload) => {
