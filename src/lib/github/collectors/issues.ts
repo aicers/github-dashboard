@@ -241,7 +241,6 @@ export async function collectIssueComments(
     }
 
     if (reachedUpperBound) {
-      hasNextPage = false;
       cursor = null;
       break;
     }
@@ -534,7 +533,6 @@ export async function collectDiscussionsForRepository(
 
     if (reachedLowerBound) {
       logger?.(`${summary} (stopped at lower bound)`);
-      hasNextPage = false;
       cursor = null;
       break;
     }
@@ -674,7 +672,6 @@ export async function collectIssuesForRepository(
 
     if (reachedUpperBound) {
       logger?.(`${summary} (stopped at upper bound)`);
-      hasNextPage = false;
       cursor = null;
       break;
     }

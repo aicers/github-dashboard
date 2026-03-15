@@ -259,7 +259,6 @@ export async function collectReviewComments(
     }
 
     if (reachedUpperBound) {
-      hasNextPage = false;
       cursor = null;
       break;
     }
@@ -347,7 +346,6 @@ export async function collectReviews(
     }
 
     if (reachedUpperBound) {
-      hasNextPage = false;
       cursor = null;
       break;
     }
@@ -509,7 +507,6 @@ export async function collectPullRequestsForRepository(
 
     if (reachedLowerBound) {
       logger?.(`${summary} (stopped at lower bound)`);
-      hasNextPage = false;
       cursor = null;
       break;
     }
@@ -900,8 +897,6 @@ export async function collectPullRequestLinksForRepository(
 
     if (reachedLowerBound) {
       logger?.(`${summary} (stopped at lower bound)`);
-      hasNextPage = false;
-      cursor = nextCursor;
       break;
     }
 
