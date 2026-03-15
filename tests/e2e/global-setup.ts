@@ -34,7 +34,18 @@ async function warmActivityCaches() {
   }
 }
 
+async function warmTestHarnessPages() {
+  // Pre-compile test-harness pages so that cold-start compilation does not
+  // consume test time budgets during the first test run.
+  const pages = [
+    `${BASE_URL}/test-harness/activity`,
+    `${BASE_URL}/test-harness/people`,
+  ];
+  await Promise.all(pages.map((url) => fetch(url).catch(() => {})));
+}
+
 export default async function globalSetup() {
   await waitForServer();
   await warmActivityCaches();
+  await warmTestHarnessPages();
 }

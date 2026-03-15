@@ -1156,7 +1156,6 @@ function canonicalizeActivityParams(params: ActivityListParams) {
 }
 
 function applyFiltersToQuery(
-  router: ReturnType<typeof useRouter>,
   filters: FilterState,
   defaultPerPage: number,
   resolveLabelKeys: (labels: readonly string[]) => string[],
@@ -1169,10 +1168,9 @@ function applyFiltersToQuery(
     defaultPerPage,
   );
   const query = params.toString();
-  router.replace(
-    query.length ? `/dashboard/activity?${query}` : "/dashboard/activity",
-    { scroll: false },
-  );
+  const basePath = window.location.pathname;
+  const url = query.length ? `${basePath}?${query}` : basePath;
+  window.history.replaceState(null, "", url);
 }
 
 function toPositiveInt(value: string, fallback: number) {
@@ -3248,12 +3246,7 @@ export function ActivityView({
         };
         setApplied(nextState);
         setDraft(nextState);
-        applyFiltersToQuery(
-          router,
-          nextState,
-          perPageDefault,
-          resolveLabelKeys,
-        );
+        applyFiltersToQuery(nextState, perPageDefault, resolveLabelKeys);
 
         if (
           options.previousSync &&
@@ -3274,7 +3267,7 @@ export function ActivityView({
         }
       }
     },
-    [perPageDefault, resolveLabelKeys, router, showNotification],
+    [perPageDefault, resolveLabelKeys, showNotification],
   );
 
   const handleMentionOverride = useCallback(
@@ -3491,12 +3484,11 @@ export function ActivityView({
       const nextParams = new URLSearchParams(searchParams.toString());
       nextParams.delete("quick");
       appliedQuickParamRef.current = quickParam;
-      router.replace(
-        nextParams.toString().length
-          ? `/dashboard/activity?${nextParams.toString()}`
-          : "/dashboard/activity",
-        { scroll: false },
-      );
+      const basePath = window.location.pathname;
+      const url = nextParams.toString().length
+        ? `${basePath}?${nextParams.toString()}`
+        : basePath;
+      window.history.replaceState(null, "", url);
     };
 
     if (!definition) {
@@ -3525,7 +3517,6 @@ export function ActivityView({
     handleApplyQuickFilter,
     normalizeFilterState,
     quickFilterDefinitions,
-    router,
     searchParams,
   ]);
 
