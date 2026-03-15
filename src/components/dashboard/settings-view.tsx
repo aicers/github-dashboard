@@ -152,7 +152,7 @@ export function SettingsView({
           </div>
         </nav>
 
-        {activeTab === "personal" ? (
+        <div className={activeTab === "personal" ? undefined : "hidden"}>
           <SettingsPersonalTab
             timeZone={timeZone}
             weekStart={weekStart}
@@ -171,9 +171,9 @@ export function SettingsView({
             currentUserOriginalAvatarUrl={currentUserOriginalAvatarUrl}
             currentUserCustomAvatarUrl={currentUserCustomAvatarUrl}
           />
-        ) : null}
+        </div>
 
-        {activeTab === "organization" ? (
+        <div className={activeTab === "organization" ? undefined : "hidden"}>
           <SettingsOrgTab
             orgName={orgName}
             syncIntervalMinutes={syncIntervalMinutes}
@@ -200,7 +200,7 @@ export function SettingsView({
             authReauthCountryChange={authReauthCountryChange}
             onReauthRequired={() => setReauthOpen(true)}
           />
-        ) : null}
+        </div>
       </div>
     </section>
   );
