@@ -155,6 +155,7 @@ test.describe("ActivityView (Playwright)", () => {
     );
     await page.getByRole("button", { name: /^확인 필요$/ }).click();
     await feedResponse;
+    expect(page.url()).toContain("/test-harness/activity");
     await expect(
       page.getByRole("button", { name: /Filtered critical issue/ }),
     ).toBeVisible();
@@ -311,6 +312,7 @@ test.describe("ActivityView (Playwright)", () => {
     await expect(
       page.getByRole("button", { name: /Advanced filter match/ }),
     ).toBeVisible();
+    expect(page.url()).toContain("/test-harness/activity");
 
     const nextPageResponse = page.waitForResponse(
       (response) =>
