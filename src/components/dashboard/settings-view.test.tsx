@@ -659,6 +659,63 @@ describe("SettingsView", () => {
     ).toBeInTheDocument();
   });
 
+  it("preserves unsaved personal draft when switching tabs and returning", async () => {
+    const user = userEvent.setup();
+
+    renderSettings();
+
+    // Change timezone and format on Personal tab (unsaved)
+    const timezoneSelect = screen.getByLabelText("표준 시간대");
+    await user.selectOptions(timezoneSelect, "America/Los_Angeles");
+
+    const formatSelect = screen.getByLabelText("날짜와 시간 형식");
+    await user.selectOptions(formatSelect, "en-us-12h");
+
+    // Switch to Organization tab
+    await user.click(screen.getByRole("button", { name: "Organization" }));
+    await screen.findByRole("button", { name: "조직 설정 저장" });
+
+    // Switch back to Personal tab
+    await user.click(screen.getByRole("button", { name: "Personal" }));
+
+    // Draft values must still be present — not reset to original props
+    expect(screen.getByLabelText("표준 시간대")).toHaveValue(
+      "America/Los_Angeles",
+    );
+    expect(screen.getByLabelText("날짜와 시간 형식")).toHaveValue("en-us-12h");
+  });
+
+  it("preserves unsaved org draft when switching tabs and returning", async () => {
+    const user = userEvent.setup();
+
+    renderSettings();
+
+    // Switch to Organization tab and make an unsaved change
+    await user.click(screen.getByRole("button", { name: "Organization" }));
+
+    const organizationSection = (
+      await screen.findByRole("button", { name: "조직 설정 저장" })
+    ).closest("section") as HTMLElement;
+
+    const orgInput =
+      within(organizationSection).getByLabelText("Organization 이름");
+    await user.clear(orgInput);
+    await user.type(orgInput, "new-org-draft");
+
+    // Switch to Personal tab
+    await user.click(screen.getByRole("button", { name: "Personal" }));
+    expect(screen.getByLabelText("표준 시간대")).toBeInTheDocument();
+
+    // Switch back to Organization tab
+    await user.click(screen.getByRole("button", { name: "Organization" }));
+    await screen.findByRole("button", { name: "조직 설정 저장" });
+
+    // Draft value must still be present
+    expect(
+      within(organizationSection).getByLabelText("Organization 이름"),
+    ).toHaveValue("new-org-draft");
+  });
+
   it("allows non-admin users to update personal settings only", async () => {
     const user = userEvent.setup();
     mockFetchJsonOnce({ success: true });
