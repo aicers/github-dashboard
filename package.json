@@ -58,7 +58,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/sanitize-html": "^2.16.1",
     "graphql": "^16.13.1",
-    "jsdom": "^28.1.0",
+    "jsdom": "^29.0.0",
     "markdownlint-cli2": "^0.21.0",
     "tailwindcss": "^4.2.1",
     "tsx": "^4.21.0",
