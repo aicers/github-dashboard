@@ -1,8 +1,14 @@
 // @vitest-environment node
 
+import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
 import type { ActivityItem, ActivityItemDetail } from "@/lib/activity/types";
+import { readActiveSession } from "@/lib/auth/session";
+import type { SessionRecord } from "@/lib/auth/session-store";
+
+vi.mock("@/lib/auth/session", () => ({
+  readActiveSession: vi.fn(),
+}));
 
 const getActivityItemDetailMock =
   vi.fn<(id: string) => Promise<ActivityItemDetail | null>>();
@@ -26,6 +32,8 @@ const refreshActivityItemsSnapshotMock =
 vi.mock("@/lib/activity/snapshot", () => ({
   refreshActivityItemsSnapshot: refreshActivityItemsSnapshotMock,
 }));
+
+const readActiveSessionMock = vi.mocked(readActiveSession);
 
 type RouteHandlers = typeof import("./route");
 
@@ -112,13 +120,83 @@ function buildContext(id: string) {
   };
 }
 
+function buildSession(overrides: Partial<SessionRecord> = {}): SessionRecord {
+  const base = {
+    id: "session-1",
+    userId: "user-1",
+    orgSlug: "acme",
+    orgVerified: true,
+    isAdmin: true,
+    createdAt: new Date("2024-01-01T00:00:00.000Z"),
+    lastSeenAt: new Date("2024-01-01T01:00:00.000Z"),
+    expiresAt: new Date("2024-01-01T12:00:00.000Z"),
+    refreshExpiresAt: new Date("2024-01-02T00:00:00.000Z"),
+    maxExpiresAt: new Date("2024-02-01T00:00:00.000Z"),
+    lastReauthAt: new Date("2024-01-01T00:00:00.000Z"),
+    deviceId: "device-1",
+    ipCountry: "KR",
+  };
+
+  return { ...base, ...overrides };
+}
+
+function buildRequest(
+  path: string,
+  init?: ConstructorParameters<typeof NextRequest>[1],
+) {
+  return new NextRequest(`http://localhost${path}`, init);
+}
+
 describe("PATCH /api/activity/[id]/project-fields", () => {
   let handlers: RouteHandlers;
 
   beforeEach(async () => {
     vi.clearAllMocks();
     refreshActivityItemsSnapshotMock.mockResolvedValue(undefined);
+    readActiveSessionMock.mockResolvedValue(buildSession());
     handlers = await import("./route");
+  });
+
+  it("returns 401 when no session is present", async () => {
+    readActiveSessionMock.mockResolvedValueOnce(null);
+
+    const response = await handlers.PATCH(
+      buildRequest("/api/activity/issue-1/project-fields", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priority: "P2" }),
+      }),
+      buildContext("issue-1"),
+    );
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      success: false,
+      message: "Authentication required.",
+    });
+    expect(getActivityItemDetailMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 when the session is not admin", async () => {
+    readActiveSessionMock.mockResolvedValueOnce(
+      buildSession({ isAdmin: false }),
+    );
+
+    const response = await handlers.PATCH(
+      buildRequest("/api/activity/issue-1/project-fields", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priority: "P2" }),
+      }),
+      buildContext("issue-1"),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      success: false,
+      message: "Administrator access is required.",
+    });
+    expect(getActivityItemDetailMock).not.toHaveBeenCalled();
   });
 
   it("updates editable project fields and returns the refreshed item", async () => {
@@ -140,7 +218,7 @@ describe("PATCH /api/activity/[id]/project-fields", () => {
     );
 
     const response = await handlers.PATCH(
-      new Request("http://localhost/api/activity/issue-1/project-fields", {
+      buildRequest("/api/activity/issue-1/project-fields", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -174,7 +252,7 @@ describe("PATCH /api/activity/[id]/project-fields", () => {
     getActivityItemDetailMock.mockResolvedValueOnce(createDetail());
 
     const response = await handlers.PATCH(
-      new Request("http://localhost/api/activity/issue-1/project-fields", {
+      buildRequest("/api/activity/issue-1/project-fields", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ priority: "invalid" }),
@@ -197,7 +275,7 @@ describe("PATCH /api/activity/[id]/project-fields", () => {
     );
 
     const response = await handlers.PATCH(
-      new Request("http://localhost/api/activity/issue-1/project-fields", {
+      buildRequest("/api/activity/issue-1/project-fields", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ priority: "P1" }),
@@ -224,7 +302,7 @@ describe("PATCH /api/activity/[id]/project-fields", () => {
     );
 
     const response = await handlers.PATCH(
-      new Request("http://localhost/api/activity/issue-1/project-fields", {
+      buildRequest("/api/activity/issue-1/project-fields", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -248,7 +326,7 @@ describe("PATCH /api/activity/[id]/project-fields", () => {
 
   it("returns 400 when the issue id is invalid", async () => {
     const response = await handlers.PATCH(
-      new Request("http://localhost/api/activity/%20/project-fields", {
+      buildRequest("/api/activity/%20/project-fields", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ priority: "P1" }),
@@ -267,7 +345,7 @@ describe("PATCH /api/activity/[id]/project-fields", () => {
     getActivityItemDetailMock.mockResolvedValueOnce(null);
 
     const response = await handlers.PATCH(
-      new Request("http://localhost/api/activity/missing/project-fields", {
+      buildRequest("/api/activity/missing/project-fields", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ priority: "P1" }),
@@ -290,7 +368,7 @@ describe("PATCH /api/activity/[id]/project-fields", () => {
     );
 
     const response = await handlers.PATCH(
-      new Request("http://localhost/api/activity/pr-1/project-fields", {
+      buildRequest("/api/activity/pr-1/project-fields", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ priority: "P1" }),
@@ -312,7 +390,46 @@ describe("DELETE /api/activity/[id]/project-fields", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     refreshActivityItemsSnapshotMock.mockResolvedValue(undefined);
+    readActiveSessionMock.mockResolvedValue(buildSession());
     handlers = await import("./route");
+  });
+
+  it("returns 401 when no session is present", async () => {
+    readActiveSessionMock.mockResolvedValueOnce(null);
+
+    const response = await handlers.DELETE(
+      buildRequest("/api/activity/issue-1/project-fields", {
+        method: "DELETE",
+      }),
+      buildContext("issue-1"),
+    );
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      success: false,
+      message: "Authentication required.",
+    });
+    expect(clearProjectFieldOverridesMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 when the session is not admin", async () => {
+    readActiveSessionMock.mockResolvedValueOnce(
+      buildSession({ isAdmin: false }),
+    );
+
+    const response = await handlers.DELETE(
+      buildRequest("/api/activity/issue-1/project-fields", {
+        method: "DELETE",
+      }),
+      buildContext("issue-1"),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      success: false,
+      message: "Administrator access is required.",
+    });
+    expect(clearProjectFieldOverridesMock).not.toHaveBeenCalled();
   });
 
   it("clears overrides and returns the updated item when unlocked", async () => {
@@ -330,7 +447,7 @@ describe("DELETE /api/activity/[id]/project-fields", () => {
     );
 
     const response = await handlers.DELETE(
-      new Request("http://localhost/api/activity/issue-1/project-fields", {
+      buildRequest("/api/activity/issue-1/project-fields", {
         method: "DELETE",
       }),
       buildContext("issue-1"),
@@ -353,7 +470,7 @@ describe("DELETE /api/activity/[id]/project-fields", () => {
     );
 
     const response = await handlers.DELETE(
-      new Request("http://localhost/api/activity/issue-1/project-fields", {
+      buildRequest("/api/activity/issue-1/project-fields", {
         method: "DELETE",
       }),
       buildContext("issue-1"),
@@ -368,7 +485,7 @@ describe("DELETE /api/activity/[id]/project-fields", () => {
 
   it("returns 400 when the issue id is invalid", async () => {
     const response = await handlers.DELETE(
-      new Request("http://localhost/api/activity/%20/project-fields", {
+      buildRequest("/api/activity/%20/project-fields", {
         method: "DELETE",
       }),
       buildContext(" "),
@@ -385,7 +502,7 @@ describe("DELETE /api/activity/[id]/project-fields", () => {
     getActivityItemDetailMock.mockResolvedValueOnce(null);
 
     const response = await handlers.DELETE(
-      new Request("http://localhost/api/activity/missing/project-fields", {
+      buildRequest("/api/activity/missing/project-fields", {
         method: "DELETE",
       }),
       buildContext("missing"),

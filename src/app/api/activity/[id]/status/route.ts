@@ -7,11 +7,8 @@ import {
   recordActivityStatus,
 } from "@/lib/activity/status-store";
 import type { IssueProjectStatus } from "@/lib/activity/types";
+import { adminRoute } from "@/lib/api/route-handler";
 import { ensureSchema } from "@/lib/db";
-
-type RouteParams = {
-  params: Promise<{ id: string }>;
-};
 
 const ALLOWED_STATUSES: IssueProjectStatus[] = [
   "no_status",
@@ -39,108 +36,112 @@ async function resolveIssueItem(id: string) {
   return detail;
 }
 
-export async function PATCH(request: Request, context: RouteParams) {
-  const resolvedParams = await context.params;
-  const rawId = resolvedParams?.id ?? "";
-  const id = decodeURIComponent(rawId.trim());
-  if (!id) {
-    return NextResponse.json({ error: "Invalid issue id." }, { status: 400 });
-  }
+export const PATCH = adminRoute<{ id: string }>(
+  async (request, _session, context) => {
+    const resolvedParams = await context.params;
+    const rawId = resolvedParams?.id ?? "";
+    const id = decodeURIComponent(rawId.trim());
+    if (!id) {
+      return NextResponse.json({ error: "Invalid issue id." }, { status: 400 });
+    }
 
-  let payload: unknown;
-  try {
-    payload = await request.json();
-  } catch {
-    return NextResponse.json(
-      { error: "Invalid request body." },
-      { status: 400 },
-    );
-  }
-
-  const status = (payload as { status?: unknown })?.status;
-  if (!isIssueProjectStatus(status)) {
-    return NextResponse.json(
-      { error: "Missing or invalid status value." },
-      { status: 400 },
-    );
-  }
-
-  const rawExpectedStatus = (payload as { expectedStatus?: unknown })
-    ?.expectedStatus;
-  let expectedStatus: IssueProjectStatus | undefined;
-  if (rawExpectedStatus !== undefined) {
-    if (!isIssueProjectStatus(rawExpectedStatus)) {
+    let payload: unknown;
+    try {
+      payload = await request.json();
+    } catch {
       return NextResponse.json(
-        { error: "Missing or invalid expected status value." },
+        { error: "Invalid request body." },
         { status: 400 },
       );
     }
-    expectedStatus = rawExpectedStatus;
-  }
 
-  const detail = await resolveIssueItem(id);
-  if (!detail) {
-    return NextResponse.json({ error: "Issue not found." }, { status: 404 });
-  }
+    const status = (payload as { status?: unknown })?.status;
+    if (!isIssueProjectStatus(status)) {
+      return NextResponse.json(
+        { error: "Missing or invalid status value." },
+        { status: 400 },
+      );
+    }
 
-  if (detail.item.issueProjectStatusLocked) {
-    return NextResponse.json(
-      {
-        error: "Status managed by the to-do list project.",
-        todoStatus: detail.item.issueTodoProjectStatus,
-      },
-      { status: 409 },
-    );
-  }
+    const rawExpectedStatus = (payload as { expectedStatus?: unknown })
+      ?.expectedStatus;
+    let expectedStatus: IssueProjectStatus | undefined;
+    if (rawExpectedStatus !== undefined) {
+      if (!isIssueProjectStatus(rawExpectedStatus)) {
+        return NextResponse.json(
+          { error: "Missing or invalid expected status value." },
+          { status: 400 },
+        );
+      }
+      expectedStatus = rawExpectedStatus;
+    }
 
-  if (expectedStatus !== undefined) {
-    const currentStatus = detail.item.issueProjectStatus ?? "no_status";
-    if (currentStatus !== expectedStatus) {
-      const refreshed = await resolveIssueItem(id);
+    const detail = await resolveIssueItem(id);
+    if (!detail) {
+      return NextResponse.json({ error: "Issue not found." }, { status: 404 });
+    }
+
+    if (detail.item.issueProjectStatusLocked) {
       return NextResponse.json(
         {
-          error: "이슈 상태가 이미 변경되었어요. 최신 상태를 불러왔어요.",
-          item: refreshed?.item ?? detail.item,
+          error: "Status managed by the to-do list project.",
+          todoStatus: detail.item.issueTodoProjectStatus,
         },
         { status: 409 },
       );
     }
-  }
 
-  if (status === "no_status") {
-    await clearActivityStatuses(id);
-  } else {
-    await recordActivityStatus(id, status);
-  }
+    if (expectedStatus !== undefined) {
+      const currentStatus = detail.item.issueProjectStatus ?? "no_status";
+      if (currentStatus !== expectedStatus) {
+        const refreshed = await resolveIssueItem(id);
+        return NextResponse.json(
+          {
+            error: "이슈 상태가 이미 변경되었어요. 최신 상태를 불러왔어요.",
+            item: refreshed?.item ?? detail.item,
+          },
+          { status: 409 },
+        );
+      }
+    }
 
-  await refreshActivityItemsSnapshot({ ids: [id] });
+    if (status === "no_status") {
+      await clearActivityStatuses(id);
+    } else {
+      await recordActivityStatus(id, status);
+    }
 
-  const updated = await resolveIssueItem(id);
-  if (updated?.item.issueProjectStatusLocked) {
-    await clearProjectFieldOverrides(id);
     await refreshActivityItemsSnapshot({ ids: [id] });
-    const refreshed = await resolveIssueItem(id);
-    return NextResponse.json({ item: refreshed?.item ?? updated.item });
-  }
 
-  return NextResponse.json({ item: updated?.item ?? detail.item });
-}
+    const updated = await resolveIssueItem(id);
+    if (updated?.item.issueProjectStatusLocked) {
+      await clearProjectFieldOverrides(id);
+      await refreshActivityItemsSnapshot({ ids: [id] });
+      const refreshed = await resolveIssueItem(id);
+      return NextResponse.json({ item: refreshed?.item ?? updated.item });
+    }
 
-export async function DELETE(_: Request, context: RouteParams) {
-  const resolvedParams = await context.params;
-  const rawId = resolvedParams?.id ?? "";
-  const id = decodeURIComponent(rawId.trim());
-  if (!id) {
-    return NextResponse.json({ error: "Invalid issue id." }, { status: 400 });
-  }
+    return NextResponse.json({ item: updated?.item ?? detail.item });
+  },
+);
 
-  const detail = await resolveIssueItem(id);
-  if (!detail) {
-    return NextResponse.json({ error: "Issue not found." }, { status: 404 });
-  }
+export const DELETE = adminRoute<{ id: string }>(
+  async (_request, _session, context) => {
+    const resolvedParams = await context.params;
+    const rawId = resolvedParams?.id ?? "";
+    const id = decodeURIComponent(rawId.trim());
+    if (!id) {
+      return NextResponse.json({ error: "Invalid issue id." }, { status: 400 });
+    }
 
-  await clearActivityStatuses(id);
-  await refreshActivityItemsSnapshot({ ids: [id] });
-  const updated = await resolveIssueItem(id);
-  return NextResponse.json({ item: updated?.item ?? detail.item });
-}
+    const detail = await resolveIssueItem(id);
+    if (!detail) {
+      return NextResponse.json({ error: "Issue not found." }, { status: 404 });
+    }
+
+    await clearActivityStatuses(id);
+    await refreshActivityItemsSnapshot({ ids: [id] });
+    const updated = await resolveIssueItem(id);
+    return NextResponse.json({ item: updated?.item ?? detail.item });
+  },
+);

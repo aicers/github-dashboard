@@ -1,13 +1,59 @@
 import { NextRequest } from "next/server";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { readActiveSession } from "@/lib/auth/session";
+import type { SessionRecord } from "@/lib/auth/session-store";
 import { emitSyncEvent } from "@/lib/sync/event-bus";
 import type { SyncStreamEvent } from "@/lib/sync/events";
 
-import { GET } from "./route";
+vi.mock("@/lib/auth/session", () => ({
+  readActiveSession: vi.fn(),
+}));
+
+const readActiveSessionMock = vi.mocked(readActiveSession);
+
+function buildSession(overrides: Partial<SessionRecord> = {}): SessionRecord {
+  const base = {
+    id: "session-1",
+    userId: "user-1",
+    orgSlug: "acme",
+    orgVerified: true,
+    isAdmin: false,
+    createdAt: new Date("2024-01-01T00:00:00.000Z"),
+    lastSeenAt: new Date("2024-01-01T01:00:00.000Z"),
+    expiresAt: new Date("2024-01-01T12:00:00.000Z"),
+    refreshExpiresAt: new Date("2024-01-02T00:00:00.000Z"),
+    maxExpiresAt: new Date("2024-02-01T00:00:00.000Z"),
+    lastReauthAt: new Date("2024-01-01T00:00:00.000Z"),
+    deviceId: "device-1",
+    ipCountry: "KR",
+  };
+
+  return { ...base, ...overrides };
+}
 
 describe("GET /api/sync/stream", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    readActiveSessionMock.mockResolvedValue(buildSession());
+  });
+
+  it("returns 401 when no session is present", async () => {
+    readActiveSessionMock.mockResolvedValueOnce(null);
+    const { GET } = await import("./route");
+
+    const request = new NextRequest("http://localhost/api/sync/stream");
+    const response = await GET(request);
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      success: false,
+      message: "Authentication required.",
+    });
+  });
+
   it("returns a server-sent events stream and forwards sync events", async () => {
+    const { GET } = await import("./route");
     const request = new NextRequest("http://localhost/api/sync/stream");
     const response = await GET(request);
 

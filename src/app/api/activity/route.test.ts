@@ -8,6 +8,7 @@ import type {
   ActivityListParams,
   ActivityListResult,
 } from "@/lib/activity/types";
+import type { SessionRecord } from "@/lib/auth/session-store";
 
 vi.mock("@/lib/activity/params", () => ({
   parseActivityListParams: vi.fn(),
@@ -35,10 +36,45 @@ const { getActivityItems, getActivityFilterOptions, getActivityItemDetail } =
   vi.mocked(await import("@/lib/activity/service"));
 const { readActiveSession } = vi.mocked(await import("@/lib/auth/session"));
 
+function buildSession(overrides: Partial<SessionRecord> = {}): SessionRecord {
+  const base = {
+    id: "session-1",
+    userId: "user-1",
+    orgSlug: "acme",
+    orgVerified: true,
+    isAdmin: false,
+    createdAt: new Date("2024-01-01T00:00:00.000Z"),
+    lastSeenAt: new Date("2024-01-01T01:00:00.000Z"),
+    expiresAt: new Date("2024-01-01T12:00:00.000Z"),
+    refreshExpiresAt: new Date("2024-01-02T00:00:00.000Z"),
+    maxExpiresAt: new Date("2024-02-01T00:00:00.000Z"),
+    lastReauthAt: new Date("2024-01-01T00:00:00.000Z"),
+    deviceId: "device-1",
+    ipCountry: "KR",
+  };
+
+  return { ...base, ...overrides };
+}
+
 describe("GET /api/activity", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    readActiveSession.mockResolvedValue(null);
+    readActiveSession.mockResolvedValue(buildSession());
+  });
+
+  it("returns 401 when no session is present", async () => {
+    readActiveSession.mockResolvedValueOnce(null);
+
+    const { GET } = await import("./route");
+    const response = await GET(new Request("http://localhost/api/activity"));
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      success: false,
+      message: "Authentication required.",
+    });
+    expect(parseActivityListParams).not.toHaveBeenCalled();
+    expect(getActivityItems).not.toHaveBeenCalled();
   });
 
   it("returns activity items for parsed params", async () => {
@@ -74,7 +110,7 @@ describe("GET /api/activity", () => {
     expect(body).toEqual(listResult);
     expect(parseActivityListParams).toHaveBeenCalledTimes(1);
     expect(getActivityItems).toHaveBeenCalledWith(parsedParams, {
-      userId: null,
+      userId: "user-1",
     });
   });
 
@@ -94,6 +130,23 @@ describe("GET /api/activity", () => {
 describe("GET /api/activity/options", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    readActiveSession.mockResolvedValue(buildSession());
+  });
+
+  it("returns 401 when no session is present", async () => {
+    readActiveSession.mockResolvedValueOnce(null);
+
+    const { GET } = await import("./options/route");
+    const response = await GET(
+      new Request("http://localhost/api/activity/options"),
+    );
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      success: false,
+      message: "Authentication required.",
+    });
+    expect(getActivityFilterOptions).not.toHaveBeenCalled();
   });
 
   it("returns filter options", async () => {
@@ -110,7 +163,9 @@ describe("GET /api/activity/options", () => {
 
     const { GET } = await import("./options/route");
 
-    const response = await GET();
+    const response = await GET(
+      new Request("http://localhost/api/activity/options"),
+    );
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(options);
@@ -122,7 +177,9 @@ describe("GET /api/activity/options", () => {
 
     const { GET } = await import("./options/route");
 
-    const response = await GET();
+    const response = await GET(
+      new Request("http://localhost/api/activity/options"),
+    );
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({
@@ -134,6 +191,23 @@ describe("GET /api/activity/options", () => {
 describe("GET /api/activity/[id]", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    readActiveSession.mockResolvedValue(buildSession());
+  });
+
+  it("returns 401 when no session is present", async () => {
+    readActiveSession.mockResolvedValueOnce(null);
+
+    const { GET } = await import("./[id]/route");
+    const response = await GET(new Request("http://localhost/api/activity"), {
+      params: Promise.resolve({ id: "activity-1" }),
+    });
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      success: false,
+      message: "Authentication required.",
+    });
+    expect(getActivityItemDetail).not.toHaveBeenCalled();
   });
 
   it("returns 400 for invalid id", async () => {

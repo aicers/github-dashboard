@@ -1,5 +1,4 @@
-import type { NextRequest } from "next/server";
-
+import { authenticatedRoute } from "@/lib/api/route-handler";
 import {
   getSyncSubscriberCount,
   subscribeToSyncEvents,
@@ -26,7 +25,7 @@ function encodeRetry(delayMs: number) {
   return encoder.encode(`retry: ${delayMs}\n\n`);
 }
 
-export async function GET(request: NextRequest) {
+export const GET = authenticatedRoute(async (request) => {
   let cleanup: (() => void) | null = null;
 
   const stream = new ReadableStream<Uint8Array>({
@@ -102,4 +101,4 @@ export async function GET(request: NextRequest) {
       "X-Accel-Buffering": "no",
     },
   });
-}
+});
