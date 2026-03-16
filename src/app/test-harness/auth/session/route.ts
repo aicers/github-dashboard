@@ -4,10 +4,10 @@ import { establishSession } from "@/lib/auth/session";
 import { ensureSchema } from "@/lib/db";
 import type { DbActor } from "@/lib/db/operations";
 import { upsertUser } from "@/lib/db/operations";
-
-function allowHarnessAccess() {
-  return process.env.NODE_ENV !== "production";
-}
+import {
+  createDebugSurfaceDeniedResponse,
+  isDebugSurfaceEnabled,
+} from "@/lib/debug-surface";
 
 function buildActor({
   id,
@@ -31,8 +31,8 @@ function buildActor({
 }
 
 export async function GET(request: Request) {
-  if (!allowHarnessAccess()) {
-    return NextResponse.json({ success: false }, { status: 404 });
+  if (!isDebugSurfaceEnabled()) {
+    return createDebugSurfaceDeniedResponse();
   }
 
   const url = new URL(request.url);
