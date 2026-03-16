@@ -8,11 +8,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { assertDebugSurfaceEnabled } from "@/lib/debug-surface";
 import { fetchViewerSummary } from "@/lib/github";
 
 export const dynamic = "force-dynamic";
 
 export default async function GitHubTestPage() {
+  assertDebugSurfaceEnabled();
+
   const status: {
     error: string | null;
     viewer: Awaited<ReturnType<typeof fetchViewerSummary>> | null;
