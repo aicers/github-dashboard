@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { authenticatedRoute } from "@/lib/api/route-handler";
 import { fetchRepositorySummary } from "@/lib/github";
 
 const requestSchema = z.object({
@@ -8,7 +9,7 @@ const requestSchema = z.object({
   name: z.string().min(1, "Repository name is required."),
 });
 
-export async function POST(request: Request) {
+export const POST = authenticatedRoute(async (request) => {
   try {
     const payload = await request.json();
     const { owner, name } = requestSchema.parse(payload);
@@ -39,4 +40,4 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
-}
+});

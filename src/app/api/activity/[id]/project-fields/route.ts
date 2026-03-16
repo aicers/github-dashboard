@@ -8,10 +8,7 @@ import {
 import { getActivityItemDetail } from "@/lib/activity/service";
 import { refreshActivityItemsSnapshot } from "@/lib/activity/snapshot";
 import type { IssueProjectStatus } from "@/lib/activity/types";
-
-type RouteParams = {
-  params: Promise<{ id: string }>;
-};
+import { adminRoute } from "@/lib/api/route-handler";
 
 type ProjectFieldKey =
   | "priority"
@@ -178,195 +175,199 @@ function isLockedStatus(status: IssueProjectStatus | null) {
   return status === "in_progress" || status === "done" || status === "pending";
 }
 
-export async function PATCH(request: Request, context: RouteParams) {
-  const resolvedParams = await context.params;
-  const rawId = resolvedParams?.id ?? "";
-  const id = decodeURIComponent(rawId.trim());
-  if (!id) {
-    return NextResponse.json({ error: "Invalid issue id." }, { status: 400 });
-  }
-
-  let payload: unknown;
-  try {
-    payload = await request.json();
-  } catch {
-    return NextResponse.json(
-      { error: "Invalid request body." },
-      { status: 400 },
-    );
-  }
-
-  const record = (payload as Record<string, unknown>) ?? {};
-  const providedKeys = (Object.keys(record) as ProjectFieldKey[]).filter(
-    (key) =>
-      key === "priority" ||
-      key === "weight" ||
-      key === "initiationOptions" ||
-      key === "startDate",
-  );
-
-  if (providedKeys.length === 0) {
-    return NextResponse.json(
-      { error: "Missing project field values." },
-      { status: 400 },
-    );
-  }
-
-  const expectedPayloadRaw = record.expected;
-  let expectedPayload: Record<string, unknown> | undefined;
-  if (expectedPayloadRaw !== undefined) {
-    if (
-      expectedPayloadRaw === null ||
-      typeof expectedPayloadRaw !== "object" ||
-      Array.isArray(expectedPayloadRaw)
-    ) {
-      return NextResponse.json(
-        { error: "기대한 값 형식이 올바르지 않아요." },
-        { status: 400 },
-      );
+export const PATCH = adminRoute<{ id: string }>(
+  async (request, _session, context) => {
+    const resolvedParams = await context.params;
+    const rawId = resolvedParams?.id ?? "";
+    const id = decodeURIComponent(rawId.trim());
+    if (!id) {
+      return NextResponse.json({ error: "Invalid issue id." }, { status: 400 });
     }
-    expectedPayload = expectedPayloadRaw as Record<string, unknown>;
-  }
 
-  const detail = await resolveIssueItem(id);
-  if (!detail) {
-    return NextResponse.json({ error: "Issue not found." }, { status: 404 });
-  }
-
-  if (
-    detail.item.issueProjectStatusLocked &&
-    providedKeys.some((key) => key !== "weight")
-  ) {
-    return NextResponse.json(
-      {
-        error: "To-do 프로젝트가 이 값을 관리하고 있어요.",
-        todoStatus: detail.item.issueTodoProjectStatus,
-      },
-      { status: 409 },
-    );
-  }
-
-  const effectiveUpdates: ProjectFieldOverrideUpdate = {};
-
-  for (const key of providedKeys) {
-    let sanitized: string | null;
+    let payload: unknown;
     try {
-      sanitized = sanitizePayloadValue(key, record[key]);
-    } catch (error) {
+      payload = await request.json();
+    } catch {
       return NextResponse.json(
-        { error: (error as Error).message },
+        { error: "Invalid request body." },
         { status: 400 },
       );
     }
 
-    const currentValue = (() => {
-      switch (key) {
-        case "priority":
-          return detail.item.issueTodoProjectPriority;
-        case "weight":
-          return detail.item.issueTodoProjectWeight;
-        case "initiationOptions":
-          return detail.item.issueTodoProjectInitiationOptions;
-        case "startDate":
-          return detail.item.issueTodoProjectStartDate;
-        default:
-          return null;
-      }
-    })();
+    const record = (payload as Record<string, unknown>) ?? {};
+    const providedKeys = (Object.keys(record) as ProjectFieldKey[]).filter(
+      (key) =>
+        key === "priority" ||
+        key === "weight" ||
+        key === "initiationOptions" ||
+        key === "startDate",
+    );
 
-    const normalizedCurrent = normalizeComparison(key, currentValue);
-    const normalizedNext = normalizeComparison(key, sanitized);
-
-    let normalizedExpected: string | null | undefined;
-    try {
-      const expectedEntry = parseExpectedEntry(expectedPayload, key);
-      if (expectedEntry) {
-        normalizedExpected = normalizeComparison(key, expectedEntry.value);
-      }
-    } catch (error) {
+    if (providedKeys.length === 0) {
       return NextResponse.json(
-        { error: (error as Error).message },
+        { error: "Missing project field values." },
         { status: 400 },
       );
     }
 
-    if (normalizedCurrent === normalizedNext) {
-      continue;
+    const expectedPayloadRaw = record.expected;
+    let expectedPayload: Record<string, unknown> | undefined;
+    if (expectedPayloadRaw !== undefined) {
+      if (
+        expectedPayloadRaw === null ||
+        typeof expectedPayloadRaw !== "object" ||
+        Array.isArray(expectedPayloadRaw)
+      ) {
+        return NextResponse.json(
+          { error: "기대한 값 형식이 올바르지 않아요." },
+          { status: 400 },
+        );
+      }
+      expectedPayload = expectedPayloadRaw as Record<string, unknown>;
+    }
+
+    const detail = await resolveIssueItem(id);
+    if (!detail) {
+      return NextResponse.json({ error: "Issue not found." }, { status: 404 });
     }
 
     if (
-      normalizedExpected !== undefined &&
-      normalizedExpected !== normalizedCurrent
+      detail.item.issueProjectStatusLocked &&
+      providedKeys.some((key) => key !== "weight")
     ) {
-      const refreshed = await resolveIssueItem(id);
-      const label = FIELD_LABEL_MAP[key];
       return NextResponse.json(
         {
-          error: `${label} 값이 이미 변경되었어요. 최신 값을 불러왔어요.`,
-          item: refreshed?.item ?? detail.item,
+          error: "To-do 프로젝트가 이 값을 관리하고 있어요.",
+          todoStatus: detail.item.issueTodoProjectStatus,
         },
         { status: 409 },
       );
     }
 
-    switch (key) {
-      case "priority":
-        effectiveUpdates.priority = sanitized;
-        break;
-      case "weight":
-        effectiveUpdates.weight = sanitized;
-        break;
-      case "initiationOptions":
-        effectiveUpdates.initiationOptions = sanitized;
-        break;
-      case "startDate":
-        effectiveUpdates.startDate = sanitized;
-        break;
-      default:
-        break;
+    const effectiveUpdates: ProjectFieldOverrideUpdate = {};
+
+    for (const key of providedKeys) {
+      let sanitized: string | null;
+      try {
+        sanitized = sanitizePayloadValue(key, record[key]);
+      } catch (error) {
+        return NextResponse.json(
+          { error: (error as Error).message },
+          { status: 400 },
+        );
+      }
+
+      const currentValue = (() => {
+        switch (key) {
+          case "priority":
+            return detail.item.issueTodoProjectPriority;
+          case "weight":
+            return detail.item.issueTodoProjectWeight;
+          case "initiationOptions":
+            return detail.item.issueTodoProjectInitiationOptions;
+          case "startDate":
+            return detail.item.issueTodoProjectStartDate;
+          default:
+            return null;
+        }
+      })();
+
+      const normalizedCurrent = normalizeComparison(key, currentValue);
+      const normalizedNext = normalizeComparison(key, sanitized);
+
+      let normalizedExpected: string | null | undefined;
+      try {
+        const expectedEntry = parseExpectedEntry(expectedPayload, key);
+        if (expectedEntry) {
+          normalizedExpected = normalizeComparison(key, expectedEntry.value);
+        }
+      } catch (error) {
+        return NextResponse.json(
+          { error: (error as Error).message },
+          { status: 400 },
+        );
+      }
+
+      if (normalizedCurrent === normalizedNext) {
+        continue;
+      }
+
+      if (
+        normalizedExpected !== undefined &&
+        normalizedExpected !== normalizedCurrent
+      ) {
+        const refreshed = await resolveIssueItem(id);
+        const label = FIELD_LABEL_MAP[key];
+        return NextResponse.json(
+          {
+            error: `${label} 값이 이미 변경되었어요. 최신 값을 불러왔어요.`,
+            item: refreshed?.item ?? detail.item,
+          },
+          { status: 409 },
+        );
+      }
+
+      switch (key) {
+        case "priority":
+          effectiveUpdates.priority = sanitized;
+          break;
+        case "weight":
+          effectiveUpdates.weight = sanitized;
+          break;
+        case "initiationOptions":
+          effectiveUpdates.initiationOptions = sanitized;
+          break;
+        case "startDate":
+          effectiveUpdates.startDate = sanitized;
+          break;
+        default:
+          break;
+      }
     }
-  }
 
-  if (
-    effectiveUpdates.priority === undefined &&
-    effectiveUpdates.weight === undefined &&
-    effectiveUpdates.initiationOptions === undefined &&
-    effectiveUpdates.startDate === undefined
-  ) {
-    return NextResponse.json({ item: detail.item });
-  }
+    if (
+      effectiveUpdates.priority === undefined &&
+      effectiveUpdates.weight === undefined &&
+      effectiveUpdates.initiationOptions === undefined &&
+      effectiveUpdates.startDate === undefined
+    ) {
+      return NextResponse.json({ item: detail.item });
+    }
 
-  await applyProjectFieldOverrides(id, effectiveUpdates);
-  await refreshActivityItemsSnapshot({ ids: [id] });
-  const updated = await resolveIssueItem(id);
-  return NextResponse.json({ item: updated?.item ?? detail.item });
-}
+    await applyProjectFieldOverrides(id, effectiveUpdates);
+    await refreshActivityItemsSnapshot({ ids: [id] });
+    const updated = await resolveIssueItem(id);
+    return NextResponse.json({ item: updated?.item ?? detail.item });
+  },
+);
 
-export async function DELETE(_: Request, context: RouteParams) {
-  const resolvedParams = await context.params;
-  const rawId = resolvedParams?.id ?? "";
-  const id = decodeURIComponent(rawId.trim());
-  if (!id) {
-    return NextResponse.json({ error: "Invalid issue id." }, { status: 400 });
-  }
+export const DELETE = adminRoute<{ id: string }>(
+  async (_request, _session, context) => {
+    const resolvedParams = await context.params;
+    const rawId = resolvedParams?.id ?? "";
+    const id = decodeURIComponent(rawId.trim());
+    if (!id) {
+      return NextResponse.json({ error: "Invalid issue id." }, { status: 400 });
+    }
 
-  const detail = await resolveIssueItem(id);
-  if (!detail) {
-    return NextResponse.json({ error: "Issue not found." }, { status: 404 });
-  }
+    const detail = await resolveIssueItem(id);
+    if (!detail) {
+      return NextResponse.json({ error: "Issue not found." }, { status: 404 });
+    }
 
-  if (isLockedStatus(detail.item.issueTodoProjectStatus)) {
-    return NextResponse.json(
-      {
-        error: "To-do 프로젝트가 이 값을 관리하고 있어요.",
-        todoStatus: detail.item.issueTodoProjectStatus,
-      },
-      { status: 409 },
-    );
-  }
+    if (isLockedStatus(detail.item.issueTodoProjectStatus)) {
+      return NextResponse.json(
+        {
+          error: "To-do 프로젝트가 이 값을 관리하고 있어요.",
+          todoStatus: detail.item.issueTodoProjectStatus,
+        },
+        { status: 409 },
+      );
+    }
 
-  await clearProjectFieldOverrides(id);
-  await refreshActivityItemsSnapshot({ ids: [id] });
-  const updated = await resolveIssueItem(id);
-  return NextResponse.json({ item: updated?.item ?? detail.item });
-}
+    await clearProjectFieldOverrides(id);
+    await refreshActivityItemsSnapshot({ ids: [id] });
+    const updated = await resolveIssueItem(id);
+    return NextResponse.json({ item: updated?.item ?? detail.item });
+  },
+);

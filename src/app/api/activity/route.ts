@@ -1,17 +1,16 @@
 import { NextResponse } from "next/server";
 import { parseActivityListParams } from "@/lib/activity/params";
 import { getActivityItems } from "@/lib/activity/service";
-import { readActiveSession } from "@/lib/auth/session";
+import { authenticatedRoute } from "@/lib/api/route-handler";
 
-export async function GET(request: Request) {
+export const GET = authenticatedRoute(async (request, session) => {
   const url = new URL(request.url);
   const searchParams = url.searchParams;
   const params = parseActivityListParams(searchParams);
 
   try {
-    const session = await readActiveSession();
     const result = await getActivityItems(params, {
-      userId: session?.userId ?? null,
+      userId: session.userId,
     });
     return NextResponse.json(result);
   } catch (error) {
@@ -21,4 +20,4 @@ export async function GET(request: Request) {
       { status: 500 },
     );
   }
-}
+});

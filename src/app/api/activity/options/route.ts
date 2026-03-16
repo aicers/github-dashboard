@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-
 import { getActivityFilterOptions } from "@/lib/activity/service";
+import { authenticatedRoute } from "@/lib/api/route-handler";
 
-export async function GET() {
+export const GET = authenticatedRoute(async () => {
   try {
     const options = await getActivityFilterOptions();
     return NextResponse.json(options);
@@ -13,4 +13,4 @@ export async function GET() {
       { status: 500 },
     );
   }
-}
+});
