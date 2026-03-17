@@ -238,8 +238,10 @@ repeats the same steps for each day slice in the requested range.
   re-opens.
 - No extra libraries are required—the server uses the built-in Next.js App
   Router streaming response API, and the browser relies on native `EventSource`
-  with automatic reconnection. Expect a single SSE connection per browser tab
-  (~50 concurrent clients are well within the Node runtime budget).
+  with automatic reconnection. Expect a single SSE connection per browser tab.
+  The server currently allows up to 25 concurrent sync stream subscribers and
+  returns `429 Too Many Requests` with `Retry-After: 5` when that cap is
+  reached.
 
 ### Activity filters and optional people chips
 
