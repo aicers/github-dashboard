@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-
+import { getMutationRequestViolation } from "@/lib/api/request-guards";
 import type { ReauthAction } from "@/lib/auth/reauth";
 import { isReauthAction } from "@/lib/auth/reauth";
 import { checkReauthRequired } from "@/lib/auth/reauth-guard";
@@ -27,6 +27,10 @@ function forbidden(): NextResponse {
     { success: false, message: "Administrator access is required." },
     { status: 403 },
   );
+}
+
+function crossOriginMutationForbidden(message: string): NextResponse {
+  return NextResponse.json({ success: false, message }, { status: 403 });
 }
 
 function reauthNeeded(): NextResponse {
@@ -66,6 +70,10 @@ export function authenticatedRoute(handler: any): any {
     const session = await readActiveSession();
     if (!session) {
       return unauthorized();
+    }
+    const mutationViolation = getMutationRequestViolation(request);
+    if (mutationViolation) {
+      return crossOriginMutationForbidden(mutationViolation);
     }
     return handler(request, session, context);
   };
@@ -137,6 +145,10 @@ export function adminRoute(reauthActionOrHandler: any, handlerArg?: any): any {
     }
     if (!session.isAdmin) {
       return forbidden();
+    }
+    const mutationViolation = getMutationRequestViolation(request);
+    if (mutationViolation) {
+      return crossOriginMutationForbidden(mutationViolation);
     }
     if (reauthAction) {
       const needsReauth = await checkReauthRequired(

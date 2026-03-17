@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 
 const encoder = new TextEncoder();
 const HEARTBEAT_INTERVAL_MS = 25_000;
+export const SYNC_STREAM_MAX_SUBSCRIBERS = 25;
 
 function encodeEvent(eventName: string, payload: unknown) {
   const data =
@@ -26,6 +27,22 @@ function encodeRetry(delayMs: number) {
 }
 
 export const GET = authenticatedRoute(async (request) => {
+  if (getSyncSubscriberCount() >= SYNC_STREAM_MAX_SUBSCRIBERS) {
+    return Response.json(
+      {
+        success: false,
+        message:
+          "Too many sync stream connections are already active. Please try again shortly.",
+      },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": "5",
+        },
+      },
+    );
+  }
+
   let cleanup: (() => void) | null = null;
 
   const stream = new ReadableStream<Uint8Array>({

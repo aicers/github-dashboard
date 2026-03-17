@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import {
+  consumeRateLimit,
+  createRetryAfterHeaders,
+} from "@/lib/api/rate-limit";
 import { authenticatedRoute } from "@/lib/api/route-handler";
 import { fetchRepositorySummary } from "@/lib/github";
 
@@ -9,7 +13,30 @@ const requestSchema = z.object({
   name: z.string().min(1, "Repository name is required."),
 });
 
-export const POST = authenticatedRoute(async (request) => {
+export const GITHUB_REPOSITORY_RATE_LIMIT_MAX_REQUESTS = 20;
+export const GITHUB_REPOSITORY_RATE_LIMIT_WINDOW_MS = 60_000;
+
+export const POST = authenticatedRoute(async (request, session) => {
+  const rateLimit = consumeRateLimit({
+    scope: "github-repository",
+    key: session.userId,
+    limit: GITHUB_REPOSITORY_RATE_LIMIT_MAX_REQUESTS,
+    windowMs: GITHUB_REPOSITORY_RATE_LIMIT_WINDOW_MS,
+  });
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      {
+        success: false,
+        message:
+          "Too many repository lookup requests. Please try again shortly.",
+      },
+      {
+        status: 429,
+        headers: createRetryAfterHeaders(rateLimit.retryAfterSeconds),
+      },
+    );
+  }
+
   try {
     const payload = await request.json();
     const { owner, name } = requestSchema.parse(payload);
