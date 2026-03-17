@@ -346,6 +346,40 @@ function buildBackupFilename() {
   return `db-backup-${timestampLabel()}.dump`;
 }
 
+function isBackupFilenameCandidate(filename: string) {
+  return (
+    filename.startsWith("db-backup-") &&
+    !filename.endsWith(BACKUP_METADATA_SUFFIX)
+  );
+}
+
+function isPathWithinDirectory(filePath: string, directory: string) {
+  const relativePath = path.relative(directory, filePath);
+  return (
+    relativePath === "" ||
+    (!relativePath.startsWith("..") && !path.isAbsolute(relativePath))
+  );
+}
+
+function resolveTrustedFilesystemRestorePath(filePath: string) {
+  const normalizedPath = path.resolve(filePath);
+  const backupDirectory = path.resolve(env.DB_BACKUP_DIRECTORY);
+
+  if (!isPathWithinDirectory(normalizedPath, backupDirectory)) {
+    throw new Error(
+      "Backup restore path must stay inside the configured backup directory.",
+    );
+  }
+
+  if (!isBackupFilenameCandidate(path.basename(normalizedPath))) {
+    throw new Error(
+      "Backup restore path must reference a trusted backup file.",
+    );
+  }
+
+  return normalizedPath;
+}
+
 function toBackupMetadataPath(filePath: string) {
   return `${filePath}${BACKUP_METADATA_SUFFIX}`;
 }
@@ -464,11 +498,7 @@ async function discoverFilesystemBackups(options: {
     }
 
     const filename = entry.name;
-    if (!filename.startsWith("db-backup-")) {
-      continue;
-    }
-
-    if (filename.endsWith(BACKUP_METADATA_SUFFIX)) {
+    if (!isBackupFilenameCandidate(filename)) {
       continue;
     }
 
@@ -1081,7 +1111,7 @@ export async function restoreDatabaseBackup(params: {
     if (!filePathValue) {
       throw new Error("Backup file path is required.");
     }
-    const normalizedPath = path.resolve(filePathValue);
+    const normalizedPath = resolveTrustedFilesystemRestorePath(filePathValue);
     await access(normalizedPath, fsConstants.R_OK).catch(() => {
       throw new Error("Backup file is not accessible on disk.");
     });

@@ -648,6 +648,40 @@ describe("restoreDatabaseBackup", () => {
       }),
     );
   });
+
+  it("rejects filesystem restores outside the configured backup directory", async () => {
+    ensureSchemaMock.mockResolvedValue(undefined);
+
+    const { restoreDatabaseBackup } = await loadService();
+
+    await expect(
+      restoreDatabaseBackup({
+        filePath: "/tmp/db-backup-outside.dump",
+      }),
+    ).rejects.toThrow(
+      "Backup restore path must stay inside the configured backup directory.",
+    );
+
+    expect(accessMock).not.toHaveBeenCalled();
+    expect(withJobLockMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects filesystem restores for non-backup filenames", async () => {
+    ensureSchemaMock.mockResolvedValue(undefined);
+
+    const { restoreDatabaseBackup } = await loadService();
+
+    await expect(
+      restoreDatabaseBackup({
+        filePath: path.join(envValues.DB_BACKUP_DIRECTORY, "notes.txt"),
+      }),
+    ).rejects.toThrow(
+      "Backup restore path must reference a trusted backup file.",
+    );
+
+    expect(accessMock).not.toHaveBeenCalled();
+    expect(withJobLockMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("refreshScheduler", () => {
