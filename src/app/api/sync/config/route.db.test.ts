@@ -224,6 +224,30 @@ describe("sync config API routes", () => {
     expect(users.map((user) => user.id)).toEqual(["user", "user-1", "user-2"]);
   });
 
+  it("rejects cross-origin configuration updates", async () => {
+    const response = await handlers.PATCH(
+      new NextRequest("http://localhost/api/sync/config", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: "https://evil.example",
+        },
+        body: JSON.stringify({
+          orgName: "blocked-org",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      success: false,
+      message: "Cross-origin state-changing requests are not allowed.",
+    });
+
+    const config = await getSyncConfig();
+    expect(config?.org_name).toBe("seed-org");
+  });
+
   it("updates repository maintainers when requested by an admin user", async () => {
     await seedRepository("repo-1", "user");
     await seedRepository("repo-2", "user");

@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
+import { getMutationRequestViolation } from "@/lib/api/request-guards";
 import { authenticatedRoute } from "@/lib/api/route-handler";
 import { checkReauthRequired } from "@/lib/auth/reauth-guard";
 import { readActiveSession } from "@/lib/auth/session";
@@ -140,6 +141,14 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json(
       { success: false, message: "Authentication required." },
       { status: 401 },
+    );
+  }
+
+  const mutationViolation = getMutationRequestViolation(request);
+  if (mutationViolation) {
+    return NextResponse.json(
+      { success: false, message: mutationViolation },
+      { status: 403 },
     );
   }
 

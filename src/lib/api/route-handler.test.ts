@@ -1,9 +1,9 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { CROSS_ORIGIN_MUTATION_MESSAGE } from "@/lib/api/request-guards";
 import { checkReauthRequired } from "@/lib/auth/reauth-guard";
 import type { ActiveSession } from "@/lib/auth/session";
 import { readActiveSession } from "@/lib/auth/session";
-
 import { adminRoute, authenticatedRoute } from "./route-handler";
 
 vi.mock("@/lib/auth/session", () => ({
@@ -94,6 +94,45 @@ describe("authenticatedRoute", () => {
     expect(response.status).toBe(201);
     expect(await response.json()).toEqual({ data: "value" });
   });
+
+  it("rejects cross-origin state-changing requests", async () => {
+    vi.mocked(readActiveSession).mockResolvedValue(mockSession);
+    const handler = vi.fn(async () => new Response("ok", { status: 200 }));
+    const route = authenticatedRoute(handler);
+
+    const response = await route(
+      new Request("http://localhost/test", {
+        method: "POST",
+        headers: {
+          Origin: "https://evil.example",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      success: false,
+      message: CROSS_ORIGIN_MUTATION_MESSAGE,
+    });
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("allows same-origin state-changing requests", async () => {
+    vi.mocked(readActiveSession).mockResolvedValue(mockSession);
+    const handler = vi.fn(async () => new Response("ok", { status: 200 }));
+    const route = authenticatedRoute(handler);
+
+    const request = new Request("http://localhost/test", {
+      method: "POST",
+      headers: {
+        Origin: "http://localhost",
+      },
+    });
+    const response = await route(request);
+
+    expect(response.status).toBe(200);
+    expect(handler).toHaveBeenCalledWith(request, mockSession, undefined);
+  });
 });
 
 // ---- adminRoute ----
@@ -169,6 +208,29 @@ describe("adminRoute", () => {
 
     await route(new NextRequest("http://localhost/test", { method: "POST" }));
 
+    expect(checkReauthRequired).not.toHaveBeenCalled();
+  });
+
+  it("rejects cross-site mutation requests before reaching the handler", async () => {
+    vi.mocked(readActiveSession).mockResolvedValue(adminSession);
+    const handler = vi.fn(async () => new Response("ok", { status: 200 }));
+    const route = adminRoute(handler);
+
+    const response = await route(
+      new NextRequest("http://localhost/test", {
+        method: "POST",
+        headers: {
+          "Sec-Fetch-Site": "cross-site",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      success: false,
+      message: CROSS_ORIGIN_MUTATION_MESSAGE,
+    });
+    expect(handler).not.toHaveBeenCalled();
     expect(checkReauthRequired).not.toHaveBeenCalled();
   });
 });

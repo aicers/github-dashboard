@@ -3,14 +3,26 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { readActiveSession } from "@/lib/auth/session";
 import type { SessionRecord } from "@/lib/auth/session-store";
-import { emitSyncEvent } from "@/lib/sync/event-bus";
+import { emitSyncEvent, getSyncSubscriberCount } from "@/lib/sync/event-bus";
 import type { SyncStreamEvent } from "@/lib/sync/events";
 
 vi.mock("@/lib/auth/session", () => ({
   readActiveSession: vi.fn(),
 }));
 
+vi.mock("@/lib/sync/event-bus", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/sync/event-bus")>(
+    "@/lib/sync/event-bus",
+  );
+
+  return {
+    ...actual,
+    getSyncSubscriberCount: vi.fn(() => actual.getSyncSubscriberCount()),
+  };
+});
+
 const readActiveSessionMock = vi.mocked(readActiveSession);
+const getSyncSubscriberCountMock = vi.mocked(getSyncSubscriberCount);
 
 function buildSession(overrides: Partial<SessionRecord> = {}): SessionRecord {
   const base = {
@@ -109,5 +121,21 @@ describe("GET /api/sync/stream", () => {
     expect(eventPayload).toContain('"runId":123');
 
     await reader.cancel();
+  });
+
+  it("returns 429 when too many subscribers are already connected", async () => {
+    const { GET, SYNC_STREAM_MAX_SUBSCRIBERS } = await import("./route");
+    getSyncSubscriberCountMock.mockReturnValueOnce(SYNC_STREAM_MAX_SUBSCRIBERS);
+
+    const request = new NextRequest("http://localhost/api/sync/stream");
+    const response = await GET(request);
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("5");
+    expect(await response.json()).toEqual({
+      success: false,
+      message:
+        "Too many sync stream connections are already active. Please try again shortly.",
+    });
   });
 });

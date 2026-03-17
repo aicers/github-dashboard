@@ -2,6 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { resetRateLimitState } from "@/lib/api/rate-limit";
 import { readActiveSession } from "@/lib/auth/session";
 import type { SessionRecord } from "@/lib/auth/session-store";
 import type { RepositorySummary } from "@/lib/github";
@@ -41,7 +42,10 @@ function buildSession(overrides: Partial<SessionRecord> = {}): SessionRecord {
 function buildRequest(body: unknown) {
   return new Request("http://localhost/api/github/repository", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Origin: "http://localhost",
+    },
     body: JSON.stringify(body),
   });
 }
@@ -49,6 +53,7 @@ function buildRequest(body: unknown) {
 describe("POST /api/github/repository", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetRateLimitState();
     readActiveSessionMock.mockResolvedValue(buildSession());
   });
 
@@ -126,6 +131,68 @@ describe("POST /api/github/repository", () => {
     expect(await response.json()).toEqual({
       success: false,
       message: "Repository vercel/next.js was not found.",
+    });
+  });
+
+  it("rejects cross-origin requests", async () => {
+    const { POST } = await import("./route");
+    const response = await POST(
+      new Request("http://localhost/api/github/repository", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: "https://evil.example",
+        },
+        body: JSON.stringify({ owner: "vercel", name: "next.js" }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      success: false,
+      message: "Cross-origin state-changing requests are not allowed.",
+    });
+    expect(fetchRepositorySummaryMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 429 when the repository lookup rate limit is exceeded", async () => {
+    const summary: RepositorySummary = {
+      name: "next.js",
+      description: "The React Framework",
+      url: "https://github.com/vercel/next.js",
+      stars: 1,
+      forks: 2,
+      openIssues: 3,
+      openPullRequests: 4,
+      defaultBranch: "canary",
+      updatedAt: "2024-01-01T00:00:00.000Z",
+    };
+    fetchRepositorySummaryMock.mockResolvedValue(summary);
+
+    const { POST, GITHUB_REPOSITORY_RATE_LIMIT_MAX_REQUESTS } = await import(
+      "./route"
+    );
+
+    for (
+      let index = 0;
+      index < GITHUB_REPOSITORY_RATE_LIMIT_MAX_REQUESTS;
+      index += 1
+    ) {
+      const response = await POST(
+        buildRequest({ owner: "vercel", name: "next.js" }),
+      );
+      expect(response.status).toBe(200);
+    }
+
+    const response = await POST(
+      buildRequest({ owner: "vercel", name: "next.js" }),
+    );
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBeTruthy();
+    expect(await response.json()).toEqual({
+      success: false,
+      message: "Too many repository lookup requests. Please try again shortly.",
     });
   });
 });

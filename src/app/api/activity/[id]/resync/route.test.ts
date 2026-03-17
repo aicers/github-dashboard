@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { POST } from "@/app/api/activity/[id]/resync/route";
 import { resyncActivityItem } from "@/lib/activity/item-resync";
+import { resetRateLimitState } from "@/lib/api/rate-limit";
 import { readActiveSession } from "@/lib/auth/session";
 import type { SessionRecord } from "@/lib/auth/session-store";
 
@@ -38,10 +39,18 @@ function buildSession(overrides: Partial<SessionRecord> = {}): SessionRecord {
 function buildRequest(id: string) {
   return new Request(`http://localhost/api/activity/${id}/resync`, {
     method: "POST",
+    headers: {
+      Origin: "http://localhost",
+    },
   });
 }
 
 describe("POST /api/activity/[id]/resync", () => {
+  beforeEach(() => {
+    resetRateLimitState();
+    vi.clearAllMocks();
+  });
+
   it("returns 401 when no session is present", async () => {
     readActiveSessionMock.mockResolvedValueOnce(null);
 
@@ -117,6 +126,58 @@ describe("POST /api/activity/[id]/resync", () => {
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({
       error: "Failed to load item data from GitHub.",
+    });
+  });
+
+  it("rejects cross-origin requests", async () => {
+    readActiveSessionMock.mockResolvedValueOnce(buildSession());
+
+    const response = await POST(
+      new Request("http://localhost/api/activity/abc/resync", {
+        method: "POST",
+        headers: {
+          Origin: "https://evil.example",
+        },
+      }),
+      {
+        params: Promise.resolve({ id: "abc" }),
+      },
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      error: "Cross-origin state-changing requests are not allowed.",
+    });
+    expect(resyncActivityItemMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 429 when the resync rate limit is exceeded", async () => {
+    readActiveSessionMock.mockResolvedValue(buildSession());
+    resyncActivityItemMock.mockResolvedValue({
+      nodeId: "abc",
+      type: "issue",
+    });
+
+    const routeModule = await import("@/app/api/activity/[id]/resync/route");
+    for (
+      let index = 0;
+      index < routeModule.ACTIVITY_RESYNC_RATE_LIMIT_MAX_REQUESTS;
+      index += 1
+    ) {
+      const response = await routeModule.POST(buildRequest("abc"), {
+        params: Promise.resolve({ id: "abc" }),
+      });
+      expect(response.status).toBe(200);
+    }
+
+    const response = await routeModule.POST(buildRequest("abc"), {
+      params: Promise.resolve({ id: "abc" }),
+    });
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBeTruthy();
+    expect(await response.json()).toEqual({
+      error: "Too many resync requests. Please try again shortly.",
     });
   });
 });
