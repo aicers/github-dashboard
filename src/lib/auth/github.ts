@@ -1,7 +1,7 @@
 import { isAdminUser } from "@/lib/auth/admin";
 import { ensureSchema } from "@/lib/db";
 import { type DbActor, getSyncConfig, upsertUser } from "@/lib/db/operations";
-import { env } from "@/lib/env";
+import { assertProductionAuthEnv, env } from "@/lib/env";
 
 const GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize";
 const GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token";
@@ -43,6 +43,8 @@ export type GithubOAuthProfile = {
 };
 
 function requireOAuthConfig(): GithubOAuthConfig {
+  assertProductionAuthEnv();
+
   const clientId = env.GITHUB_OAUTH_CLIENT_ID;
   const clientSecret = env.GITHUB_OAUTH_CLIENT_SECRET;
 
@@ -261,6 +263,8 @@ export async function verifyOrganizationMembership({
   login,
   userId,
 }: VerifyMembershipOptions): Promise<MembershipResult> {
+  assertProductionAuthEnv();
+
   const targetOrg = env.GITHUB_ALLOWED_ORG?.trim();
   if (!targetOrg) {
     return { allowed: true, orgSlug: null };

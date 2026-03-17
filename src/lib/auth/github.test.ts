@@ -32,6 +32,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   process.env = { ...originalEnv };
 });
 
@@ -59,6 +60,23 @@ describe("GitHub OAuth helpers", () => {
     expect(parsed.searchParams.get("scope")).toBe(
       "read:user user:email read:org",
     );
+  });
+
+  test("buildAuthorizeUrl fails safe in production when auth prerequisites are missing", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    process.env.GITHUB_OAUTH_CLIENT_ID = "client-id";
+    process.env.GITHUB_OAUTH_CLIENT_SECRET = "client-secret";
+    process.env.SESSION_SECRET = "a".repeat(32);
+    delete process.env.GITHUB_ALLOWED_ORG;
+
+    const { buildAuthorizeUrl } = await import("./github");
+
+    expect(() =>
+      buildAuthorizeUrl({
+        state: "state-value",
+        redirectUri: "http://localhost/callback",
+      }),
+    ).toThrow(/GITHUB_ALLOWED_ORG/);
   });
 
   test("buildStateCookie sets secure defaults", async () => {
@@ -117,7 +135,8 @@ describe("GitHub OAuth helpers", () => {
     expect(profile.emails).toEqual(["octo@github.com"]);
   });
 
-  test("verifyOrganizationMembership allows when no org is configured", async () => {
+  test("verifyOrganizationMembership allows when no org is configured outside production", async () => {
+    vi.stubEnv("NODE_ENV", "test");
     delete process.env.GITHUB_ALLOWED_ORG;
 
     const { verifyOrganizationMembership } = await import("./github");

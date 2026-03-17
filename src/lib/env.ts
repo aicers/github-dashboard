@@ -4,6 +4,13 @@ import path from "node:path";
 
 import { z } from "zod";
 
+const PRODUCTION_AUTH_REQUIRED_ENV_KEYS = [
+  "GITHUB_ALLOWED_ORG",
+  "GITHUB_OAUTH_CLIENT_ID",
+  "GITHUB_OAUTH_CLIENT_SECRET",
+  "SESSION_SECRET",
+] as const;
+
 function coerceOptionalString(value: string | null | undefined) {
   if (typeof value !== "string") {
     return null;
@@ -167,6 +174,18 @@ const resolvedBackupDirectory = parsed.DB_BACKUP_DIRECTORY
     : path.resolve(process.cwd(), parsed.DB_BACKUP_DIRECTORY)
   : defaultBackupDirectory;
 
+function formatEnvKeyList(keys: readonly string[]) {
+  if (keys.length <= 1) {
+    return keys[0] ?? "";
+  }
+
+  if (keys.length === 2) {
+    return `${keys[0]} and ${keys[1]}`;
+  }
+
+  return `${keys.slice(0, -1).join(", ")}, and ${keys.at(-1)}`;
+}
+
 export const env = {
   ...parsed,
   SYNC_INTERVAL_MINUTES: parsed.SYNC_INTERVAL_MINUTES ?? 60,
@@ -191,3 +210,18 @@ export const env = {
     : [],
   ACTIVITY_SAVED_FILTER_LIMIT: parsed.ACTIVITY_SAVED_FILTER_LIMIT ?? 30,
 };
+
+export function assertProductionAuthEnv() {
+  if (process.env.NODE_ENV !== "production") {
+    return;
+  }
+
+  const missing = PRODUCTION_AUTH_REQUIRED_ENV_KEYS.filter((key) => !env[key]);
+  if (missing.length === 0) {
+    return;
+  }
+
+  throw new Error(
+    `Production authentication requires ${formatEnvKeyList(missing)} to be set.`,
+  );
+}
