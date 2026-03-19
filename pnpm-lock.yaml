@@ -74,8 +74,8 @@ importers:
         version: 4.3.6
     devDependencies:
       '@next/env':
-        specifier: ^16.1.7
-        version: 16.1.7
+        specifier: ^16.2.0
+        version: 16.2.0
       '@playwright/test':
         specifier: ^1.58.2
         version: 1.58.2
@@ -749,8 +749,8 @@ packages:
   '@next/env@16.1.6':
     resolution: {integrity: sha512-N1ySLuZjnAtN3kFnwhAwPvZah8RJxKasD7x1f8shFqhncnWZn4JMfg37diLNuoHsLAlrDfM3g4mawVdtAG8XLQ==}
 
-  '@next/env@16.1.7':
-    resolution: {integrity: sha512-rJJbIdJB/RQr2F1nylZr/PJzamvNNhfr3brdKP6s/GW850jbtR70QlSfFselvIBbcPUOlQwBakexjFzqLzF6pg==}
+  '@next/env@16.2.0':
+    resolution: {integrity: sha512-OZIbODWWAi0epQRCRjNe1VO45LOFBzgiyqmTLzIqWq6u1wrxKnAyz1HH6tgY/Mc81YzIjRPoYsPAEr4QV4l9TA==}
 
   '@next/swc-darwin-arm64@16.1.6':
     resolution: {integrity: sha512-wTzYulosJr/6nFnqGW7FrG3jfUUlEf8UjGA0/pyypJl42ExdVgC6xJgcXQ+V8QFn6niSG2Pb8+MIG1mZr2vczw==}
@@ -3336,7 +3336,7 @@ snapshots:
 
   '@next/env@16.1.6': {}
 
-  '@next/env@16.1.7': {}
+  '@next/env@16.2.0': {}
 
   '@next/swc-darwin-arm64@16.1.6':
     optional: true
