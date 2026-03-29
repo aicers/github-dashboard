@@ -156,7 +156,7 @@ export const DELETE = authenticatedRoute(async (_request, session) => {
   try {
     const profile = await getCurrentUserProfile(session.userId);
 
-    if (!profile || !profile.avatarUrl) {
+    if (!profile?.avatarUrl) {
       return NextResponse.json({ success: true });
     }
 
