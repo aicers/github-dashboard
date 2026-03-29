@@ -1017,7 +1017,7 @@ async function processCandidateBatch(params: {
       }
       let resolvedUrl: string | null = null;
       let node = candidate.id ? (nodeMap.get(candidate.id) ?? null) : null;
-      if ((!node || !node.id) && candidate.url) {
+      if (!node?.id && candidate.url) {
         const fallback = await resolveNodeFromUrl({
           client,
           url: candidate.url,
@@ -1028,7 +1028,7 @@ async function processCandidateBatch(params: {
           resolvedUrl = fallback.resolvedUrl ?? null;
         }
       }
-      if (!node || !node.id) {
+      if (!node?.id) {
         const mappedId = await findIssueIdByProjectItems({
           excludeId: candidate.id,
           projectItemIds: candidate.project_item_ids ?? null,
@@ -1040,7 +1040,7 @@ async function processCandidateBatch(params: {
           }
         }
       }
-      if (!node || !node.id) {
+      if (!node?.id) {
         logger?.(
           `[realign] Node ${candidate.id} could not be resolved (url=${candidate.url ?? "unknown"}). Skipping.`,
         );

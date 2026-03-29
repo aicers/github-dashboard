@@ -202,7 +202,7 @@ export function extractTodoProjectFieldValuesNormalized(
     startDateUpdatedAt: null,
   };
 
-  if (!raw || !raw.projectItems || typeof raw.projectItems !== "object") {
+  if (!raw?.projectItems || typeof raw.projectItems !== "object") {
     return result;
   }
 
