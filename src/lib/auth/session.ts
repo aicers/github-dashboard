@@ -112,7 +112,7 @@ export async function readActiveSession(): Promise<ActiveSession | null> {
     idleTtlSeconds,
   });
 
-  if (!record || !record.orgVerified) {
+  if (!record?.orgVerified) {
     // Clean up expired/invalid sessions to avoid reusing stale identifiers.
     await deleteSessionRecord(sessionId);
     return null;

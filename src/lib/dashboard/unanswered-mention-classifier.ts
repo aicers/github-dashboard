@@ -570,7 +570,7 @@ export async function runUnansweredMentionClassification(
         continue;
       }
 
-      if (!candidate.commentBody || !candidate.commentBody.trim()) {
+      if (!candidate.commentBody?.trim()) {
         summary.skipped += 1;
         continue;
       }
