@@ -6,9 +6,9 @@ settings:
 
 overrides:
   markdown-it: 14.1.1
-  lodash: '>=4.18.1'
+  lodash: ^4.18.1
   undici: ^7.24.5
-  vite: '>=7.3.2'
+  vite: ^8.0.5
   '@types/react': 19.2.14
   '@types/react-dom': 19.2.3
 
@@ -1198,7 +1198,7 @@ packages:
     resolution: {integrity: sha512-Ize4iQtEALHDttPRCmN+FKqOl2vxTiNUhzobQFFt/BM1lRUTG7zRCLOykG/6Vo4E4hnUdfVLo5/eqKPukcWW7Q==}
     peerDependencies:
       msw: ^2.4.9
-      vite: '>=7.3.2'
+      vite: ^8.0.5
     peerDependenciesMeta:
       msw:
         optional: true
@@ -2656,7 +2656,7 @@ packages:
       '@vitest/ui': 4.1.2
       happy-dom: '*'
       jsdom: '*'
-      vite: '>=7.3.2'
+      vite: ^8.0.5
     peerDependenciesMeta:
       '@edge-runtime/vm':
         optional: true
