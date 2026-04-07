@@ -23,6 +23,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Recovered transient post-login dashboard fetch failures by refreshing and
   retrying the first unauthorized client-side requests for Analytics, People,
   Activity saved filters, and the shared sync status panel.
+- Fixed date picker calendar showing weekdays off by one (e.g., Wednesday
+  dates appearing under Tuesday) due to a mismatch between the Sunday-first
+  header and Luxon's Monday-first grid start.
 
 ## [0.3.1] - 2026-02-18
 
