@@ -32,7 +32,7 @@
     "graphql-request": "^7.4.0",
     "lucide-react": "^0.577.0",
     "luxon": "^3.7.2",
-    "next": "^16.1.6",
+    "next": "^16.2.2",
     "pg": "^8.20.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -73,7 +73,8 @@
     "overrides": {
       "markdown-it": "14.1.1",
       "lodash": ">=4.18.1",
-      "undici": ">=7.19.2",
+      "undici": ">=7.24.5 <8",
+      "vite": ">=7.3.2",
       "@types/react": "19.2.14",
       "@types/react-dom": "19.2.3"
     }
