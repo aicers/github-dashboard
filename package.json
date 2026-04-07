@@ -72,7 +72,7 @@
   "pnpm": {
     "overrides": {
       "markdown-it": "14.1.1",
-      "lodash": ">=4.17.23",
+      "lodash": ">=4.18.1",
       "undici": ">=7.19.2",
       "@types/react": "19.2.14",
       "@types/react-dom": "19.2.3"
