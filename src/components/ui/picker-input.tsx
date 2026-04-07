@@ -316,7 +316,9 @@ export const PickerInput = forwardRef<HTMLInputElement, PickerInputProps>(
 
     const renderCalendar = () => {
       const startOfMonth = calendarMonth.startOf("month");
-      const startOfGrid = startOfMonth.startOf("week");
+      // Luxon startOf("week") defaults to Monday; shift back one day to
+      // align with the Sunday-first WEEKDAY_LABELS header.
+      const startOfGrid = startOfMonth.startOf("week").minus({ days: 1 });
       const days: DateTime[] = [];
       for (let index = 0; index < 42; index += 1) {
         days.push(startOfGrid.plus({ days: index }));
