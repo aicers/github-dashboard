@@ -29,6 +29,8 @@ type PickerInputProps = Omit<ComponentPropsWithoutRef<"input">, "type"> & {
   iconButtonClassName?: string;
   pickerButtonLabel?: string;
   onValueChange?: (value: string) => void;
+  /** Show the Clear button inside the calendar panel. @default true */
+  showClear?: boolean;
 };
 
 const WEEKDAY_LABELS = [
@@ -148,6 +150,7 @@ export const PickerInput = forwardRef<HTMLInputElement, PickerInputProps>(
       lang,
       onChange,
       onValueChange,
+      showClear = true,
       ...props
     },
     forwardedRef,
@@ -257,7 +260,6 @@ export const PickerInput = forwardRef<HTMLInputElement, PickerInputProps>(
       const synthetic = buildSyntheticEvent(target, "");
       onChange?.(synthetic);
       onValueChange?.("");
-      setCalendarOpen(false);
       if (type === "datetime-local") {
         setTimeValue("00:00");
       }
@@ -411,13 +413,17 @@ export const PickerInput = forwardRef<HTMLInputElement, PickerInputProps>(
             </div>
           ) : null}
           <div className="mt-3 flex items-center justify-between">
-            <button
-              type="button"
-              className="text-xs text-muted-foreground hover:text-foreground"
-              onClick={handleClearDate}
-            >
-              Clear
-            </button>
+            {showClear ? (
+              <button
+                type="button"
+                className="text-xs text-muted-foreground hover:text-foreground"
+                onClick={handleClearDate}
+              >
+                Clear
+              </button>
+            ) : (
+              <span />
+            )}
             <button
               type="button"
               className="text-xs text-primary hover:underline"
