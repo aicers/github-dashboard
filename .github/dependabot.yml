@@ -32,6 +32,9 @@ updates:
       - dependency-name: "@types/node"
         versions:
           - ">=25"
+      - dependency-name: "typescript"
+        versions:
+          - ">=6"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
