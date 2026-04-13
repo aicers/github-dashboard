@@ -1,4 +1,4 @@
-import { Github } from "lucide-react";
+import { MarkGithubIcon } from "@primer/octicons-react";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -55,7 +55,7 @@ export default function Home() {
               href="/auth/github?next=/dashboard/activity"
               className="flex items-center gap-4"
             >
-              <Github className="w-4 h-4" />
+              <MarkGithubIcon size={16} />
               Sign in with GitHub
             </Link>
           </Button>
