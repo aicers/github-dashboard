@@ -367,29 +367,31 @@ export async function fetchIndividualCoverageMetrics(
          AND pr.github_merged_at BETWEEN $2 AND $3
          AND ${DEPENDABOT_FILTER}
      ),
-     participation AS (
-       SELECT
-         pr.id,
-         COUNT(DISTINCT r.author_id) FILTER (WHERE r.github_submitted_at BETWEEN $2 AND $3) AS reviewer_count
-       FROM pull_requests pr
-       LEFT JOIN reviews r ON r.pull_request_id = pr.id
-       WHERE pr.id IN (SELECT id FROM prs_in_range)
-       GROUP BY pr.id
+     person_requests AS (
+       SELECT rr.id
+       FROM review_requests rr
+       JOIN prs_in_range pr ON pr.id = rr.pull_request_id
+       WHERE rr.reviewer_id = $1
+         AND rr.requested_at BETWEEN $2 AND $3
      ),
-     person_participation AS (
-       SELECT
-         pr.id,
-         COUNT(DISTINCT r.author_id) FILTER (WHERE r.github_submitted_at BETWEEN $2 AND $3) AS reviewer_count
-       FROM pull_requests pr
-       JOIN reviews r ON r.pull_request_id = pr.id
-       WHERE pr.id IN (SELECT pull_request_id FROM reviewer_prs)
-       GROUP BY pr.id
+     person_responses AS (
+       SELECT DISTINCT rr.id
+       FROM review_requests rr
+       JOIN prs_in_range pr ON pr.id = rr.pull_request_id
+       JOIN reviews r ON r.pull_request_id = rr.pull_request_id
+         AND r.author_id = rr.reviewer_id
+       WHERE rr.reviewer_id = $1
+         AND rr.requested_at BETWEEN $2 AND $3
+         AND r.github_submitted_at BETWEEN $2 AND $3
      )
      SELECT
        CASE WHEN (SELECT COUNT(*) FROM prs_in_range) = 0 THEN NULL
             ELSE (SELECT COUNT(*) FROM reviewer_prs)::numeric / (SELECT COUNT(*) FROM prs_in_range)::numeric
        END AS coverage,
-       (SELECT AVG(reviewer_count) FROM person_participation) AS participation
+       CASE WHEN (SELECT COUNT(*) FROM person_requests) = 0 THEN NULL
+            ELSE (SELECT COUNT(*) FROM person_responses)::numeric
+                 / (SELECT COUNT(*) FROM person_requests)::numeric
+       END AS participation
      `,
     params,
   );

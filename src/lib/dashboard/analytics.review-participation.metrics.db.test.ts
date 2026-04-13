@@ -9,9 +9,11 @@ import {
   type DbPullRequest,
   type DbRepository,
   type DbReview,
+  type DbReviewRequest,
   upsertPullRequest,
   upsertRepository,
   upsertReview,
+  upsertReviewRequest,
   upsertUser,
 } from "@/lib/db/operations";
 import {
@@ -27,7 +29,10 @@ const PERIODS = PERIOD_KEYS;
 
 type ReviewerSpec = {
   reviewerId: string;
+  /** undefined = use default (responded); null = no review submitted */
   submittedAt?: string | null;
+  /** Whether a review_request exists for this reviewer. Default: true */
+  requested?: boolean;
 };
 
 type ParticipationSpec = {
@@ -77,7 +82,7 @@ function buildPullRequest({
   };
 }
 
-async function insertReviews({
+async function insertReviewsAndRequests({
   pullRequestId,
   reviewers,
   defaultSubmittedAt,
@@ -91,24 +96,37 @@ async function insertReviews({
   }
 
   await Promise.all(
-    reviewers.map((entry, index) => {
-      const review: DbReview = {
-        id: `${pullRequestId}-review-${index + 1}`,
-        pullRequestId,
-        authorId: entry.reviewerId,
-        state: entry.submittedAt === null ? "COMMENTED" : "APPROVED",
-        submittedAt:
-          entry.submittedAt === undefined
-            ? defaultSubmittedAt
-            : entry.submittedAt,
-        raw: {},
-      } satisfies DbReview;
+    reviewers.flatMap((entry, index) => {
+      const tasks: Promise<void>[] = [];
 
-      if (entry.submittedAt === null) {
-        review.submittedAt = null;
+      const requested = entry.requested !== false;
+      if (requested) {
+        const reviewRequest: DbReviewRequest = {
+          id: `${pullRequestId}-rr-${index + 1}`,
+          pullRequestId,
+          reviewerId: entry.reviewerId,
+          requestedAt: hoursBefore(defaultSubmittedAt, 4),
+          raw: {},
+        };
+        tasks.push(upsertReviewRequest(reviewRequest));
       }
 
-      return upsertReview(review);
+      if (entry.submittedAt !== null) {
+        const review: DbReview = {
+          id: `${pullRequestId}-review-${index + 1}`,
+          pullRequestId,
+          authorId: entry.reviewerId,
+          state: "APPROVED",
+          submittedAt:
+            entry.submittedAt === undefined
+              ? defaultSubmittedAt
+              : entry.submittedAt,
+          raw: {},
+        };
+        tasks.push(upsertReview(review));
+      }
+
+      return tasks;
     }),
   );
 }
@@ -127,16 +145,6 @@ type ParticipationExpectations = Record<
     individual: number | null;
   }
 >;
-
-function _subtractRange(
-  previousOfStart: Date,
-  previousOfEnd: Date,
-): PeriodRange {
-  const duration = previousOfEnd.getTime() - previousOfStart.getTime();
-  const end = new Date(previousOfStart.getTime() - 1);
-  const start = new Date(end.getTime() - duration);
-  return { start, end };
-}
 
 function buildDatePeriodRanges(): PeriodRanges {
   const isoRanges = buildIsoPeriodRanges(
@@ -166,14 +174,21 @@ function computeExpectedParticipation({
 }): ParticipationExpectations {
   const results = {} as ParticipationExpectations;
 
+  let totalRequested = 0;
+  let totalResponded = 0;
+  let individualRequested = 0;
+  let individualResponded = 0;
+
   for (const period of PERIODS) {
     const specs = periodSpecs[period] ?? [];
     const range = ranges[period];
     const startMs = range.start.getTime();
     const endMs = range.end.getTime();
 
-    const orgCounts: number[] = [];
-    const individualCounts: number[] = [];
+    totalRequested = 0;
+    totalResponded = 0;
+    individualRequested = 0;
+    individualResponded = 0;
 
     for (const spec of specs) {
       if (spec.authorId === dependabotId) {
@@ -188,47 +203,38 @@ function computeExpectedParticipation({
         continue;
       }
 
-      const uniqueReviewers = new Set<string>();
-      let reviewerParticipated = false;
-
       for (const entry of spec.reviewers) {
-        if (entry.submittedAt === null) {
+        const requested = entry.requested !== false;
+        if (!requested) {
           continue;
         }
 
-        const submittedMs =
-          entry.submittedAt === undefined
-            ? mergedMs
-            : new Date(entry.submittedAt).getTime();
-        if (Number.isNaN(submittedMs)) {
-          continue;
-        }
-        if (submittedMs < startMs || submittedMs > endMs) {
-          continue;
+        totalRequested++;
+
+        if (entry.submittedAt !== null) {
+          const submittedMs =
+            entry.submittedAt === undefined
+              ? mergedMs
+              : new Date(entry.submittedAt).getTime();
+          if (!Number.isNaN(submittedMs) && submittedMs >= startMs && submittedMs <= endMs) {
+            totalResponded++;
+            if (entry.reviewerId === targetReviewerId) {
+              individualResponded++;
+            }
+          }
         }
 
-        uniqueReviewers.add(entry.reviewerId);
         if (entry.reviewerId === targetReviewerId) {
-          reviewerParticipated = true;
+          individualRequested++;
         }
-      }
-
-      const count = uniqueReviewers.size;
-      orgCounts.push(count);
-
-      if (reviewerParticipated) {
-        individualCounts.push(count);
       }
     }
 
     const organization =
-      orgCounts.length > 0
-        ? orgCounts.reduce((sum, value) => sum + value, 0) / orgCounts.length
-        : null;
+      totalRequested > 0 ? totalResponded / totalRequested : null;
     const individual =
-      individualCounts.length > 0
-        ? individualCounts.reduce((sum, value) => sum + value, 0) /
-          individualCounts.length
+      individualRequested > 0
+        ? individualResponded / individualRequested
         : null;
 
     results[period] = { organization, individual };
@@ -447,7 +453,7 @@ describe("analytics review participation metrics", () => {
               number,
             });
             await upsertPullRequest(pullRequest);
-            await insertReviews({
+            await insertReviewsAndRequests({
               pullRequestId: pullRequest.id,
               reviewers: spec.reviewers,
               defaultSubmittedAt: spec.mergedAt,
@@ -468,7 +474,7 @@ describe("analytics review participation metrics", () => {
           number: outOfRangeNumber,
         });
         await upsertPullRequest(outOfRangePull);
-        await insertReviews({
+        await insertReviewsAndRequests({
           pullRequestId: outOfRangePull.id,
           reviewers: [
             { reviewerId: reviewer.id },
