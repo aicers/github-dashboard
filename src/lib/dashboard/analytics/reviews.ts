@@ -64,18 +64,26 @@ export async function fetchReviewAggregates(
          JOIN pr_scope pr ON pr.id = r.pull_request_id
          WHERE r.github_submitted_at BETWEEN $1 AND $2
        ),
-       participation AS (
-         SELECT
-           pr_scope.id AS pull_request_id,
-           COUNT(DISTINCT r.author_id)
-             FILTER (WHERE r.github_submitted_at BETWEEN $1 AND $2) AS reviewer_count
-         FROM pr_scope
-         LEFT JOIN reviews r ON r.pull_request_id = pr_scope.id
-         GROUP BY pr_scope.id
+       participation_requests AS (
+         SELECT rr.id, rr.pull_request_id, rr.reviewer_id
+         FROM review_requests rr
+         JOIN pr_scope pr ON pr.id = rr.pull_request_id
+         WHERE rr.reviewer_id IS NOT NULL
+           AND rr.requested_at BETWEEN $1 AND $2
+       ),
+       participation_responses AS (
+         SELECT DISTINCT prq.id
+         FROM participation_requests prq
+         JOIN reviews r ON r.pull_request_id = prq.pull_request_id
+           AND r.author_id = prq.reviewer_id
+         WHERE r.github_submitted_at BETWEEN $1 AND $2
        )
        SELECT
          (SELECT COUNT(*) FROM reviews_in_range) AS reviews_completed,
-         (SELECT AVG(COALESCE(participation.reviewer_count, 0)) FROM participation) AS avg_participation
+         CASE WHEN (SELECT COUNT(*) FROM participation_requests) = 0 THEN NULL
+              ELSE (SELECT COUNT(*) FROM participation_responses)::numeric
+                   / (SELECT COUNT(*) FROM participation_requests)::numeric
+         END AS avg_participation
        `,
       params,
     ),

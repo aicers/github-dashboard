@@ -9,8 +9,10 @@ import {
   type DbActor,
   type DbPullRequest,
   type DbReview,
+  type DbReviewRequest,
   upsertPullRequest,
   upsertReview,
+  upsertReviewRequest,
   upsertUser,
 } from "@/lib/db/operations";
 import {
@@ -23,14 +25,15 @@ import {
   shiftHours,
 } from "../../../tests/helpers/dashboard-metrics";
 
-type ParticipationSpec = number[];
+/** [requested, responded] counts per PR */
+type ParticipationSpec = { requested: number; responded: number }[];
 
 describe("people review participation metrics", () => {
   beforeEach(async () => {
     await resetDashboardTables();
   });
 
-  it("averages reviewer counts on participated PRs", async () => {
+  it("computes responded/requested ratio for the person", async () => {
     const { actor, repository } = await seedPersonAndRepo();
     const ranges = buildPeriodRanges(CURRENT_RANGE_START, CURRENT_RANGE_END);
 
@@ -43,31 +46,33 @@ describe("people review participation metrics", () => {
     };
     await upsertUser(prAuthor);
 
-    const extraReviewers: DbActor[] = Array.from({ length: 6 }).map(
-      (_, index) => ({
-        id: `extra-reviewer-${index}`,
-        login: `extra-reviewer-${index}`,
-        name: `Extra Reviewer ${index}`,
-        createdAt: CURRENT_RANGE_START,
-        updatedAt: CURRENT_RANGE_START,
-      }),
-    );
-    await Promise.all(extraReviewers.map((reviewer) => upsertUser(reviewer)));
-
     const specs: Record<(typeof PERIOD_KEYS)[number], ParticipationSpec> = {
-      previous4: [1, 2],
-      previous3: [2],
-      previous2: [3, 2],
-      previous: [4, 3],
-      current: [2, 3, 4],
+      previous4: [
+        { requested: 1, responded: 1 },
+        { requested: 1, responded: 0 },
+      ],
+      previous3: [{ requested: 1, responded: 1 }],
+      previous2: [
+        { requested: 1, responded: 1 },
+        { requested: 1, responded: 1 },
+      ],
+      previous: [
+        { requested: 1, responded: 0 },
+        { requested: 1, responded: 1 },
+      ],
+      current: [
+        { requested: 1, responded: 1 },
+        { requested: 1, responded: 1 },
+        { requested: 1, responded: 0 },
+      ],
     } as const;
 
     let prNumber = 1;
     for (const period of PERIOD_KEYS) {
       const { start } = ranges[period];
-      const counts = specs[period];
-      for (let index = 0; index < counts.length; index += 1) {
-        const reviewerCount = counts[index];
+      const prSpecs = specs[period];
+      for (let index = 0; index < prSpecs.length; index += 1) {
+        const { requested, responded } = prSpecs[index];
         const mergedAt = shiftHours(start, 14 + index * 6);
         const createdAt = shiftHours(mergedAt, -48);
         const prId = `${period}-participation-pr-${index}`;
@@ -89,26 +94,25 @@ describe("people review participation metrics", () => {
         prNumber += 1;
         await upsertPullRequest(pullRequest);
 
-        const reviewers: DbActor[] = [actor];
-        for (let idx = 0; idx < reviewerCount - 1; idx += 1) {
-          reviewers.push(extraReviewers[(index + idx) % extraReviewers.length]);
+        if (requested > 0) {
+          const reviewRequest: DbReviewRequest = {
+            id: `${prId}-rr-actor`,
+            pullRequestId: prId,
+            reviewerId: actor.id,
+            requestedAt: shiftHours(mergedAt, -6),
+            raw: {},
+          };
+          await upsertReviewRequest(reviewRequest);
         }
 
-        for (
-          let reviewerIndex = 0;
-          reviewerIndex < reviewers.length;
-          reviewerIndex += 1
-        ) {
-          const reviewer = reviewers[reviewerIndex];
-          const submittedAt = shiftHours(mergedAt, -2 - reviewerIndex);
-          const state = reviewer.id === actor.id ? "APPROVED" : "COMMENTED";
+        if (responded > 0) {
           const review: DbReview = {
-            id: `${prId}-review-${reviewerIndex}`,
+            id: `${prId}-review-actor`,
             pullRequestId: prId,
-            authorId: reviewer.id,
-            state,
-            submittedAt,
-            raw: { state },
+            authorId: actor.id,
+            state: "APPROVED",
+            submittedAt: shiftHours(mergedAt, -2),
+            raw: { state: "APPROVED" },
           };
           await upsertReview(review);
         }
@@ -129,24 +133,35 @@ describe("people review participation metrics", () => {
     const metric = individual.metrics.reviewParticipation;
     const history = individual.metricHistory.reviewParticipation;
 
-    const averageFor = (values: number[]) =>
-      values.reduce((acc, value) => acc + value, 0) / values.length;
+    const ratioFor = (prSpecs: ParticipationSpec) => {
+      const totalRequested = prSpecs.reduce((sum, s) => sum + s.requested, 0);
+      const totalResponded = prSpecs.reduce((sum, s) => sum + s.responded, 0);
+      return totalRequested > 0 ? totalResponded / totalRequested : null;
+    };
 
     const expectedHistory = PERIOD_KEYS.map((period) =>
-      averageFor(specs[period]),
+      ratioFor(specs[period]),
     );
 
-    expect(metric.current).toBeCloseTo(averageFor(specs.current), 5);
-    expect(metric.previous).toBeCloseTo(averageFor(specs.previous), 5);
+    const expectedCurrent = ratioFor(specs.current) ?? 0;
+    const expectedPrevious = ratioFor(specs.previous) ?? 0;
+
+    expect(metric.current).toBeCloseTo(expectedCurrent, 5);
+    expect(metric.previous).toBeCloseTo(expectedPrevious, 5);
     expect(metric.absoluteChange).toBeCloseTo(
-      averageFor(specs.current) - averageFor(specs.previous),
+      expectedCurrent - expectedPrevious,
       5,
     );
 
     expect(history).toHaveLength(PERIOD_KEYS.length);
     history.forEach((entry, index) => {
       expect(entry.period).toBe(PERIOD_KEYS[index]);
-      expect(entry.value ?? Number.NaN).toBeCloseTo(expectedHistory[index], 5);
+      const expected = expectedHistory[index];
+      if (expected == null) {
+        expect(entry.value).toBeNull();
+      } else {
+        expect(entry.value ?? Number.NaN).toBeCloseTo(expected, 5);
+      }
     });
   });
 });
