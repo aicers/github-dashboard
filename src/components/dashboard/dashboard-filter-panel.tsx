@@ -241,6 +241,7 @@ export function DashboardFilterPanel({
                       ),
                     }))
                   }
+                  showClear={false}
                   pickerButtonLabel="달력 열기"
                 />
               </div>
@@ -262,6 +263,7 @@ export function DashboardFilterPanel({
                       ),
                     }))
                   }
+                  showClear={false}
                   pickerButtonLabel="달력 열기"
                 />
               </div>
