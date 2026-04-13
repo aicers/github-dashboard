@@ -47,10 +47,19 @@ describe("people review participation metrics", () => {
     await upsertUser(prAuthor);
 
     const specs: Record<(typeof PERIOD_KEYS)[number], ParticipationSpec> = {
-      previous4: [{ requested: 1, responded: 1 }, { requested: 1, responded: 0 }],
+      previous4: [
+        { requested: 1, responded: 1 },
+        { requested: 1, responded: 0 },
+      ],
       previous3: [{ requested: 1, responded: 1 }],
-      previous2: [{ requested: 1, responded: 1 }, { requested: 1, responded: 1 }],
-      previous: [{ requested: 1, responded: 0 }, { requested: 1, responded: 1 }],
+      previous2: [
+        { requested: 1, responded: 1 },
+        { requested: 1, responded: 1 },
+      ],
+      previous: [
+        { requested: 1, responded: 0 },
+        { requested: 1, responded: 1 },
+      ],
       current: [
         { requested: 1, responded: 1 },
         { requested: 1, responded: 1 },
@@ -130,7 +139,9 @@ describe("people review participation metrics", () => {
       return totalRequested > 0 ? totalResponded / totalRequested : null;
     };
 
-    const expectedHistory = PERIOD_KEYS.map((period) => ratioFor(specs[period]));
+    const expectedHistory = PERIOD_KEYS.map((period) =>
+      ratioFor(specs[period]),
+    );
 
     const expectedCurrent = ratioFor(specs.current) ?? 0;
     const expectedPrevious = ratioFor(specs.previous) ?? 0;

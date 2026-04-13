@@ -216,7 +216,11 @@ function computeExpectedParticipation({
             entry.submittedAt === undefined
               ? mergedMs
               : new Date(entry.submittedAt).getTime();
-          if (!Number.isNaN(submittedMs) && submittedMs >= startMs && submittedMs <= endMs) {
+          if (
+            !Number.isNaN(submittedMs) &&
+            submittedMs >= startMs &&
+            submittedMs <= endMs
+          ) {
             totalResponded++;
             if (entry.reviewerId === targetReviewerId) {
               individualResponded++;
