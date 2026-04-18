@@ -32,7 +32,7 @@
     "graphql-request": "^7.4.0",
     "lucide-react": "^1.8.0",
     "luxon": "^3.7.2",
-    "next": "^16.2.3",
+    "next": "^16.2.4",
     "pg": "^8.20.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
@@ -43,7 +43,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@next/env": "^16.2.3",
+    "@next/env": "^16.2.4",
     "@playwright/test": "^1.59.1",
     "@tailwindcss/cli": "^4.2.2",
     "@tailwindcss/postcss": "^4.2.2",
