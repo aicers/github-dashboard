@@ -12,3 +12,5 @@ Dockerfile.dev
 docker-compose*.yml
 .env*
 backups/
+*.tar
+*.tar.gz
