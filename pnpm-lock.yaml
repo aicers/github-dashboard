@@ -16,8 +16,8 @@ importers:
         specifier: ^5.2.2
         version: 5.2.2(react-hook-form@7.73.1(react@19.2.5))
       '@primer/octicons-react':
-        specifier: ^19.24.1
-        version: 19.24.1(react@19.2.5)
+        specifier: ^19.25.0
+        version: 19.25.0(react@19.2.5)
       '@radix-ui/react-label':
         specifier: ^2.1.8
         version: 2.1.8(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
@@ -766,8 +766,8 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
-  '@primer/octicons-react@19.24.1':
-    resolution: {integrity: sha512-Y4EqqNb6VrFWfs9HDu3EUpFNm2xbOWMh6uEyXn968gQgXDxfRjBKhWoogrMsbo74S3mGAP0KYSxL8ZebWHDRtA==}
+  '@primer/octicons-react@19.25.0':
+    resolution: {integrity: sha512-Cv7l7Mk4ahe6pOJ4A59viOQ22q5QkJ3jtkMyrQ2lpOofcKpVzvVg4CpYiq76Lj0RRlYC4qk1Tp9FpfzQnf4AuQ==}
     engines: {node: '>=8'}
     peerDependencies:
       react: '>=16.3'
@@ -2207,6 +2207,10 @@ packages:
     resolution: {integrity: sha512-pMMHxBOZKFU6HgAZ4eyGnwXF/EvPGGqUr0MnZ5+99485wwW41kW91A4LOGxSHhgugZmSChL5AlElNdwlNgcnLQ==}
     engines: {node: ^10 || ^12 || >=14}
 
+  postcss@8.5.12:
+    resolution: {integrity: sha512-W62t/Se6rA0Az3DfCL0AqJwXuKwBeYg6nOaIgzP+xZ7N5BFCI7DYi1qs6ygUYT6rvfi6t9k65UMLJC+PHZpDAA==}
+    engines: {node: ^10 || ^12 || >=14}
+
   postgres-array@2.0.0:
     resolution: {integrity: sha512-VpZrUqU5A69eQyW2c5CA1jtLecCsN2U/bD6VilrFDWq5+5UIEVO7nazS3TEcHf1zuPYO/sqGvUvW62g86RXZuA==}
     engines: {node: '>=4'}
@@ -3200,7 +3204,7 @@ snapshots:
     dependencies:
       playwright: 1.59.1
 
-  '@primer/octicons-react@19.24.1(react@19.2.5)':
+  '@primer/octicons-react@19.25.0(react@19.2.5)':
     dependencies:
       react: 19.2.5
 
@@ -4637,6 +4641,12 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
+  postcss@8.5.12:
+    dependencies:
+      nanoid: 3.3.11
+      picocolors: 1.1.1
+      source-map-js: 1.2.1
+
   postgres-array@2.0.0: {}
 
   postgres-bytea@1.0.1: {}
@@ -5134,7 +5144,7 @@ snapshots:
     dependencies:
       lightningcss: 1.32.0
       picomatch: 4.0.4
-      postcss: 8.5.10
+      postcss: 8.5.12
       rolldown: 1.0.0-rc.12(@emnapi/core@1.9.2)(@emnapi/runtime@1.10.0)
       tinyglobby: 0.2.16
     optionalDependencies:
