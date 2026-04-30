@@ -40,7 +40,7 @@
     "recharts": "^3.8.1",
     "sanitize-html": "^2.17.3",
     "tailwind-merge": "^3.5.0",
-    "zod": "^4.3.6"
+    "zod": "^4.4.1"
   },
   "devDependencies": {
     "@next/env": "^16.2.4",
