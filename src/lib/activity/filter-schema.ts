@@ -107,7 +107,8 @@ const optionalStringField = z
     }
     const trimmed = value.trim();
     return trimmed.length ? trimmed : undefined;
-  });
+  })
+  .optional();
 
 const optionalPeopleField = z
   .record(z.string(), z.array(z.string().trim()))
@@ -136,7 +137,8 @@ const optionalPeopleField = z
 
 const taskModeField = z
   .union([z.literal("my_todo"), z.undefined(), z.null()])
-  .transform((value) => (value === "my_todo" ? "my_todo" : undefined));
+  .transform((value) => (value === "my_todo" ? "my_todo" : undefined))
+  .optional();
 
 const optionalBooleanField = z
   .union([z.boolean(), z.undefined(), z.null()])
@@ -145,7 +147,8 @@ const optionalBooleanField = z
       return undefined;
     }
     return value;
-  });
+  })
+  .optional();
 
 export type ActivityFilterPayload = ActivityListParams;
 
@@ -153,10 +156,12 @@ export const activityFilterPayloadSchema: z.ZodType<ActivityFilterPayload> = z
   .object({
     page: z
       .union([positiveIntegerField, z.undefined(), z.null()])
-      .transform((value) => (typeof value === "number" ? value : undefined)),
+      .transform((value) => (typeof value === "number" ? value : undefined))
+      .optional(),
     perPage: z
       .union([positiveIntegerField, z.undefined(), z.null()])
-      .transform((value) => (typeof value === "number" ? value : undefined)),
+      .transform((value) => (typeof value === "number" ? value : undefined))
+      .optional(),
     types: stringArrayField,
     repositoryIds: stringArrayField,
     labelKeys: stringArrayField,
