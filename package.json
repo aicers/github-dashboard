@@ -22,7 +22,7 @@
     "migrate:activity-saved-filter-attention": "tsx scripts/migrate-activity-saved-filter-attention.ts"
   },
   "dependencies": {
-    "@hookform/resolvers": "^5.2.2",
+    "@hookform/resolvers": "^5.4.0",
     "@primer/octicons-react": "^19.27.0",
     "@radix-ui/react-label": "^2.1.8",
     "@radix-ui/react-slot": "^1.2.4",
