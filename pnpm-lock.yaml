@@ -36,7 +36,7 @@ importers:
         version: 17.4.2
       graphql-request:
         specifier: ^7.4.0
-        version: 7.4.0(graphql@16.14.0)
+        version: 7.4.0(graphql@16.14.1)
       lucide-react:
         specifier: ^1.17.0
         version: 1.17.0(react@19.2.7)
@@ -114,8 +114,8 @@ importers:
         specifier: ^2.16.1
         version: 2.16.1
       graphql:
-        specifier: ^16.14.0
-        version: 16.14.0
+        specifier: ^16.14.1
+        version: 16.14.1
       jsdom:
         specifier: ^29.1.1
         version: 29.1.1
@@ -1714,8 +1714,8 @@ packages:
     peerDependencies:
       graphql: 14 - 16
 
-  graphql@16.14.0:
-    resolution: {integrity: sha512-BBvQ/406p+4CZbTpCbVPSxfzrZrbnuWSP1ELYgyS6B+hNeKzgrdB4JczCa5VZUBQrDa9hUngm0KnexY6pJRN5Q==}
+  graphql@16.14.1:
+    resolution: {integrity: sha512-cQOsSMS/IrDz82PVyRDvf/Q1F/bRbBVjJlh+xYOkI1qw2bWRvWGiWc+m2O0d6l4Bt1fyY+8kzJ8JFWGJqNeDBg==}
     engines: {node: ^12.22.0 || ^14.16.0 || ^16.0.0 || >=17.0.0}
 
   html-encoding-sniffer@6.0.0:
@@ -2921,9 +2921,9 @@ snapshots:
 
   '@exodus/bytes@1.15.1': {}
 
-  '@graphql-typed-document-node/core@3.2.0(graphql@16.14.0)':
+  '@graphql-typed-document-node/core@3.2.0(graphql@16.14.1)':
     dependencies:
-      graphql: 16.14.0
+      graphql: 16.14.1
 
   '@grpc/grpc-js@1.14.4':
     dependencies:
@@ -4065,12 +4065,12 @@ snapshots:
 
   graceful-fs@4.2.11: {}
 
-  graphql-request@7.4.0(graphql@16.14.0):
+  graphql-request@7.4.0(graphql@16.14.1):
     dependencies:
-      '@graphql-typed-document-node/core': 3.2.0(graphql@16.14.0)
-      graphql: 16.14.0
+      '@graphql-typed-document-node/core': 3.2.0(graphql@16.14.1)
+      graphql: 16.14.1
 
-  graphql@16.14.0: {}
+  graphql@16.14.1: {}
 
   html-encoding-sniffer@6.0.0:
     dependencies:
