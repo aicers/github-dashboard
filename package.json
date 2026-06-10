@@ -43,7 +43,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@next/env": "^16.2.7",
+    "@next/env": "^16.2.9",
     "@playwright/test": "^1.60.0",
     "@tailwindcss/cli": "^4.3.0",
     "@tailwindcss/postcss": "^4.3.0",
