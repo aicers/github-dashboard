@@ -96,16 +96,18 @@ export async function getDashboardAnalytics(
   const timeZone = userTimeSettings.timezone;
   const dateTimeFormat = userTimeSettings.dateTimeFormat;
   const weekStart: WeekStart = userTimeSettings.weekStart;
+  const rawExcludedUserIds = config?.excluded_user_ids;
   const excludedUserIds = new Set<string>(
-    Array.isArray(config?.excluded_user_ids)
-      ? (config?.excluded_user_ids as string[]).filter(
+    Array.isArray(rawExcludedUserIds)
+      ? (rawExcludedUserIds as string[]).filter(
           (id) => typeof id === "string" && id.trim().length > 0,
         )
       : [],
   );
+  const rawExcludedRepositoryIds = config?.excluded_repository_ids;
   const excludedRepositoryIds = new Set<string>(
-    Array.isArray(config?.excluded_repository_ids)
-      ? (config?.excluded_repository_ids as string[]).filter(
+    Array.isArray(rawExcludedRepositoryIds)
+      ? (rawExcludedRepositoryIds as string[]).filter(
           (id) => typeof id === "string" && id.trim().length > 0,
         )
       : [],

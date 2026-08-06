@@ -30,7 +30,7 @@ function isIssueProjectStatus(value: unknown): value is IssueProjectStatus {
 async function resolveIssueItem(id: string) {
   await ensureSchema();
   const detail = await getActivityItemDetail(id);
-  if (!detail || detail.item.type !== "issue") {
+  if (detail?.item.type !== "issue") {
     return null;
   }
   return detail;

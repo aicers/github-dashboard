@@ -260,7 +260,7 @@ async function fetchReviewRequestsWithEvents(
   const latestEventByReviewer = new Map<string, string>(); // reviewerId -> createdAt
   for (const event of events) {
     const reviewer = event.requestedReviewer;
-    if (!reviewer || reviewer.__typename !== "User") {
+    if (reviewer?.__typename !== "User") {
       continue;
     }
     const existing = latestEventByReviewer.get(reviewer.id);
@@ -275,7 +275,7 @@ async function fetchReviewRequestsWithEvents(
 
   for (const node of reviewRequestNodes) {
     const reviewer = node.requestedReviewer;
-    if (!reviewer || reviewer.__typename !== "User") {
+    if (reviewer?.__typename !== "User") {
       continue;
     }
     const createdAt = latestEventByReviewer.get(reviewer.id) ?? null;

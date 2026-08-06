@@ -413,7 +413,7 @@ async function fetchDiscussionCommentRepliesConnection(
     },
   );
   const node = data.node;
-  if (!node || node.__typename !== "DiscussionComment") {
+  if (node?.__typename !== "DiscussionComment") {
     return null;
   }
   return node.replies ?? null;

@@ -165,7 +165,7 @@ function sanitizePayloadValue(key: ProjectFieldKey, raw: unknown) {
 
 async function resolveIssueItem(id: string) {
   const detail = await getActivityItemDetail(id);
-  if (!detail || detail.item.type !== "issue") {
+  if (detail?.item.type !== "issue") {
     return null;
   }
   return detail;
