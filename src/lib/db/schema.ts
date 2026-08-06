@@ -821,7 +821,7 @@ let ensurePromise: Promise<void> | null = null;
 
 function isPublicSchemaPermissionError(error: unknown) {
   const dbError = error as DatabaseError | null;
-  if (!dbError || dbError.code !== "42501") {
+  if (dbError?.code !== "42501") {
     return false;
   }
 

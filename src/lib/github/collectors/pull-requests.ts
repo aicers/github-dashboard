@@ -80,7 +80,7 @@ async function syncReviewRequestsSnapshot(
 
   const latestEventByReviewer = new Map<string, string>(); // reviewerId -> createdAt
   for (const node of events) {
-    if (!node || node.__typename !== "ReviewRequestedEvent") {
+    if (node?.__typename !== "ReviewRequestedEvent") {
       continue;
     }
     const reviewer = node.requestedReviewer;
