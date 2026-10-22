@@ -176,7 +176,7 @@ function parseRetryAfterHeader(value: string): number | null {
   }
 
   const waitMs = timestamp - Date.now();
-  return waitMs > 0 ? waitMs : 0;
+  return Math.max(waitMs, 0);
 }
 
 function parseResetHeader(value: string): number | null {
@@ -188,7 +188,7 @@ function parseResetHeader(value: string): number | null {
   const numeric = Number(trimmed);
   if (Number.isFinite(numeric)) {
     const waitMs = numeric * 1000 - Date.now();
-    return waitMs > 0 ? waitMs : 0;
+    return Math.max(waitMs, 0);
   }
 
   const timestamp = Date.parse(trimmed);
@@ -197,7 +197,7 @@ function parseResetHeader(value: string): number | null {
   }
 
   const waitMs = timestamp - Date.now();
-  return waitMs > 0 ? waitMs : 0;
+  return Math.max(waitMs, 0);
 }
 
 function parseExtensionDelay(value: unknown): number | null {
@@ -224,7 +224,7 @@ function parseExtensionDelay(value: unknown): number | null {
     const timestamp = Date.parse(value);
     if (!Number.isNaN(timestamp)) {
       const waitMs = timestamp - Date.now();
-      return waitMs > 0 ? waitMs : 0;
+      return Math.max(waitMs, 0);
     }
   }
 
@@ -240,13 +240,13 @@ function parseExtensionReset(value: unknown): number | null {
     const timestamp = Date.parse(value);
     if (!Number.isNaN(timestamp)) {
       const waitMs = timestamp - Date.now();
-      return waitMs > 0 ? waitMs : 0;
+      return Math.max(waitMs, 0);
     }
   }
 
   if (typeof value === "number" && Number.isFinite(value)) {
     const waitMs = value * 1000 - Date.now();
-    return waitMs > 0 ? waitMs : 0;
+    return Math.max(waitMs, 0);
   }
 
   return null;
