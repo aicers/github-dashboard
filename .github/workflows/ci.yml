@@ -1,17 +1,32 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - "**"
   pull_request:
     branches:
       - main
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}${{ github.event_name == 'workflow_dispatch' && '-dispatch' || (github.run_attempt != '1' && format('-rerun-{0}', github.run_id) || '') }}
+  cancel-in-progress: true
+
 jobs:
+  markdown:
+    name: Markdown
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: markdownlint
+        uses: DavidAnson/markdownlint-cli2-action@v25
+
   check:
     runs-on: ubuntu-latest
 
@@ -44,11 +59,6 @@ jobs:
 
       - name: Type check
         run: pnpm run typecheck
-
-      - name: markdownlint
-        uses: DavidAnson/markdownlint-cli2-action@v25.0.0
-        with:
-          globs: "**/*.md"
 
   test:
     runs-on: ubuntu-latest
@@ -134,3 +144,26 @@ jobs:
 
       - name: Build production image
         run: docker build . --file Dockerfile --tag github-dashboard:test
+
+  gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    permissions: {}
+    needs: [markdown, check, test, image-build]
+    if: ${{ always() }}
+    steps:
+      - name: Assert every job passed or was skipped
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "${RESULTS}"
+          bad="$(printf '%s' "${RESULTS}" \
+            | jq -r 'to_entries[]
+                     | select(.value.result != "success" and .value.result != "skipped")
+                     | "  \(.key): \(.value.result)"')"
+          if [ -n "${bad}" ]; then
+            echo "Not green:" >&2
+            echo "${bad}" >&2
+            exit 1
+          fi

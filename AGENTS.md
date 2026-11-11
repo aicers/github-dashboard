@@ -17,7 +17,8 @@
 - `pnpm run typecheck` — TypeScript types; uses project tsconfig.
 - `pnpm lint:md` — markdownlint for docs.
 
-CI also reruns these on push/PR; keep them green locally to avoid surprises.
+CI also reruns these on every pull request and on pushes to `main`; keep them
+green locally to avoid surprises.
 
 ## Useful scripts
 
