@@ -125,7 +125,22 @@ jobs:
       - name: Run database integration tests
         run: pnpm run test:db
 
+      # Playwright's `--with-deps` installs system libraries through apt. This
+      # step configures every apt run after it, Playwright's included: retry
+      # each download three times, and fail `apt-get update` when any source
+      # cannot be refreshed instead of only warning. The file is named to sort
+      # after the hosted image's own `zz-retries` (`Acquire::Retries "1"`),
+      # since apt applies `apt.conf.d` in name order and the last value wins.
+      - name: Refresh apt package lists
+        timeout-minutes: 10
+        run: |
+          printf '%s\n' 'Acquire::Retries "3";' 'APT::Update::Error-Mode "any";' \
+            | sudo tee /etc/apt/apt.conf.d/zzz-ci-apt >/dev/null
+          apt-config dump | grep -E '^(Acquire::Retries|APT::Update::Error-Mode) '
+          sudo apt-get update -qq
+
       - name: Install Playwright Browser Dependencies
+        timeout-minutes: 30
         run: pnpm exec playwright install --with-deps
 
       - name: Run Playwright E2E tests
