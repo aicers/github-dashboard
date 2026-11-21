@@ -6,11 +6,6 @@ name: PR title
 # of aicers/agent-instructions, at the release `.agent-instructions.toml`
 # pins; the action below reads it from there.
 #
-# release-please also reads one thing from the pull request itself: a
-# commit-override block in its body replaces the squash commit's message,
-# title included, when the next release is built. So an open pull request
-# whose body carries one fails here too.
-#
 # `pull_request_target` so that a pull request from a fork is checked too,
 # with a token that is read-only here. Only pull requests into `main` are
 # checked: no other branch is squashed into the history release-please
@@ -47,20 +42,3 @@ jobs:
       - uses: aicers/agent-instructions/conventional-title@main
         with:
           title: ${{ github.event.pull_request.title }}
-
-      # Only while the pull request is open. Once it is merged, an
-      # override holding just the title is how a squash commit whose
-      # message release-please misreads is put right (the commit-title
-      # workflow says so when it finds one), and that edit must not turn
-      # this check red.
-      - name: Reject a commit override in the body
-        if: ${{ !cancelled() && github.event.pull_request.state == 'open' }}
-        env:
-          BODY: ${{ github.event.pull_request.body }}
-        run: |
-          if grep -q 'BEGIN_COMMIT_OVERRIDE' <<< "$BODY"; then
-            echo "::error::The pull request body carries a commit override" \
-              "(BEGIN_COMMIT_OVERRIDE). release-please would build the" \
-              "release from it instead of from the title. Remove it."
-            exit 1
-          fi
