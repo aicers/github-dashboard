@@ -195,11 +195,15 @@ export async function updateSavedFilter(
       return { status: "ok", filter: existing };
     }
 
+    // The client compares versions as ISO timestamps with millisecond precision.
     const updateResult = await client.query<ActivitySavedFilterRow>(
       `UPDATE activity_saved_filters
        SET name = $3,
            payload = $4::jsonb,
-           updated_at = NOW()
+           updated_at = GREATEST(
+             NOW(),
+             DATE_TRUNC('milliseconds', updated_at) + INTERVAL '1 millisecond'
+           )
        WHERE id = $1 AND user_id = $2
        RETURNING id, user_id, name, payload, created_at, updated_at`,
       [filterId, userId, nextName, JSON.stringify(nextPayload)],
