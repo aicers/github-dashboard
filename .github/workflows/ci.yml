@@ -20,10 +20,34 @@ jobs:
 
     steps:
       - name: Checkout
+        id: checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: markdownlint
         uses: DavidAnson/markdownlint-cli2-action@v25
+
+      # Fails when this repository's copy of the shared instruction blocks
+      # stops matching the release `.agent-instructions.toml` pins --
+      # because a generated region of AGENTS.md was edited here, or because
+      # an update pull request was never merged. Running in this required
+      # job makes a drift failure fail `Markdown` (and `CI Gate`).
+      #
+      # `@main`: the scripts are mechanism and come from wherever this
+      # reference points, while the blocks are content and come from the
+      # pin. No `with:` block, because the release to compare against and
+      # the blocks to compare are both read from that one file.
+      #
+      # Guarded rather than left to the default `success()`, which would
+      # skip it whenever the lint above failed: a drifted block is drift
+      # whether or not some other Markdown file also breaks a lint rule.
+      # `!cancelled()` rather than `always()`, because a cancelled run
+      # should stop, and the `checkout` clause keeps a failed checkout from
+      # being reported as drift.
+      - name: Check shared instruction-block drift
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        uses: aicers/agent-instructions/check-drift@main
 
   check:
     runs-on: ubuntu-latest
@@ -31,6 +55,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Enable corepack
         run: corepack enable pnpm
@@ -85,6 +111,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Enable corepack
         run: corepack enable pnpm
@@ -151,6 +179,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4

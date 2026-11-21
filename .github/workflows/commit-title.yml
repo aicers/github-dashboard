@@ -1,0 +1,126 @@
+name: Commit title
+
+# Every commit on `main` is a squash merge whose title is its pull
+# request's title plus ` (#<number>)`, and release-please builds the next
+# release's version and CHANGELOG.md from those titles. This checks each
+# commit a push added to `main` against the Conventional title rule, so a
+# title that slipped past the pull-request check, or a commit that did not
+# come through one, is reported on the commit itself. It blocks nothing:
+# the commit is already on `main`.
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  list:
+    name: List the pushed commits
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      commits: ${{ steps.list.outputs.commits }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.after }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The commits the push added on `main`'s first-parent path, oldest
+      # first, each with its title -- the first line of its message, not
+      # git's `%s`, which joins the first paragraph's lines -- and its
+      # number of parents.
+      - name: List the commits on main's first-parent path
+        id: list
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+        run: |
+          set -euo pipefail
+          for sha in "$BEFORE" "$AFTER"; do
+            if ! printf '%s' "$sha" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "::error::The push event names no commit range"
+              exit 1
+            fi
+          done
+          if [ "$BEFORE" = 0000000000000000000000000000000000000000 ]; then
+            echo "::error::This push created main, so which of its commits" \
+              "it added cannot be told apart from the rest of the history."
+            exit 1
+          fi
+          if ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            echo "::error::$BEFORE, main before this push, is no longer in" \
+              "the repository: the push rewrote main, and the commits it" \
+              "added cannot be told apart."
+            exit 1
+          fi
+
+          commits='[]'
+          for sha in $(git rev-list --first-parent --reverse "$AFTER" "^$BEFORE"); do
+            parents=$(($(git rev-list --parents -n 1 "$sha" | wc -w) - 1))
+            title=$(git show -s --format=%B "$sha" | sed -n 1p)
+            commits=$(jq -c \
+              --arg sha "$sha" \
+              --arg short "${sha:0:12}" \
+              --arg title "$title" \
+              --argjson parents "$parents" \
+              '. + [{sha: $sha, short: $short, title: $title,
+                     parents: $parents}]' <<< "$commits")
+          done
+
+          count=$(jq length <<< "$commits")
+          echo "$count commit(s) added on main's first-parent path."
+          # A matrix holds at most 256 jobs. A squash-only `main` gains one
+          # commit per merge, so a push past that is not one to pass over.
+          if [ "$count" -gt 256 ]; then
+            echo "::error::$count commits is more than one run can check" \
+              "(a matrix holds at most 256 jobs). Check the titles of" \
+              "$BEFORE..$AFTER on main's first-parent path by hand."
+            exit 1
+          fi
+          echo "commits=$commits" >> "$GITHUB_OUTPUT"
+
+  check:
+    name: ${{ matrix.commit.short }}
+    needs: list
+    if: needs.list.outputs.commits != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        commit: ${{ fromJSON(needs.list.outputs.commits) }}
+    steps:
+      # This repository merges only by squash, so every commit on `main`'s
+      # first-parent path has exactly one parent. A merge commit's title is
+      # git's or the merger's, not a pull request's.
+      - name: Require exactly one parent
+        env:
+          SHA: ${{ matrix.commit.sha }}
+          PARENTS: ${{ matrix.commit.parents }}
+        run: |
+          if [ "$PARENTS" != 1 ]; then
+            echo "::error::Commit $SHA has $PARENTS parents. This" \
+              "repository merges only by squash, so a commit on main has" \
+              "exactly one."
+            exit 1
+          fi
+
+      # The action reads the rule's pin from the workspace: main as this
+      # push left it.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.after }}
+          persist-credentials: false
+
+      # With `pr-suffix`, the title must end with the ` (#<number>)` a
+      # squash merge appends; the action removes it and checks the rest.
+      - uses: aicers/agent-instructions/conventional-title@main
+        with:
+          title: ${{ matrix.commit.title }}
+          pr-suffix: "true"
