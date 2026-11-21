@@ -1,0 +1,197 @@
+name: Commit title
+
+# Every commit on `main` is a squash merge whose title is its pull
+# request's title plus ` (#<number>)`, and release-please builds the next
+# release's version and CHANGELOG.md from those titles. This checks each
+# commit a push added to `main` against the Conventional title rule, so a
+# title that slipped past the pull-request check, or a commit that did not
+# come through one, is reported on the commit itself. It blocks nothing:
+# the commit is already on `main`.
+#
+# release-please reads more than the title, though: the rest of the
+# message, and a commit-override block in the body of the merged pull
+# request, which replaces the message. Either can change the version or
+# add entries of its own. So each commit is also read with release-please's
+# own parser, from the release the pinned action bundles, once as
+# release-please reads it and once as its title alone, and fails if the
+# two differ in anything that can change the release
+# (`.github/scripts/release-please-reads.js`). An override that holds
+# exactly the commit's title makes release-please read that title alone,
+# so it is the remedy for a commit already on `main`, and the check passes
+# it.
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  list:
+    name: List the pushed commits
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # To read the bodies of the pull requests the commits came from.
+      pull-requests: read
+    outputs:
+      commits: ${{ steps.list.outputs.commits }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.after }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The commits the push added on `main`'s first-parent path, oldest
+      # first.
+      - name: List the commits on main's first-parent path
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+        run: |
+          set -euo pipefail
+          for sha in "$BEFORE" "$AFTER"; do
+            if ! printf '%s' "$sha" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "::error::The push event names no commit range"
+              exit 1
+            fi
+          done
+          if [ "$BEFORE" = 0000000000000000000000000000000000000000 ]; then
+            echo "::error::This push created main, so which of its commits" \
+              "it added cannot be told apart from the rest of the history."
+            exit 1
+          fi
+          if ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            echo "::error::$BEFORE, main before this push, is no longer in" \
+              "the repository: the push rewrote main, and the commits it" \
+              "added cannot be told apart."
+            exit 1
+          fi
+
+          git rev-list --first-parent --reverse "$AFTER" "^$BEFORE" \
+            > "$RUNNER_TEMP/shas"
+          count=$(wc -l < "$RUNNER_TEMP/shas" | tr -d ' ')
+          echo "$count commit(s) added on main's first-parent path."
+          # A matrix holds at most 256 jobs. A squash-only `main` gains one
+          # commit per merge, so a push past that is not one to pass over.
+          if [ "$count" -gt 256 ]; then
+            echo "::error::$count commits is more than one run can check" \
+              "(a matrix holds at most 256 jobs). Check the titles of" \
+              "$BEFORE..$AFTER on main's first-parent path by hand."
+            exit 1
+          fi
+
+      - name: Collect what release-please reads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          .github/scripts/release-please-input.sh \
+            < "$RUNNER_TEMP/shas" > "$RUNNER_TEMP/commits.json"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Enable corepack
+        run: corepack enable pnpm
+
+      # No token here: this runs release-please as fetched from npm.
+      - name: Read the commits as release-please does
+        run: |
+          .github/scripts/release-please-reads.sh \
+            < "$RUNNER_TEMP/commits.json" > "$RUNNER_TEMP/findings.json"
+
+      # Each commit with its title -- the first line of its message, not
+      # git's `%s`, which joins the first paragraph's lines -- its number
+      # of parents, and what release-please would read from beyond its
+      # title.
+      - name: List the commits to check
+        id: list
+        run: |
+          set -euo pipefail
+          commits='[]'
+          while read -r sha; do
+            parents=$(($(git rev-list --parents -n 1 "$sha" | wc -w) - 1))
+            title=$(git show -s --format=%B "$sha" | sed -n 1p)
+            beyond=$(jq -r --arg sha "$sha" \
+              '[.[] | select(.sha == $sha)] | if length == 1
+                then .[0].findings | join("; ")
+                else error("no single finding for \($sha)") end' \
+              "$RUNNER_TEMP/findings.json")
+            commits=$(jq -c \
+              --arg sha "$sha" \
+              --arg short "${sha:0:12}" \
+              --arg title "$title" \
+              --argjson parents "$parents" \
+              --arg beyond "$beyond" \
+              '. + [{sha: $sha, short: $short, title: $title,
+                     parents: $parents, beyond: $beyond}]' <<< "$commits")
+          done < "$RUNNER_TEMP/shas"
+          echo "commits=$commits" >> "$GITHUB_OUTPUT"
+
+  check:
+    name: ${{ matrix.commit.short }}
+    needs: list
+    if: needs.list.outputs.commits != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        commit: ${{ fromJSON(needs.list.outputs.commits) }}
+    steps:
+      # This repository merges only by squash, so every commit on `main`'s
+      # first-parent path has exactly one parent. A merge commit's title is
+      # git's or the merger's, not a pull request's.
+      - name: Require exactly one parent
+        env:
+          SHA: ${{ matrix.commit.sha }}
+          PARENTS: ${{ matrix.commit.parents }}
+        run: |
+          if [ "$PARENTS" != 1 ]; then
+            echo "::error::Commit $SHA has $PARENTS parents. This" \
+              "repository merges only by squash, so a commit on main has" \
+              "exactly one."
+            exit 1
+          fi
+
+      # The action reads the rule's pin from the workspace: main as this
+      # push left it.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.after }}
+          persist-credentials: false
+
+      # With `pr-suffix`, the title must end with the ` (#<number>)` a
+      # squash merge appends; the action removes it and checks the rest.
+      - uses: aicers/agent-instructions/conventional-title@main
+        with:
+          title: ${{ matrix.commit.title }}
+          pr-suffix: "true"
+
+      # The title decides the release only if release-please reads nothing
+      # else. Checked even when the title failed, so both are reported.
+      - name: Require release-please to read the title alone
+        if: ${{ !cancelled() }}
+        env:
+          SHA: ${{ matrix.commit.sha }}
+          BEYOND: ${{ matrix.commit.beyond }}
+        run: |
+          if [ -n "$BEYOND" ]; then
+            echo "::error::Commit $SHA is not read by its title alone:" \
+              "$BEYOND. So the next release would not follow the title," \
+              "and the release workflow builds no release pull request" \
+              "while it is so. The commit is already on main. To have" \
+              "release-please read the title alone, remove any commit" \
+              "override from the body of each of its pull requests and put" \
+              "one there holding exactly the title, ' (#<number>)' included" \
+              "(see release-please's README, \"Overriding the commit" \
+              "message\"). Then re-run all jobs of this run, not only the" \
+              "failed ones: it passes once release-please would read the" \
+              "title alone. Then dispatch the release-please workflow on" \
+              "main, which builds the release pull request again."
+            exit 1
+          fi
