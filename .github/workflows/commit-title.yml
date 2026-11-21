@@ -51,10 +51,9 @@ jobs:
               "it added cannot be told apart from the rest of the history."
             exit 1
           fi
-          if ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
-            echo "::error::$BEFORE, main before this push, is no longer in" \
-              "the repository: the push rewrote main, and the commits it" \
-              "added cannot be told apart."
+          if ! git merge-base --is-ancestor "$BEFORE" "$AFTER" 2>/dev/null; then
+            echo "::error::Cannot verify the push from $BEFORE to $AFTER." \
+              "The push rewrote main or one of these commits is missing."
             exit 1
           fi
 
