@@ -1,0 +1,44 @@
+name: PR title
+
+# A pull request's title becomes its squash commit's title on `main` and,
+# through release-please, its line in CHANGELOG.md, so it has to follow
+# the Conventional title rule. The rule is `conventional-title/pattern.txt`
+# of aicers/agent-instructions, at the release `.agent-instructions.toml`
+# pins; the action below reads it from there.
+#
+# `pull_request_target` so that a pull request from a fork is checked too,
+# with a token that is read-only here. Only pull requests into `main` are
+# checked: no other branch is squashed into the history release-please
+# reads.
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  title:
+    name: Validate PR title
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      # The base only, never the pull request's head: under
+      # `pull_request_target` the head is untrusted, and the pin that
+      # decides the rule is the base's. This is the checkout's default for
+      # the event.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # The title reaches the action as an input, which hands it to its
+      # script as an environment variable; it never enters a `run:` here.
+      - uses: aicers/agent-instructions/conventional-title@main
+        with:
+          title: ${{ github.event.pull_request.title }}

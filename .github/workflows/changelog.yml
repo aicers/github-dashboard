@@ -1,0 +1,92 @@
+name: Changelog
+
+# CHANGELOG.md is written by release-please, in the release pull request
+# it opens, from the titles merged since the last release. An edit
+# anywhere else would conflict with that pull request or be overwritten
+# by it, so only the release pull request may change the file.
+#
+# `pull_request_target` so that a pull request from a fork is checked as
+# well. Nothing is checked out and no code from the pull request runs: the
+# pull request and its files are read through the API.
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: changelog-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  changelog:
+    name: Changelog
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Allow CHANGELOG.md only in the release pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          # Read from the API rather than from the event payload, so the
+          # verdict is about the pull request as it is now.
+          pull=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$NUMBER")
+          expected=$(printf '%s' "$pull" | jq -r '.changed_files')
+          if ! printf '%s' "$expected" | grep -Eq '^[0-9]+$'; then
+            echo "::error::Could not read how many files pull request" \
+              "$NUMBER changes."
+            exit 1
+          fi
+
+          # One `true` or `false` line per file: whether it is the root
+          # CHANGELOG.md, before or after a rename. Nothing from a file
+          # name is printed, so no name can start a workflow command.
+          verdicts=$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/pulls/$NUMBER/files?per_page=100" \
+            --jq '.[] | (.filename == "CHANGELOG.md"
+              or .previous_filename == "CHANGELOG.md")')
+          read=$(printf '%s\n' "$verdicts" | grep -c . || true)
+
+          # The files endpoint stops at 3000 files. A file it did not
+          # return could be the one this check is for, so a short read is
+          # a failure, not a pass.
+          if [ "$read" -ne "$expected" ]; then
+            echo "::error::Read $read of the $expected files this pull" \
+              "request changes, so whether it changes CHANGELOG.md is" \
+              "unknown."
+            exit 1
+          fi
+
+          if ! printf '%s\n' "$verdicts" | grep -qx true; then
+            echo "This pull request does not change CHANGELOG.md."
+            exit 0
+          fi
+
+          # The release pull request is the one release-please opens with
+          # GITHUB_TOKEN: by `github-actions[bot]`, from a `release-please--`
+          # branch of this repository, into the default branch. A person's
+          # pull request from a branch of that name is not one.
+          release=$(printf '%s' "$pull" | jq -r \
+            --arg repo "$GITHUB_REPOSITORY" '
+              .user.login == "github-actions[bot]"
+              and .user.type == "Bot"
+              and .head.repo.full_name == $repo
+              and (.head.ref | startswith("release-please--"))
+              and .base.ref == .base.repo.default_branch')
+
+          if [ "$release" = true ]; then
+            echo "CHANGELOG.md is changed by the release pull request."
+            exit 0
+          fi
+
+          echo "::error::This pull request changes CHANGELOG.md. The file is" \
+            "written by release-please in its release pull request, from" \
+            "the titles of the pull requests merged since the last release;" \
+            "drop the change and let this pull request's title be its entry."
+          exit 1
