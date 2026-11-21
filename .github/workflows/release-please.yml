@@ -33,8 +33,22 @@ on:
 permissions: {}
 
 # One release run at a time, and none cancelled halfway through tagging.
+#
+# A group holds one running and one pending run, and a newer pending run
+# replaces the older. So only a run that acts (the condition is the
+# `gate` job's) joins `release`; every other one, a failed, cancelled,
+# dispatched or pull-request run of CI, or a dispatch off `main`, gets a
+# group of its own and is skipped there, instead of displacing a pending
+# run that would have tagged a release.
 concurrency:
-  group: release
+  group: >-
+    ${{ ((github.event_name == 'workflow_dispatch'
+          && github.ref == 'refs/heads/main')
+        || (github.event_name == 'workflow_run'
+          && github.event.workflow_run.conclusion == 'success'
+          && github.event.workflow_run.event == 'push'))
+      && 'release'
+      || format('release-skipped-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
@@ -55,6 +69,10 @@ jobs:
   # `none` skips the release step too, rather than letting it look for
   # itself: a release pull request merged after this check would otherwise
   # be tagged unchecked.
+  #
+  # `candidates` lists the pull requests checked, as `<number>:<merge
+  # commit>` lines in order of number, so that the `release-please` job
+  # can tell whether the set changed after this check (see there).
   gate:
     name: Check CI on the release commit
     # A dispatch acts only on `main`; a CI run only when it was a push to
@@ -76,17 +94,22 @@ jobs:
       pull-requests: read
     outputs:
       release: ${{ steps.gate.outputs.release }}
+      candidates: ${{ steps.gate.outputs.candidates }}
     steps:
       - name: Check CI on the merged release pull request
         id: gate
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
+          # `<number>:<merge commit>` for every merged pull request into
+          # `main` labelled `autorelease: pending`, in order of number.
           numbers=$(gh api -X GET "repos/$GITHUB_REPOSITORY/issues" \
             -f state=closed -f labels='autorelease: pending' -f per_page=100 \
             --paginate \
-            --jq '.[] | select(.pull_request.merged_at != null) | .number')
-          release=none
+            --jq '.[] | select(.pull_request.merged_at != null) | .number' \
+            | sort -n)
+          candidates=""
           for number in $numbers; do
             pull=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$number")
             base=$(printf '%s' "$pull" | jq -r '.base.ref')
@@ -98,6 +121,13 @@ jobs:
               echo "::error::Could not read the merge commit of pull request $number"
               exit 1
             fi
+            candidates="$candidates$number:$sha"$'\n'
+          done
+
+          release=none
+          for candidate in $candidates; do
+            number=${candidate%%:*}
+            sha=${candidate#*:}
             passed=$(gh api -X GET \
               "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
               -f head_sha="$sha" -f event=push -f branch=main \
@@ -116,7 +146,14 @@ jobs:
               "request $number."
             release=ready
           done
-          echo "release=$release" >> "$GITHUB_OUTPUT"
+
+          delimiter="candidates-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+          {
+            echo "release=$release"
+            echo "candidates<<$delimiter"
+            printf '%s' "$candidates"
+            echo "$delimiter"
+          } >> "$GITHUB_OUTPUT"
 
   release-please:
     name: Release Please
@@ -154,13 +191,59 @@ jobs:
           fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
+      # release-please cannot be told which pull request to tag: it looks
+      # up the merged pull requests labelled `autorelease: pending` itself.
+      # So this repeats the `gate` job's lookup, right before it, and skips
+      # both release-please steps if the set is no longer the one `gate`
+      # checked: one merged, or was relabelled, in between. A pull request
+      # merged in between starts a run of its own once CI has passed on its
+      # merge commit, and that run checks it.
+      #
+      # What is left is the time between this lookup and the action's own,
+      # a few seconds. A second release pull request cannot appear in it,
+      # since release-please opens none while a merged one is untagged and
+      # keeps one open release pull request on one branch; only a pull
+      # request labelled `autorelease: pending` by hand could.
+      - name: Check that the release pull requests are the ones checked
+        id: same
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKED: ${{ needs.gate.outputs.candidates }}
+        run: |
+          set -euo pipefail
+          numbers=$(gh api -X GET "repos/$GITHUB_REPOSITORY/issues" \
+            -f state=closed -f labels='autorelease: pending' -f per_page=100 \
+            --paginate \
+            --jq '.[] | select(.pull_request.merged_at != null) | .number' \
+            | sort -n)
+          candidates=""
+          for number in $numbers; do
+            pull=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$number")
+            base=$(printf '%s' "$pull" | jq -r '.base.ref')
+            if [ "$base" != main ]; then
+              continue
+            fi
+            sha=$(printf '%s' "$pull" | jq -r '.merge_commit_sha')
+            candidates="$candidates$number:$sha"$'\n'
+          done
+          # A multi-line output drops its last newline, so compare without.
+          if [ "$(printf '%s' "$candidates")" = "$(printf '%s' "$CHECKED")" ]; then
+            echo "same=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "The merged release pull requests changed after the CI" \
+              "check; leaving them to the run that checks them."
+            echo "same=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # Tags and releases a merged release pull request still labelled
       # `autorelease: pending`, once `gate` has found CI passed on its merge
       # commit. It runs first: release-please opens no new release pull
       # request while a merged one is still untagged.
       - name: Tag and release
         id: release
-        if: needs.gate.outputs.release == 'ready'
+        if: >-
+          needs.gate.outputs.release == 'ready'
+          && steps.same.outputs.same == 'true'
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           target-branch: main
@@ -170,6 +253,12 @@ jobs:
       # `main` has moved on, the CI run of the newer commit will start a run
       # of its own, which brings the release pull request up to that commit;
       # this one leaves it alone rather than racing it.
+      #
+      # The action takes a branch, not a commit, so a push landing between
+      # this check and the action's read of `main` is still picked up. The
+      # release pull request then lists that commit before its CI has
+      # finished, until the run its CI starts brings it up to date; it
+      # tags nothing, since tagging waits for CI on the merge commit.
       - name: Check that the commit is still the head of main
         id: head
         env:
@@ -190,6 +279,7 @@ jobs:
         id: pr
         if: >-
           steps.head.outputs.current == 'true'
+          && steps.same.outputs.same == 'true'
           && needs.gate.outputs.release != 'waiting'
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
