@@ -34,28 +34,16 @@ permissions: {}
 
 # One release run at a time, and none cancelled halfway through tagging.
 #
-# A group holds one running and one pending run, and a newer pending run
-# replaces the older. So only a run that acts (the condition is the
-# `gate` job's) joins `release`; every other one, a failed, cancelled,
-# dispatched or pull-request run of CI, or a dispatch off `main`, gets a
-# group of its own and is skipped there, instead of displacing a pending
-# run that would have tagged a release.
-#
-# A run that acts can still displace one: a rerun of push CI for an older
-# commit, finishing while the run for `main`'s head waits, replaces that
-# run. The `gate` job of the replacement therefore also records `main`'s
-# head and whether CI has passed on it, and the release-PR step acts on
-# that head in the displaced run's place (see the head check).
+# A group holds one pending run by default, and a newer pending run
+# replaces the older: a failed or dispatched CI completion, or a rerun of
+# CI for an older commit, could then replace the pending run that would
+# have tagged a release or brought the release pull request up to
+# `main`'s head. `queue: max` keeps up to 100 pending runs instead, which
+# run in the order they started waiting, so none is dropped.
 concurrency:
-  group: >-
-    ${{ ((github.event_name == 'workflow_dispatch'
-          && github.ref == 'refs/heads/main')
-        || (github.event_name == 'workflow_run'
-          && github.event.workflow_run.conclusion == 'success'
-          && github.event.workflow_run.event == 'push'))
-      && 'release'
-      || format('release-skipped-{0}', github.run_id) }}
+  group: release
   cancel-in-progress: false
+  queue: max
 
 jobs:
   # Whether a merged release pull request is waiting to be tagged, and if
@@ -80,9 +68,6 @@ jobs:
   # commit>` lines in order of number, so that the `release-please` job
   # can tell whether the set changed after this check, and whether every
   # Release it created is of a checked merge commit (see there).
-  #
-  # `head` is `main`'s head at this check, and `head_passed` whether it has
-  # a successful push run of CI, for the release job's head check.
   gate:
     name: Check CI on the release commit
     # A dispatch acts only on `main`; a CI run only when it was a push to
@@ -96,19 +81,15 @@ jobs:
         && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # Reads the labelled pull requests (issues, pull-requests), the CI
-    # runs of their merge commits and of `main`'s head (actions), and
-    # `main`'s head (contents).
+    # Reads the labelled pull requests (issues, pull-requests) and the CI
+    # runs of their merge commits (actions).
     permissions:
       actions: read
-      contents: read
       issues: read
       pull-requests: read
     outputs:
       release: ${{ steps.gate.outputs.release }}
       candidates: ${{ steps.gate.outputs.candidates }}
-      head: ${{ steps.gate.outputs.head }}
-      head_passed: ${{ steps.gate.outputs.head_passed }}
     steps:
       - name: Check CI on the merged release pull request
         id: gate
@@ -161,30 +142,9 @@ jobs:
             release=ready
           done
 
-          head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" \
-            --jq .object.sha)
-          if ! printf '%s' "$head" | grep -Eq '^[0-9a-f]{40}$'; then
-            echo "::error::Could not read the head of main"
-            exit 1
-          fi
-          head_runs=$(gh api -X GET \
-            "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
-            -f head_sha="$head" -f event=push -f branch=main \
-            -f status=success -f per_page=1 --jq '.total_count')
-          if ! printf '%s' "$head_runs" | grep -Eq '^[0-9]+$'; then
-            echo "::error::Could not read the CI runs of $head"
-            exit 1
-          fi
-          head_passed=false
-          if [ "$head_runs" -gt 0 ]; then
-            head_passed=true
-          fi
-
           delimiter="candidates-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
           {
             echo "release=$release"
-            echo "head=$head"
-            echo "head_passed=$head_passed"
             echo "candidates<<$delimiter"
             printf '%s' "$candidates"
             echo "$delimiter"
@@ -240,8 +200,10 @@ jobs:
       # since release-please opens none while a merged one is untagged and
       # keeps one open release pull request on one branch; only a pull
       # request labelled `autorelease: pending` by hand could. If one does,
-      # the check after the release step fails the run, naming the Release
-      # it created.
+      # release-please tags and releases it before anything here can stop
+      # it; the check after the release step then fails the run, naming the
+      # Release it created, so that someone looks at it. The window is
+      # narrowed to those seconds and caught, not closed.
       - name: Check that the release pull requests are the ones checked
         id: same
         env:
@@ -346,14 +308,8 @@ jobs:
       # release-please reads `main` as it is now, not this run's commit. If
       # `main` has moved on, the CI run of the newer commit will start a run
       # of its own, which brings the release pull request up to that commit;
-      # this one leaves it alone rather than racing it.
-      #
-      # Unless that run may be gone: when `main`'s head is still the one
-      # `gate` read and CI has passed on it, the run its CI started may have
-      # been displaced from the concurrency group by this one (a rerun of CI
-      # for an older commit). This run then brings the release pull request
-      # up to that head in its place; if the other run is still waiting, it
-      # finds the release pull request already up to date.
+      # this one leaves it alone rather than racing it. That run is not
+      # lost: the concurrency queue keeps it until this one has finished.
       #
       # The action takes a branch, not a commit, so a push landing between
       # this check and the action's read of `main` is still picked up. The
@@ -365,17 +321,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ steps.commit.outputs.sha }}
-          GATE_HEAD: ${{ needs.gate.outputs.head }}
-          HEAD_PASSED: ${{ needs.gate.outputs.head_passed }}
         run: |
           head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" \
             --jq .object.sha)
           if [ "$head" = "$SHA" ]; then
-            echo "current=true" >> "$GITHUB_OUTPUT"
-          elif [ "$head" = "$GATE_HEAD" ] && [ "$HEAD_PASSED" = true ]; then
-            echo "main has moved on from $SHA to $head, which CI has passed;" \
-              "bringing the release pull request up to it, in case the run" \
-              "its CI started was displaced."
             echo "current=true" >> "$GITHUB_OUTPUT"
           else
             echo "main has moved on from $SHA to $head;" \
