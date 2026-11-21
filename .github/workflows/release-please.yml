@@ -1,0 +1,1166 @@
+name: Release
+
+# Runs release-please after CI has passed on `main`, and by hand.
+#
+# Merging the release pull request (label `autorelease: pending`) tags the
+# merged commit `X.Y.Z` and creates the GitHub Release from the section the
+# pull request added to CHANGELOG.md. Any other push to `main` creates or
+# updates the release pull request, which collects the Conventional titles
+# merged since the last release.
+#
+# `workflow_run` rather than `push`, so that nothing is tagged, and no
+# release pull request is proposed, from a commit CI has not passed. The
+# filter names the CI workflow by its `name:`; a file name there never
+# matches anything.
+#
+# release-please finds the merged release pull request on `main` as it is
+# when it runs, not on the commit whose CI started the run, so a run for
+# an older commit could otherwise tag a release pull request merged after
+# it, before that commit's own CI has passed. The `gate` job therefore
+# lets the release step run only once CI has passed on the release pull
+# request's merge commit itself.
+#
+# The release pull request is meant to follow the titles alone. The
+# `titles` job reads every commit since the last release as release-please
+# does, and the release pull request is neither created nor updated while
+# release-please would read any of them beyond its title. The `Validate PR
+# title` status on the open release pull request passes only when it was
+# brought up to date from exactly what that job checked; otherwise it
+# fails, so that a release pull request that no longer follows the titles
+# is not merged. A passing status names the `main` it was checked against,
+# and the `gate` job tags a merged release pull request only if its status
+# passed and names the commit it was merged onto.
+#
+# release-please builds the release pull request's branch, title and body
+# together, but leaves them alone while the body is unchanged, and tags
+# and publishes from the title and body as they are when it tags. So a
+# passing status also needs the head to be what release-please builds from
+# that title and body, and `gate` tags a merged one only if its title and
+# body still match the version and CHANGELOG.md section of its merge
+# commit; both are checked with release-please's own code. A body too long
+# for a pull request holds only a link to a `release-notes.md` file on a
+# branch of release-please's, which it reads in the body's place; that
+# file is read and checked as the body (`.github/scripts/
+# release-please-body.sh`). release-please uploads that file one byte per
+# character, so notes holding a character beyond Latin-1, such as the `⚠`
+# of a breaking release, lose it, and the check fails; the error names
+# `.github/scripts/release-please-notes.sh`, which restores the file as
+# UTF-8, after which a dispatch on `main` checks it again.
+#
+# A version is tagged only where no tag of it exists yet, or where it
+# already points to the merge commit checked, and every new Release is
+# checked by where its tag points, not by the commit it reports.
+#
+# Nothing else runs after a release: this repository builds no artifact
+# and deploys nothing (the Docker image is built by hand, as README
+# "Docker" describes), so no other workflow is called from here.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+# One release run at a time, and none cancelled halfway through tagging.
+#
+# A group holds one pending run by default, and a newer pending run
+# replaces the older: a failed or dispatched CI completion, or a rerun of
+# CI for an older commit, could then replace the pending run that would
+# have tagged a release or brought the release pull request up to
+# `main`'s head. `queue: max` keeps up to 100 pending runs instead, which
+# run in the order they started waiting, so none is dropped.
+concurrency:
+  group: release
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  # Whether a merged release pull request is waiting to be tagged, and if
+  # so whether CI has passed on its merge commit. `release` is `none` when
+  # no merged release pull request is labelled `autorelease: pending`,
+  # `ready` when every one of them has a successful push run of CI on its
+  # merge commit, and `waiting` otherwise.
+  #
+  # `waiting` skips both release-please steps: the release step would tag a
+  # commit CI has not passed, and the release-PR step opens nothing while a
+  # merged release pull request is untagged. The CI run of that merge
+  # commit starts a run of its own, and a later run, of a newer commit or
+  # dispatched, finds that CI run through the API; so the release is
+  # tagged once it has passed, even if the concurrency group dropped the
+  # run it started.
+  #
+  # `none` skips the release step too, rather than letting it look for
+  # itself: a release pull request merged after this check would otherwise
+  # be tagged unchecked.
+  #
+  # A merged release pull request is tagged only if its head carries a
+  # passing `Validate PR title` status that names, as `main at <commit>`,
+  # the commit its squash merge was made on (the merge commit's parent).
+  # The `title` job names there the `main` it checked the release pull
+  # request against, so this holds only if nothing landed on `main` between
+  # that check and the merge. Otherwise the job fails, so nothing is tagged
+  # or proposed: the release pull request was merged with a failed status,
+  # with none, or with a passing one from before a later commit landed (a
+  # merge that came before the run for that commit could post its
+  # verdict), so its version or notes may not follow the titles, and
+  # tagging it would publish them. Someone has to decide what that release
+  # should be; release-please proposes nothing new while it is untagged.
+  #
+  # release-please tags a merged release pull request with the version in
+  # its title, and publishes the notes in its body, as they are when it
+  # tags; neither is bound to the commits checked above, and either can be
+  # edited after the merge. So each one is also read with release-please's
+  # own code (`.github/scripts/release-please-pull.js`): its title must be
+  # `chore(main): release X.Y.Z` for the version its merge commit writes
+  # into the manifest, its body (or the notes file an overflowed body
+  # links to) must hold the notes its merge commit adds to CHANGELOG.md,
+  # and the merge commit must change exactly what release-please writes.
+  # Otherwise the job fails, so nothing is tagged or proposed.
+  #
+  # `candidates` lists the pull requests checked, as `<number>:<merge
+  # commit>:<version>:<title, body and notes file>:<notes>` lines in order
+  # of number, the last two as SHA-256 digests, so that the `release` job
+  # can tell whether the set, or a title, body or notes file, changed after
+  # this check, and whether every Release it created is the one checked
+  # (see there).
+  gate:
+    name: Check CI on the release commit
+    # A dispatch acts only on `main`; a CI run only when it was a push to
+    # `main` and passed. A failed or cancelled CI run, and a dispatched or
+    # pull-request run of CI, start nothing here.
+    if: >-
+      (github.event_name == 'workflow_dispatch'
+        && github.ref == 'refs/heads/main')
+      || (github.event_name == 'workflow_run'
+        && github.event.workflow_run.conclusion == 'success'
+        && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Reads the labelled pull requests (issues, pull-requests), the CI runs
+    # of their merge commits (actions), the parents and files of those
+    # commits (contents) and the statuses of their heads (statuses).
+    permissions:
+      actions: read
+      contents: read
+      issues: read
+      pull-requests: read
+      statuses: read
+    outputs:
+      release: ${{ steps.gate.outputs.release }}
+      candidates: ${{ steps.publish.outputs.candidates }}
+    steps:
+      # For the scripts under `.github/scripts`: the commit this run is
+      # about, the one CI passed, or `main`'s head when dispatched there.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Check CI on the merged release pull request
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/release-pulls"
+          # `<number>:<merge commit>` for every merged pull request into
+          # `main` labelled `autorelease: pending`, in order of number.
+          numbers=$(gh api -X GET "repos/$GITHUB_REPOSITORY/issues" \
+            -f state=closed -f labels='autorelease: pending' -f per_page=100 \
+            --paginate \
+            --jq '.[] | select(.pull_request.merged_at != null) | .number' \
+            | sort -n)
+          candidates=""
+          for number in $numbers; do
+            pull=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$number")
+            base=$(printf '%s' "$pull" | jq -r '.base.ref')
+            if [ "$base" != main ]; then
+              continue
+            fi
+            sha=$(printf '%s' "$pull" | jq -r '.merge_commit_sha')
+            if ! printf '%s' "$sha" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "::error::Could not read the merge commit of pull request $number"
+              exit 1
+            fi
+            head=$(printf '%s' "$pull" | jq -r '.head.sha')
+            if ! printf '%s' "$head" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "::error::Could not read the head of pull request $number"
+              exit 1
+            fi
+            # The commit the squash merge was made on: `main` just before it.
+            parents=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha" \
+              --jq '[.parents[].sha] | join(" ")')
+            if ! printf '%s' "$parents" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "::error::The merge commit $sha of release pull request" \
+                "$number does not have exactly one parent, so it was not" \
+                "squash-merged; it is not tagged."
+              exit 1
+            fi
+            # The latest `Validate PR title` status of the head, if any, as
+            # `<state> <description>`.
+            verdict=$(gh api "repos/$GITHUB_REPOSITORY/commits/$head/status" \
+              --jq '[.statuses[] | select(.context == "Validate PR title")
+                | "\(.state) \(.description // "")"] | first // ""')
+            state=${verdict%% *}
+            checked=$(printf '%s' "${verdict#* }" \
+              | sed -nE 's/.*main at ([0-9a-f]{40})$/\1/p')
+            if [ "$state" != success ] || [ "$checked" != "$parents" ]; then
+              if [ -z "$state" ]; then
+                why="carried no Validate PR title status"
+              elif [ "$state" != success ]; then
+                why="carried a Validate PR title status of $state"
+              else
+                why="carried a Validate PR title status that checked it against main at ${checked:-no named commit}, not $parents"
+              fi
+              echo "::error::Release pull request $number was merged onto" \
+                "$parents while its head $head $why, so its version or" \
+                "notes may not follow the titles merged before it, and it is" \
+                "not tagged. If a person confirms it is to be released as it" \
+                "is, a success Validate PR title status posted on $head whose" \
+                "description ends in 'main at $parents' lets the next run tag" \
+                "it; otherwise remove its 'autorelease: pending' label and" \
+                "correct the release on main."
+              exit 1
+            fi
+            # Its title, body and merge commit, for the check below.
+            .github/scripts/release-please-pull.sh "$number" "$sha" \
+              > "$RUNNER_TEMP/release-pulls/$number.json"
+            candidates="$candidates$number:$sha"$'\n'
+          done
+
+          release=none
+          for candidate in $candidates; do
+            number=${candidate%%:*}
+            sha=${candidate#*:}
+            passed=$(gh api -X GET \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+              -f head_sha="$sha" -f event=push -f branch=main \
+              -f status=success -f per_page=1 --jq '.total_count')
+            if ! printf '%s' "$passed" | grep -Eq '^[0-9]+$'; then
+              echo "::error::Could not read the CI runs of $sha"
+              exit 1
+            fi
+            if [ "$passed" -eq 0 ]; then
+              echo "Release pull request $number (merge commit $sha) has" \
+                "no successful push run of CI yet; it is tagged after one."
+              release=waiting
+              break
+            fi
+            echo "CI passed on $sha, the merge commit of release pull" \
+              "request $number."
+            release=ready
+          done
+
+          printf '%s' "$candidates" > "$RUNNER_TEMP/candidates"
+          {
+            echo "release=$release"
+            if [ -n "$candidates" ]; then
+              echo "any=true"
+            else
+              echo "any=false"
+            fi
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v7
+        if: steps.gate.outputs.any == 'true'
+        with:
+          node-version: 24
+
+      - name: Enable corepack
+        if: steps.gate.outputs.any == 'true'
+        run: corepack enable pnpm
+
+      # What release-please would tag and publish for each merged release
+      # pull request, read with its own code. No token here: this runs
+      # release-please as fetched from npm.
+      - name: Check what each release pull request would publish
+        id: publish
+        run: |
+          set -euo pipefail
+          checked=""
+          failed=0
+          while IFS=: read -r number sha; do
+            [ -n "$number" ] || continue
+            .github/scripts/release-please-node.sh release-please-pull.js \
+              < "$RUNNER_TEMP/release-pulls/$number.json" \
+              > "$RUNNER_TEMP/release-pulls/$number.out.json"
+            if [ "$(jq '.problems | length' \
+              "$RUNNER_TEMP/release-pulls/$number.out.json")" -gt 0 ]; then
+              failed=1
+            fi
+            # A notes file that only lost characters names its own remedy.
+            if [ "$(jq -r '.restorable' \
+              "$RUNNER_TEMP/release-pulls/$number.out.json")" = true ]; then
+              remedy=""
+            else
+              remedy=" Restore its title and body to what release-please wrote (the pull request's edit history holds them), or, if it is not to be released, remove its 'autorelease: pending' label and correct the release on main."
+            fi
+            while IFS= read -r problem; do
+              echo "::error::Release pull request $number does not publish" \
+                "what its merge commit $sha holds: $problem. It is not" \
+                "tagged.$remedy"
+            done < <(jq -r '.problems[]' \
+              "$RUNNER_TEMP/release-pulls/$number.out.json")
+            [ "$failed" -eq 0 ] || continue
+            line=$(jq -r --arg number "$number" --arg sha "$sha" \
+              --slurpfile pull "$RUNNER_TEMP/release-pulls/$number.json" \
+              '"\($number):\($sha):\(.version):\($pull[0].meta):\(.notesDigest)"' \
+              "$RUNNER_TEMP/release-pulls/$number.out.json")
+            echo "Release pull request $number publishes ${line#*:*:}" \
+              "(version, title and body, notes)."
+            checked="$checked$line"$'\n'
+          done < "$RUNNER_TEMP/candidates"
+          [ "$failed" -eq 0 ]
+
+          delimiter="candidates-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+          {
+            echo "candidates<<$delimiter"
+            printf '%s' "$checked"
+            echo "$delimiter"
+          } >> "$GITHUB_OUTPUT"
+
+  # `titles` is `only` when release-please reads every commit since the
+  # last release by its title alone. The next version and CHANGELOG.md
+  # follow the titles only if release-please reads nothing else, so any
+  # other value, `beyond` or none when this job failed, keeps the release
+  # pull request from being created or updated, and fails the `Validate PR
+  # title` status of one already open. It does not hold back tagging, which
+  # runs in a job of its own beside it: a merged release pull request was
+  # built while the titles were all that was read.
+  #
+  # `digest` identifies what this job read: every commit's message and the
+  # bodies of its pull requests. Those bodies can be edited at any time,
+  # and release-please reads them again when it builds the release pull
+  # request, so the `title` job reads them once more after that and
+  # passes the release pull request only if nothing changed.
+  titles:
+    name: Check that release-please reads the titles alone
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Reads the commits since the last release (contents) and the bodies of
+    # their pull requests (pull-requests).
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      titles: ${{ steps.titles.outputs.titles }}
+      digest: ${{ steps.input.outputs.digest }}
+      last: ${{ steps.input.outputs.last }}
+    steps:
+      # The commit this run is about: the one CI passed, or `main`'s head
+      # when dispatched there. With every tag, to find the last release.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # `last` is the commit the commits were read after: the tag of the
+      # manifest's version, or, before the release step has created that
+      # tag, the merge commit it will be created on. The `release-pr` job
+      # proposes nothing unless the tag is on that commit by then.
+      - name: Collect what release-please reads
+        id: input
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          .github/scripts/release-please-since.sh --last "$RUNNER_TEMP/last" \
+            > "$RUNNER_TEMP/shas"
+          .github/scripts/release-please-input.sh \
+            < "$RUNNER_TEMP/shas" > "$RUNNER_TEMP/commits.json"
+          digest=$(sha256sum "$RUNNER_TEMP/commits.json" | cut -d' ' -f1)
+          {
+            echo "digest=$digest"
+            echo "last=$(cat "$RUNNER_TEMP/last")"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Enable corepack
+        run: corepack enable pnpm
+
+      # Reads each commit with release-please's own parser, from the
+      # release the action pinned below bundles, as release-please reads it
+      # and as its title alone (`.github/scripts/release-please-reads.js`).
+      # Where the two differ, the release pull request would not follow the
+      # titles, for example at the version a `Release-As` footer sets, so
+      # `titles` becomes `beyond`, and the release pull request is neither
+      # created nor updated until each such commit is corrected. The `Commit
+      # title` run of that commit names the remedy: a commit override
+      # holding exactly the title in the body of its pull request. A release
+      # pull request already open keeps what it had, but its `Validate PR
+      # title` status fails (see the `title` job), since it no longer covers
+      # every commit on `main`. No token here: this runs release-please as
+      # fetched from npm.
+      - name: Check that release-please reads the titles alone
+        id: titles
+        run: |
+          set -euo pipefail
+          .github/scripts/release-please-reads.sh \
+            < "$RUNNER_TEMP/commits.json" > "$RUNNER_TEMP/findings.json"
+          titles=only
+          while IFS=$'\t' read -r sha finding; do
+            echo "::error::Commit $sha is not read by its title alone: $finding"
+            titles=beyond
+          done < <(jq -r '.[] | .sha as $sha | .findings[] | "\($sha)\t\(.)"' \
+            "$RUNNER_TEMP/findings.json")
+          echo "titles=$titles" >> "$GITHUB_OUTPUT"
+
+  # Tags and releases a merged release pull request. It needs `gate` only,
+  # so it neither waits for `titles` nor depends on its result.
+  release:
+    name: Tag and release
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The set release-please-action's README names: it tags and releases
+    # (contents), and swaps the `autorelease:` labels through the issues
+    # API (issues), on the pull request it tags (pull-requests).
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      same: ${{ steps.same.outputs.same }}
+    steps:
+      # For `.github/scripts/release-please-body.sh` and
+      # `release-please-tag.sh`: the commit this run is about, the one CI passed, or `main`'s head when dispatched there.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+
+      # The Releases that exist before the release step, so that the check
+      # after it can tell which ones it created. Recorded before the
+      # re-check below, so that nothing but that re-check stands between
+      # this snapshot and the action.
+      - name: Record the Releases before tagging
+        id: before
+        if: needs.gate.outputs.release == 'ready'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ids=$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].id')
+          delimiter="ids-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+          {
+            echo "ids<<$delimiter"
+            printf '%s\n' "$ids"
+            echo "$delimiter"
+          } >> "$GITHUB_OUTPUT"
+
+      # release-please cannot be told which pull request to tag: it looks
+      # up the merged pull requests labelled `autorelease: pending` itself.
+      # So this repeats the `gate` job's lookup as the last step before it,
+      # and skips both release-please steps if the set is no longer the one
+      # `gate` checked: one merged, or was relabelled, in between, or the
+      # title or body of one changed, or the release notes file an
+      # overflowed body links to, which release-please tags and publishes
+      # from.
+      # A pull request merged in between starts a run of its own once CI
+      # has passed on its merge commit, and that run checks it; after an
+      # edit, the next run, or a dispatch on `main`, checks it again.
+      #
+      # What is left is the time between this lookup and the action's own,
+      # a few seconds, and the action takes no list of pull requests to
+      # bind it to. A second release pull request cannot appear in it,
+      # since release-please opens none while a merged one is untagged and
+      # keeps one open release pull request on one branch; only a pull
+      # request labelled `autorelease: pending` by hand could. If one does,
+      # release-please tags and releases it before anything here can stop
+      # it; the check after the release step then fails the run, naming the
+      # Release it created, so that someone looks at it. The same holds for
+      # a title, a body or an overflowed body's notes file edited in those
+      # seconds: the Release is published from the edit, and the check
+      # after the release step fails the run when its tag, name or notes
+      # are not the ones `gate` checked. The window is narrowed to those
+      # seconds and caught, not closed.
+      #
+      # Before that lookup, it fails the job when the tag of a checked
+      # version already exists on a commit other than that pull request's
+      # merge commit, or exists and leads to no commit at all.
+      # release-please would then create the Release on the existing tag,
+      # since GitHub ignores the commit it names when the tag exists, and
+      # publish the version from a commit nobody checked. Someone has to
+      # decide which commit that version is. The tags are read first so
+      # that their reads, one or more per version, do not stand between
+      # the lookup and the action and widen the window above.
+      - name: Check that the release pull requests are the ones checked
+        id: same
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKED: ${{ needs.gate.outputs.candidates }}
+        run: |
+          set -euo pipefail
+          # `<number>:<merge commit>:<version>` of what `gate` checked.
+          conflict=0
+          while IFS=: read -r number sha version; do
+            [ -n "$number" ] || continue
+            if ! tagged=$(.github/scripts/release-please-tag.sh "$version"); then
+              echo "::error::Could not tell where the tag $version is, so" \
+                "release-please could publish $version on a commit nobody" \
+                "checked. Nothing is tagged. Point the tag $version at" \
+                "$sha if that is the release, or remove the 'autorelease:" \
+                "pending' label of pull request $number and correct the" \
+                "release on main."
+              conflict=1
+              continue
+            fi
+            if [ -n "$tagged" ] && [ "$tagged" != "$sha" ]; then
+              echo "::error::The tag $version already points to $tagged," \
+                "not to $sha, the merge commit of release pull request" \
+                "$number, so release-please would publish $version on" \
+                "$tagged. Nothing is tagged. Move or delete the tag" \
+                "$version if $sha is that release, or remove the" \
+                "'autorelease: pending' label of pull request $number and" \
+                "correct the release on main."
+              conflict=1
+            fi
+          done < <(printf '%s\n' "$CHECKED" | cut -d: -f1-3)
+          if [ "$conflict" -ne 0 ]; then
+            exit 1
+          fi
+          numbers=$(gh api -X GET "repos/$GITHUB_REPOSITORY/issues" \
+            -f state=closed -f labels='autorelease: pending' -f per_page=100 \
+            --paginate \
+            --jq '.[] | select(.pull_request.merged_at != null) | .number' \
+            | sort -n)
+          candidates=""
+          for number in $numbers; do
+            pull=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$number")
+            base=$(printf '%s' "$pull" | jq -r '.base.ref')
+            if [ "$base" != main ]; then
+              continue
+            fi
+            sha=$(printf '%s' "$pull" | jq -r '.merge_commit_sha')
+            # The title, body and overflowed notes, as release-please-pull.sh
+            # digests them.
+            meta=$(printf '%s' "$pull" \
+              | .github/scripts/release-please-body.sh | jq -r '.meta')
+            candidates="$candidates$number:$sha:$meta"$'\n'
+          done
+          # `<number>:<merge commit>:<title, body and notes file>` of what
+          # `gate` checked. A multi-line output drops its last newline, so
+          # compare without.
+          checked=$(printf '%s\n' "$CHECKED" | cut -d: -f1,2,4)
+          if [ "$(printf '%s' "$candidates")" = "$checked" ]; then
+            echo "same=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "The merged release pull requests changed after the CI" \
+              "check; leaving them to the run that checks them."
+            echo "same=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Tags and releases a merged release pull request still labelled
+      # `autorelease: pending`, once `gate` has found CI passed on its merge
+      # commit. It runs before the release-PR step, whose job waits for this
+      # one: release-please opens no new release pull request while a merged
+      # one is still untagged.
+      - name: Tag and release
+        id: release
+        if: >-
+          needs.gate.outputs.release == 'ready'
+          && steps.same.outputs.same == 'true'
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          target-branch: main
+          skip-github-pull-request: true
+
+      # release-please creates each Release on the merge commit of the pull
+      # request it tagged (`target_commitish`). Every Release the step
+      # created must be on a merge commit `gate` found CI passed on, with
+      # the tag, name and notes `gate` found it would publish; one that is
+      # not was tagged from a pull request labelled, or a title or body
+      # edited, after the re-check above, and this fails the run so that
+      # someone looks at it. Where it is, is read from its tag: when the
+      # tag already existed, GitHub keeps it where it was and the Release
+      # still reports the commit it was asked for. It also runs when the
+      # release step failed partway.
+      - name: Check that every new Release is of a checked commit
+        if: >-
+          !cancelled()
+          && steps.before.outcome == 'success'
+          && steps.release.outcome != 'skipped'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE: ${{ steps.before.outputs.ids }}
+          CHECKED: ${{ needs.gate.outputs.candidates }}
+        run: |
+          set -euo pipefail
+          after=$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | [.id, .tag_name, .target_commitish, (.name // "")] | @tsv')
+          unchecked=0
+          while IFS=$'\t' read -r id tag target name; do
+            [ -n "$id" ] || continue
+            if printf '%s\n' "$BEFORE" | grep -Fqx -- "$id"; then
+              continue
+            fi
+            # A tag that is not a version names no checked release.
+            tagged=""
+            if printf '%s' "$tag" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              if ! tagged=$(.github/scripts/release-please-tag.sh "$tag"); then
+                tagged=""
+              fi
+            fi
+            if [ -z "$tagged" ] || [ "$tagged" != "$target" ]; then
+              echo "::error::Release $tag reports $target, but its tag points to ${tagged:-no commit}, so it was not published on the commit it was created for"
+              unchecked=1
+              continue
+            fi
+            # `<version>:<notes>` that `gate` checked for this commit.
+            expected=$(printf '%s\n' "$CHECKED" \
+              | awk -F: -v target="$target" \
+                '$2 == target && target != "" { print $3 ":" $5 }')
+            if [ -z "$expected" ] || [ "$(printf '%s\n' "$expected" | wc -l)" -ne 1 ]; then
+              echo "::error::Release $tag was created on $target, which is not the merge commit of a release pull request whose CI was checked"
+              unchecked=1
+              continue
+            fi
+            version=${expected%%:*}
+            # The substitution drops the newline `--jq` ends the body with;
+            # the notes release-please publishes end in none.
+            body=$(gh api "repos/$GITHUB_REPOSITORY/releases/$id" \
+              --jq '.body // ""')
+            notes=$(printf '%s' "$body" | sha256sum | cut -d' ' -f1)
+            if [ "$tag" != "$version" ] || [ "$name" != "$version" ] \
+              || [ "$notes" != "${expected#*:}" ]; then
+              echo "::error::Release $tag (named '$name') on $target is not the release checked for that commit: the tag and name $version, with the notes its merge commit adds to CHANGELOG.md"
+              unchecked=1
+            else
+              echo "Release $tag is on $target, a checked merge commit, with the checked name and notes."
+            fi
+          done <<< "$after"
+          [ "$unchecked" -eq 0 ]
+
+  # Creates or updates the release pull request, after the release step
+  # and once `titles` has finished. `acted` is `true` when this run was the
+  # one to bring the release pull request up to `main`, whether or not
+  # `titles` let it; the `title` job then posts the verdict on it.
+  release-pr:
+    name: Release Please
+    needs: [gate, titles, release]
+    # Also when `titles` failed: its missing output refuses the release
+    # pull request below. Not when the release step failed, which must
+    # come first.
+    if: >-
+      !cancelled()
+      && needs.gate.result == 'success'
+      && needs.release.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The set release-please-action's README names: it pushes the release
+    # branch (contents), opens and edits the release pull request
+    # (pull-requests), and creates its `autorelease:` labels through the
+    # issues API (issues).
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+      acted: ${{ steps.act.outputs.acted }}
+      baseline: ${{ steps.baseline.outputs.baseline }}
+      built: ${{ steps.built.outputs.built }}
+      pr: ${{ steps.pr.outputs.pr }}
+    steps:
+      # The commit this run is about: the one CI passed, or `main`'s head
+      # when dispatched there.
+      - name: Resolve the commit
+        id: commit
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ "$EVENT_NAME" = workflow_run ]; then
+            sha=$RUN_SHA
+          else
+            sha=$GITHUB_SHA
+          fi
+          if ! printf '%s' "$sha" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::Could not resolve the commit this run is about"
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      # release-please reads `main` as it is now, not this run's commit. If
+      # `main` has moved on, the CI run of the newer commit will start a run
+      # of its own, which brings the release pull request up to that commit;
+      # this one leaves it alone rather than racing it. That run is not
+      # lost: the concurrency queue keeps it until this one has finished.
+      #
+      # This check comes first, so that a run already stale makes none of
+      # the reads below; the `act` step reads `main` again after them, right
+      # before the action.
+      - name: Check that the commit is still the head of main
+        id: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" \
+            --jq .object.sha)
+          if [ "$head" = "$SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "main has moved on from $SHA to $head;" \
+              "leaving the release pull request to the newer run."
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # For `.github/scripts/release-please-tag.sh` in the check below.
+      - uses: actions/checkout@v7
+        if: >-
+          steps.head.outputs.current == 'true'
+          && needs.release.outputs.same == 'true'
+          && needs.gate.outputs.release != 'waiting'
+        with:
+          ref: ${{ steps.commit.outputs.sha }}
+          persist-credentials: false
+
+      # release-please reads the commits after the Release, or else the
+      # tag, of the manifest's version; with neither, it reads back through
+      # the history well past the last release, over commits `titles` did
+      # not read. `titles` may have read before the release step created
+      # that tag, from the commit it would be created on. So now that
+      # tagging is done, the tag must exist on the commit `titles` read
+      # after (`last`); otherwise nothing is proposed, and the `title` job
+      # fails the run. A merged release pull request left untagged, for
+      # example one `gate` refused whose `autorelease: pending` label was
+      # then removed, keeps the release pull request from being proposed
+      # until its release is tagged or the manifest corrected on `main`.
+      - name: Check that the last release is tagged where titles read from
+        id: baseline
+        if: >-
+          steps.head.outputs.current == 'true'
+          && needs.release.outputs.same == 'true'
+          && needs.gate.outputs.release != 'waiting'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.commit.outputs.sha }}
+          LAST: ${{ needs.titles.outputs.last }}
+        run: |
+          set -euo pipefail
+          version=$(gh api \
+            "repos/$GITHUB_REPOSITORY/contents/.release-please-manifest.json?ref=$SHA" \
+            --jq '.content' | base64 -d | jq -r '."."')
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::.release-please-manifest.json at $SHA holds no X.Y.Z version"
+            exit 1
+          fi
+          # Resolved as the release job's re-check resolves it, through any
+          # chain of annotated tags; a tag that leads to no commit, or an
+          # error of the API, fails the step.
+          if ! tagged=$(.github/scripts/release-please-tag.sh "$version"); then
+            echo "::error::Could not tell which commit the tag $version of" \
+              "the manifest's version is on (see above), so the release pull" \
+              "request is not proposed."
+            echo "baseline=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          if [ -n "$tagged" ] && [ "$tagged" = "$LAST" ]; then
+            echo "The tag $version is on $tagged, where titles read from."
+            echo "baseline=true" >> "$GITHUB_OUTPUT"
+          else
+            if [ -z "$tagged" ]; then
+              echo "::error::The tag $version of the manifest's version does" \
+                "not exist, so release-please would read commits from before" \
+                "the last release that the titles job did not check. Tag the" \
+                "release of $version, or correct the manifest on main, then" \
+                "dispatch this workflow on main."
+            else
+              echo "::error::The tag $version is on $tagged, not on" \
+                "${LAST:-the commit the titles job read after}, so" \
+                "release-please would read commits the titles job did not" \
+                "check. Dispatch this workflow on main to read them again."
+            fi
+            echo "baseline=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # This run is the one to bring the release pull request up to `main`
+      # when its commit is still `main`'s head, the merged release pull
+      # requests are the ones `gate` checked, and none of them waits for CI.
+      # `main` is read again here, after the reads above and as the last
+      # step before the action, so that a push landing while they ran
+      # leaves the release pull request to the run for that push, as the
+      # first check does. It runs also when the last-release check failed,
+      # so that the `title` job posts that verdict.
+      #
+      # The action takes a branch, not a commit, so a push landing between
+      # this read and the action's own read of `main` is still picked up.
+      # The `title` job then finds `main` moved and fails the release pull
+      # request's `Validate PR title` status, until the run for the newer
+      # commit has checked it; it tags nothing, since tagging waits for CI
+      # on the merge commit.
+      - name: Decide whether this run updates the release pull request
+        id: act
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.commit.outputs.sha }}
+          CURRENT: ${{ steps.head.outputs.current }}
+          SAME: ${{ needs.release.outputs.same }}
+          RELEASE: ${{ needs.gate.outputs.release }}
+        run: |
+          set -euo pipefail
+          acted=false
+          if [ "$CURRENT" = true ] && [ "$SAME" = true ] \
+            && [ "$RELEASE" != waiting ]; then
+            head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" \
+              --jq .object.sha)
+            if [ "$head" = "$SHA" ]; then
+              acted=true
+            else
+              echo "main moved on from $SHA to $head while this run read" \
+                "the last release; leaving the release pull request to the" \
+                "newer run."
+            fi
+          fi
+          echo "acted=$acted" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update the release pull request
+        id: pr
+        if: >-
+          steps.act.outputs.acted == 'true'
+          && steps.baseline.outputs.baseline == 'true'
+          && needs.titles.outputs.titles == 'only'
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          target-branch: main
+          skip-github-release: true
+
+      # `success`, `failure` or `skipped`, for the `title` job. Also when
+      # the step failed.
+      - name: Record whether the release pull request was built
+        id: built
+        if: ${{ !cancelled() }}
+        env:
+          OUTCOME: ${{ steps.pr.outcome }}
+        run: echo "built=$OUTCOME" >> "$GITHUB_OUTPUT"
+
+  # The release pull request is opened with GITHUB_TOKEN, so it starts no
+  # `pull_request_target` run and `pr-title.yml` never checks it. Post the
+  # verdict, under the same name, as a commit status on its head.
+  #
+  # The status passes only when the title passes the rule and the release
+  # pull request was brought up to date from exactly what `titles` checked.
+  # It fails when `titles` refused it (a release pull request already open
+  # then no longer covers every commit on `main`), when the release-PR step
+  # failed, when a pull request body changed between the `titles` read and
+  # the one here (release-please read it in between, so what it read was
+  # not checked), and when `main` moved while it was built (release-please
+  # read a commit `titles` did not), and when the re-read of what
+  # release-please read could not be made. A passing status names the
+  # `main` it was checked against (`main at <commit>`). Once `Validate PR
+  # title` is a required check, a failed status keeps the release pull
+  # request from being merged, and `gate` tags none merged with it failing,
+  # nor one merged onto a `main` other than the one its status names: a
+  # commit landed in between, and the run for that commit had not yet
+  # replaced the passing status when the release pull request merged.
+  #
+  # It is posted on the open release pull request whether or not this run
+  # changed it: release-please leaves an unchanged one alone and names
+  # none in its output, and its status must still follow this run's
+  # verdict, which replaces any earlier one.
+  #
+  # release-please leaves it alone whenever its body is the one it would
+  # generate, whatever has been pushed to its branch since, so a passing
+  # verdict also needs the head to be what release-please builds from
+  # that body: one commit on a commit of `main`, changing exactly the
+  # files release-please writes, each to what its own updaters make of
+  # them with the version in the title and the notes in the body
+  # (`.github/scripts/release-please-pull.js`).
+  #
+  # Reading the bodies after release-please narrows what it might have
+  # read unchecked to a body edited and edited back between the two
+  # reads. A body edited only after release-please read it fails the
+  # status too; dispatching this workflow on `main` passes it again.
+  title:
+    name: Validate PR title
+    needs: [titles, release-pr]
+    if: ${{ !cancelled() && needs.release-pr.outputs.acted == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    steps:
+      # The action's `pr` output gives the number but no head commit, so the
+      # pull request is read back after release-please has pushed to it.
+      # When the output names none, release-please left the release pull
+      # request alone, or was not run; the open one is looked up on the
+      # branch release-please keeps it on. With one package, release-please
+      # 17.6.0 opens a pull request per component, on
+      # `release-please--branches--<target>--components--<component>`, and
+      # the component is the `name` of `package.json`, `github-dashboard`
+      # (`build/src/strategies/base.js`, `buildReleasePullRequest`).
+      #
+      # This comes first, needing nothing checked out, so that the verdict
+      # below is posted on the release pull request even when a later step
+      # fails.
+      - name: Read the release pull request
+        id: read
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ needs.release-pr.outputs.pr }}
+        run: |
+          set -euo pipefail
+          if [ -n "$PR" ]; then
+            number=$(printf '%s' "$PR" | jq -r '.number')
+          else
+            number=$(gh api -X GET "repos/$GITHUB_REPOSITORY/pulls" \
+              -f state=open -f base=main \
+              -f head="${GITHUB_REPOSITORY%%/*}:release-please--branches--main--components--github-dashboard" \
+              --jq '[.[] | select(.user.login == "github-actions[bot]")
+                | .number] | first // ""')
+            if [ -z "$number" ]; then
+              echo "No release pull request is open."
+              echo "found=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          if ! printf '%s' "$number" | grep -Eq '^[0-9]+$'; then
+            echo "::error::Could not tell which pull request is the release pull request"
+            exit 1
+          fi
+          pull=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$number")
+          sha=$(printf '%s' "$pull" | jq -r '.head.sha')
+          if ! printf '%s' "$sha" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::Could not read the head of pull request $number"
+            exit 1
+          fi
+          delimiter="title-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+          {
+            echo "found=true"
+            echo "number=$number"
+            echo "sha=$sha"
+            echo "title<<$delimiter"
+            printf '%s' "$pull" | jq -r '.title'
+            echo "$delimiter"
+          } >> "$GITHUB_OUTPUT"
+
+      # The rule is read from the release `.agent-instructions.toml` pins,
+      # which the action reads from the workspace: `main` as of this run,
+      # which is what the release pull request is based on. With every
+      # tag, to find the last release.
+      - uses: actions/checkout@v7
+        id: checkout
+        with:
+          ref: ${{ needs.release-pr.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # What release-please read, read again: the commits since the last
+      # release and their pull requests' bodies, compared with what
+      # `titles` read, and `main`'s head, compared with this run's commit.
+      - name: Check that release-please read what was checked
+        id: inputs
+        if: >-
+          needs.titles.outputs.titles == 'only'
+          && needs.release-pr.outputs.built == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.release-pr.outputs.sha }}
+          CHECKED: ${{ needs.titles.outputs.digest }}
+        run: |
+          set -euo pipefail
+          head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" \
+            --jq .object.sha)
+          if [ "$head" = "$SHA" ]; then
+            echo "moved=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "main moved from $SHA to $head while the release pull" \
+              "request was built."
+            echo "moved=true" >> "$GITHUB_OUTPUT"
+          fi
+          # After tagging, so the tag must exist.
+          .github/scripts/release-please-since.sh --require-tag \
+            > "$RUNNER_TEMP/shas"
+          .github/scripts/release-please-input.sh \
+            < "$RUNNER_TEMP/shas" > "$RUNNER_TEMP/commits.json"
+          digest=$(sha256sum "$RUNNER_TEMP/commits.json" | cut -d' ' -f1)
+          if [ -n "$CHECKED" ] && [ "$digest" = "$CHECKED" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "A commit message or pull request body since the last" \
+              "release differs from what the titles job read."
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The head's one parent, whether that is a commit of `main` (the
+      # `main` this run checked, or one before it), and the input of the
+      # check below.
+      - name: Collect the release pull request's head
+        id: pull
+        if: steps.read.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ steps.read.outputs.number }}
+          SHA: ${{ steps.read.outputs.sha }}
+          MAIN: ${{ needs.release-pr.outputs.sha }}
+        run: |
+          set -euo pipefail
+          .github/scripts/release-please-pull.sh "$NUMBER" "$SHA" \
+            > "$RUNNER_TEMP/pull.json"
+          parent=$(jq -r '.parent' "$RUNNER_TEMP/pull.json")
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$parent...$MAIN" \
+            --jq '.status')
+          if [ "$status" = identical ] || [ "$status" = ahead ]; then
+            echo "on_main=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::The head $SHA of the release pull request is not" \
+              "one commit on main: its parent $parent is not a commit of" \
+              "main at $MAIN, so it was not pushed by release-please."
+            echo "on_main=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v7
+        if: steps.read.outputs.found == 'true'
+        with:
+          node-version: 24
+
+      - name: Enable corepack
+        if: steps.read.outputs.found == 'true'
+        run: corepack enable pnpm
+
+      # No token here: this runs release-please as fetched from npm.
+      - name: Check that release-please built the head from the body
+        id: generated
+        if: steps.pull.outcome == 'success'
+        env:
+          SHA: ${{ steps.read.outputs.sha }}
+        run: |
+          set -euo pipefail
+          .github/scripts/release-please-node.sh release-please-pull.js \
+            < "$RUNNER_TEMP/pull.json" > "$RUNNER_TEMP/pull.out.json"
+          generated=true
+          while IFS= read -r problem; do
+            echo "::error::The release pull request at $SHA is not what" \
+              "release-please builds: $problem."
+            generated=false
+          done < <(jq -r '.problems[]' "$RUNNER_TEMP/pull.out.json")
+          {
+            echo "generated=$generated"
+            echo "restorable=$(jq -r '.restorable' "$RUNNER_TEMP/pull.out.json")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check the title
+        id: check
+        if: steps.read.outputs.found == 'true'
+        continue-on-error: true
+        uses: aicers/agent-instructions/conventional-title@main
+        with:
+          title: ${{ steps.read.outputs.title }}
+
+      # Also when the checkout or the re-read failed, so that a release pull
+      # request left unchanged does not keep an earlier passing status
+      # although what release-please read could not be checked; not when the
+      # release pull request could not be read, since then there is nothing
+      # to post the verdict on.
+      - name: Post the verdict
+        if: ${{ !cancelled() && steps.read.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FOUND: ${{ steps.read.outputs.found }}
+          NUMBER: ${{ steps.read.outputs.number }}
+          SHA: ${{ steps.read.outputs.sha }}
+          MAIN: ${{ needs.release-pr.outputs.sha }}
+          TITLES: ${{ needs.titles.outputs.titles }}
+          BASELINE: ${{ needs.release-pr.outputs.baseline }}
+          BUILT: ${{ needs.release-pr.outputs.built }}
+          CHECKOUT: ${{ steps.checkout.outcome }}
+          INPUTS: ${{ steps.inputs.outcome }}
+          MOVED: ${{ steps.inputs.outputs.moved }}
+          CHANGED: ${{ steps.inputs.outputs.changed }}
+          PULL: ${{ steps.pull.outcome }}
+          ON_MAIN: ${{ steps.pull.outputs.on_main }}
+          GENERATED_OUTCOME: ${{ steps.generated.outcome }}
+          GENERATED: ${{ steps.generated.outputs.generated }}
+          RESTORABLE: ${{ steps.generated.outputs.restorable }}
+          OUTCOME: ${{ steps.check.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ "$TITLES" != only ]; then
+            state=failure description="A commit since the last release is read beyond its title"
+            echo "::error::release-please reads some commit since the last" \
+              "release beyond its title, or the commits could not be checked" \
+              "(see the titles job), so the release pull request was not" \
+              "created or updated. Correct each such commit as its Commit" \
+              "title run says, then dispatch this workflow on main."
+          elif [ "$BASELINE" != true ]; then
+            state=failure description="The last release is not tagged where its commits were read from"
+            echo "::error::The tag of the last release is missing, or not on" \
+              "the commit the titles job read after (see the Release Please" \
+              "job), so the release pull request was not created or updated."
+          elif [ "$BUILT" != success ]; then
+            state=failure description="Not brought up to date with main"
+            echo "::error::The release pull request was not brought up to" \
+              "date with main (see the Release Please job)."
+          elif [ "$CHECKOUT" != success ] || [ "$INPUTS" != success ]; then
+            state=failure description="What release-please read could not be checked"
+            echo "::error::Checking out main or reading again what" \
+              "release-please read failed (see the steps above), so the" \
+              "release pull request may hold what the titles job did not" \
+              "check. Dispatch this workflow on main to check it again."
+          elif [ "$MOVED" != false ]; then
+            state=failure description="main moved while it was built; the newer run checks it"
+            echo "::error::main moved while the release pull request was" \
+              "built, so it may hold a commit the titles job did not read." \
+              "The run for main's new head checks it again."
+          elif [ "$CHANGED" != false ]; then
+            state=failure description="A pull request body changed while it was built"
+            echo "::error::A commit message or pull request body changed" \
+              "while the release pull request was built, so what" \
+              "release-please read was not checked. Dispatch this workflow" \
+              "on main to check and build it again."
+          elif [ "$PULL" != success ] || [ "$GENERATED_OUTCOME" != success ]; then
+            state=failure description="Could not check that release-please built its head"
+            echo "::error::Reading the release pull request's head, or" \
+              "checking it against what release-please builds, failed (see" \
+              "the steps above). Dispatch this workflow on main to check it" \
+              "again."
+          elif [ "$ON_MAIN" = true ] && [ "$RESTORABLE" = true ]; then
+            state=failure description="Its release notes file lost characters; restore it as UTF-8"
+            echo "::error::release-please uploaded the release notes file" \
+              "of this overflowed body one byte per character, so it lost" \
+              "the characters beyond Latin-1 that CHANGELOG.md holds (see" \
+              "the steps above). Run .github/scripts/release-please-notes.sh" \
+              "$NUMBER to restore it as UTF-8, then dispatch this workflow" \
+              "on main."
+          elif [ "$ON_MAIN" != true ] || [ "$GENERATED" != true ]; then
+            state=failure description="Its head is not what release-please builds from its body"
+            echo "::error::The release pull request's head is not what" \
+              "release-please builds from its title and body (see the steps" \
+              "above): a commit was pushed to its branch, or its title or" \
+              "body was edited. Close it and delete its branch, then" \
+              "dispatch this workflow on main to open it again."
+          elif [ "$OUTCOME" != success ]; then
+            state=failure description="Not a Conventional title"
+          elif ! printf '%s' "$MAIN" | grep -Eq '^[0-9a-f]{40}$'; then
+            state=failure description="Could not tell which main it was checked against"
+          else
+            # `gate` tags the release pull request only if it was merged
+            # onto the commit named here.
+            state=success description="Conventional title, built from the checked titles of main at $MAIN"
+          fi
+          if [ "$FOUND" != true ]; then
+            # Nothing to hold back, unless a refusal above applies.
+            [ "$TITLES" = only ] && [ "$BASELINE" = true ] || exit 1
+            exit 0
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" \
+            -f state="$state" \
+            -f context="Validate PR title" \
+            -f description="$description" \
+            -f target_url="$RUN_URL" > /dev/null
+          echo "Validate PR title: $state on $SHA, the head of pull request $NUMBER"
+          [ "$state" = success ]

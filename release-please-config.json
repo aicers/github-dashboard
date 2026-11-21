@@ -1,0 +1,22 @@
+{
+  "packages": { ".": {} },
+  "release-type": "node",
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": true,
+  "include-v-in-tag": false,
+  "include-v-in-release-name": false,
+  "include-component-in-tag": false,
+  "changelog-sections": [
+    { "type": "feat", "section": "Added" },
+    { "type": "fix", "section": "Fixed" },
+    { "type": "perf", "section": "Other" },
+    { "type": "refactor", "section": "Other" },
+    { "type": "docs", "section": "Other" },
+    { "type": "style", "section": "Other" },
+    { "type": "test", "section": "Other" },
+    { "type": "build", "section": "Other" },
+    { "type": "ci", "section": "Other" },
+    { "type": "chore", "section": "Other" },
+    { "type": "revert", "section": "Other" }
+  ]
+}
