@@ -14,6 +14,7 @@ import {
   SAVED_FILTER_LIMIT,
   updateSavedFilter,
 } from "@/lib/activity/filter-store";
+import { query } from "@/lib/db/client";
 import {
   resetActivitySavedFiltersTables,
   seedActivityUser,
@@ -178,15 +179,34 @@ describe("activity filter store", () => {
     const stored = await getSavedFilter(USER_ID, filter.id);
     expect(stored).toBeNull();
 
-    const stale = await createSavedFilter(
+    const saved = await createSavedFilter(
       USER_ID,
       "Stale delete",
       createPayload(),
     );
+    // Reproduce a database clock that has not reached the stored version yet.
+    await query(
+      `UPDATE activity_saved_filters
+       SET updated_at = NOW() + INTERVAL '1 hour'
+       WHERE id = $1`,
+      [saved.id],
+    );
+    const stale = await getSavedFilter(USER_ID, saved.id);
+    if (!stale) {
+      throw new Error("Expected to read the saved filter before updating it");
+    }
+
     const updated = await updateSavedFilter(USER_ID, stale.id, {
       name: "Updated name",
+      expectedUpdatedAt: stale.updatedAt,
     });
     expect(updated.status).toBe("ok");
+    if (updated.status !== "ok") {
+      throw new Error("Expected update with the current timestamp to succeed");
+    }
+    expect(Date.parse(updated.filter.updatedAt)).toBeGreaterThan(
+      Date.parse(stale.updatedAt),
+    );
 
     const conflict = await deleteSavedFilter(USER_ID, stale.id, {
       expectedUpdatedAt: stale.updatedAt,
@@ -196,6 +216,7 @@ describe("activity filter store", () => {
       throw new Error("Expected conflict when deleting with stale timestamp");
     }
     expect(conflict.filter.name).toBe("Updated name");
+    expect(await getSavedFilter(USER_ID, stale.id)).toEqual(updated.filter);
   });
 
   it("throws when filter name is empty or whitespace", async () => {
