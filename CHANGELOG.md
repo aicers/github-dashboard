@@ -4,6 +4,17 @@ This file documents recent notable changes to this project. The format of this
 file is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1](https://github.com/aicers/github-dashboard/compare/0.4.0...0.4.1) (2026-11-22)
+
+
+### Other
+
+* automate releases with release-please ([#596](https://github.com/aicers/github-dashboard/issues/596)) ([dd640c4](https://github.com/aicers/github-dashboard/commit/dd640c4d975a82a8dd110964a1d28ad4f5c82558))
+* count the triggering CI run as passed in the release gate ([#608](https://github.com/aicers/github-dashboard/issues/608)) ([a1d12b1](https://github.com/aicers/github-dashboard/commit/a1d12b1a992737e0ac7b7d9c38c8f09977bbb979)), closes [#607](https://github.com/aicers/github-dashboard/issues/607)
+* limit release checks to titles and merge-commit CI ([#602](https://github.com/aicers/github-dashboard/issues/602)) ([7dcdf59](https://github.com/aicers/github-dashboard/commit/7dcdf5926d8668976a871a8790d9ad6b04c33034))
+* update shared instruction blocks to 0.6.3 ([#605](https://github.com/aicers/github-dashboard/issues/605)) ([b537e9c](https://github.com/aicers/github-dashboard/commit/b537e9cf225e996d255dc7b3b4ef66beaf6fbd7f))
+* update shared instruction blocks to 0.6.4 ([#606](https://github.com/aicers/github-dashboard/issues/606)) ([575bd1d](https://github.com/aicers/github-dashboard/commit/575bd1d39aa5c3bb3fd8da3f8e9696c0c1256018))
+
 ## [0.4.0] - 2026-11-22
 
 ### Changed
